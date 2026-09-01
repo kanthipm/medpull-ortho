@@ -1,0 +1,452 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  MedPull Recovery Copilot — provider console on AWS. Built to sit inside the
+  always-free tier: Lambda (1M requests + 400,000 GB-s/month), CloudFront
+  (1 TB egress + 10M requests/month), SSM Parameter Store standard parameters,
+  and a few megabytes of S3. No VPC, no NAT gateway, no API Gateway, no ECR,
+  no always-on database — those are where an "AWS demo" normally starts
+  costing real money.
+
+Parameters:
+  LambdaCodeBucket:
+    Type: String
+    Description: S3 bucket holding the Lambda deployment zip (created by deploy.sh).
+  LambdaCodeKey:
+    Type: String
+    Description: S3 key of the Lambda deployment zip.
+
+  OriginVerifySecret:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: >-
+      Shared secret CloudFront injects as x-origin-verify. The Function URL is
+      public so CloudFront can reach it without SigV4; this header is what
+      actually stops anyone calling the origin directly.
+
+  GroqApiKeyParameter:
+    Type: String
+    Default: /recovery-copilot/groq-api-key
+    Description: >-
+      SSM Parameter Store name (SecureString) holding the Groq API key.
+      deploy.sh writes it; standard parameters are free.
+  GroqModel:
+    Type: String
+    Default: llama-3.3-70b-versatile
+
+  LambdaMemoryMB:
+    Type: Number
+    Default: 1024
+    MinValue: 512
+    MaxValue: 3008
+    Description: >-
+      Free-tier compute is billed in GB-seconds, so memory and duration trade
+      off against each other. 1024 MB imports numpy/pandas fast enough that
+      total GB-s is roughly flat versus 512 MB, with much better latency.
+
+  ApiReservedConcurrency:
+    Type: Number
+    Default: 5
+    Description: >-
+      Hard ceiling on concurrent API executions — the main guard against a
+      traffic spike (or a loop) eating the free tier. Set -1 to leave it
+      unreserved. Keep this below the account concurrency limit: new accounts
+      often start at 10, and reserving all of it would starve the seed
+      function.
+
+  BudgetAlertEmail:
+    Type: String
+    Default: ""
+    Description: Optional. Email for a monthly AWS cost alarm. Blank disables it.
+  MonthlyBudgetUSD:
+    Type: Number
+    Default: 1
+    Description: Monthly spend that triggers the alert, in USD.
+
+Conditions:
+  HasBudgetEmail: !Not [!Equals [!Ref BudgetAlertEmail, ""]]
+  HasReservedConcurrency: !Not [!Equals [!Ref ApiReservedConcurrency, -1]]
+
+Resources:
+  # ------------------------------------------------------------------
+  # Storage: one private bucket for both the SQLite database and the SPA
+  # ------------------------------------------------------------------
+  DataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              # SSE-S3, not SSE-KMS: encryption at rest with no per-request
+              # KMS charge.
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        # Cheap point-in-time recovery for the database — a few MB per version,
+        # expired after a week by the rule below.
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-database-versions
+            Status: Enabled
+            Prefix: db/
+            NoncurrentVersionExpirationInDays: 7
+            ExpiredObjectDeleteMarker: true
+          # Every SPA deploy replaces the previous build under web/; without
+          # this rule those old bundles pile up as noncurrent versions forever.
+          - Id: expire-old-spa-versions
+            Status: Enabled
+            Prefix: web/
+            NoncurrentVersionExpirationInDays: 7
+            ExpiredObjectDeleteMarker: true
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  DataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # CloudFront may read the built SPA and nothing else. The database
+          # prefix is deliberately not reachable through the distribution.
+          - Sid: AllowCloudFrontReadSpa
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${DataBucket.Arn}/web/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt DataBucket.Arn
+              - !Sub "${DataBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  # ------------------------------------------------------------------
+  # Lambda
+  # ------------------------------------------------------------------
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: database-and-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${DataBucket.Arn}/db/*"
+              - Effect: Allow
+                # Without ListBucket, S3 answers a HEAD for a missing key with
+                # 403 instead of 404, and the "database not seeded yet" path
+                # would surface as a permissions error. Deliberately carries no
+                # s3:prefix condition: that key is only populated for list
+                # requests, so conditioning on it would fail the implicit check
+                # behind that HEAD and reintroduce the 403 on a fresh bucket.
+                # The grant is therefore key enumeration only — reads and writes
+                # stay scoped to db/ by the statement above.
+                Action: s3:ListBucket
+                Resource: !GetAtt DataBucket.Arn
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GroqApiKeyParameter}"
+              - Effect: Allow
+                # Decrypting a SecureString written under the AWS-managed
+                # aws/ssm key, and only through SSM.
+                Action: kms:Decrypt
+                Resource: !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
+
+  # Declared explicitly so retention is 14 days. Left to Lambda, log groups are
+  # created with "never expire" and quietly grow past the 5 GB free tier.
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-api"
+      RetentionInDays: 14
+
+  SeedLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-seed"
+      RetentionInDays: 14
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ApiLogGroup
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-api"
+      Description: Recovery Copilot API (FastAPI via Mangum)
+      Runtime: python3.12
+      # Graviton bills ~20% fewer GB-seconds, which stretches the always-free
+      # 400,000 GB-s/month further.
+      Architectures: [arm64]
+      Handler: app.lambda_handler.handler
+      Role: !GetAtt LambdaRole.Arn
+      MemorySize: !Ref LambdaMemoryMB
+      # Comfortably above the Distribution's OriginReadTimeout of 30s below, so
+      # a slow Groq call is given up on at the edge while the function keeps
+      # running: it finishes its write-back and releases the S3 lock instead of
+      # being killed mid-upload. Equal values would race, and the loser would be
+      # a truncated Lambda holding the lock until its TTL expires.
+      Timeout: 45
+      ReservedConcurrentExecutions: !If
+        - HasReservedConcurrency
+        - !Ref ApiReservedConcurrency
+        - !Ref AWS::NoValue
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Environment:
+        Variables:
+          # Only /tmp is writable in the execution environment.
+          DATABASE_URL: sqlite:////tmp/recovery.db
+          S3_BUCKET: !Ref DataBucket
+          S3_DB_KEY: db/recovery.db
+          S3_LOCK_KEY: db/recovery.db.lock
+          ORIGIN_VERIFY_SECRET: !Ref OriginVerifySecret
+          GROQ_API_KEY_PARAMETER: !Ref GroqApiKeyParameter
+          GROQ_MODEL: !Ref GroqModel
+          # No local model on Lambda: the chain is Groq -> deterministic.
+          OLLAMA_URL: ""
+          # The warmer is a laptop convenience; on Lambda it would re-run every
+          # cold start and race other instances. The seed does it once instead.
+          WARM_CACHES_ON_STARTUP: "false"
+
+  # Same artifact, longer timeout. Seeding rebuilds the roster and warms every
+  # insight through Groq, which takes minutes — far past the API's 30s.
+  SeedFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: SeedLogGroup
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-seed"
+      Description: Rebuilds the demo database and uploads it to S3
+      Runtime: python3.12
+      Architectures: [arm64]
+      Handler: app.lambda_handler.handler
+      Role: !GetAtt LambdaRole.Arn
+      MemorySize: !Ref LambdaMemoryMB
+      Timeout: 900
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Environment:
+        Variables:
+          DATABASE_URL: sqlite:////tmp/recovery.db
+          S3_BUCKET: !Ref DataBucket
+          S3_DB_KEY: db/recovery.db
+          S3_LOCK_KEY: db/recovery.db.lock
+          GROQ_API_KEY_PARAMETER: !Ref GroqApiKeyParameter
+          GROQ_MODEL: !Ref GroqModel
+          OLLAMA_URL: ""
+          WARM_CACHES_ON_STARTUP: "false"
+          # The seed holds the write lock for its whole run, so the TTL has to
+          # cover it — but stay under the 900s timeout above, or a seed the
+          # runtime kills leaves a lock no later writer is allowed to break.
+          LOCK_TTL_SECONDS: "840"
+
+  ApiFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt ApiFunction.Arn
+      # NONE + the x-origin-verify header, rather than AWS_IAM: SigV4 origin
+      # signing to a Function URL is fussy about request bodies, and this app
+      # ships no auth of its own by design (see the project README).
+      AuthType: NONE
+      InvokeMode: BUFFERED
+
+  ApiFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  # Function URLs created since October 2025 also require lambda:InvokeFunction
+  # in the resource policy — InvokeFunctionUrl alone answers every request with
+  # the service's own 403 before the code ever runs. InvokedViaFunctionUrl
+  # scopes the grant to URL calls, so the Invoke API itself stays closed.
+  ApiFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+  # ------------------------------------------------------------------
+  # CloudFront: one origin for the SPA and the API, so nothing is cross-origin
+  # ------------------------------------------------------------------
+  SpaRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-spa-rewrite"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Serve index.html for client-side routes
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var uri = event.request.uri;
+          // Extensionless paths are React Router routes (/patients/marcus),
+          // not objects in the bucket. Rewriting here rather than using
+          // CustomErrorResponses matters: those apply to every behaviour, so
+          // they would also turn a genuine API 404 into a 200 page of HTML.
+          // Trailing-slash routes (/worklist/) get the same treatment: the
+          // bucket holds exactly one index.html, at the root, so appending
+          // "index.html" to the path would 404 everywhere except /.
+          if (uri.endsWith('/') || uri.split('/').pop().indexOf('.') === -1) {
+            event.request.uri = '/index.html';
+          }
+          return event.request;
+        }
+
+  S3OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-s3-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${AWS::StackName} — Recovery Copilot"
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        # Cheapest edge footprint (North America + Europe).
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: spa
+            DomainName: !GetAtt DataBucket.RegionalDomainName
+            OriginPath: /web
+            OriginAccessControlId: !GetAtt S3OriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: api
+            # Strips "https://" and the trailing slash off the Function URL.
+            DomainName: !Select [2, !Split ["/", !GetAtt ApiFunctionUrl.FunctionUrl]]
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              HTTPSPort: 443
+              OriginSSLProtocols: [TLSv1.2]
+              # CloudFront allows 1-60s here without a quota increase. 30 pairs
+              # with the API function's 45s timeout: the edge stops waiting
+              # first, by 15s, on every slow request.
+              OriginReadTimeout: 30
+            OriginCustomHeaders:
+              - HeaderName: x-origin-verify
+                HeaderValue: !Ref OriginVerifySecret
+        DefaultCacheBehavior:
+          TargetOriginId: spa
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # Managed-CachingOptimized
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt SpaRewriteFunction.FunctionMetadata.FunctionARN
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            # Managed-CachingDisabled: every response here is per-patient and
+            # changes the moment the engine recomputes.
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            # Managed-AllViewerExceptHostHeader: a Function URL origin rejects
+            # a forwarded viewer Host header, so this policy is required.
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+
+  # ------------------------------------------------------------------
+  # Cost alarm
+  # ------------------------------------------------------------------
+  Budget:
+    Type: AWS::Budgets::Budget
+    Condition: HasBudgetEmail
+    Properties:
+      Budget:
+        # No explicit BudgetName: changing the alert email replaces the budget,
+        # and replacement of a fixed-name budget collides with itself (create
+        # runs before delete). A generated name lets the swap succeed.
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUSD
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BudgetAlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BudgetAlertEmail
+
+Outputs:
+  SiteUrl:
+    Description: Open this in a browser.
+    Value: !Sub "https://${Distribution.DomainName}"
+  DistributionId:
+    Value: !Ref Distribution
+  DataBucketName:
+    Value: !Ref DataBucket
+  ApiFunctionName:
+    Value: !Ref ApiFunction
+  SeedFunctionName:
+    Value: !Ref SeedFunction
+  ApiFunctionUrl:
+    Description: Origin URL — reachable only with the x-origin-verify header.
+    Value: !GetAtt ApiFunctionUrl.FunctionUrl

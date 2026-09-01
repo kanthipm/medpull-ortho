@@ -1,0 +1,35 @@
+[project]
+name = "recovery-copilot-backend"
+version = "0.1.0"
+description = "MedPull Recovery Copilot — provider console API + Recovery Intelligence Engine"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "numpy>=2.0",
+    "scipy>=1.14",
+    "pandas>=2.2",
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+    {include-group = "aws"},
+]
+# Only needed to run on Lambda. boto3 is *not* bundled into the deployment
+# artifact — the Python runtime already ships it — but the tests need it here.
+aws = [
+    "mangum>=0.19",
+    "boto3>=1.35",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100

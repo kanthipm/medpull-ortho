@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 440" fill="none">
+  <!-- MedPull mark: two figures, periwinkle + mint, teal where they overlap. -->
+  <!-- periwinkle person -->
+  <circle cx="186" cy="64" r="44" fill="#a6ace6"/>
+  <path d="M186 168 L104 376 L270 376 Z" stroke="#a6ace6" stroke-width="112"
+        stroke-linejoin="round" fill="#a6ace6"/>
+  <!-- mint person -->
+  <circle cx="308" cy="88" r="42" fill="#a5e6d7"/>
+  <path d="M308 196 L236 380 L382 380 Z" stroke="#a5e6d7" stroke-width="110"
+        stroke-linejoin="round" fill="#a5e6d7"/>
+  <!-- teal overlap (intersection of the two bodies) -->
+  <path d="M253 185 L322 355 A56 56 0 0 1 270 432 L218 432 A55 55 0 0 1 185 360 Z"
+        fill="#7cc7cd"/>
+</svg>
