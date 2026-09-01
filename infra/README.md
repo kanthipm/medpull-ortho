@@ -128,6 +128,11 @@ recommends against creating them at all.
 | `STACK_NAME` | `recovery-copilot` | CloudFormation stack name |
 | `GROQ_API_KEY` | — | Skips the prompt; also read from `recovery-copilot/.env` |
 | `GROQ_MODEL` | `llama-3.3-70b-versatile` | Overrides the model |
+| `JUNCTION_API_KEY` | — | Stored in SSM on first deploy; also read from `.env`. Optional — without it the wearable connector stays idle |
+| `JUNCTION_WEBHOOK_SECRET` | — | The Svix `whsec_…` secret for the registered endpoint; stored in SSM like the key |
+| `JUNCTION_ENVIRONMENT` | `sandbox` | `sandbox` or `production` — must match the key |
+| `JUNCTION_REGION` | `us` | `us` or `eu` |
+| `JUNCTION_LINK_REDIRECT_URL` | — | Where Junction Link sends a patient afterwards |
 | `BUDGET_EMAIL` | — | Enables the monthly cost alarm |
 | `API_RESERVED_CONCURRENCY` | `5` | `-1` leaves concurrency unreserved |
 
@@ -150,6 +155,14 @@ aws ssm put-parameter --name /recovery-copilot/groq-api-key \
 ```
 
 New cold starts pick it up; force it immediately by redeploying the function.
+
+The two Junction secrets follow the same path (`/recovery-copilot/junction-api-key`
+and `/recovery-copilot/junction-webhook-secret`, read into
+`settings.junction_api_key` / `settings.junction_webhook_secret`). Register
+`https://<CloudFront domain>/api/webhooks/wearables/junction` as the endpoint in
+Junction's webhook dashboard, store the `whsec_…` secret it shows, and
+redeploy. Both are optional: with neither stored the connector is idle and the
+console's Integrations page says so.
 
 Ollama is explicitly disabled on Lambda (`OLLAMA_URL=""`) — there is no local
 model to reach. With no Groq key configured the app still works end to end and

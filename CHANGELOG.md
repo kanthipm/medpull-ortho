@@ -1,5 +1,21 @@
 # Changelog
 
+## [recovery-copilot 1.4.0] - 2026-09-01
+
+### Added
+- **Junction wearable integration** (`app/connectors/junction.py`, `junction_client.py`) — the aggregator chosen for production is live: `POST /api/patients/{id}/wearables/junction/link` creates the patient's Junction user (opaque `client_user_id`, `fallback_time_zone`, `ingestion_start` pinned to the ingestible window) and mints a one-time hosted Link URL; `provider.connection.created|error` events maintain Device rows and a provider snapshot; `daily.data.{activity,sleep,workouts}` summaries and `blood_oxygen` / `respiratory_rate` / `hrv` / `body_temperature(_delta)` timeseries normalize onto `MetricType` with the semantics the engine expects (one resting-HR definition per provider, Apple HRV routed to `HRV_SDNN`, delta vs absolute temperature kept apart, intraday totals never ingested, naps and in-progress sleeps skipped); `historical.data.*` events pull the announced window through the API; `.updated` deliveries restate in place by Junction record id
+- **Per-patient wearable lifecycle** — `GET /api/patients/{id}/wearables` (`?refresh=true` re-syncs the snapshot from Junction), `POST …/junction/backfill` (optional Junction re-sync first, clamped to the ingestible window, chunked under the ingest ceiling, recomputes the engine), `DELETE …/junction` (deregisters at Junction, retires the mapping, keeps history); `GET /api/integrations/junction/status` and `/webhook-portal` for operators
+- **`wearable_connections` table** (`app/models/connection.py`) — the only place a Junction user id meets a patient id; webhooks are resolved through it and never through the body, a delivery for an unknown user is recorded as `ignored` and answered 202, and a sandbox account cannot be driven against the production host (409)
+- **Console** — the Integrations page leads with the aggregator card (live / needs setup, environment, webhook endpoint and secret state, linked-patient counts, recent deliveries) and labels brands *Via Junction* or *Needs patient app*; every patient record gains a Wearable connection card with Connect (copyable one-time link), Back-fill, Refresh status and Disconnect
+- **Lambda secrets** — `JUNCTION_API_KEY_PARAMETER` and `JUNCTION_WEBHOOK_SECRET_PARAMETER` (SSM SecureStrings) alongside the Groq key; `deploy.sh` stores them from the environment or `.env` when present
+- 29 Junction tests (normalization semantics, Svix-signed end-to-end deliveries, resolution, out-of-window and implausible handling, historical pulls, link/backfill/disconnect against a fake Junction, client back-off and paging)
+
+### Changed
+- `WearableConnector` contract: `authorize` / `handle_oauth_callback` / `fetch_historical` take the session, `normalize` takes the resolved `PatientContext`, and connectors gain `resolve_patient` / `receive` hooks; the ingest layer gains `partition_by_window` and `ingest_in_batches` for aggregator deliveries (the demo path keeps all-or-nothing rejection)
+- `POST /api/integrations/{brand}/connect` answers 409 (link from a patient record) for Junction-reachable brands and 501 for on-device stores; the registry reports six statuses instead of two
+- Provider `source_updated_at` stamps are flattened to naive UTC at ingest so a restatement can be ordered against what SQLite hands back
+- `make seed` (or a fresh deploy) is not required: the new table is created additively on first request
+
 ## [recovery-copilot 1.3.2] - 2026-07-21
 
 ### Changed

@@ -35,8 +35,11 @@ class AwsSettings(BaseSettings):
     # invoked directly. Empty => no origin check (local runs, `sam local`).
     origin_verify_secret: str = ""
 
-    # SSM Parameter Store name holding the Groq API key as a SecureString.
+    # SSM Parameter Store names holding secrets as SecureStrings. Each is
+    # optional and read once per cold start (app/aws/secrets.py).
     groq_api_key_parameter: str = ""
+    junction_api_key_parameter: str = ""
+    junction_webhook_secret_parameter: str = ""
 
     # The background insight warmer is a laptop convenience. On Lambda it would
     # re-run on every cold start, burn the Groq free-tier quota and race other

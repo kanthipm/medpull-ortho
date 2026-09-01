@@ -20,6 +20,7 @@ import RecoveryTimeline from './RecoveryTimeline'
 import RtmReadinessCard from './RtmReadinessCard'
 import SignalsSection from './SignalsSection'
 import useReviewTimeTracker from './useReviewTimeTracker'
+import WearableConnectionCard from './WearableConnectionCard'
 
 function rise(index: number) {
   return { className: 'rise', style: { '--rise-delay': `${index * 55}ms` } as CSSProperties }
@@ -210,6 +211,10 @@ export default function PatientDetailPage() {
 
         <div {...rise(7)}>
           <SignalsSection patientId={p.id} rtm={p.rtm} refreshing={refreshing} />
+        </div>
+
+        <div {...rise(8)}>
+          <WearableConnectionCard patientId={p.id} patientName={p.name} refreshing={refreshing} />
         </div>
       </div>
 

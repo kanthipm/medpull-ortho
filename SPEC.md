@@ -39,7 +39,7 @@ Markers used below:
 | 7. AI documentation | Partly built | Two of the five document types are generated: encounter notes and monthly RTM summaries. Recovery summaries exist as an on-screen insight rather than an approvable document. Outreach and treatment-management documentation are not built. Review-and-approve is built, and an approved document is never regenerated. |
 | 8. RTM compliance & billing | Built, with two stated limits | The readiness card, the CPT ladder, the suggested next action and Ready to Bill are implemented and fully deterministic. First limit: the sample card below is not reproducible as printed. Marcus Reyes is the patient it was written around and he matches its provider-review half exactly (14 minutes logged, 6 remaining on 98980, and that suggested next action), but his monitoring days read 8, not 14, because the count is clamped to the enrollment date and he enrolled eight days ago, and his documentation is not yet approved. Second limit: 98980/98981 are defined per calendar month while this card accrues over a rolling 30 days, so a practice billing at each month end could claim one accrual twice. Closing that needs a record of what has actually been claimed, which the product does not keep. Both are documented in `app/rtm/readiness.py`. |
 | 9. Practice overview | Built | Five numbers, every one of them from `GET /api/practice/overview`. |
-| Future integrations | Mocked, as this spec intends | The connector interface, webhook path, idempotent upsert and per-provider capability map are real; every non-demo connector raises `NotImplementedError`. |
+| Future integrations | Partly built | The Junction wearable aggregator is live end to end: one Junction account per patient issued from the patient record, a hosted Link page for the patient, Svix-verified webhooks for summaries and timeseries, automatic and on-demand back-fill, and disconnect — all through the same connector interface, webhook path, idempotent upsert and capability map. Oura, Fitbit/Google Health, Garmin, WHOOP, Withings, Polar and Dexcom connect this way. Apple Health and Android Health Connect need Junction's mobile SDK inside a patient app, which is not built; Terra stays scaffolded; EHR, PT platforms and patient portals are not started. Junction passes no Apple gait metrics through, so those stay demo-only. |
 
 ## CPT code reference
 
@@ -281,7 +281,9 @@ Avoid complex dashboards or unnecessary analytics.
 
 ## Future integrations
 
-Design interfaces now using mocked data.
+**Status: partly built.** Wearables are live through Junction (see the status
+table and README's wearable section); the rest below is designed against the
+same connector interface using mocked data.
 
 Future integrations include:
 

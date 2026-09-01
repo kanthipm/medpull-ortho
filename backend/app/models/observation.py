@@ -74,6 +74,9 @@ class WebhookEvent(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     signature_valid: Mapped[bool] = mapped_column(Boolean, default=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
-    status: Mapped[str] = mapped_column(String, default="received")  # received|processed|failed
+    # received | processed | failed | rejected (bad signature) | ignored (a
+    # verified delivery for a user no connection maps to — recorded, never
+    # written into any chart, answered 202 so the provider stops retrying)
+    status: Mapped[str] = mapped_column(String, default="received")
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error: Mapped[str | None] = mapped_column(String, nullable=True)

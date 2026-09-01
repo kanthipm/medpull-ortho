@@ -4,14 +4,19 @@ import { fetchJson } from './client'
 import type {
   AppNotification,
   Checkin,
-  IntegrationProvider,
+  IntegrationsResponse,
+  JunctionBackfill,
+  JunctionLink,
+  JunctionStatus,
   NotificationPreference,
   PatientDetail,
   PatientMetrics,
+  PatientWearables,
   PracticeOverview,
   RtmDocument,
   RtmReadiness,
   TimelineEvent,
+  WearableConnection,
   WorklistResponse,
 } from './types'
 
@@ -78,7 +83,87 @@ export function useMarkAllNotificationsRead() {
 export function useIntegrations() {
   return useQuery({
     queryKey: ['integrations'],
-    queryFn: () => fetchJson<{ providers: IntegrationProvider[] }>('/api/integrations'),
+    queryFn: () => fetchJson<IntegrationsResponse>('/api/integrations'),
+  })
+}
+
+export function useJunctionStatus(enabled = true) {
+  return useQuery({
+    queryKey: ['integrations', 'junction'],
+    queryFn: () => fetchJson<JunctionStatus>('/api/integrations/junction/status?limit=10'),
+    refetchInterval: 60_000,
+    enabled,
+  })
+}
+
+/** Caches a change to a patient's wearable connection moves: the card
+ *  itself, the patient header (its device line reads the newest Device row),
+ *  and the Integrations page's per-brand patient counts. */
+export function wearableKeys(id: string): QueryKey[] {
+  return [
+    ['patient', id, 'wearables'],
+    ['patient', id],
+    ['integrations'],
+  ]
+}
+
+export function usePatientWearables(id: string) {
+  return useQuery({
+    queryKey: ['patient', id, 'wearables'],
+    queryFn: () => fetchJson<PatientWearables>(`/api/patients/${id}/wearables`),
+  })
+}
+
+export function useRefreshWearables(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchJson<PatientWearables>(`/api/patients/${id}/wearables?refresh=true`),
+    onSuccess: (data) => {
+      qc.setQueryData(['patient', id, 'wearables'], data)
+      for (const queryKey of wearableKeys(id).slice(1)) qc.invalidateQueries({ queryKey })
+    },
+  })
+}
+
+export function useCreateJunctionLink(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<JunctionLink>(`/api/patients/${id}/wearables/junction/link`, { method: 'POST' }),
+    onSuccess: () => {
+      for (const queryKey of wearableKeys(id)) qc.invalidateQueries({ queryKey })
+    },
+  })
+}
+
+export function useJunctionBackfill(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (options: { refresh: boolean }) =>
+      fetchJson<JunctionBackfill>(`/api/patients/${id}/wearables/junction/backfill`, {
+        method: 'POST',
+        body: JSON.stringify(options),
+      }),
+    // a back-fill that landed rows recomputed the patient server-side, so the
+    // same caches a Refresh analysis moves are stale, plus the metric cards
+    onSuccess: () => {
+      for (const queryKey of [...wearableKeys(id), ...recomputeKeys(id), ['patient', id, 'metrics']])
+        qc.invalidateQueries({ queryKey })
+    },
+  })
+}
+
+export function useDisconnectJunction(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<{ ok: boolean; remote: string; connection: WearableConnection }>(
+        `/api/patients/${id}/wearables/junction`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: () => {
+      for (const queryKey of wearableKeys(id)) qc.invalidateQueries({ queryKey })
+    },
   })
 }
 

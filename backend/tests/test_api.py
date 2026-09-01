@@ -92,13 +92,23 @@ def test_observations_series(client):
 
 
 def test_integrations(client):
-    providers = client.get("/api/integrations").json()["providers"]
-    assert len(providers) == 10
+    body = client.get("/api/integrations").json()
+    providers = body["providers"]
+    assert len(providers) == 11
     by_key = {p["key"]: p for p in providers}
     assert by_key["mock"]["status"] == "mock_connected"
+    # no API key in the test environment: the aggregator is present but unconfigured
+    assert by_key["junction"]["status"] == "needs_setup"
+    assert body["aggregator"]["configured"] is False
+    assert body["aggregator"]["webhook_path"] == "/api/webhooks/wearables/junction"
+    # brands are reached through Junction; the on-device stores need a patient app
+    assert by_key["fitbit"]["status"] == "via_junction"
+    assert by_key["apple"]["status"] == "needs_app"
     assert by_key["apple"]["gait_capable"] is True
     assert by_key["fitbit"]["gait_capable"] is False
-    assert client.post("/api/integrations/fitbit/connect").status_code == 501
+    assert client.post("/api/integrations/fitbit/connect").status_code == 409
+    assert client.post("/api/integrations/apple/connect").status_code == 501
+    assert client.post("/api/integrations/junction/connect").json()["status"] == "needs_setup"
     assert client.post("/api/integrations/nope/connect").status_code == 404
 
 
@@ -643,6 +653,9 @@ def test_every_router_is_wired(client):
         "/api/notifications",
         "/api/notification-preferences",
         "/api/integrations",
+        "/api/integrations/junction/status",
+        "/api/patients/{patient_id}/wearables",
+        "/api/patients/{patient_id}/wearables/junction/link",
         "/api/webhooks/wearables/{provider}",
         "/api/ask",
         "/api/patients/{patient_id}/rtm",

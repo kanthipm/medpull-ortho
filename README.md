@@ -35,11 +35,11 @@ Single-process demo (serves the built frontend from FastAPI):
 make build && make run     # everything on http://localhost:8000
 ```
 
-`make test` runs the backend suite (224 tests: seed determinism, engine golden
+`make test` runs the backend suite (257 tests: seed determinism, engine golden
 tiers, baseline stability, guardrail enforcement, API contracts, connector
-idempotency and ingest bounds, RTM billing gates, LLM deadline and cooldown
-behaviour, static-file containment, AWS persistence). There are no frontend
-tests. `make lint` runs ESLint over the frontend and ruff over the backend.
+idempotency and ingest bounds, the Junction connector end to end against a
+fake Junction, RTM billing gates, LLM deadline and cooldown behaviour,
+static-file containment, AWS persistence). There are no frontend tests. `make lint` runs ESLint over the frontend and ruff over the backend.
 
 ## Deploying
 
@@ -134,7 +134,8 @@ are always deterministic.
 ```
                     ┌────────────────────────────────────────────┐
  wearables ── webhooks ──► connectors/ ──► observations (canonical store)
- (mocked in v1)     │            │                               │
+ (Junction live;    │            │                               │
+  demo mocked)      │            │                               │
                     │   Recovery Intelligence Engine (engine/)   │
                     │   baselines · EWMA/CUSUM deviation ·       │
                     │   expected recovery curves · trajectory ·  │
@@ -230,48 +231,112 @@ Two layers, deliberately separated:
    the data, the tier, the transcript, the prompt version or the provider
    changes.
 
-### Wearable integration scaffolding
+### Wearable integration: Junction
 
-No live integrations ship in v1, by design — but the seams are real:
+Live device data comes through **Junction** (formerly Vital), the aggregator
+chosen after the mid-2026 market review: HIPAA-native with a BAA at the floor
+price (which is what ruled Terra out), one integration in front of Oura,
+Fitbit / Google Health, Garmin, WHOOP, Withings, Polar and Dexcom, and Apple
+Health / Android Health Connect through its mobile SDK once a patient app
+exists. The demo source stays exactly as it was; a workspace with no Junction
+key runs on it and says so.
 
-- `connectors/base.py` — provider-agnostic `WearableConnector` interface
+**Setup.** Create a team at app.junction.com (sandbox first), then:
+
+1. Put the team API key in `.env` as `JUNCTION_API_KEY` with
+   `JUNCTION_ENVIRONMENT=sandbox|production` and `JUNCTION_REGION=us|eu`
+   (on AWS: SSM parameters, see `infra/README.md`).
+2. In Junction's webhook dashboard register
+   `https://<your host>/api/webhooks/wearables/junction` and put the `whsec_…`
+   secret it shows in `.env` as `JUNCTION_WEBHOOK_SECRET`. Locally, a tunnel
+   (ngrok or similar) in front of `:8000` works.
+3. Restart. The Integrations page now reads **Live**, and every patient
+   record gains a *Wearable connection* card.
+
+**The patient flow.** On the patient record, *Connect wearable* creates the
+patient's Junction user (an opaque `client_user_id`, the patient's time zone,
+and an `ingestion_start` pinned to the ingestible window so Junction never
+pulls history the console would drop) and mints a one-time hosted Link URL.
+The clinic hands the link to the patient — copy it, open it on a tablet, read
+it out — and the patient signs in to their device's cloud account on
+Junction's page. Nothing is typed into the console. Junction then emits
+`provider.connection.created`, back-fills, and announces each resource with
+`historical.data.<resource>.created`; the connector pulls those windows
+through the API. From then on `daily.data.*` deliveries land within minutes of
+each device sync. *Back-fill* asks Junction to re-sync every linked device and
+pulls the whole window again (the nightly trailing re-pull the data-layer
+design asks for, on demand); *Disconnect* deregisters the patient at Junction
+and retires the mapping while keeping the history on the chart.
+
+**Identity.** `wearable_connections` (`models/connection.py`) is the only
+place a Junction user id meets a patient id. Every delivery is resolved
+through it (`JunctionConnector.resolve_patient`) and never through anything in
+the body: a verified delivery for a user the table has never issued is
+recorded as `ignored` and answered 202, so it can neither write anywhere nor
+make Junction retry. A sandbox account is refused against the production host
+(409) rather than mistaken for a lost user.
+
+**Semantics, decided once in `connectors/junction.py`:**
+
+- Resting heart rate has two definitions in the wild — a daily figure (Apple,
+  Fitbit, Garmin, Withings) and a sleep statistic (Oura, WHOOP, Polar). Each
+  provider gets exactly one, so a patient's series never alternates.
+- Apple HealthKit only measures SDNN. Junction labels every HRV stream
+  "rmssd", but a label cannot convert a statistic, so Apple-sourced HRV lands
+  in `HRV_SDNN`: stored and charted, not scored (the control chart is
+  RMSSD-only by design).
+- `temperature_delta` is a deviation from the device's own baseline and goes to
+  `SKIN_TEMP_DELTA`; `skin_temperature` / `body_temperature` are absolute and
+  go to `SKIN_TEMP`. Never the other way round.
+- Intraday totals (steps, calories, distance timeseries) are **not** ingested.
+  The daily summary is the row; `engine/dataload.py` averages every row on a
+  day, so fifteen-minute step buckets beside an 8,000-step summary would score
+  the day at 160 steps. SpO₂, respiratory rate, HRV and temperature samples
+  are ingested as instants and average correctly.
+- Naps and in-progress sleep recordings are not the night's sleep and are
+  skipped; Junction restates the session when it completes, and a `.updated`
+  delivery restates in place by Junction's record id.
+- Rows dated outside the patient's ingestible window, or carrying a value no
+  body can produce, are dropped and counted instead of refused: refusing would
+  only make Junction retry a delivery that can never become acceptable. The
+  demo `mock` endpoint keeps the loud all-or-nothing 422, where an odd date is
+  a caller bug.
+- Every Junction row qualifies for RTM day-counting except data a person typed
+  into a health app by hand (Junction's `manual` provider), which is stored as
+  patient-reported. Whether consumer wearables satisfy CMS's device
+  requirement is a billing question this code does not decide.
+
+**The seams underneath are unchanged and shared with the demo source:**
+
+- `connectors/base.py` — the provider-agnostic `WearableConnector` contract
   (authorize / OAuth callback / webhook registration / historical fetch /
-  normalize).
-- `POST /api/webhooks/wearables/{provider}` — signature check, raw event
-  persistence, normalization, **idempotent upsert** by dedupe key (wearable
-  providers re-deliver, restate and back-fill as a matter of course), engine
-  recompute. Signature verification fails closed: an unknown provider or a
-  configured scheme with no secret is a rejection, never a pass-through. Svix
-  (Junction) and Terra verifiers are written and unit-tested, but neither
-  aggregator is in `connectors/registry.py` yet, so those paths answer 501
-  before verification is reached. The demo `mock` endpoint is deliberately
-  unsigned and stamps its rows `mock`: a `provider` field in the body is
-  recorded as provenance, never obeyed, so an anonymous POST cannot write into
-  a real connector's keyspace.
-- `connectors/ingest.py` is the one choke point every connector's output passes
-  through, and it bounds what may land: a batch ceiling (5,000 rows), an
-  ingestible date window per patient (60 days before surgery through tomorrow,
-  rejected all-or-nothing with a 422 and a recorded failed webhook event), and
-  a physiological plausibility range per metric. A provider tombstone
-  soft-deletes rather than removing the row, so the retraction survives
-  re-delivery, and all three readers (the engine's day series, the RTM
-  monitoring count, and the patient chart endpoint) filter it out.
-- `connectors/capabilities.py` — per-provider metric capability map. Gait
-  metrics (walking speed/asymmetry/steadiness) are Apple-exclusive. Be precise
-  about how that reaches the UI: there is no per-patient capability lookup. A
-  patient's chart carries a card for each signal that patient's own device
-  actually reported, so gait cards are simply absent for everyone else, and the
-  capability map itself is surfaced on the Integrations page.
-- `terra.py` / `junction.py` / `apple_healthkit.py` — documented stubs
-  capturing what each production integration requires (BAAs, webhook
-  signatures, the iOS companion-app constraint for HealthKit). Every method
-  raises `NotImplementedError`.
+  normalize), plus the two hooks the webhook handler drives: `resolve_patient`
+  and `receive`.
+- `POST /api/webhooks/wearables/{provider}` — signature check on the raw bytes
+  (Svix for Junction, `terra-signature` for Terra, none for the demo path),
+  raw event persistence, patient resolution, normalization, **idempotent
+  upsert** by dedupe key, engine recompute. Verification fails closed: an
+  unknown provider or a configured scheme with no secret is a rejection, never
+  a pass-through. The demo endpoint stamps its rows `mock` whatever the body
+  claims, so an anonymous POST cannot write into a real connector's keyspace.
+- `connectors/ingest.py` — the one choke point every connector's output passes
+  through: a batch ceiling (5,000 rows; aggregator deliveries are fed through
+  in ceiling-sized slices), an ingestible date window per patient (60 days
+  before surgery through tomorrow), a physiological plausibility range per
+  metric, and tombstones that soft-delete so a retraction survives
+  re-delivery.
+- `connectors/capabilities.py` — per-provider metric map, surfaced on the
+  Integrations page. Gait metrics stay Apple-exclusive and Junction does not
+  pass them through, so gait cards remain demo-only until the patient app.
+- `terra.py` / `apple_healthkit.py` — documented stubs capturing what each
+  would require. Every method raises `NotImplementedError`.
 
-Recommended production path (researched mid-2026): one aggregator — **Terra**
-(~$399/mo flat, BAA, widest coverage) or **Junction** fka Vital
-($0.50/user/mo, bundles labs) — plus a thin Apple HealthKit path for gait.
-Avoid: Human API (absorbed into LexisNexis), Metriport (exited wearables),
-Google Fit (shut down; Fitbit moves to the Google Health API in 2026).
+Operator surfaces: `GET /api/integrations/junction/status` (configuration,
+connection counts, recent deliveries with their outcomes) and
+`GET /api/integrations/junction/webhook-portal` (Junction's Svix portal for
+the team). Avoid, per the review: Human API (absorbed into LexisNexis),
+Metriport (exited wearables), Google Fit (shut down; Junction owns the
+Fitbit → Google Health migration as the same device epoch).
 
 ### RTM platform (P1)
 
@@ -345,7 +410,9 @@ failed webhook event.
   bundle and 404s unmatched `/api/*` paths rather than falling through to
   index.html, so it will not serve the database or read outside the bundle. That
   is containment, not authentication.
-- **Real integrations.** See the scaffolding section above.
+- **Every wearable path except Junction.** Apple Health and Android Health
+  Connect need Junction's mobile SDK inside a patient app, which does not
+  exist; Terra stays scaffolded. See the wearable section above.
 - **SMS/email delivery.** Channel stubs record intent; only in-app
   notifications are deliverable, and the preferences API refuses to enable a
   channel that would deliver nowhere.
