@@ -270,9 +270,21 @@ class JunctionClient:
     def refresh_user(
         self, user_id: str, *, deadline_s: float = DEFAULT_DEADLINE_S
     ) -> dict[str, Any] | None:
-        """Ask Junction to re-pull from every connected provider now."""
+        """Ask Junction to re-pull from every connected provider now.
+
+        The endpoint takes its own ``timeout``: Junction waits that long for
+        the provider pulls and then answers with ``refreshed_sources``,
+        ``in_progress_sources`` and ``failed_sources``. It is set a second
+        inside our socket deadline so Junction answers before we hang up,
+        rather than our timeout cutting off a call that would have completed.
+        """
+        junction_wait = max(1.0, deadline_s - 1.0)
         return self._request(
-            "POST", f"/v2/user/refresh/{user_id}", not_found_ok=True, deadline_s=deadline_s
+            "POST",
+            f"/v2/user/refresh/{user_id}",
+            params={"timeout": junction_wait},
+            not_found_ok=True,
+            deadline_s=deadline_s,
         )
 
     def connected_providers(self, user_id: str) -> list[dict[str, Any]]:

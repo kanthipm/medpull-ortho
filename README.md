@@ -290,8 +290,11 @@ month-granular ingestion floor — never the surgery date to the day.
   in `HRV_SDNN`: stored and charted, not scored (the control chart is
   RMSSD-only by design).
 - `temperature_delta` is a deviation from the device's own baseline and goes to
-  `SKIN_TEMP_DELTA`; `skin_temperature` / `body_temperature` are absolute and
-  go to `SKIN_TEMP`. Never the other way round.
+  `SKIN_TEMP_DELTA`; `skin_temperature` and wrist-site `body_temperature`
+  samples are absolute and go to `SKIN_TEMP`. Never the other way round. A
+  thermometer reading tagged with a core site (oral, rectal, temporal artery,
+  ear) is skipped and counted: there is no core-temperature metric yet, and
+  filed on the wrist series it would read as a fever.
 - Intraday totals (steps, calories, distance timeseries) are **not** ingested.
   The daily summary is the row; `engine/dataload.py` averages every row on a
   day, so fifteen-minute step buckets beside an 8,000-step summary would score

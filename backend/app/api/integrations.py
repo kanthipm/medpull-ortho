@@ -313,10 +313,11 @@ def junction_backfill(
     # One wall-clock budget for the whole request: the optional re-sync call
     # and the pull share it, so together they stay inside the write-lock TTL.
     started = time.monotonic()
+    refresh_result: dict[str, Any] | None = None
     try:
         conn = connector.active_connection(db, patient_id)
         if body.refresh:
-            connector.request_refresh(conn, deadline_s=REFRESH_DEADLINE_S)
+            refresh_result = connector.request_refresh(conn, deadline_s=REFRESH_DEADLINE_S)
         remaining = max(2.0, DEFAULT_PULL_BUDGET_S - (time.monotonic() - started))
         report = connector.pull(
             db, conn, patient, start=body.since, end=body.until, budget_s=remaining
@@ -347,6 +348,9 @@ def junction_backfill(
         "duplicates": duplicates,
         "skipped_out_of_window": len(outside),
         "dropped_implausible": report.dropped,
+        # Junction's own account of the re-sync, when one was asked for:
+        # refreshed_sources / in_progress_sources / failed_sources.
+        "refresh": refresh_result,
         "connection": _connection_view(conn),
     }
 

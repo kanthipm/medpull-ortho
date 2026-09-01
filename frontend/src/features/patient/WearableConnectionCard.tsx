@@ -164,6 +164,9 @@ export default function WearableConnectionCard({
   const c = data.connection
   const configured = data.aggregator.configured
   const active = c !== null && c.status !== 'disconnected'
+  // An account made under the other Junction environment cannot be reached
+  // from this deployment: every route but Disconnect answers 409 for it.
+  const wrongEnvironment = active && c.environment !== data.aggregator.environment
   const busy = createLink.isPending || backfill.isPending || disconnect.isPending || refresh.isPending
 
   const issueLink = () =>
@@ -213,7 +216,7 @@ export default function WearableConnectionCard({
     refresh.mutate(undefined, {
       onSuccess: (r) =>
         r.refresh_error
-          ? toast(`Junction didn't answer — ${r.refresh_error}`, 'warning')
+          ? toast(`Refresh failed — ${r.refresh_error}`, 'warning')
           : toast('Connection state refreshed', 'info'),
       onError: (err) => toast(`Refresh failed — ${err.message}`, 'warning'),
     })
@@ -221,8 +224,16 @@ export default function WearableConnectionCard({
   return (
     <SectionCard
       title="Wearable connection"
-      spine={active && c?.status === 'linked' ? 'bg-risk-low' : undefined}
-      aside={<StatusChip data={data} />}
+      spine={active && !wrongEnvironment && c?.status === 'linked' ? 'bg-risk-low' : undefined}
+      aside={
+        wrongEnvironment ? (
+          <span className="chip bg-risk-med-bg text-risk-med">
+            <TriangleAlert size={11} /> Other environment
+          </span>
+        ) : (
+          <StatusChip data={data} />
+        )
+      }
     >
       <RefreshOverlay show={refreshing} />
 
@@ -267,11 +278,24 @@ export default function WearableConnectionCard({
         </p>
       )}
 
-      {c && c.last_error && (
+      {c && wrongEnvironment && (
+        <p className="mt-3 flex items-start gap-2 rounded-btn border border-risk-med/30 bg-risk-med-bg px-3 py-2 text-[12.5px] font-medium leading-[1.5] text-risk-med">
+          <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+          <span>
+            This account lives on Junction's {c.environment} host and this deployment is
+            configured for {data.aggregator.environment}. Disconnect it and issue a new link.
+          </span>
+        </p>
+      )}
+
+      {/* The provider-error copy is tied to the error *state*, not to the
+          presence of a message: a retired connection can carry a note about
+          what Junction did not delete, which is shown as-is. */}
+      {c && c.last_error && (c.status === 'error' || c.status === 'disconnected') && (
         <p className="mt-3 flex items-start gap-2 rounded-btn border border-risk-high/30 bg-risk-high-bg px-3 py-2 text-[12.5px] font-medium leading-[1.5] text-risk-high">
           <TriangleAlert size={14} className="mt-0.5 shrink-0" />
           <span>
-            {active
+            {c.status === 'error'
               ? `Junction reports a provider error: ${c.last_error}. A new link lets ${firstName} sign in again.`
               : c.last_error}
           </span>
@@ -287,27 +311,44 @@ export default function WearableConnectionCard({
       )}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={issueLink}
-          disabled={!configured || busy}
-          className={active ? 'qa-btn' : 'btn-primary w-auto'}
-          title={configured ? undefined : 'Configure Junction on the Integrations page first'}
+        {/* A disabled button takes no pointer events, so the reason lives on
+            the wrapping span (the Integrations page does the same). */}
+        <span
+          className="inline-block"
+          title={
+            !configured
+              ? 'Configure Junction on the Integrations page first'
+              : wrongEnvironment
+                ? 'Disconnect this account before linking under the current environment'
+                : undefined
+          }
         >
-          <Link2 size={14} /> {active ? 'New link' : 'Connect wearable'}
-        </button>
+          <button
+            type="button"
+            onClick={issueLink}
+            disabled={!configured || busy || wrongEnvironment}
+            className={active ? 'qa-btn' : 'btn-primary w-auto'}
+          >
+            <Link2 size={14} /> {active ? 'New link' : 'Connect wearable'}
+          </button>
+        </span>
         {active && (
           <>
             <button
               type="button"
               onClick={runBackfill}
-              disabled={busy || c?.status === 'pending_link'}
+              disabled={busy || wrongEnvironment || c?.status === 'pending_link'}
               className="qa-btn"
               title="Ask Junction to re-sync every linked device, then pull the whole ingestible window"
             >
               <RefreshCw size={14} className={backfill.isPending ? 'animate-spin' : ''} /> Back-fill
             </button>
-            <button type="button" onClick={runRefresh} disabled={busy} className="qa-btn">
+            <button
+              type="button"
+              onClick={runRefresh}
+              disabled={busy || wrongEnvironment}
+              className="qa-btn"
+            >
               Refresh status
             </button>
             <button

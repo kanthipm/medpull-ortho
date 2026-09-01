@@ -138,6 +138,14 @@ SLEEP_RHR_PROVIDERS = frozenset(
 SDNN_PROVIDERS = frozenset({"apple_health_kit"})
 # Junction's slug for data a person typed into a health app by hand.
 MANUAL_PROVIDERS = frozenset({"manual"})
+# Junction's body_temperature stream is a thermometer reading tagged with the
+# site it was taken at. Only skin sites belong on SKIN_TEMP: a core reading
+# (oral, rectal, temporal artery, ear) sits three to four degrees above a
+# wrist baseline and would read as a fever against it. There is no
+# core-temperature MetricType yet, so those readings are not ingested rather
+# than misfiled. An absent site is a wearable that did not say, which is a
+# wrist.
+SKIN_TEMPERATURE_SITES = frozenset({"wrist", "finger", "toe"})
 
 UNITS: dict[M, str] = {
     M.STEPS: "count",
@@ -550,7 +558,14 @@ class JunctionConnector(WearableConnector):
                 try:
                     with self._client() as client:
                         answer = client.delete_user(conn.external_user_id)
-                    remote = "deleted" if answer is not None else "not_found"
+                    # The endpoint can answer 200 with success=false; only an
+                    # explicit true is a deletion.
+                    if answer is None:
+                        remote = "not_found"
+                    elif isinstance(answer, dict) and answer.get("success") is True:
+                        remote = "deleted"
+                    else:
+                        remote = f"failed: Junction answered success={answer.get('success')!r}" if isinstance(answer, dict) else "failed: unexpected answer"
                 except JunctionNotConfigured:
                     remote = "not_configured"
                 except JunctionError as e:
@@ -585,11 +600,15 @@ class JunctionConnector(WearableConnector):
 
     def request_refresh(
         self, conn: WearableConnection, *, deadline_s: float = REFRESH_DEADLINE_S
-    ) -> None:
+    ) -> dict[str, Any] | None:
         """Ask Junction to re-pull from every provider linked to this user
-        now, ahead of a back-fill read."""
+        now, ahead of a back-fill read. Junction waits up to the timeout it
+        is given and reports refreshed / in-progress / failed sources; a
+        source still in progress is not a failure, just data that the next
+        delivery or back-fill will carry."""
         with self._client() as client:
-            client.refresh_user(conn.external_user_id, deadline_s=deadline_s)
+            answer = client.refresh_user(conn.external_user_id, deadline_s=deadline_s)
+        return answer if isinstance(answer, dict) else None
 
     # -- devices ---------------------------------------------------------------
 
@@ -654,7 +673,10 @@ class JunctionConnector(WearableConnector):
             first = errored[0]
             conn.last_error = f"{first['slug']}: {first.get('error') or 'connection error'}"
         elif conn.status != ConnectionStatus.DISCONNECTED:
+            # Nothing connected and nothing errored: back to waiting for the
+            # patient, and the old provider error no longer describes anything.
             conn.status = ConnectionStatus.PENDING_LINK
+            conn.last_error = None
 
     # -- webhook dispatch ------------------------------------------------------
 
@@ -685,7 +707,11 @@ class JunctionConnector(WearableConnector):
                 conn.last_data_at = datetime.now()
                 self.mark_synced(db, conn, observations)
             db.commit()
-            note = f"dropped {dropped} implausible row(s)" if dropped else None
+            note = (
+                f"skipped {dropped} row(s): implausible value or non-skin temperature site"
+                if dropped
+                else None
+            )
             if not observations and resource not in SUMMARY_RESOURCES:
                 if resource not in TIMESERIES_METRIC:
                     note = f"{resource} is not ingested"
@@ -774,7 +800,7 @@ class JunctionConnector(WearableConnector):
         if provider:
             note += f" from {provider}"
         if report.dropped:
-            note += f", dropped {report.dropped} implausible row(s)"
+            note += f", skipped {report.dropped} row(s) (implausible or non-skin temperature site)"
         if not report.complete:
             note += "; pull hit the time budget — run a backfill to finish"
         return Delivery("historical", report.observations, note=note)
@@ -1111,6 +1137,19 @@ class JunctionConnector(WearableConnector):
                 dropped += 1
                 continue
             site = sample.get("sensor_location")
+            if (
+                resource == "body_temperature"
+                and isinstance(site, str)
+                and site
+                and site not in SKIN_TEMPERATURE_SITES
+            ):
+                logger.info(
+                    "Skipping Junction body_temperature at site %r for %s: no core "
+                    "temperature metric, and it does not belong on the skin series",
+                    site, patient.id,
+                )
+                dropped += 1
+                continue
             rows.append(
                 CanonicalObservation(
                     patient_id=patient.id,

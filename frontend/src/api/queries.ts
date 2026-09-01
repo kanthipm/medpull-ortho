@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { QueryKey } from '@tanstack/react-query'
+import type { InvalidateQueryFilters, QueryKey } from '@tanstack/react-query'
 import { fetchJson } from './client'
 import type {
   AppNotification,
@@ -97,13 +97,15 @@ export function useJunctionStatus(enabled = true) {
 }
 
 /** Caches a change to a patient's wearable connection moves: the card
- *  itself, the patient header (its device line reads the newest Device row),
- *  and the Integrations page's per-brand patient counts. */
-export function wearableKeys(id: string): QueryKey[] {
+ *  itself, the patient record (its device line reads the newest Device row —
+ *  exact, so the metrics/timeline/check-in sub-queries under the same prefix
+ *  are left alone), and the Integrations page's per-brand patient counts and
+ *  aggregator status. */
+export function wearableFilters(id: string): InvalidateQueryFilters[] {
   return [
-    ['patient', id, 'wearables'],
-    ['patient', id],
-    ['integrations'],
+    { queryKey: ['patient', id, 'wearables'] },
+    { queryKey: ['patient', id], exact: true },
+    { queryKey: ['integrations'] },
   ]
 }
 
@@ -118,9 +120,11 @@ export function useRefreshWearables(id: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: () => fetchJson<PatientWearables>(`/api/patients/${id}/wearables?refresh=true`),
+    // The response already IS the refreshed card, so it seeds the cache and
+    // only the neighbours are refetched.
     onSuccess: (data) => {
       qc.setQueryData(['patient', id, 'wearables'], data)
-      for (const queryKey of wearableKeys(id).slice(1)) qc.invalidateQueries({ queryKey })
+      for (const filter of wearableFilters(id).slice(1)) qc.invalidateQueries(filter)
     },
   })
 }
@@ -131,7 +135,7 @@ export function useCreateJunctionLink(id: string) {
     mutationFn: () =>
       fetchJson<JunctionLink>(`/api/patients/${id}/wearables/junction/link`, { method: 'POST' }),
     onSuccess: () => {
-      for (const queryKey of wearableKeys(id)) qc.invalidateQueries({ queryKey })
+      for (const filter of wearableFilters(id)) qc.invalidateQueries(filter)
     },
   })
 }
@@ -145,10 +149,11 @@ export function useJunctionBackfill(id: string) {
         body: JSON.stringify(options),
       }),
     // a back-fill that landed rows recomputed the patient server-side, so the
-    // same caches a Refresh analysis moves are stale, plus the metric cards
+    // same caches a Refresh analysis moves are stale — recomputeKeys' prefix
+    // on ['patient', id] deliberately sweeps the metric cards up too
     onSuccess: () => {
-      for (const queryKey of [...wearableKeys(id), ...recomputeKeys(id), ['patient', id, 'metrics']])
-        qc.invalidateQueries({ queryKey })
+      for (const filter of wearableFilters(id)) qc.invalidateQueries(filter)
+      for (const queryKey of recomputeKeys(id)) qc.invalidateQueries({ queryKey })
     },
   })
 }
@@ -162,7 +167,7 @@ export function useDisconnectJunction(id: string) {
         { method: 'DELETE' },
       ),
     onSuccess: () => {
-      for (const queryKey of wearableKeys(id)) qc.invalidateQueries({ queryKey })
+      for (const filter of wearableFilters(id)) qc.invalidateQueries(filter)
     },
   })
 }

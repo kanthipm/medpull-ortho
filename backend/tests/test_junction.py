@@ -175,7 +175,16 @@ class FakeJunction:
         if method == "GET" and path.startswith("/v2/user/providers/"):
             return httpx.Response(200, json={"providers": self.providers})
         if method == "POST" and path.startswith("/v2/user/refresh/"):
-            return httpx.Response(200, json={"success": True})
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "user_id": USER_ID,
+                    "refreshed_sources": ["oura"],
+                    "in_progress_sources": ["garmin"],
+                    "failed_sources": [],
+                },
+            )
         if method == "DELETE" and path.startswith("/v2/user/"):
             return httpx.Response(200, json={"success": True})
         if method == "GET" and path.startswith("/v2/summary/"):
@@ -451,24 +460,31 @@ def test_absolute_and_delta_temperature_never_swap():
     assert M.SKIN_TEMP_DELTA not in by_metric
     oura = connector_under_test.normalize(envelope("daily.data.sleep.created", sleep_summary()), CTX)
     assert M.SKIN_TEMP not in {r.metric_type for r in oura}
-    absolute = envelope(
-        "daily.data.body_temperature.created",
-        {
-            "source": {"provider": "withings", "type": "unknown"},
-            "data": [
-                {
-                    "start": f"{YESTERDAY.isoformat()}T15:00:00+00:00",
-                    "end": f"{YESTERDAY.isoformat()}T15:01:00+00:00",
-                    "value": 36.9,
-                    "unit": "°C",
-                    "timezone_offset": -25200,
-                    "sensor_location": "temporal_artery",
-                }
-            ],
-        },
-    )
-    (row,) = connector_under_test.normalize(absolute, CTX)
-    assert row.metric_type is M.SKIN_TEMP and row.body_site == "temporal_artery"
+    def thermometer(site: str | None, value: float) -> dict:
+        sample = {
+            "start": f"{YESTERDAY.isoformat()}T15:00:00+00:00",
+            "end": f"{YESTERDAY.isoformat()}T15:01:00+00:00",
+            "value": value,
+            "unit": "°C",
+            "timezone_offset": -25200,
+        }
+        if site is not None:
+            sample["sensor_location"] = site
+        return envelope(
+            "daily.data.body_temperature.created",
+            {"source": {"provider": "withings", "type": "unknown"}, "data": [sample]},
+        )
+
+    # a wrist (or unsaid) site is the skin series; a core-site thermometer
+    # reading would read as a fever against a 33 °C wrist baseline and has no
+    # metric of its own yet, so it is skipped and counted
+    (row,) = connector_under_test.normalize(thermometer("wrist", 33.6), CTX)
+    assert row.metric_type is M.SKIN_TEMP and row.body_site == "wrist"
+    (row,) = connector_under_test.normalize(thermometer(None, 33.4), CTX)
+    assert row.metric_type is M.SKIN_TEMP and row.body_site is None
+    for site in ("temporal_artery", "mouth", "rectum", "ear", "armpit", "forehead"):
+        rows, dropped = connector_under_test._normalize_event(thermometer(site, 37.9), CTX)
+        assert rows == [] and dropped == 1, site
     delta = envelope("daily.data.body_temperature_delta.created", sample_block(values=(-0.3,), unit="°C"))
     assert {r.metric_type for r in connector_under_test.normalize(delta, CTX)} == {M.SKIN_TEMP_DELTA}
 
@@ -942,7 +958,11 @@ def test_backfill_pulls_every_resource_ingests_and_reports(client, db, connectio
     # 3 activity (oura: no daily RHR) + 6 sleep + 1 workout + 3 SpO2 = 13 rows
     assert body["ingested"] == 13
     assert body["dropped_implausible"] == 0
-    assert fake.calls("POST", "/v2/user/refresh/")
+    (refresh_call,) = fake.calls("POST", "/v2/user/refresh/")
+    # Junction is told how long to wait for the provider pulls, inside our own deadline
+    assert 1.0 <= float(refresh_call.url.params["timeout"]) < 4.0
+    assert body["refresh"]["refreshed_sources"] == ["oura"]
+    assert body["refresh"]["in_progress_sources"] == ["garmin"]  # not a failure
     for call in fake.calls("GET", "/v2/summary/"):
         assert call.url.params["end_date"] == (TODAY + timedelta(days=1)).isoformat()
     db.expire_all()
@@ -1045,6 +1065,22 @@ def test_disconnect_reports_what_junction_actually_did(client, db, fake):
         connector._client_factory = factory
     assert body["remote"] == "not_found"
     assert body["connection"]["status"] == "disconnected"
+    assert "not deleted" in body["connection"]["last_error"]
+
+    # a 200 whose body says success=false is not a deletion either
+    _reset_connection(db)
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"success": False})
+
+    connector._client_factory = lambda: JunctionClient(
+        "sk_us_test", SANDBOX, transport=httpx.MockTransport(refused), sleep=lambda _s: None
+    )
+    try:
+        body = client.delete(f"/api/patients/{PATIENT}/wearables/junction").json()
+    finally:
+        connector._client_factory = factory
+    assert body["remote"].startswith("failed") and "success=False" in body["remote"]
     assert "not deleted" in body["connection"]["last_error"]
 
     # an account on the other host cannot be reached from this deployment
