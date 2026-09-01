@@ -81,6 +81,13 @@ class JunctionNotConfigured(JunctionError):
     """No API key: the connector is scaffolding until one is set."""
 
 
+class JunctionDeadlineExceeded(JunctionError):
+    """The call's wall-clock budget ran out before an answer arrived — or
+    before an attempt could even start. Distinct from an outage so a caller
+    that pulls several resources can keep what it has and report the rest
+    as not reached, instead of treating "slow" as "down"."""
+
+
 def base_url_for(environment: str, region: str) -> str:
     env = (environment or "sandbox").strip().lower()
     reg = (region or "us").strip().lower()
@@ -170,9 +177,11 @@ class JunctionClient:
         limit = time.monotonic() + deadline_s
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}
         last_error: JunctionError | None = None
+        out_of_time = False
         for attempt in range(1, MAX_ATTEMPTS + 1):
             remaining = limit - time.monotonic()
             if remaining < MIN_ATTEMPT_S:
+                out_of_time = True
                 if last_error is None:
                     last_error = JunctionError(
                         f"Junction {method} {path} not attempted: the call's "
@@ -205,9 +214,16 @@ class JunctionClient:
                 break
             wait = self._backoff(attempt, response)
             if time.monotonic() + wait + MIN_ATTEMPT_S >= limit:
+                out_of_time = True
                 break
             self._sleep(wait)
         assert last_error is not None
+        if out_of_time:
+            raise JunctionDeadlineExceeded(
+                f"{last_error} (the call's {deadline_s:.1f}s deadline ran out)",
+                status=last_error.status,
+                detail=last_error.detail,
+            )
         raise last_error
 
     @staticmethod
@@ -248,6 +264,7 @@ class JunctionClient:
         fallback_time_zone: str | None = None,
         ingestion_start: date | None = None,
         ingestion_end: date | None = None,
+        deadline_s: float = DEFAULT_DEADLINE_S,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"client_user_id": client_user_id}
         if fallback_time_zone:
@@ -256,16 +273,24 @@ class JunctionClient:
             body["ingestion_start"] = ingestion_start.isoformat()
         if ingestion_end is not None:
             body["ingestion_end"] = ingestion_end.isoformat()
-        return self._request("POST", "/v2/user", json=body)
+        return self._request("POST", "/v2/user", json=body, deadline_s=deadline_s)
 
-    def resolve_user(self, client_user_id: str) -> dict[str, Any] | None:
-        return self._request("GET", f"/v2/user/resolve/{client_user_id}", not_found_ok=True)
+    def resolve_user(
+        self, client_user_id: str, *, deadline_s: float = DEFAULT_DEADLINE_S
+    ) -> dict[str, Any] | None:
+        return self._request(
+            "GET", f"/v2/user/resolve/{client_user_id}", not_found_ok=True, deadline_s=deadline_s
+        )
 
     def get_user(self, user_id: str) -> dict[str, Any] | None:
         return self._request("GET", f"/v2/user/{user_id}", not_found_ok=True)
 
-    def delete_user(self, user_id: str) -> dict[str, Any] | None:
-        return self._request("DELETE", f"/v2/user/{user_id}", not_found_ok=True)
+    def delete_user(
+        self, user_id: str, *, deadline_s: float = DEFAULT_DEADLINE_S
+    ) -> dict[str, Any] | None:
+        return self._request(
+            "DELETE", f"/v2/user/{user_id}", not_found_ok=True, deadline_s=deadline_s
+        )
 
     def refresh_user(
         self, user_id: str, *, deadline_s: float = DEFAULT_DEADLINE_S
@@ -308,6 +333,7 @@ class JunctionClient:
         redirect_url: str | None = None,
         provider: str | None = None,
         filter_on_providers: list[str] | None = None,
+        deadline_s: float = DEFAULT_DEADLINE_S,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"user_id": user_id}
         if redirect_url:
@@ -316,7 +342,7 @@ class JunctionClient:
             body["provider"] = provider
         if filter_on_providers:
             body["filter_on_providers"] = list(filter_on_providers)
-        return self._request("POST", "/v2/link/token", json=body)
+        return self._request("POST", "/v2/link/token", json=body, deadline_s=deadline_s)
 
     # -- data ----------------------------------------------------------------
 

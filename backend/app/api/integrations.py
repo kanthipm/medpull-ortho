@@ -246,23 +246,10 @@ def _raise_for(e: Exception) -> None:
     raise e
 
 
-@router.get("/patients/{patient_id}/wearables")
-def patient_wearables(
-    patient_id: str, refresh: bool = False, db: Session = Depends(get_db)
-) -> dict:
-    """The patient's aggregator account and device rows. ``refresh=true`` asks
-    Junction what it currently reports as connected and updates the snapshot."""
-    patient = _patient_or_404(db, patient_id)
-    connector = junction_connector()
-    conn = connector.connection_for(db, patient_id)
-    refresh_error: str | None = None
-    if refresh and conn is not None and conn.status != ConnectionStatus.DISCONNECTED:
-        try:
-            connector.sync_providers(db, patient_id)
-        except (JunctionError, ValueError) as e:
-            refresh_error = str(e)
-        db.refresh(patient)
-    devices = [_device_view(d) for d in patient.devices]
+def _wearables_view(
+    db: Session, patient: Patient, refresh_error: str | None = None
+) -> dict[str, Any]:
+    conn = junction_connector().connection_for(db, patient.id)
     return {
         "patient_id": patient.id,
         "aggregator": {
@@ -270,9 +257,36 @@ def patient_wearables(
             "environment": settings.junction_environment,
         },
         "connection": _connection_view(conn),
-        "devices": devices,
+        "devices": [_device_view(d) for d in patient.devices],
         "refresh_error": refresh_error,
     }
+
+
+@router.get("/patients/{patient_id}/wearables")
+def patient_wearables(patient_id: str, db: Session = Depends(get_db)) -> dict:
+    """The patient's aggregator account and device rows, as stored. Read-only
+    on purpose: on AWS a GET runs outside the write lock with a conditional
+    persist, so anything that mutates goes through the POST below."""
+    return _wearables_view(db, _patient_or_404(db, patient_id))
+
+
+@router.post("/patients/{patient_id}/wearables/junction/refresh")
+def refresh_junction_snapshot(patient_id: str, db: Session = Depends(get_db)) -> dict:
+    """Ask Junction what it currently reports as connected for the patient
+    and update the snapshot and Device rows. A mutating route, so on AWS it
+    holds the write lock and persists unconditionally. Answers the same view
+    as the GET, with ``refresh_error`` set when Junction could not be asked."""
+    patient = _patient_or_404(db, patient_id)
+    connector = junction_connector()
+    conn = connector.connection_for(db, patient_id)
+    refresh_error: str | None = None
+    if conn is not None and conn.status != ConnectionStatus.DISCONNECTED:
+        try:
+            connector.sync_providers(db, patient_id)
+        except (JunctionError, ValueError) as e:
+            refresh_error = str(e)
+        db.refresh(patient)
+    return _wearables_view(db, patient, refresh_error)
 
 
 @router.post("/patients/{patient_id}/wearables/junction/link")

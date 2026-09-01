@@ -119,7 +119,12 @@ export function usePatientWearables(id: string) {
 export function useRefreshWearables(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => fetchJson<PatientWearables>(`/api/patients/${id}/wearables?refresh=true`),
+    // a POST: the re-sync rewrites the snapshot and Device rows, and on AWS
+    // only a mutating request runs under the write lock
+    mutationFn: () =>
+      fetchJson<PatientWearables>(`/api/patients/${id}/wearables/junction/refresh`, {
+        method: 'POST',
+      }),
     // The response already IS the refreshed card, so it seeds the cache and
     // only the neighbours are refetched.
     onSuccess: (data) => {

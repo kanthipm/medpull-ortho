@@ -35,7 +35,7 @@ Single-process demo (serves the built frontend from FastAPI):
 make build && make run     # everything on http://localhost:8000
 ```
 
-`make test` runs the backend suite (263 tests: seed determinism, engine golden
+`make test` runs the backend suite (269 tests: seed determinism, engine golden
 tiers, baseline stability, guardrail enforcement, API contracts, connector
 idempotency and ingest bounds, the Junction connector end to end against a
 fake Junction, RTM billing gates, LLM deadline and cooldown behaviour,

@@ -29,6 +29,7 @@ from app.connectors.junction import (
 )
 from app.connectors.junction_client import (
     JunctionClient,
+    JunctionDeadlineExceeded,
     JunctionError,
     JunctionNotConfigured,
     base_url_for,
@@ -934,11 +935,19 @@ def test_patient_wearables_refresh_syncs_the_snapshot(client, db, connection, fa
             "resource_availability": {},
         }
     ]
-    view = client.get(f"/api/patients/{PATIENT}/wearables?refresh=true").json()
+    # the re-sync is a POST: it rewrites the snapshot and Device rows, and on
+    # AWS only a mutating request runs under the write lock
+    view = client.post(f"/api/patients/{PATIENT}/wearables/junction/refresh").json()
     assert view["refresh_error"] is None
     assert view["connection"]["status"] == "linked"
     assert [p["slug"] for p in view["connection"]["providers"]] == ["oura"]
     assert any(d["id"] == f"junction:{USER_ID}:oura" and d["via_junction"] for d in view["devices"])
+    # the GET is read-only and reports the same state; a stray ?refresh=true
+    # on it is ignored rather than honoured
+    fake.providers = []
+    plain = client.get(f"/api/patients/{PATIENT}/wearables?refresh=true").json()
+    assert plain["connection"]["status"] == "linked"
+    assert len(fake.calls("GET", "/v2/user/providers/")) == 1  # only the POST asked Junction
 
 
 def test_backfill_pulls_every_resource_ingests_and_reports(client, db, connection, fake):
@@ -991,7 +1000,9 @@ def test_disconnect_retires_the_mapping_and_late_deliveries_are_ignored(client, 
     assert client.delete("/api/patients/marcus/wearables/junction").status_code == 404
 
 
-def test_integrations_and_status_report_the_aggregator(client, fake, signing_secret):
+def test_integrations_and_status_report_the_aggregator(client, connection, fake, signing_secret):
+    # state this test asserts on is state it made: one linked patient, one delivery
+    assert post_signed(client, envelope("daily.data.sleep.created", sleep_summary(id="status-probe"))).status_code == 200
     body = client.get("/api/integrations").json()
     by_key = {p["key"]: p for p in body["providers"]}
     assert by_key["junction"]["status"] == "live"
@@ -1136,12 +1147,83 @@ def test_client_never_starts_an_attempt_past_its_deadline():
         return httpx.Response(503, headers={"retry-after": "3"}, json={"detail": "busy"})
 
     client = JunctionClient("sk", SANDBOX, transport=httpx.MockTransport(slow_then_ok), sleep=lambda _s: None)
-    with pytest.raises(JunctionError, match="503"):
+    with pytest.raises(JunctionDeadlineExceeded, match="503"):
         client._request("GET", f"/v2/user/{USER_ID}", deadline_s=1.0)
     assert len(attempts) == 1  # no retry fits inside a 1 s budget
-    with pytest.raises(JunctionError, match="already spent"):
+    with pytest.raises(JunctionDeadlineExceeded, match="already spent"):
         client._request("GET", f"/v2/user/{USER_ID}", deadline_s=0.0)
     assert len(attempts) == 1
+    # exhausting the attempts inside a generous budget is an outage, not a deadline
+    with pytest.raises(JunctionError) as excinfo:
+        client._request("GET", f"/v2/user/{USER_ID}", deadline_s=60.0)
+    assert not isinstance(excinfo.value, JunctionDeadlineExceeded)
+    assert len(attempts) == 4
+
+
+def test_a_pull_that_runs_out_of_budget_keeps_what_it_has(db, connection, monkeypatch):
+    """Slow is not down: the resources pulled before the budget ran out are
+    kept and the rest are named as skipped, instead of the whole pull raising
+    and a 502 making Junction retry into the same slowness."""
+    import time as _time
+
+    from app.connectors import junction as junction_module
+
+    calls: list[str] = []
+
+    def slow(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        _time.sleep(0.3)
+        if "/v2/summary/" in request.url.path:
+            resource = request.url.path.split("/")[3]
+            return httpx.Response(200, json={resource: [activity_summary(id="slow-act", provider="oura")]} if resource == "activity" else {resource: []})
+        return httpx.Response(200, json={"groups": {}, "next_cursor": None})
+
+    connector = JunctionConnector(
+        lambda: JunctionClient("sk", SANDBOX, transport=httpx.MockTransport(slow), sleep=lambda _s: None)
+    )
+    monkeypatch.setattr(junction_module, "DEFAULT_PULL_BUDGET_S", 0.75)
+    patient = db.get(Patient, PATIENT)
+    report = connector.pull(db, connection, patient, budget_s=0.75)
+    assert report.complete is False
+    assert "activity" in report.resources  # the first resource landed
+    assert report.skipped  # and the tail is named, not lost
+    assert len(report.observations) == 3  # oura activity: steps, calories, active energy
+    assert set(report.resources) | set(report.skipped) >= {"activity", "sleep", "workouts", "blood_oxygen"}
+    assert len(calls) <= 3  # it stopped calling once the budget was gone
+
+
+def test_the_link_route_shares_one_budget_across_its_calls(client, db, fake, monkeypatch):
+    """Resolve, create and mint each used to get a full 15 s; together that
+    outlived the 25 s write lock. They now share LINK_BUDGET_S."""
+    import time as _time
+
+    from app.connectors import junction as junction_module
+
+    db.execute(delete(WearableConnection).where(WearableConnection.patient_id == PATIENT))
+    db.commit()
+
+    def slow(request: httpx.Request) -> httpx.Response:
+        _time.sleep(0.3)
+        return fake.handle(request)
+
+    connector = junction_connector()
+    # 1.0 s budget, 0.3 s per call: resolve (0.3) and create (0.3) fit, and
+    # the token call is refused because 0.4 s is under the minimum attempt
+    monkeypatch.setattr(junction_module, "LINK_BUDGET_S", 1.0)
+    monkeypatch.setattr(
+        connector, "_client_factory",
+        lambda: JunctionClient("sk_us_test", SANDBOX, transport=httpx.MockTransport(slow), sleep=lambda _s: None),
+    )
+    started = _time.monotonic()
+    response = client.post(f"/api/patients/{PATIENT}/wearables/junction/link")
+    elapsed = _time.monotonic() - started
+    assert response.status_code == 502 and "deadline" in response.json()["detail"]
+    assert elapsed < 2.0  # the third call was refused, not waited for
+    assert len(fake.calls("POST", "/v2/link/token")) == 0
+    # the user made inside the budget is on file for the next click
+    db.expire_all()
+    conn = connector.connection_for(db, PATIENT)
+    assert conn is not None and conn.status == ConnectionStatus.PENDING_LINK
 
 
 def test_client_follows_timeseries_pages_and_flattens_groups():

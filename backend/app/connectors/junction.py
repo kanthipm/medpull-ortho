@@ -75,8 +75,10 @@ from app.connectors.base import (
 )
 from app.connectors.ingest import PLAUSIBLE_RANGE, ingestible_window
 from app.connectors.junction_client import (
+    MIN_ATTEMPT_S,
     SUMMARY_RESOURCES,
     JunctionClient,
+    JunctionDeadlineExceeded,
     JunctionError,
     JunctionNotConfigured,
     configured,
@@ -205,6 +207,10 @@ DEFAULT_PULL_BUDGET_S = 12.0
 # The operator's Backfill button may first ask Junction to re-sync the user's
 # providers; that call shares the same request and gets its own slice.
 REFRESH_DEADLINE_S = 4.0
+# Connect wearable makes up to three Junction calls in one request (resolve
+# or create the user, then mint the token); they share this budget for the
+# same reason the pull does.
+LINK_BUDGET_S = 12.0
 
 
 @dataclass
@@ -427,6 +433,12 @@ class JunctionConnector(WearableConnector):
                 f"environment; disconnect it before linking under {env}",
                 status=409,
             )
+        started = time.monotonic()
+
+        def left() -> float:
+            # One budget for the whole request, however many calls it takes.
+            return max(MIN_ATTEMPT_S, LINK_BUDGET_S - (time.monotonic() - started))
+
         with self._client() as client:
             if conn is None or conn.status == ConnectionStatus.DISCONNECTED:
                 # A fresh opaque reference every time an account is (re)created:
@@ -435,7 +447,9 @@ class JunctionConnector(WearableConnector):
                 # or resolve to it.
                 client_user_id = f"mp_{uuid.uuid4().hex}"
                 floor, _ceiling = ingestible_window(patient.surgery_date, date.today())
-                user = client.resolve_user(client_user_id) or client.create_user(
+                user = client.resolve_user(
+                    client_user_id, deadline_s=left()
+                ) or client.create_user(
                     client_user_id,
                     fallback_time_zone=patient.timezone,
                     # Junction's own ingestion bound, so the aggregator never
@@ -446,6 +460,7 @@ class JunctionConnector(WearableConnector):
                     # aggregator the surgery date. partition_by_window drops
                     # the few extra weeks this lets through.
                     ingestion_start=floor.replace(day=1),
+                    deadline_s=left(),
                 )
                 user_id = user.get("user_id") if isinstance(user, dict) else None
                 if not isinstance(user_id, str) or not user_id:
@@ -475,6 +490,7 @@ class JunctionConnector(WearableConnector):
             token = client.create_link_token(
                 conn.external_user_id,
                 redirect_url=settings.junction_link_redirect_url.strip() or None,
+                deadline_s=left(),
             )
         url = token.get("link_web_url") if isinstance(token, dict) else None
         if not isinstance(url, str) or not url:
@@ -854,31 +870,43 @@ class JunctionConnector(WearableConnector):
                 if wanted is not None and not (produced & wanted):
                     continue
                 remaining = limit - time.monotonic()
-                if remaining <= 0:
+                if remaining < MIN_ATTEMPT_S:
+                    # Not enough budget for the client to even start a call:
+                    # this resource is reported as not reached, and so is
+                    # everything after it.
                     report.skipped.append(resource)
                     continue
-                if resource in SUMMARY_RESOURCES:
-                    rows = client.summaries(
-                        resource, conn.external_user_id, lo, hi,
-                        provider=provider, deadline_s=remaining,
-                    )
-                    for rec in rows:
-                        obs, dropped = self._normalize_summary(
-                            resource, rec, ctx, f"pull.{resource}"
+                try:
+                    if resource in SUMMARY_RESOURCES:
+                        rows = client.summaries(
+                            resource, conn.external_user_id, lo, hi,
+                            provider=provider, deadline_s=remaining,
                         )
-                        report.observations.extend(obs)
-                        report.dropped += dropped
-                else:
-                    blocks = client.timeseries_grouped(
-                        resource, conn.external_user_id, lo, hi,
-                        provider=provider, deadline_s=remaining,
-                    )
-                    for block in blocks:
-                        obs, dropped = self._normalize_block(
-                            resource, block, ctx, f"pull.{resource}"
+                        for rec in rows:
+                            obs, dropped = self._normalize_summary(
+                                resource, rec, ctx, f"pull.{resource}"
+                            )
+                            report.observations.extend(obs)
+                            report.dropped += dropped
+                    else:
+                        blocks = client.timeseries_grouped(
+                            resource, conn.external_user_id, lo, hi,
+                            provider=provider, deadline_s=remaining,
                         )
-                        report.observations.extend(obs)
-                        report.dropped += dropped
+                        for block in blocks:
+                            obs, dropped = self._normalize_block(
+                                resource, block, ctx, f"pull.{resource}"
+                            )
+                            report.observations.extend(obs)
+                            report.dropped += dropped
+                except JunctionDeadlineExceeded as e:
+                    # Slow is not down. Keep every resource already pulled and
+                    # say which one the budget ran out on; an outage (any
+                    # other JunctionError) still propagates so the webhook
+                    # answers 502 and Junction retries.
+                    logger.warning("Junction pull of %s ran out of budget: %s", resource, e)
+                    report.skipped.append(resource)
+                    continue
                 report.resources.append(resource)
         return report
 

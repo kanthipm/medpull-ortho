@@ -11,6 +11,12 @@ plain env var or a local .env keeps working exactly as before:
 * ``GROQ_API_KEY_PARAMETER`` → ``settings.groq_api_key``
 * ``JUNCTION_API_KEY_PARAMETER`` → ``settings.junction_api_key``
 * ``JUNCTION_WEBHOOK_SECRET_PARAMETER`` → ``settings.junction_webhook_secret``
+
+The deploy always names the Junction parameters, whether or not a value was
+ever stored under them (both are optional: absent, the connector is idle).
+A parameter that does not exist is therefore an expected state and is logged
+as one line at INFO; a traceback is kept for genuine access failures, which
+are the ones that look like an IAM or KMS problem and are.
 """
 
 import logging
@@ -21,6 +27,9 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _loaded = False
+
+# boto3 raises a dynamically generated class for this; its name is stable.
+_NOT_STORED = "ParameterNotFound"
 
 
 def _parameters() -> list[tuple[str, str, str]]:
@@ -42,7 +51,10 @@ def _read(name: str, label: str) -> str | None:
 
         response = boto3.client("ssm").get_parameter(Name=name, WithDecryption=True)
         return response["Parameter"]["Value"].strip()
-    except Exception:  # noqa: BLE001 — the app is designed to run without any secret
+    except Exception as e:  # noqa: BLE001 — the app is designed to run without any secret
+        if type(e).__name__ == _NOT_STORED:
+            logger.info("SSM parameter %r (%s) is not stored; continuing without it", name, label)
+            return None
         logger.warning(
             "Could not read the %s from SSM parameter %r — continuing without it",
             label,
