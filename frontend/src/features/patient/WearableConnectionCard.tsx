@@ -193,9 +193,18 @@ export default function WearableConnectionCard({
 
   const runDisconnect = () =>
     disconnect.mutate(undefined, {
-      onSuccess: () => {
+      onSuccess: (result) => {
         setConfirmDisconnect(false)
-        toast(`${firstName}'s Junction account was retired — history stays on the chart`, 'info')
+        // The local mapping is always retired; whether Junction actually
+        // deleted the account is a separate fact the provider must see.
+        if (result.remote === 'deleted' || result.remote === 'already_disconnected') {
+          toast(`${firstName}'s Junction account was deleted — history stays on the chart`, 'info')
+        } else {
+          toast(
+            `Retired here, but Junction did not confirm deleting the account (${result.remote}) — remove it in the Junction dashboard`,
+            'warning',
+          )
+        }
       },
       onError: (err) => toast(`Disconnect failed — ${err.message}`, 'warning'),
     })
@@ -258,12 +267,13 @@ export default function WearableConnectionCard({
         </p>
       )}
 
-      {c && active && c.last_error && (
+      {c && c.last_error && (
         <p className="mt-3 flex items-start gap-2 rounded-btn border border-risk-high/30 bg-risk-high-bg px-3 py-2 text-[12.5px] font-medium leading-[1.5] text-risk-high">
           <TriangleAlert size={14} className="mt-0.5 shrink-0" />
           <span>
-            Junction reports a provider error: {c.last_error}. A new link lets {firstName} sign in
-            again.
+            {active
+              ? `Junction reports a provider error: ${c.last_error}. A new link lets ${firstName} sign in again.`
+              : c.last_error}
           </span>
         </p>
       )}

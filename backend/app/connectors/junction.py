@@ -41,8 +41,12 @@ Semantics that are easy to get wrong, decided here once:
   ingested. The daily summary is the row; ``engine/dataload.py`` averages
   every row on a day, so 96 fifteen-minute step buckets beside an 8,000-step
   summary would score the day as 160 steps.
-* Naps and in-progress recordings are not the night's sleep and are skipped;
-  Junction restates an in-progress session when it completes.
+* Only ``long_sleep`` sessions are the night's sleep. Naps, sub-three-hour
+  ``short_sleep`` sessions and in-progress recordings are skipped: a second
+  session on the same calendar day would be *averaged* with the night by
+  ``engine/dataload.py`` and halve it, and a genuinely sub-three-hour night
+  reading as "no sleep data" is the safer of the two errors. Junction
+  restates an in-progress session when it completes.
 * Out-of-window and physiologically impossible rows are dropped and counted
   rather than refused: refusing makes Junction retry a delivery that will
   never become acceptable.
@@ -184,9 +188,15 @@ SUMMARY_METRICS: dict[str, frozenset[M]] = {
 PULLABLE_RESOURCES = ("activity", "sleep", "workouts", *TIMESERIES_METRIC)
 
 # A back-fill is pulled inside one HTTP request (a webhook or the console's
-# Backfill button) and the API function has a 30 s ceiling, so the pull gets a
-# budget and reports what it did not reach rather than timing out silently.
-DEFAULT_PULL_BUDGET_S = 20.0
+# Backfill button). On AWS that request holds the S3 write lock under a 25 s
+# TTL and must still ingest, recompute and persist after the pull, so the pull
+# gets a budget well inside that and reports what it did not reach rather than
+# timing out silently (or, worse, outliving the lock and losing another
+# writer's rows).
+DEFAULT_PULL_BUDGET_S = 12.0
+# The operator's Backfill button may first ask Junction to re-sync the user's
+# providers; that call shares the same request and gets its own slice.
+REFRESH_DEADLINE_S = 4.0
 
 
 @dataclass
@@ -282,6 +292,20 @@ def _local_wall_time(instant: datetime, offset_s: Any, tz_id: str) -> datetime:
     except (KeyError, ValueError):
         zone = ZoneInfo("America/New_York")
     return instant.astimezone(zone).replace(tzinfo=None)
+
+
+def _sample_identity(resource: str, slug: str, start: datetime, end: datetime | None) -> str:
+    """A stable, offset-independent key for one timeseries sample."""
+
+    def utc(value: datetime) -> str:
+        if value.tzinfo is None:
+            return value.isoformat()
+        return value.astimezone(dt_timezone.utc).isoformat()
+
+    key = f"{resource}:{slug or 'unknown'}:{utc(start)}"
+    if end is not None:
+        key += f"..{utc(end)}"
+    return key
 
 
 def _day_bounds(day: date) -> tuple[datetime, datetime]:
@@ -407,8 +431,13 @@ class JunctionConnector(WearableConnector):
                     client_user_id,
                     fallback_time_zone=patient.timezone,
                     # Junction's own ingestion bound, so the aggregator never
-                    # even pulls history the ingest window would drop.
-                    ingestion_start=floor,
+                    # even pulls history the ingest window would drop. Rounded
+                    # down to the first of the month: the exact floor is the
+                    # surgery date minus a constant, and Junction stores this
+                    # on the user record, so day precision would hand the
+                    # aggregator the surgery date. partition_by_window drops
+                    # the few extra weeks this lets through.
+                    ingestion_start=floor.replace(day=1),
                 )
                 user_id = user.get("user_id") if isinstance(user, dict) else None
                 if not isinstance(user_id, str) or not user_id:
@@ -429,7 +458,11 @@ class JunctionConnector(WearableConnector):
                 conn.status = ConnectionStatus.PENDING_LINK
                 conn.providers = None
                 conn.last_error = None
-                db.flush()
+                # Committed before the token is minted: the Junction user now
+                # exists whatever happens next, and a token call that fails
+                # must leave the mapping behind so the next click reuses that
+                # user instead of orphaning it and creating another.
+                db.commit()
 
             token = client.create_link_token(
                 conn.external_user_id,
@@ -495,25 +528,43 @@ class JunctionConnector(WearableConnector):
 
         Observations already ingested stay: they are the patient's history.
         Late deliveries for the old user id are ignored by resolve_patient.
+
+        The local mapping is retired whatever Junction answers — a connection
+        the console says is gone must stop routing data — but the remote
+        outcome is reported honestly and kept on the row, because "retired
+        here, still collecting there" is exactly the state a consent
+        withdrawal must not hide: ``deleted``, ``not_found`` (Junction has no
+        such user: already gone, or never existed on this host),
+        ``environment_mismatch`` (the account lives on the other host and
+        cannot be reached from this deployment), ``not_configured``, or
+        ``failed: …``.
         """
         conn = self.connection_for(db, patient_id)
         if conn is None:
             raise ValueError(f"{patient_id} has no Junction connection")
-        remote = "skipped"
+        remote = "already_disconnected"
         if conn.status != ConnectionStatus.DISCONNECTED:
-            try:
-                with self._client() as client:
-                    client.delete_user(conn.external_user_id)
-                remote = "deleted"
-            except JunctionNotConfigured:
-                remote = "not_configured"
-            except JunctionError as e:
-                # Local state is retired regardless: a connection the console
-                # says is gone must stop routing data whatever Junction thinks.
-                logger.warning("Junction user %s could not be deleted: %s", conn.external_user_id, e)
-                remote = f"failed: {e}"
+            if conn.environment != settings.junction_environment:
+                remote = "environment_mismatch"
+            else:
+                try:
+                    with self._client() as client:
+                        answer = client.delete_user(conn.external_user_id)
+                    remote = "deleted" if answer is not None else "not_found"
+                except JunctionNotConfigured:
+                    remote = "not_configured"
+                except JunctionError as e:
+                    logger.warning(
+                        "Junction user %s could not be deleted: %s", conn.external_user_id, e
+                    )
+                    remote = f"failed: {e}"
         conn.status = ConnectionStatus.DISCONNECTED
-        conn.last_error = None
+        conn.last_error = (
+            None
+            if remote in ("deleted", "already_disconnected")
+            else f"Junction account not deleted ({remote}); remove user "
+            f"{conn.external_user_id} in the {conn.environment} dashboard"
+        )
         for device in self._devices_for(db, conn):
             device.status = "revoked"
         db.commit()
@@ -532,15 +583,13 @@ class JunctionConnector(WearableConnector):
             return False
         return True
 
-    def webhook_portal_url(self) -> str | None:
-        with self._client() as client:
-            return client.svix_portal_url()
-
-    def request_refresh(self, conn: WearableConnection) -> None:
+    def request_refresh(
+        self, conn: WearableConnection, *, deadline_s: float = REFRESH_DEADLINE_S
+    ) -> None:
         """Ask Junction to re-pull from every provider linked to this user
         now, ahead of a back-fill read."""
         with self._client() as client:
-            client.refresh_user(conn.external_user_id)
+            client.refresh_user(conn.external_user_id, deadline_s=deadline_s)
 
     # -- devices ---------------------------------------------------------------
 
@@ -565,10 +614,13 @@ class JunctionConnector(WearableConnector):
         slug: str,
         name: str | None,
         *,
-        status: str = "connected",
+        status: str | None = "connected",
         connected_at: datetime | None = None,
         synced_at: datetime | None = None,
     ) -> Device:
+        """``status=None`` leaves an existing row's status alone: a reading
+        arriving for a provider Junction has flagged as errored is a late or
+        replayed delivery, not evidence the grant is back."""
         device = db.get(Device, self.device_id(conn, slug))
         if device is None:
             device = Device(
@@ -577,11 +629,12 @@ class JunctionConnector(WearableConnector):
                 source_provider=BRAND_BY_SLUG.get(slug, AGGREGATOR),
                 device_model=f"{name or slug} via Junction",
                 connected_at=connected_at or datetime.now(),
-                status=status,
+                status=status or "connected",
             )
             db.add(device)
         else:
-            device.status = status
+            if status is not None:
+                device.status = status
             if name and device.device_model != f"{name} via Junction":
                 device.device_model = f"{name} via Junction"
         if synced_at is not None:
@@ -734,7 +787,7 @@ class JunctionConnector(WearableConnector):
         event did (a back-fill can)."""
         now = datetime.now()
         for slug in sorted({o.source_device_id for o in observations if o.source_device_id}):
-            self._upsert_device(db, conn, slug, None, synced_at=now)
+            self._upsert_device(db, conn, slug, None, status=None, synced_at=now)
 
     # -- pulling ---------------------------------------------------------------
 
@@ -933,9 +986,12 @@ class JunctionConnector(WearableConnector):
         self, rec: dict[str, Any], patient: PatientContext, event_type: str
     ) -> tuple[list[CanonicalObservation], int]:
         sleep_type = rec.get("type") or "long_sleep"
-        if sleep_type in ("unknown", "acknowledged_nap"):
-            # unknown = still recording (restated on completion); a nap is
-            # not the night's sleep and would halve the day's duration.
+        if sleep_type != "long_sleep":
+            # unknown = still recording (restated on completion). A nap or a
+            # sub-three-hour short_sleep beside the night's session would be
+            # averaged with it per calendar day and halve the night; a night
+            # that really was under three hours reads as missing instead,
+            # which the confidence gate reports rather than mis-scores.
             return [], 0
         slug = _slug_of(_source_of(rec))
         total_s = _number(rec.get("total"))
@@ -1068,6 +1124,13 @@ class JunctionConnector(WearableConnector):
                     source_device_id=slug or None,
                     timezone=patient.timezone,
                     body_site=site if isinstance(site, str) else None,
+                    # Identity is the instant, not the wall time: the wall
+                    # clock repeats across a DST fall-back hour and moves when
+                    # the device's offset does, and either would make one
+                    # sample two rows or two samples one. Junction gives
+                    # samples no record id, so the identity is spelled out
+                    # from the source and the UTC instant(s).
+                    external_id=_sample_identity(resource, slug, start, end),
                     qualifies_for_rtm=slug not in MANUAL_PROVIDERS,
                     is_patient_reported=slug in MANUAL_PROVIDERS,
                     raw_payload=provenance,

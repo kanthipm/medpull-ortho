@@ -46,6 +46,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["webhooks"])
 
 SKEW_TOLERANCE_S = 300  # accept timestamps ±5 minutes from server receipt
+# The largest legitimate delivery is a sleep summary with its stream, well
+# under 100 KB; the ingest ceiling bounds rows, this bounds bytes, and both
+# apply before anything is parsed or stored.
+MAX_BODY_BYTES = 1_000_000
+
+
+def _safe_compare(candidate: str, expected: str) -> bool:
+    """hmac.compare_digest refuses non-ASCII str operands with a TypeError.
+    Header bytes reach here decoded as latin-1, so a hostile byte in a
+    signature header must read as "does not match", not as a 500."""
+    try:
+        return hmac.compare_digest(candidate.encode("latin-1"), expected.encode("ascii"))
+    except (TypeError, UnicodeEncodeError, UnicodeDecodeError):
+        return False
 
 
 def _verify_svix(secret: str, headers: Mapping[str, str], body: bytes) -> bool:
@@ -66,8 +80,7 @@ def _verify_svix(secret: str, headers: Mapping[str, str], body: bytes) -> bool:
     signed = f"{msg_id}.{timestamp}.".encode() + body
     expected = base64.b64encode(hmac.new(key, signed, hashlib.sha256).digest()).decode()
     return any(
-        candidate.startswith("v1,")
-        and hmac.compare_digest(candidate.removeprefix("v1,"), expected)
+        candidate.startswith("v1,") and _safe_compare(candidate.removeprefix("v1,"), expected)
         for candidate in signatures.split(" ")
     )
 
@@ -91,7 +104,7 @@ def _verify_terra(secret: str, headers: Mapping[str, str], body: bytes) -> bool:
     signed = f"{timestamp}.".encode() + body
     expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
     return any(
-        hmac.compare_digest(value, expected)
+        _safe_compare(value, expected)
         for part in header.split(",")
         if "=" in part
         for key, value in [part.split("=", 1)]
@@ -175,8 +188,34 @@ def ingest_webhook(
         )
     connector = info.connector
 
+    if len(body) > MAX_BODY_BYTES:
+        # Refused before verification, parsing or storage: a body this size is
+        # not a delivery, and nothing about it deserves a row.
+        raise HTTPException(status_code=413, detail="Body exceeds the webhook size limit")
+
     headers = {k.lower(): v for k, v in request.headers.items()}
     signature_valid = verify_signature(key, headers, body)
+
+    if not signature_valid:
+        # Recorded, but not stored: an unverified body is untrusted bytes from
+        # anyone who knows the URL, so the row keeps what an operator needs to
+        # debug a misconfigured secret (when, how big, which Svix message) and
+        # none of the content, which would otherwise fill the table and the
+        # console's recent-deliveries list with whatever the sender chose.
+        event = WebhookEvent(
+            provider=provider,
+            signature_valid=False,
+            payload={
+                "rejected": True,
+                "bytes": len(body),
+                "sha256": hashlib.sha256(body).hexdigest(),
+                "svix_id": headers.get("svix-id"),
+            },
+        )
+        db.add(event)
+        db.commit()
+        _fail(db, event, "rejected", "signature verification failed")
+        raise HTTPException(status_code=401, detail="Signature verification failed")
 
     try:
         payload = json.loads(body)
@@ -185,13 +224,9 @@ def ingest_webhook(
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail="Body must be a JSON object")
 
-    event = WebhookEvent(provider=provider, signature_valid=signature_valid, payload=payload)
+    event = WebhookEvent(provider=provider, signature_valid=True, payload=payload)
     db.add(event)
     db.commit()
-
-    if not signature_valid:
-        _fail(db, event, "rejected", "signature verification failed")
-        raise HTTPException(status_code=401, detail="Signature verification failed")
 
     # Who is this for? The connector decides, never the body (see module doc).
     try:

@@ -292,11 +292,22 @@ def ingest_in_batches(
     delivery land. Note what changes: rejection becomes per slice rather than
     per delivery, which is why callers on this path pre-filter dates and
     values instead of relying on the guards to refuse.
+
+    The baseline pin is taken once, for the whole delivery, before the first
+    slice. Taken per slice it would let the second slice establish a
+    patient's pre-op reference from whatever prefix of the back-fill the
+    first slice happened to hold — a reference the delivery itself defined,
+    which is exactly what the pin exists to prevent.
     """
+    if not observations:
+        return (0, 0, 0)
+    for patient_id in sorted({o.patient_id for o in observations}):
+        baseline_store.ensure_established(db, patient_id)
+    db.commit()
     ingested = updated = duplicates = 0
     for offset in range(0, len(observations), MAX_BATCH_OBSERVATIONS):
         chunk = observations[offset : offset + MAX_BATCH_OBSERVATIONS]
-        i, u, d = ingest_observations(db, chunk)
+        i, u, d = ingest_observations(db, chunk, pin_baseline=False)
         ingested += i
         updated += u
         duplicates += d
@@ -304,13 +315,16 @@ def ingest_in_batches(
 
 
 def ingest_observations(
-    db: Session, observations: list[CanonicalObservation]
+    db: Session, observations: list[CanonicalObservation], *, pin_baseline: bool = True
 ) -> tuple[int, int, int]:
     """Returns (ingested, updated, duplicates).
 
     Raises ValueError if the batch is oversized, carries dates outside a
     patient's ingestible window, or carries values no body could produce —
     nothing is written in any of those cases.
+
+    ``pin_baseline=False`` is for ``ingest_in_batches``, which has already
+    pinned the reference for the delivery as a whole.
     """
     if not observations:
         return (0, 0, 0)
@@ -330,9 +344,10 @@ def ingest_observations(
     # old one silently becomes a different finding. Establishing here, at the
     # one choke point every connector passes through, is what stops a delivery
     # from defining the baseline it is about to be judged against.
-    for patient_id in sorted({o.patient_id for o in observations}):
-        baseline_store.ensure_established(db, patient_id)
-    db.commit()
+    if pin_baseline:
+        for patient_id in sorted({o.patient_id for o in observations}):
+            baseline_store.ensure_established(db, patient_id)
+        db.commit()
 
     keys = [o.dedupe_key for o in observations]
     existing: dict[str, Observation] = {

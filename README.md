@@ -35,7 +35,7 @@ Single-process demo (serves the built frontend from FastAPI):
 make build && make run     # everything on http://localhost:8000
 ```
 
-`make test` runs the backend suite (257 tests: seed determinism, engine golden
+`make test` runs the backend suite (263 tests: seed determinism, engine golden
 tiers, baseline stability, guardrail enforcement, API contracts, connector
 idempotency and ingest bounds, the Junction connector end to end against a
 fake Junction, RTM billing gates, LLM deadline and cooldown behaviour,
@@ -273,8 +273,12 @@ place a Junction user id meets a patient id. Every delivery is resolved
 through it (`JunctionConnector.resolve_patient`) and never through anything in
 the body: a verified delivery for a user the table has never issued is
 recorded as `ignored` and answered 202, so it can neither write anywhere nor
-make Junction retry. A sandbox account is refused against the production host
-(409) rather than mistaken for a lost user.
+make Junction retry. An unverified body is never stored (only its size, hash
+and Svix id are, so a misconfigured secret can still be debugged) and bodies
+over 1 MB are refused outright. A sandbox account is refused against the
+production host (409) rather than mistaken for a lost user. What Junction
+holds per patient is the opaque `client_user_id`, a time zone and a
+month-granular ingestion floor — never the surgery date to the day.
 
 **Semantics, decided once in `connectors/junction.py`:**
 
@@ -293,9 +297,14 @@ make Junction retry. A sandbox account is refused against the production host
   day, so fifteen-minute step buckets beside an 8,000-step summary would score
   the day at 160 steps. SpO₂, respiratory rate, HRV and temperature samples
   are ingested as instants and average correctly.
-- Naps and in-progress sleep recordings are not the night's sleep and are
-  skipped; Junction restates the session when it completes, and a `.updated`
-  delivery restates in place by Junction's record id.
+- Only a `long_sleep` session is the night's sleep. Naps, sub-three-hour
+  `short_sleep` sessions and in-progress recordings are skipped: a second
+  session on the same day would be averaged with the night and halve it, and
+  a genuinely short night reading as missing is the safer of the two errors.
+  Junction restates a session when it completes, and a `.updated` delivery
+  restates in place by Junction's record id; timeseries samples are keyed on
+  their UTC instant, so the repeated hour of a DST fall-back stays two
+  samples.
 - Rows dated outside the patient's ingestible window, or carrying a value no
   body can produce, are dropped and counted instead of refused: refusing would
   only make Junction retry a delivery that can never become acceptable. The
@@ -331,12 +340,14 @@ make Junction retry. A sandbox account is refused against the production host
 - `terra.py` / `apple_healthkit.py` — documented stubs capturing what each
   would require. Every method raises `NotImplementedError`.
 
-Operator surfaces: `GET /api/integrations/junction/status` (configuration,
-connection counts, recent deliveries with their outcomes) and
-`GET /api/integrations/junction/webhook-portal` (Junction's Svix portal for
-the team). Avoid, per the review: Human API (absorbed into LexisNexis),
-Metriport (exited wearables), Google Fit (shut down; Junction owns the
-Fitbit → Google Health migration as the same device epoch).
+Operator surface: `GET /api/integrations/junction/status` (configuration,
+connection counts, recent deliveries with their outcomes). There is
+deliberately no route to Junction's Svix portal: that link is
+pre-authenticated and this console has no authentication to put in front of
+it, so webhook endpoints and secrets are managed at app.junction.com. Avoid,
+per the review: Human API (absorbed into LexisNexis), Metriport (exited
+wearables), Google Fit (shut down; Junction owns the Fitbit → Google Health
+migration as the same device epoch).
 
 ### RTM platform (P1)
 
@@ -402,9 +413,14 @@ failed webhook event.
 
 ## Not in v1
 
-- **Auth.** Deliberately open for demos. All 30 API routes are unauthenticated,
+- **Auth.** Deliberately open for demos. Every API route is unauthenticated,
   write paths included (RTM time, document approval, escalations, the demo
-  webhook). Running locally, `/docs`, `/redoc` and `/openapi.json` are open too;
+  webhook, and now the Junction lifecycle: whoever can reach the console can
+  issue a Junction Link for any patient, trigger a back-fill, or disconnect
+  an account). The Junction *webhook* is the exception — it is verified
+  against Junction's Svix signature and fails closed — but binding a device
+  to a patient is a console action, and the console has no login. That is
+  the gap to close before any real patient is linked. Running locally, `/docs`, `/redoc` and `/openapi.json` are open too;
   on AWS only `/api/*` is routed to the function, so those three are not
   reachable there. The demo server does contain the SPA catch-all to the built
   bundle and 404s unmatched `/api/*` paths rather than falling through to

@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from app.config import settings
 from app.connectors.base import PatientContext
@@ -473,14 +473,14 @@ def test_absolute_and_delta_temperature_never_swap():
     assert {r.metric_type for r in connector_under_test.normalize(delta, CTX)} == {M.SKIN_TEMP_DELTA}
 
 
-def test_naps_and_in_progress_recordings_are_not_the_nights_sleep():
-    for sleep_type in ("acknowledged_nap", "unknown"):
-        rec = sleep_summary(type=sleep_type)
+def test_only_the_long_sleep_session_is_the_nights_sleep():
+    """A nap, a sub-three-hour short_sleep or an in-progress recording on the
+    same calendar day would be averaged with the night by the engine and
+    halve it; each is skipped, so a genuinely short night reads as missing
+    rather than as a wrong number."""
+    for sleep_type in ("acknowledged_nap", "unknown", "short_sleep"):
+        rec = sleep_summary(type=sleep_type, total=7200)
         assert connector_under_test.normalize(envelope("daily.data.sleep.created", rec), CTX) == []
-    short = connector_under_test.normalize(
-        envelope("daily.data.sleep.created", sleep_summary(type="short_sleep", total=7200)), CTX
-    )
-    assert {r.metric_type: r.value_num for r in short}[M.SLEEP_DURATION] == 2.0
 
 
 def test_workout_becomes_an_exercise_session_in_local_wall_time():
@@ -523,6 +523,23 @@ def test_point_samples_become_instant_rows_and_totals_are_not_ingested(monkeypat
     resp = envelope("daily.data.respiratory_rate.created", interval_block(values=(14.0,)))
     (row,) = connector_under_test.normalize(resp, CTX)
     assert row.granularity is Granularity.INTERVAL and row.end_time > row.start_time
+
+
+def test_sample_identity_survives_the_dst_fall_back_hour_and_offset_changes():
+    """01:30 happens twice on the fall-back night. Keyed on wall time the two
+    samples would be one row; keyed on the instant they stay two, and the
+    same instant restated under a new offset stays one."""
+    first = {"timestamp": "2026-11-01T08:30:00+00:00", "value": 96.0, "timezone_offset": -25200}
+    second = {"timestamp": "2026-11-01T09:30:00+00:00", "value": 95.0, "timezone_offset": -28800}
+    block = {"source": {"provider": "oura"}, "data": [first, second]}
+    rows = connector_under_test.normalize(envelope("daily.data.blood_oxygen.created", block), CTX)
+    assert [r.start_time.hour for r in rows] == [1, 1]  # both 01:30 on the wall clock
+    assert rows[0].dedupe_key != rows[1].dedupe_key
+    restated = {"timestamp": "2026-11-01T08:30:00+00:00", "value": 96.5, "timezone_offset": -28800}
+    (row,) = connector_under_test.normalize(
+        envelope("daily.data.blood_oxygen.updated", {"source": {"provider": "oura"}, "data": [restated]}), CTX
+    )
+    assert row.dedupe_key == rows[0].dedupe_key
 
 
 def test_implausible_values_are_dropped_row_by_row():
@@ -719,6 +736,12 @@ def test_connection_events_maintain_devices_and_the_snapshot(client, db, connect
     conn = db.get(WearableConnection, connection.id)
     assert conn.status == ConnectionStatus.ERROR
     assert "token_refresh_failed" in conn.last_error
+    # a late or replayed reading is not evidence the grant is back
+    late = envelope("daily.data.sleep.created", sleep_summary(id="late-garmin", provider="garmin"))
+    assert post_signed(client, late).status_code == 200
+    db.expire_all()
+    device = db.get(Device, f"junction:{USER_ID}:garmin")
+    assert device.status == "error" and device.last_sync_at is not None
 
 
 def test_historical_event_pulls_the_window_through_the_api(client, db, connection, signing_secret, fake):
@@ -807,8 +830,9 @@ def test_link_flow_creates_a_junction_user_once_and_mints_links(client, db, fake
     sent = json.loads(create.content)
     assert sent["client_user_id"].startswith("mp_") and PATIENT not in sent["client_user_id"]
     assert sent["fallback_time_zone"] == "America/Los_Angeles"
-    floor = (patient.surgery_date - timedelta(days=MAX_PREOP_BACKFILL_DAYS)).isoformat()
-    assert sent["ingestion_start"] == floor
+    floor = patient.surgery_date - timedelta(days=MAX_PREOP_BACKFILL_DAYS)
+    # month-granular on purpose: the exact floor would hand Junction the surgery date
+    assert sent["ingestion_start"] == floor.replace(day=1).isoformat()
     assert create.headers["x-vital-api-key"] == "sk_us_test"
 
     second = client.post(f"/api/patients/{PATIENT}/wearables/junction/link")
@@ -820,6 +844,54 @@ def test_link_flow_creates_a_junction_user_once_and_mints_links(client, db, fake
     assert view["aggregator"]["configured"] is True
     assert view["connection"]["external_user_id"] == USER_ID
     assert view["connection"]["last_link_issued_at"] is not None
+
+
+def test_a_failed_token_call_does_not_orphan_the_junction_user(client, db, fake, monkeypatch):
+    db.execute(delete(WearableConnection).where(WearableConnection.patient_id == PATIENT))
+    db.commit()
+    connector = junction_connector()
+    healthy_factory = connector._client_factory
+
+    def token_down(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v2/link/token":
+            return httpx.Response(500, json={"detail": "link service down"})
+        return fake.handle(request)
+
+    monkeypatch.setattr(
+        connector, "_client_factory",
+        lambda: JunctionClient(
+            "sk_us_test", SANDBOX, transport=httpx.MockTransport(token_down), sleep=lambda _s: None
+        ),
+    )
+    assert client.post(f"/api/patients/{PATIENT}/wearables/junction/link").status_code == 502
+    db.expire_all()
+    conn = connector.connection_for(db, PATIENT)
+    assert conn is not None and conn.external_user_id == USER_ID  # the user we made is on file
+    assert conn.status == ConnectionStatus.PENDING_LINK
+
+    monkeypatch.setattr(connector, "_client_factory", healthy_factory)
+    assert client.post(f"/api/patients/{PATIENT}/wearables/junction/link").status_code == 200
+    assert len(fake.calls("POST", "/v2/user")) == 1  # reused, not recreated
+
+
+def test_a_chunked_backfill_pins_the_baseline_once(db, connection, monkeypatch):
+    """Sliced under the ceiling, a back-fill must not let slice two establish
+    a pre-op reference from whatever slice one happened to hold."""
+    from app.connectors import ingest as ingest_module
+    from app.engine import baseline_store
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        baseline_store, "ensure_established", lambda db_, pid: calls.append(pid)
+    )
+    monkeypatch.setattr(ingest_module, "MAX_BATCH_OBSERVATIONS", 2)
+    rows = connector_under_test.normalize(
+        envelope("daily.data.blood_oxygen.created", sample_block(values=(95.0, 96.0, 97.0, 98.0, 99.0))),
+        CTX,
+    )
+    assert len(rows) == 5
+    assert ingest_module.ingest_in_batches(db, rows) == (5, 0, 0)
+    assert calls == [PATIENT]  # once for the delivery, not once per slice
 
 
 def test_link_requires_configuration_and_a_real_patient(client):
@@ -912,10 +984,75 @@ def test_integrations_and_status_report_the_aggregator(client, fake, signing_sec
     assert status["connections"]["total"] >= 1
     assert isinstance(status["recent_events"], list) and len(status["recent_events"]) <= 5
     assert status["recent_events"][0]["event_type"]
-    portal = client.get("/api/integrations/junction/webhook-portal").json()
-    assert portal["url"].startswith("https://app.svix.com/")
+    # No route hands out Junction's pre-authenticated Svix portal link.
+    assert client.get("/api/integrations/junction/webhook-portal").status_code == 404
     assert client.post("/api/integrations/oura/connect").status_code == 409
     assert client.post("/api/integrations/junction/connect").json()["status"] == "live"
+
+
+def test_unverified_bodies_are_bounded_and_never_stored(client, db, connection, signing_secret):
+    """Anyone who knows the URL can POST to it. What they send must not fill
+    the table, reach the console's recent-deliveries list, or crash the
+    verifier."""
+    before = db.scalar(select(func.count(WebhookEvent.id)).where(WebhookEvent.provider == "junction"))
+    junk = json.dumps({"event_type": "<img src=x>", "user_id": USER_ID, "pad": "x" * 5000}).encode()
+    response = client.post(
+        "/api/webhooks/wearables/junction", content=junk, headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 401
+    db.expire_all()
+    event = db.scalars(
+        select(WebhookEvent).where(WebhookEvent.provider == "junction").order_by(WebhookEvent.id.desc())
+    ).first()
+    assert event.status == "rejected" and event.payload["rejected"] is True
+    assert "pad" not in event.payload and event.payload["bytes"] == len(junk)
+    assert event.payload["sha256"] == hashlib.sha256(junk).hexdigest()
+    recent = client.get("/api/integrations/junction/status?limit=1").json()["recent_events"][0]
+    assert recent["status"] == "rejected" and recent["event_type"] is None
+    # oversized: refused before anything is verified, parsed or recorded
+    huge = b"{" + b" " * 1_000_001 + b"}"
+    assert client.post("/api/webhooks/wearables/junction", content=huge).status_code == 413
+    after = db.scalar(select(func.count(WebhookEvent.id)).where(WebhookEvent.provider == "junction"))
+    assert after == before + 1
+    # a hostile byte in the signature header is "does not match", not a 500
+    # (the test client refuses to send one, so the verifier is probed directly
+    # with the latin-1 text Starlette would hand it)
+    from app.api.webhooks import _verify_svix, _verify_terra
+
+    headers = svix_headers(junk)
+    headers["svix-signature"] = "v1,\xe9\xff"
+    assert _verify_svix(SECRET, headers, junk) is False
+    assert _verify_terra("secret", {"terra-signature": f"t={int(time.time())},v1=\xe9"}, junk) is False
+
+
+def test_disconnect_reports_what_junction_actually_did(client, db, fake):
+    """The local mapping is always retired; the remote outcome must be told
+    truthfully, because 'retired here, still collecting there' is exactly
+    what a consent withdrawal must not hide."""
+    _reset_connection(db)
+
+    def gone(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"detail": "User not found"})
+
+    connector = junction_connector()
+    factory = connector._client_factory
+    connector._client_factory = lambda: JunctionClient(
+        "sk_us_test", SANDBOX, transport=httpx.MockTransport(gone), sleep=lambda _s: None
+    )
+    try:
+        body = client.delete(f"/api/patients/{PATIENT}/wearables/junction").json()
+    finally:
+        connector._client_factory = factory
+    assert body["remote"] == "not_found"
+    assert body["connection"]["status"] == "disconnected"
+    assert "not deleted" in body["connection"]["last_error"]
+
+    # an account on the other host cannot be reached from this deployment
+    _reset_connection(db, environment="production")
+    body = client.delete(f"/api/patients/{PATIENT}/wearables/junction").json()
+    assert body["remote"] == "environment_mismatch"
+    assert not fake.calls("DELETE", "/v2/user/")
+    assert "production" in body["connection"]["last_error"]
 
 
 # --- the client ------------------------------------------------------------------
@@ -951,6 +1088,24 @@ def test_client_backs_off_on_429_and_gives_up_on_a_client_error():
     assert client.resolve_user("nobody") is None
     with pytest.raises(JunctionError):
         client.create_link_token(USER_ID)  # 404 is only tolerated where it means "none"
+
+
+def test_client_never_starts_an_attempt_past_its_deadline():
+    """On Lambda the request holds a 25 s write lock; a call that has run out
+    of budget must fail fast rather than open one more 8 s socket."""
+    attempts: list[int] = []
+
+    def slow_then_ok(request: httpx.Request) -> httpx.Response:
+        attempts.append(1)
+        return httpx.Response(503, headers={"retry-after": "3"}, json={"detail": "busy"})
+
+    client = JunctionClient("sk", SANDBOX, transport=httpx.MockTransport(slow_then_ok), sleep=lambda _s: None)
+    with pytest.raises(JunctionError, match="503"):
+        client._request("GET", f"/v2/user/{USER_ID}", deadline_s=1.0)
+    assert len(attempts) == 1  # no retry fits inside a 1 s budget
+    with pytest.raises(JunctionError, match="already spent"):
+        client._request("GET", f"/v2/user/{USER_ID}", deadline_s=0.0)
+    assert len(attempts) == 1
 
 
 def test_client_follows_timeseries_pages_and_flattens_groups():

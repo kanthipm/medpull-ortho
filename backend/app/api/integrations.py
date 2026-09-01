@@ -6,8 +6,19 @@ Every Junction-backed route answers 503 when JUNCTION_API_KEY is unset, 409
 when the patient's account belongs to the other environment, and 502 when
 Junction itself could not be reached — three different problems that a
 provider staring at a "Connect" button should be able to tell apart.
+
+Posture, stated plainly: like every other route in this console these are
+unauthenticated (README, "Not in v1"). The link, back-fill and disconnect
+routes are write paths on the same footing as logging RTM minutes or
+approving a document, and whoever can reach the console can issue a Junction
+Link for any patient. Putting authentication in front of the console is the
+v1 gap that closes this; nothing here pretends to close it with a token the
+public bundle could not keep secret. What this module does refuse is anything
+that would hand out control of the aggregator itself — there is no route to
+Junction's Svix portal link, by design.
 """
 
+import time
 from collections import Counter
 from datetime import date, datetime
 from typing import Any
@@ -20,7 +31,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.connectors.capabilities import CAPABILITIES, GAIT
 from app.connectors.ingest import ingest_in_batches, partition_by_window
-from app.connectors.junction import JunctionConnector
+from app.connectors.junction import DEFAULT_PULL_BUDGET_S, REFRESH_DEADLINE_S, JunctionConnector
 from app.connectors.junction_client import (
     JunctionError,
     JunctionNotConfigured,
@@ -167,19 +178,6 @@ def junction_status(limit: int = 10, db: Session = Depends(get_db)) -> dict:
     return {**_aggregator_status(db), "recent_events": recent}
 
 
-@router.get("/integrations/junction/webhook-portal")
-def junction_webhook_portal() -> dict:
-    """Junction registers webhook endpoints in its dashboard (a Svix portal);
-    this fetches the portal URL for the team so an operator can get there
-    from the console."""
-    _require_configured()
-    try:
-        url = junction_connector().webhook_portal_url()
-    except JunctionError as e:
-        raise HTTPException(status_code=502, detail=f"Junction call failed: {e}")
-    return {"url": url, "webhook_path": WEBHOOK_PATH}
-
-
 @router.post("/integrations/{provider}/connect")
 def connect(provider: str, db: Session = Depends(get_db)) -> dict:
     try:
@@ -312,11 +310,17 @@ def junction_backfill(
     patient = _patient_or_404(db, patient_id)
     body = body or BackfillBody()
     connector = junction_connector()
+    # One wall-clock budget for the whole request: the optional re-sync call
+    # and the pull share it, so together they stay inside the write-lock TTL.
+    started = time.monotonic()
     try:
         conn = connector.active_connection(db, patient_id)
         if body.refresh:
-            connector.request_refresh(conn)
-        report = connector.pull(db, conn, patient, start=body.since, end=body.until)
+            connector.request_refresh(conn, deadline_s=REFRESH_DEADLINE_S)
+        remaining = max(2.0, DEFAULT_PULL_BUDGET_S - (time.monotonic() - started))
+        report = connector.pull(
+            db, conn, patient, start=body.since, end=body.until, budget_s=remaining
+        )
     except (JunctionError, ValueError) as e:
         _raise_for(e)
     inside, outside = partition_by_window(db, report.observations)

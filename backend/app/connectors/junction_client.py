@@ -17,10 +17,15 @@ generates from its own API definition):
   ``Retry-After`` and both mean back off; the documented client strategy is
   exponential backoff with jitter. Webhook deliveries do not count.
 
-Every call is bounded. The API function behind CloudFront has a hard 30 s
-ceiling, so a retry that honours a 60 s ``Retry-After`` would only convert a
-rate limit into a gateway timeout: waits are capped at MAX_RETRY_WAIT_S and
-the whole call at a deadline the caller can lower further.
+Every call is bounded, twice over. The API function behind CloudFront has a
+hard 30 s ceiling, and on AWS every mutating request holds the S3 write lock
+for its whole duration under a 25 s TTL (``app/aws/config.py``): a handler
+that outlives the TTL lets a concurrent writer break the lock and one of the
+two then silently discards the other's rows. So a retry that honours a 60 s
+``Retry-After`` would only convert a rate limit into lost data: waits are
+capped at MAX_RETRY_WAIT_S, each attempt's socket timeout is clipped to what
+is left of the call's deadline, no attempt starts once the deadline is
+spent, and the defaults leave room for the ingest and recompute that follow.
 """
 
 from __future__ import annotations
@@ -39,10 +44,15 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 API_KEY_HEADER = "x-vital-api-key"
-DEFAULT_TIMEOUT_S = 10.0
-DEFAULT_DEADLINE_S = 25.0
+# Per-attempt socket timeout and per-call wall-clock deadline. Both sit well
+# under the 25 s write-lock TTL so the request that made the call can still
+# ingest, recompute and persist before the lock can be broken.
+DEFAULT_TIMEOUT_S = 8.0
+DEFAULT_DEADLINE_S = 15.0
 MAX_ATTEMPTS = 3
-MAX_RETRY_WAIT_S = 5.0
+MAX_RETRY_WAIT_S = 4.0
+# Below this much remaining budget an attempt cannot complete; give up instead.
+MIN_ATTEMPT_S = 0.5
 # Pagination guard for grouped timeseries: a page is at most a few thousand
 # samples, and twenty of them is more than any resource the connector ingests
 # produces over the ingestible window.
@@ -118,6 +128,7 @@ class JunctionClient:
             raise JunctionNotConfigured("JUNCTION_API_KEY is not set")
         self.base_url = base_url.rstrip("/")
         self._sleep = sleep
+        self._timeout = timeout
         self._http = httpx.Client(
             base_url=self.base_url,
             headers={API_KEY_HEADER: api_key, "accept": "application/json"},
@@ -153,13 +164,26 @@ class JunctionClient:
         not_found_ok: bool = False,
     ) -> Any:
         """One logical call: retries on 429/503/5xx/transport failure with a
-        capped, jittered backoff, and never past `deadline_s` of wall clock."""
+        capped, jittered backoff, and never past `deadline_s` of wall clock —
+        the first attempt included, whose socket timeout is clipped to what
+        is left of the budget."""
         limit = time.monotonic() + deadline_s
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}
         last_error: JunctionError | None = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
+            remaining = limit - time.monotonic()
+            if remaining < MIN_ATTEMPT_S:
+                if last_error is None:
+                    last_error = JunctionError(
+                        f"Junction {method} {path} not attempted: the call's "
+                        f"{deadline_s:.1f}s deadline is already spent"
+                    )
+                break
             try:
-                response = self._http.request(method, path, params=clean_params, json=json)
+                response = self._http.request(
+                    method, path, params=clean_params, json=json,
+                    timeout=min(self._timeout, remaining),
+                )
             except httpx.HTTPError as e:
                 last_error = JunctionError(f"Junction {method} {path} failed: {e}")
                 logger.warning("Junction transport error on %s %s: %s", method, path, e)
@@ -180,7 +204,7 @@ class JunctionClient:
             if attempt == MAX_ATTEMPTS:
                 break
             wait = self._backoff(attempt, response)
-            if time.monotonic() + wait >= limit:
+            if time.monotonic() + wait + MIN_ATTEMPT_S >= limit:
                 break
             self._sleep(wait)
         assert last_error is not None
@@ -243,9 +267,13 @@ class JunctionClient:
     def delete_user(self, user_id: str) -> dict[str, Any] | None:
         return self._request("DELETE", f"/v2/user/{user_id}", not_found_ok=True)
 
-    def refresh_user(self, user_id: str) -> dict[str, Any] | None:
+    def refresh_user(
+        self, user_id: str, *, deadline_s: float = DEFAULT_DEADLINE_S
+    ) -> dict[str, Any] | None:
         """Ask Junction to re-pull from every connected provider now."""
-        return self._request("POST", f"/v2/user/refresh/{user_id}", not_found_ok=True)
+        return self._request(
+            "POST", f"/v2/user/refresh/{user_id}", not_found_ok=True, deadline_s=deadline_s
+        )
 
     def connected_providers(self, user_id: str) -> list[dict[str, Any]]:
         body = self._request("GET", f"/v2/user/providers/{user_id}", not_found_ok=True)
@@ -357,10 +385,8 @@ class JunctionClient:
                 break
         return blocks
 
-    # -- team ----------------------------------------------------------------
-
-    def svix_portal_url(self) -> str | None:
-        body = self._request("GET", "/v2/team/svix/url")
-        if isinstance(body, dict):
-            return body.get("url")
-        return None
+    # Deliberately absent: GET /v2/team/svix/url. It answers with a
+    # pre-authenticated Svix App Portal link — the message log of every
+    # delivered payload plus endpoint and secret control — and this console
+    # has no authentication to gate such a thing behind. Operators reach the
+    # portal from app.junction.com instead.
