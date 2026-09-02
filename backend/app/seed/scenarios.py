@@ -47,7 +47,7 @@ SCENARIOS: dict[str, ScenarioSpec] = {
     # Possible early infection pattern: coupled vitals shift + activity collapse
     # starting day 6. The engine should see EWMA flags on RHR/temp/HRV, a high
     # composite deviation index, and a trajectory change-point.
-    "marcus": ScenarioSpec(
+    "steve": ScenarioSpec(
         ramps=(
             Ramp(M.RESTING_HR, 4, 8, add=8.0),
             Ramp(M.SKIN_TEMP, 4, 8, add=0.7),

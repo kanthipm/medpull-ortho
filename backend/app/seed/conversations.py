@@ -9,9 +9,9 @@ C = "copilot"
 P = "patient"
 
 CONVERSATIONS: dict[str, list[tuple[int, int, list[tuple[str, str]]]]] = {
-    "marcus": [
+    "steve": [
         (3, 8, [
-            (C, "Good morning, Marcus. How are you feeling today?"),
+            (C, "Good morning, Steve. How are you feeling today?"),
             (P, "Not bad. The knee is sore but I got my exercises in yesterday."),
             (C, "Good to hear you kept up with the exercises. Is the soreness better, worse, or about the same as yesterday?"),
             (P, "About the same. Maybe a little more swollen in the evening."),
@@ -19,7 +19,7 @@ CONVERSATIONS: dict[str, list[tuple[int, int, list[tuple[str, str]]]]] = {
             (P, "Yes, twenty minutes like they showed me."),
         ]),
         (1, 8, [
-            (C, "Morning, Marcus. How did you sleep, and how is the knee today?"),
+            (C, "Morning, Steve. How did you sleep, and how is the knee today?"),
             (P, "Rough night. The pain woke me up a couple of times."),
             (C, "I'm sorry to hear that. On a scale from mild to severe, how would you describe the pain right now?"),
             (P, "Worse than the weekend. The pills don't seem to be doing as much."),
@@ -29,7 +29,7 @@ CONVERSATIONS: dict[str, list[tuple[int, int, list[tuple[str, str]]]]] = {
             (P, "It does feel warm, and it looks puffier than before."),
         ]),
         (0, 8, [
-            (C, "Good morning, Marcus. Checking in on the knee — how are you feeling?"),
+            (C, "Good morning, Steve. Checking in on the knee — how are you feeling?"),
             (P, "Honestly, worse. My pain has gotten worse and I felt feverish last night."),
             (C, "I'm sorry you're feeling worse. Did you take your temperature?"),
             (P, "I didn't have a thermometer handy, but I was sweating and had chills."),

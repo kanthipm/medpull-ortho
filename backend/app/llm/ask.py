@@ -242,7 +242,7 @@ def _ask_llm(
     if dropped_by_outage:
         # A candidate the outage dropped is a candidate nobody checked, and the
         # answer that comes back is the shape of the outage, not a finding
-        # about the roster: "1 match: Marcus" when two other patients were
+        # about the roster: "1 match: Steve" when two other patients were
         # never looked at reads as a complete answer and gets cached as one.
         # Whether some candidates survived makes no difference to that — the
         # claim "these are the patients who match" is false either way. The

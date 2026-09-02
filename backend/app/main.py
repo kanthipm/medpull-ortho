@@ -81,7 +81,7 @@ app.include_router(api_router)
 
 # Single-process demo mode: serve the built SPA. API routes are registered
 # above, so they win; everything else falls back to index.html for client
-# routing (deep links like /patients/marcus).
+# routing (deep links like /patients/steve).
 # Resolved once so the containment check below compares like with like even
 # when the checkout itself sits behind a symlink.
 DIST = (PROJECT_DIR / "frontend" / "dist").resolve()

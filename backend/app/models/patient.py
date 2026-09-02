@@ -20,7 +20,7 @@ class CareTeamMember(Base):
 class Patient(Base):
     __tablename__ = "patients"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)  # slug, e.g. "marcus"
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # slug, e.g. "steve"
     name: Mapped[str] = mapped_column(String)
     initials: Mapped[str] = mapped_column(String)
     age: Mapped[int] = mapped_column(Integer)

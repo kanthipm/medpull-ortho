@@ -57,7 +57,7 @@ def _spec(
 
 
 PATIENTS: list[PatientSpec] = [
-    _spec("marcus", "Marcus Reyes", 63, "M", ProcedureType.TKA,
+    _spec("steve", "Steve", 63, "M", ProcedureType.TKA,
           "Total Knee Replacement (TKA)", 8, SourceProvider.APPLE, "Apple Watch Series 10", 2),
     _spec("linda", "Linda Park", 58, "F", ProcedureType.ROTATOR_CUFF,
           "Rotator Cuff Repair", 10, SourceProvider.FITBIT, "Fitbit Charge 6", 0),

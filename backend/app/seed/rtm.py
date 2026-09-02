@@ -9,7 +9,7 @@ seed date. The roster deliberately covers every compliance stage:
 
   grace   education only — consent is the next action
   robert  baseline pending — enrollment incomplete
-  marcus  enrolled, 14 min, no call yet — the spec's "98980 (6 min remaining)"
+  steve  enrolled, 14 min, no call yet — the spec's "98980 (6 min remaining)"
   linda   enrolled, minimal time — early monitoring
   priya   enrolled but barely-worn device — monitoring-days gap drives action
   elena   enrolled, 12 min incl. call — 98979 tier
@@ -60,7 +60,7 @@ class RtmSpec:
 
 
 RTM_STATES: dict[str, RtmSpec] = {
-    "marcus": RtmSpec(
+    "steve": RtmSpec(
         9, 9, 8, "TKA standard recovery",
         [
             TimeEntry(6, TimeLogActivity.CHART_REVIEW, 5, note="Reviewed vitals deviation"),
