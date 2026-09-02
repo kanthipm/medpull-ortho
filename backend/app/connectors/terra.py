@@ -1,9 +1,9 @@
 """Terra aggregator connector — scaffolded, not yet implemented.
 
-Terra (tryterra.co) is one of the two recommended aggregators for production
-(the other is Junction). One integration covers Apple Health, Fitbit, Garmin,
-Oura, Whoop, Samsung, Withings, Dexcom, Polar and ~500 more sources behind a
-single OAuth widget + webhook stream.
+Terra (tryterra.co) was one of the two aggregators evaluated for production;
+Junction (``junction.py``) is the one that shipped. Terra stays scaffolded
+because a signed BAA is listed only under its custom-priced Enterprise plan,
+which rules the $399–499/mo tier out for PHI at startup pricing.
 
 What a real implementation needs (researched mid-2026):
 - Terra dev account + API key + signing secret; BAA executed (Terra is
@@ -11,10 +11,11 @@ What a real implementation needs (researched mid-2026):
   (~200 credits/user/mo).
 - authorize(): POST /auth/generateWidgetSession -> widget URL for the patient.
 - handle_oauth_callback(): Terra redirects with user_id; store the
-  terra_user_id <-> patient_id mapping.
+  terra_user_id <-> patient_id mapping (models/connection.py already holds
+  one aggregator account per patient, keyed by aggregator).
 - register_webhook(): configured in the Terra dashboard; verify the
   "terra-signature" header (HMAC-SHA256 with the signing secret) on every
-  delivery — wire that into api/webhooks.py's signature hook.
+  delivery — api/webhooks.py already carries that verifier.
 - normalize(): map Terra's Activity/Daily/Sleep/Body models onto MetricType;
   Terra passes Apple mobility metrics (walking speed/asymmetry/steadiness)
   through for Apple-sourced users only.
@@ -22,11 +23,21 @@ What a real implementation needs (researched mid-2026):
   back-fill after connect.
 """
 
-from datetime import date
-from typing import Any
+from __future__ import annotations
 
-from app.connectors.base import CanonicalObservation, OAuthResult, WearableConnector
+from datetime import date
+from typing import TYPE_CHECKING, Any
+
+from app.connectors.base import (
+    CanonicalObservation,
+    OAuthResult,
+    PatientContext,
+    WearableConnector,
+)
 from app.models.enums import MetricType, SourceProvider
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 _MSG = (
     "TerraConnector is scaffolding for the production Terra integration. "
@@ -35,12 +46,14 @@ _MSG = (
 
 
 class TerraConnector(WearableConnector):
-    provider = SourceProvider.MOCK  # becomes the per-user source provider once live
+    provider = SourceProvider.TERRA
 
-    def authorize(self, patient_id: str) -> str:
+    def authorize(self, db: Session, patient_id: str) -> str:
         raise NotImplementedError(_MSG)
 
-    def handle_oauth_callback(self, patient_id: str, params: dict[str, Any]) -> OAuthResult:
+    def handle_oauth_callback(
+        self, db: Session, patient_id: str, params: dict[str, Any]
+    ) -> OAuthResult:
         raise NotImplementedError(_MSG)
 
     def register_webhook(self, callback_url: str) -> bool:
@@ -48,6 +61,7 @@ class TerraConnector(WearableConnector):
 
     def fetch_historical(
         self,
+        db: Session,
         patient_id: str,
         start: date,
         end: date,
@@ -55,5 +69,7 @@ class TerraConnector(WearableConnector):
     ) -> list[CanonicalObservation]:
         raise NotImplementedError(_MSG)
 
-    def normalize(self, raw_payload: dict[str, Any]) -> list[CanonicalObservation]:
+    def normalize(
+        self, raw_payload: dict[str, Any], patient: PatientContext | None = None
+    ) -> list[CanonicalObservation]:
         raise NotImplementedError(_MSG)

@@ -23,7 +23,7 @@ window guard cannot be bypassed by a new connector.
 
 import hashlib
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -88,6 +88,19 @@ PLAUSIBLE_RANGE: dict[str, tuple[float, float]] = {
 # legitimately be dated further ahead, and the deviation window has no upper
 # bound of its own — a future row simply becomes "the latest reading".
 MAX_FUTURE_DAYS = 1
+
+
+def _source_stamp(value: datetime | None) -> datetime | None:
+    """The provider's last-modified instant as naive UTC.
+
+    SQLite hands DateTime columns back naive, and Python refuses to order a
+    naive datetime against an aware one, so an aggregator's ISO-8601 stamp
+    (always offset-qualified) has to be flattened before it is written or
+    compared. Naive input is trusted as already UTC.
+    """
+    if value is None or value.tzinfo is None:
+        return value
+    return value.astimezone(dt_timezone.utc).replace(tzinfo=None)
 
 
 def payload_hash_of(o: CanonicalObservation) -> str:
@@ -220,21 +233,98 @@ def _apply(row: Observation, o: CanonicalObservation, content_hash: str) -> None
     row.source_device_id = o.source_device_id
     row.body_site = o.body_site
     row.side = o.side
-    row.source_updated_at = o.source_updated_at
+    row.source_updated_at = _source_stamp(o.source_updated_at)
     row.payload_hash = content_hash
     row.raw_payload = o.raw_payload
     row.deleted_at = datetime.now() if o.deleted else None
     row.ingested_at = datetime.now()
 
 
-def ingest_observations(
+def partition_by_window(
     db: Session, observations: list[CanonicalObservation]
+) -> tuple[list[CanonicalObservation], list[CanonicalObservation]]:
+    """Split a batch into (inside, outside) the patients' ingestible windows.
+
+    For an aggregator this is the polite form of ``_reject_out_of_window``:
+    Junction back-fills and restates months of history as a matter of course,
+    so a row dated before the pre-op window is routine, not a fault, and the
+    right response is to drop it and say so rather than refuse the delivery
+    (which the provider would only retry). The demo path keeps the loud
+    all-or-nothing rejection, where an odd date really is a caller bug.
+
+    Unknown patients are left in ``inside`` so the ingest guard still raises
+    for them: silently dropping a row for a patient that does not exist would
+    hide exactly the misrouting this exists to surface.
+    """
+    if not observations:
+        return [], []
+    today = date.today()
+    patient_ids = {o.patient_id for o in observations}
+    surgery_dates: dict[str, date] = dict(
+        db.execute(
+            select(Patient.id, Patient.surgery_date).where(Patient.id.in_(patient_ids))
+        ).all()
+    )
+    inside: list[CanonicalObservation] = []
+    outside: list[CanonicalObservation] = []
+    for o in observations:
+        surgery = surgery_dates.get(o.patient_id)
+        if surgery is None:
+            inside.append(o)
+            continue
+        floor, ceiling = ingestible_window(surgery, today)
+        earliest = min(o.start_time.date(), o.local_date)
+        latest = max(o.start_time.date(), o.local_date)
+        (inside if floor <= earliest and latest <= ceiling else outside).append(o)
+    return inside, outside
+
+
+def ingest_in_batches(
+    db: Session, observations: list[CanonicalObservation]
+) -> tuple[int, int, int]:
+    """``ingest_observations`` over a batch that may exceed the ceiling.
+
+    The ceiling exists so an unbounded *body* cannot be materialized; a signed
+    aggregator back-fill of a nightly SpO₂ series over the whole ingestible
+    window is not that, but it can legitimately run past 5,000 rows. Feeding
+    it through in ceiling-sized slices keeps every guard inside
+    ``ingest_observations`` in force per slice while letting the whole
+    delivery land. Note what changes: rejection becomes per slice rather than
+    per delivery, which is why callers on this path pre-filter dates and
+    values instead of relying on the guards to refuse.
+
+    The baseline pin is taken once, for the whole delivery, before the first
+    slice. Taken per slice it would let the second slice establish a
+    patient's pre-op reference from whatever prefix of the back-fill the
+    first slice happened to hold — a reference the delivery itself defined,
+    which is exactly what the pin exists to prevent.
+    """
+    if not observations:
+        return (0, 0, 0)
+    for patient_id in sorted({o.patient_id for o in observations}):
+        baseline_store.ensure_established(db, patient_id)
+    db.commit()
+    ingested = updated = duplicates = 0
+    for offset in range(0, len(observations), MAX_BATCH_OBSERVATIONS):
+        chunk = observations[offset : offset + MAX_BATCH_OBSERVATIONS]
+        i, u, d = ingest_observations(db, chunk, pin_baseline=False)
+        ingested += i
+        updated += u
+        duplicates += d
+    return ingested, updated, duplicates
+
+
+def ingest_observations(
+    db: Session, observations: list[CanonicalObservation], *, pin_baseline: bool = True
 ) -> tuple[int, int, int]:
     """Returns (ingested, updated, duplicates).
 
     Raises ValueError if the batch is oversized, carries dates outside a
     patient's ingestible window, or carries values no body could produce —
     nothing is written in any of those cases.
+
+    ``pin_baseline=False`` is for ``ingest_in_batches``, which has already
+    pinned the reference for the delivery as a whole.
     """
     if not observations:
         return (0, 0, 0)
@@ -254,9 +344,10 @@ def ingest_observations(
     # old one silently becomes a different finding. Establishing here, at the
     # one choke point every connector passes through, is what stops a delivery
     # from defining the baseline it is about to be judged against.
-    for patient_id in sorted({o.patient_id for o in observations}):
-        baseline_store.ensure_established(db, patient_id)
-    db.commit()
+    if pin_baseline:
+        for patient_id in sorted({o.patient_id for o in observations}):
+            baseline_store.ensure_established(db, patient_id)
+        db.commit()
 
     keys = [o.dedupe_key for o in observations]
     existing: dict[str, Observation] = {
@@ -291,7 +382,7 @@ def ingest_observations(
                 body_site=o.body_site,
                 side=o.side,
                 external_id=o.external_id,
-                source_updated_at=o.source_updated_at,
+                source_updated_at=_source_stamp(o.source_updated_at),
                 payload_hash=content_hash,
                 deleted_at=datetime.now() if o.deleted else None,
                 qualifies_for_rtm=o.qualifies_for_rtm,
@@ -310,10 +401,12 @@ def ingest_observations(
 
         # Out-of-order redelivery: the provider's own clock says our copy is
         # newer. payload_hash alone can't catch this — the stale copy differs.
+        incoming_stamp = _source_stamp(o.source_updated_at)
+        held_stamp = _source_stamp(row.source_updated_at)
         if (
-            o.source_updated_at is not None
-            and row.source_updated_at is not None
-            and o.source_updated_at <= row.source_updated_at
+            incoming_stamp is not None
+            and held_stamp is not None
+            and incoming_stamp <= held_stamp
         ):
             duplicates += 1
             continue

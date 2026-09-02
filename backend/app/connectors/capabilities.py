@@ -46,6 +46,17 @@ CAPABILITIES: dict[P, list[M]] = {
                        M.EXERCISE_SESSION],
     P.MOCK: CORE + GAIT + [M.HRV_RMSSD, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,
                            M.SKIN_TEMP, M.EXERCISE_SESSION],
+    # The aggregator: the union of what connectors/junction.py actually emits
+    # from Junction's activity/sleep/workout summaries and its SpO₂,
+    # respiratory-rate, HRV and temperature timeseries. Which of these a given
+    # patient really gets depends on the device behind the Junction account
+    # (an Oura ring has no workouts, a Withings watch no HRV), which the
+    # patient chart reports card by card. HR_SAMPLE is opt-in
+    # (JUNCTION_INGEST_HEART_RATE_SAMPLES); gait metrics are not passed
+    # through by Junction at all.
+    P.JUNCTION: [M.STEPS, M.RESTING_HR, M.HRV_RMSSD, M.HRV_SDNN, M.SLEEP_DURATION,
+                 M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE, M.SKIN_TEMP,
+                 M.SKIN_TEMP_DELTA, M.ACTIVE_ENERGY, M.CALORIES, M.EXERCISE_SESSION],
 }
 
 

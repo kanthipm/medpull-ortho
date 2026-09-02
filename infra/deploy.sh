@@ -20,6 +20,23 @@ REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 GROQ_PARAM="${GROQ_PARAM:-/recovery-copilot/groq-api-key}"
 ORIGIN_SECRET_PARAM="${ORIGIN_SECRET_PARAM:-/recovery-copilot/origin-verify-secret}"
 GROQ_MODEL="${GROQ_MODEL:-llama-3.3-70b-versatile}"
+# Junction (wearable aggregator). Both secrets are optional: absent, the
+# connector stays idle and the console says "Needs setup". The non-secret
+# settings come from the environment, else recovery-copilot/.env, else the
+# sandbox defaults.
+dotenv_value() {  # dotenv_value VAR -> its value in $ROOT/.env, or nothing; never fails
+  [ -f "$ROOT/.env" ] || return 0
+  # \042 = double quote, \047 = single quote — spelled in octal to keep the
+  # nesting of quotes readable. `|| true` because an absent key is not an error.
+  grep -E "^$1=" "$ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '\042\047 ' || true
+}
+JUNCTION_PARAM="${JUNCTION_PARAM:-/recovery-copilot/junction-api-key}"
+JUNCTION_WEBHOOK_PARAM="${JUNCTION_WEBHOOK_PARAM:-/recovery-copilot/junction-webhook-secret}"
+JUNCTION_ENVIRONMENT="${JUNCTION_ENVIRONMENT:-$(dotenv_value JUNCTION_ENVIRONMENT)}"
+JUNCTION_ENVIRONMENT="${JUNCTION_ENVIRONMENT:-sandbox}"
+JUNCTION_REGION="${JUNCTION_REGION:-$(dotenv_value JUNCTION_REGION)}"
+JUNCTION_REGION="${JUNCTION_REGION:-us}"
+JUNCTION_LINK_REDIRECT_URL="${JUNCTION_LINK_REDIRECT_URL:-$(dotenv_value JUNCTION_LINK_REDIRECT_URL)}"
 BUDGET_EMAIL="${BUDGET_EMAIL:-}"
 
 RESEED=false
@@ -138,6 +155,28 @@ else
   unset KEY
 fi
 
+# Junction secrets: an existing SSM value wins, then the environment, then the
+# local .env. Never prompted for — both are optional and a deploy without them
+# is a deploy with the connector idle, which is a valid state.
+store_optional_secret() {
+  local param="$1" var="$2" label="$3" value
+  if aws_ ssm get-parameter --name "$param" >/dev/null 2>&1; then
+    info "$label already in SSM at $param (delete the parameter to change it)"
+    return
+  fi
+  value="${!var:-}"
+  [ -n "$value" ] || value="$(dotenv_value "$var")"
+  if [ -n "$value" ]; then
+    aws_ ssm put-parameter --name "$param" --type SecureString \
+      --value "$value" --description "$label for Recovery Copilot" >/dev/null
+    info "stored the $label in SSM ($param)"
+  else
+    info "no $label — the Junction connector stays idle until one is stored"
+  fi
+}
+store_optional_secret "$JUNCTION_PARAM" JUNCTION_API_KEY "Junction API key"
+store_optional_secret "$JUNCTION_WEBHOOK_PARAM" JUNCTION_WEBHOOK_SECRET "Junction webhook secret"
+
 # --------------------------------------------------------------------------
 log "Building the Lambda package"
 # --------------------------------------------------------------------------
@@ -159,6 +198,11 @@ PARAMS=(
   "OriginVerifySecret=$ORIGIN_SECRET"
   "GroqApiKeyParameter=$GROQ_PARAM"
   "GroqModel=$GROQ_MODEL"
+  "JunctionApiKeyParameter=$JUNCTION_PARAM"
+  "JunctionWebhookSecretParameter=$JUNCTION_WEBHOOK_PARAM"
+  "JunctionEnvironment=$JUNCTION_ENVIRONMENT"
+  "JunctionRegion=$JUNCTION_REGION"
+  "JunctionLinkRedirectUrl=$JUNCTION_LINK_REDIRECT_URL"
   "ApiReservedConcurrency=$RESERVED"
 )
 [ -n "$BUDGET_EMAIL" ] && PARAMS+=("BudgetAlertEmail=$BUDGET_EMAIL")

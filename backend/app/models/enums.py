@@ -40,6 +40,15 @@ class SourceProvider(StrEnum):
     CLINICIAN_ENTERED = "clinician_entered"
 
 
+class ConnectionStatus(StrEnum):
+    """Lifecycle of a patient's aggregator account (models/connection.py)."""
+
+    PENDING_LINK = "pending_link"  # aggregator user exists; no device linked yet
+    LINKED = "linked"  # at least one provider connected
+    ERROR = "error"  # the aggregator reported a terminal provider error
+    DISCONNECTED = "disconnected"  # deregistered by an operator
+
+
 class MetricType(StrEnum):
     STEPS = "steps"
     RESTING_HR = "resting_hr"

@@ -1,17 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { QueryKey } from '@tanstack/react-query'
+import type { InvalidateQueryFilters, QueryKey } from '@tanstack/react-query'
 import { fetchJson } from './client'
 import type {
   AppNotification,
   Checkin,
-  IntegrationProvider,
+  IntegrationsResponse,
+  JunctionBackfill,
+  JunctionLink,
+  JunctionStatus,
   NotificationPreference,
   PatientDetail,
   PatientMetrics,
+  PatientWearables,
   PracticeOverview,
   RtmDocument,
   RtmReadiness,
   TimelineEvent,
+  WearableConnection,
   WorklistResponse,
 } from './types'
 
@@ -78,7 +83,97 @@ export function useMarkAllNotificationsRead() {
 export function useIntegrations() {
   return useQuery({
     queryKey: ['integrations'],
-    queryFn: () => fetchJson<{ providers: IntegrationProvider[] }>('/api/integrations'),
+    queryFn: () => fetchJson<IntegrationsResponse>('/api/integrations'),
+  })
+}
+
+export function useJunctionStatus(enabled = true) {
+  return useQuery({
+    queryKey: ['integrations', 'junction'],
+    queryFn: () => fetchJson<JunctionStatus>('/api/integrations/junction/status?limit=10'),
+    refetchInterval: 60_000,
+    enabled,
+  })
+}
+
+/** Caches a change to a patient's wearable connection moves: the card
+ *  itself, the patient record (its device line reads the newest Device row —
+ *  exact, so the metrics/timeline/check-in sub-queries under the same prefix
+ *  are left alone), and the Integrations page's per-brand patient counts and
+ *  aggregator status. */
+export function wearableFilters(id: string): InvalidateQueryFilters[] {
+  return [
+    { queryKey: ['patient', id, 'wearables'] },
+    { queryKey: ['patient', id], exact: true },
+    { queryKey: ['integrations'] },
+  ]
+}
+
+export function usePatientWearables(id: string) {
+  return useQuery({
+    queryKey: ['patient', id, 'wearables'],
+    queryFn: () => fetchJson<PatientWearables>(`/api/patients/${id}/wearables`),
+  })
+}
+
+export function useRefreshWearables(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    // a POST: the re-sync rewrites the snapshot and Device rows, and on AWS
+    // only a mutating request runs under the write lock
+    mutationFn: () =>
+      fetchJson<PatientWearables>(`/api/patients/${id}/wearables/junction/refresh`, {
+        method: 'POST',
+      }),
+    // The response already IS the refreshed card, so it seeds the cache and
+    // only the neighbours are refetched.
+    onSuccess: (data) => {
+      qc.setQueryData(['patient', id, 'wearables'], data)
+      for (const filter of wearableFilters(id).slice(1)) qc.invalidateQueries(filter)
+    },
+  })
+}
+
+export function useCreateJunctionLink(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<JunctionLink>(`/api/patients/${id}/wearables/junction/link`, { method: 'POST' }),
+    onSuccess: () => {
+      for (const filter of wearableFilters(id)) qc.invalidateQueries(filter)
+    },
+  })
+}
+
+export function useJunctionBackfill(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (options: { refresh: boolean }) =>
+      fetchJson<JunctionBackfill>(`/api/patients/${id}/wearables/junction/backfill`, {
+        method: 'POST',
+        body: JSON.stringify(options),
+      }),
+    // a back-fill that landed rows recomputed the patient server-side, so the
+    // same caches a Refresh analysis moves are stale — recomputeKeys' prefix
+    // on ['patient', id] deliberately sweeps the metric cards up too
+    onSuccess: () => {
+      for (const filter of wearableFilters(id)) qc.invalidateQueries(filter)
+      for (const queryKey of recomputeKeys(id)) qc.invalidateQueries({ queryKey })
+    },
+  })
+}
+
+export function useDisconnectJunction(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<{ ok: boolean; remote: string; connection: WearableConnection }>(
+        `/api/patients/${id}/wearables/junction`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: () => {
+      for (const filter of wearableFilters(id)) qc.invalidateQueries(filter)
+    },
   })
 }
 

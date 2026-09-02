@@ -139,13 +139,124 @@ export interface AppNotification {
   created_at: string
 }
 
+export type ProviderStatus =
+  | 'mock_connected' // the demo source
+  | 'live' // the aggregator, with an API key configured
+  | 'needs_setup' // the aggregator, without one
+  | 'via_junction' // a brand patients link from Junction's hosted page
+  | 'needs_app' // a brand only reachable through Junction's mobile SDK
+  | 'coming_soon'
+
 export interface IntegrationProvider {
   key: string
   name: string
-  status: 'mock_connected' | 'coming_soon'
+  status: ProviderStatus
+  junction_slug: string | null
   capabilities: string[]
   connected_patients: number
   gait_capable: boolean
+}
+
+export interface AggregatorStatus {
+  key: string
+  name: string
+  configured: boolean
+  environment: string
+  region: string
+  base_url: string | null
+  webhook_secret_configured: boolean
+  webhook_path: string
+  link_redirect_url: string | null
+  heart_rate_samples: boolean
+  connections: {
+    total: number
+    linked: number
+    pending: number
+    error: number
+    disconnected: number
+  }
+  last_delivery_at: string | null
+  last_processed_at: string | null
+}
+
+export interface IntegrationsResponse {
+  providers: IntegrationProvider[]
+  aggregator: AggregatorStatus
+}
+
+export interface JunctionEvent {
+  id: number
+  received_at: string | null
+  event_type: string | null
+  status: string
+  signature_valid: boolean
+  error: string | null
+}
+
+export interface JunctionStatus extends AggregatorStatus {
+  recent_events: JunctionEvent[]
+}
+
+export interface ConnectedProvider {
+  slug: string
+  name: string
+  status: string
+  connected_at: string | null
+  error: string | null
+}
+
+export type ConnectionStatus = 'pending_link' | 'linked' | 'error' | 'disconnected'
+
+export interface WearableConnection {
+  status: ConnectionStatus
+  environment: string
+  external_user_id: string
+  providers: ConnectedProvider[]
+  created_at: string | null
+  last_link_issued_at: string | null
+  last_event_at: string | null
+  last_data_at: string | null
+  last_backfill_at: string | null
+  last_error: string | null
+}
+
+export interface WearableDevice {
+  id: string
+  provider: string
+  model: string
+  status: string
+  connected_at: string | null
+  last_sync_at: string | null
+  via_junction: boolean
+}
+
+export interface PatientWearables {
+  patient_id: string
+  aggregator: { configured: boolean; environment: string }
+  connection: WearableConnection | null
+  devices: WearableDevice[]
+  refresh_error: string | null
+}
+
+export interface JunctionLink {
+  link_url: string
+  expires_at: string | null
+  connection: WearableConnection
+}
+
+export interface JunctionBackfill {
+  ok: boolean
+  start: string | null
+  end: string | null
+  resources: string[]
+  skipped_resources: string[]
+  complete: boolean
+  ingested: number
+  updated: number
+  duplicates: number
+  skipped_out_of_window: number
+  dropped_implausible: number
+  connection: WearableConnection
 }
 
 export interface NotificationPreference {

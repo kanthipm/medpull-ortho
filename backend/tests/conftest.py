@@ -18,6 +18,16 @@ atexit.register(shutil.rmtree, _TMP, ignore_errors=True)
 os.environ["DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
 os.environ["GROQ_API_KEY"] = ""  # force the deterministic fallback everywhere
 os.environ["OLLAMA_URL"] = ""  # never let a locally running Ollama into the tests
+# The suite's baseline is "Junction not configured"; a developer who followed
+# the README and put a key in .env must still get a green run, and no test
+# may ever reach a real Junction host.
+os.environ["JUNCTION_API_KEY"] = ""
+os.environ["JUNCTION_WEBHOOK_SECRET"] = ""
+os.environ["JUNCTION_ENVIRONMENT"] = "sandbox"
+os.environ["JUNCTION_REGION"] = "us"
+os.environ["JUNCTION_BASE_URL"] = ""
+os.environ["JUNCTION_LINK_REDIRECT_URL"] = ""
+os.environ["JUNCTION_INGEST_HEART_RATE_SAMPLES"] = "false"
 
 from datetime import date  # noqa: E402
 

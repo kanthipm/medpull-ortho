@@ -34,6 +34,37 @@ Parameters:
     Type: String
     Default: llama-3.3-70b-versatile
 
+  JunctionApiKeyParameter:
+    Type: String
+    Default: /recovery-copilot/junction-api-key
+    Description: >-
+      SSM Parameter Store name (SecureString) holding the Junction API key.
+      deploy.sh writes it when JUNCTION_API_KEY is set; with the parameter
+      absent the connector stays idle and the console says "Needs setup".
+  JunctionWebhookSecretParameter:
+    Type: String
+    Default: /recovery-copilot/junction-webhook-secret
+    Description: >-
+      SSM Parameter Store name (SecureString) holding the Svix signing secret
+      Junction shows when the webhook endpoint is registered. Without it every
+      Junction delivery is rejected with a 401 (verification fails closed).
+  JunctionEnvironment:
+    Type: String
+    Default: sandbox
+    AllowedValues: [sandbox, production]
+    Description: Which Junction environment the API key belongs to.
+  JunctionRegion:
+    Type: String
+    Default: us
+    AllowedValues: [us, eu]
+    Description: Which Junction region the team lives in.
+  JunctionLinkRedirectUrl:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional. Where Junction Link sends a patient after connecting a device.
+      Blank leaves them on Junction's own completion screen.
+
   LambdaMemoryMB:
     Type: Number
     Default: 1024
@@ -178,7 +209,10 @@ Resources:
                 Resource: !GetAtt DataBucket.Arn
               - Effect: Allow
                 Action: ssm:GetParameter
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GroqApiKeyParameter}"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GroqApiKeyParameter}"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JunctionApiKeyParameter}"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JunctionWebhookSecretParameter}"
               - Effect: Allow
                 # Decrypting a SecureString written under the AWS-managed
                 # aws/ssm key, and only through SSM.
@@ -240,6 +274,13 @@ Resources:
           ORIGIN_VERIFY_SECRET: !Ref OriginVerifySecret
           GROQ_API_KEY_PARAMETER: !Ref GroqApiKeyParameter
           GROQ_MODEL: !Ref GroqModel
+          # Junction: the two secrets come from Parameter Store at cold start
+          # (app/aws/secrets.py); the rest is plain configuration.
+          JUNCTION_API_KEY_PARAMETER: !Ref JunctionApiKeyParameter
+          JUNCTION_WEBHOOK_SECRET_PARAMETER: !Ref JunctionWebhookSecretParameter
+          JUNCTION_ENVIRONMENT: !Ref JunctionEnvironment
+          JUNCTION_REGION: !Ref JunctionRegion
+          JUNCTION_LINK_REDIRECT_URL: !Ref JunctionLinkRedirectUrl
           # No local model on Lambda: the chain is Groq -> deterministic.
           OLLAMA_URL: ""
           # The warmer is a laptop convenience; on Lambda it would re-run every
@@ -271,6 +312,13 @@ Resources:
           S3_LOCK_KEY: db/recovery.db.lock
           GROQ_API_KEY_PARAMETER: !Ref GroqApiKeyParameter
           GROQ_MODEL: !Ref GroqModel
+          # The seed never calls Junction, but it shares the handler's cold
+          # start, which reads every configured parameter; keep them
+          # consistent so a seed run cannot log a spurious lookup failure.
+          JUNCTION_API_KEY_PARAMETER: !Ref JunctionApiKeyParameter
+          JUNCTION_WEBHOOK_SECRET_PARAMETER: !Ref JunctionWebhookSecretParameter
+          JUNCTION_ENVIRONMENT: !Ref JunctionEnvironment
+          JUNCTION_REGION: !Ref JunctionRegion
           OLLAMA_URL: ""
           WARM_CACHES_ON_STARTUP: "false"
           # The seed holds the write lock for its whole run, so the TTL has to

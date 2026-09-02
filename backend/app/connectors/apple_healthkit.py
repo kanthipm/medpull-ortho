@@ -9,7 +9,10 @@ lower-limb recovery.
 Hard constraints (why this cannot be a pure server-side connector):
 - HealthKit is an ON-DEVICE store. There is no server pull API: a companion
   iOS app (or the aggregator's iOS SDK embedded in the MedPull patient app)
-  must read HealthKit locally and push to our ingestion endpoint.
+  must read HealthKit locally and push to our ingestion endpoint. Junction's
+  ``apple_health_kit`` provider is exactly that SDK path, which is why the
+  Junction connector lists Apple Health as needing the companion app rather
+  than as linkable from the hosted widget.
 - Background delivery is throttled by iOS — data arrives in batches, not
   real-time. Design for late, out-of-order back-fill (ingest.py already
   upserts idempotently by dedupe_key).
@@ -25,11 +28,21 @@ The push path when implemented: the iOS app POSTs batches to
 maps HKQuantityType identifiers onto MetricType.
 """
 
-from datetime import date
-from typing import Any
+from __future__ import annotations
 
-from app.connectors.base import CanonicalObservation, OAuthResult, WearableConnector
+from datetime import date
+from typing import TYPE_CHECKING, Any
+
+from app.connectors.base import (
+    CanonicalObservation,
+    OAuthResult,
+    PatientContext,
+    WearableConnector,
+)
 from app.models.enums import MetricType, SourceProvider
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 _MSG = (
     "AppleHealthKitConnector requires the companion iOS app path — HealthKit "
@@ -40,10 +53,12 @@ _MSG = (
 class AppleHealthKitConnector(WearableConnector):
     provider = SourceProvider.APPLE
 
-    def authorize(self, patient_id: str) -> str:
+    def authorize(self, db: Session, patient_id: str) -> str:
         raise NotImplementedError(_MSG)
 
-    def handle_oauth_callback(self, patient_id: str, params: dict[str, Any]) -> OAuthResult:
+    def handle_oauth_callback(
+        self, db: Session, patient_id: str, params: dict[str, Any]
+    ) -> OAuthResult:
         raise NotImplementedError(_MSG)
 
     def register_webhook(self, callback_url: str) -> bool:
@@ -51,6 +66,7 @@ class AppleHealthKitConnector(WearableConnector):
 
     def fetch_historical(
         self,
+        db: Session,
         patient_id: str,
         start: date,
         end: date,
@@ -58,5 +74,7 @@ class AppleHealthKitConnector(WearableConnector):
     ) -> list[CanonicalObservation]:
         raise NotImplementedError(_MSG)
 
-    def normalize(self, raw_payload: dict[str, Any]) -> list[CanonicalObservation]:
+    def normalize(
+        self, raw_payload: dict[str, Any], patient: PatientContext | None = None
+    ) -> list[CanonicalObservation]:
         raise NotImplementedError(_MSG)

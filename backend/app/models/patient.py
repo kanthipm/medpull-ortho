@@ -53,6 +53,8 @@ class Device(Base):
     device_model: Mapped[str] = mapped_column(String)  # "Apple Watch Series 10"
     connected_at: Mapped[datetime] = mapped_column(DateTime)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    status: Mapped[str] = mapped_column(String, default="connected")  # connected|stale|revoked
+    # connected | stale | error (the aggregator reported a terminal provider
+    # error, e.g. a revoked OAuth grant) | revoked (disconnected by an operator)
+    status: Mapped[str] = mapped_column(String, default="connected")
 
     patient: Mapped[Patient] = relationship(back_populates="devices")
