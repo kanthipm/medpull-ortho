@@ -468,6 +468,7 @@ def test_golden_tiers(db):
 
     expected = {
         "steve": RiskLevel.MISSING_DATA,
+        "guest": RiskLevel.MISSING_DATA,
         "priya": RiskLevel.MISSING_DATA,
         "linda": RiskLevel.MEDIUM,
         "robert": RiskLevel.MEDIUM,

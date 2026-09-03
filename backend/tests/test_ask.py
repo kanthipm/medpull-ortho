@@ -82,7 +82,7 @@ def test_ask_behind_schedule(db):
 
 def test_ask_missing_data(db):
     result = ask(db, "Anyone with device data gaps?")
-    assert result["patient_ids"] == ["priya", "steve"]
+    assert result["patient_ids"] == ["guest", "priya", "steve"]
 
 
 def test_ask_procedure_filter(db):

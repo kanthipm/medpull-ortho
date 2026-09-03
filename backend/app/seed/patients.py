@@ -57,9 +57,12 @@ def _spec(
 
 
 PATIENTS: list[PatientSpec] = [
-    # The one real patient: no synthetic device, observations, check-ins or
+    # The real patients: no synthetic device, observations, check-ins or
     # adherence history — data arrives only through the live Junction path.
+    # ("Guest" is a placeholder display name; age 45 is a decade-level guess.)
     _spec("steve", "Steve", 19, "M", ProcedureType.TKA,
+          "Total Knee Replacement (TKA)", 1, None, "", 1),
+    _spec("guest", "Guest", 45, "M", ProcedureType.TKA,
           "Total Knee Replacement (TKA)", 1, None, "", 1),
     _spec("linda", "Linda Park", 58, "F", ProcedureType.ROTATOR_CUFF,
           "Rotator Cuff Repair", 10, SourceProvider.FITBIT, "Fitbit Charge 6", 0),
