@@ -5,7 +5,6 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
-from app.llm import documentation as documentation_mod
 from app.llm import groq as groq_mod
 from app.llm import insights as insights_mod
 from app.llm import provider as provider_mod
@@ -57,21 +56,21 @@ def test_all_kinds_generate_valid_content(db):
         InsightKind.PATIENT_SUMMARY,
         InsightKind.SUGGESTED_ACTIONS,
     ):
-        insight = get_patient_insight(db, kind, "marcus")
+        insight = get_patient_insight(db, kind, "linda")
         assert insight.llm_provider == "fallback"
         assert insight.content
     briefing = get_daily_briefing(db)
-    assert "Marcus" in briefing.content["briefing"]
+    assert "Robert Hale" in briefing.content["briefing"]
 
 
 def test_summary_ends_with_guardrail(db):
-    for patient_id in ("marcus", "priya", "david"):
+    for patient_id in ("linda", "priya", "david"):
         insight = get_patient_insight(db, InsightKind.PATIENT_SUMMARY, patient_id)
         assert insight.content["summary"].endswith(GUARDRAIL_SENTENCE)
 
 
 def test_no_banned_phrases_anywhere(db):
-    for patient_id in ("marcus", "linda", "priya", "david"):
+    for patient_id in ("robert", "linda", "priya", "david"):
         for kind in (
             InsightKind.WORKLIST_REASON,
             InsightKind.PATIENT_SUMMARY,
@@ -84,8 +83,8 @@ def test_no_banned_phrases_anywhere(db):
 
 
 def test_cache_returns_same_row(db):
-    a = get_patient_insight(db, InsightKind.PATIENT_SUMMARY, "marcus")
-    b = get_patient_insight(db, InsightKind.PATIENT_SUMMARY, "marcus")
+    a = get_patient_insight(db, InsightKind.PATIENT_SUMMARY, "linda")
+    b = get_patient_insight(db, InsightKind.PATIENT_SUMMARY, "linda")
     assert a.id == b.id
 
 
@@ -104,7 +103,7 @@ def test_diagnostic_llm_output_is_rejected(db, monkeypatch):
 
 
 def test_worklist_reason_length_contract(db):
-    for patient_id in ("marcus", "linda", "sofia"):
+    for patient_id in ("robert", "linda", "sofia"):
         reason = get_patient_insight(db, InsightKind.WORKLIST_REASON, patient_id).content["reason"]
         assert 0 < len(reason) <= 90
 
@@ -180,22 +179,6 @@ def test_validate_rejects_off_contract_output():
     ) is None
 
 
-def test_document_validation_matches_the_insight_contract():
-    """RTM documents are billable and provider-signed, so they run the same
-    guardrail-append + banned-phrase scan as the narratives."""
-    ok = documentation_mod._validate({"title": "RTM encounter note — day 14", "body": LONG_BODY})
-    assert ok["body"].endswith(GUARDRAIL_SENTENCE)
-    assert documentation_mod._validate(
-        {"title": "t" * 90, "body": f"{LONG_BODY} {GUARDRAIL_SENTENCE}"}
-    ) == {"title": "t" * 60, "body": f"{LONG_BODY} {GUARDRAIL_SENTENCE}"}
-    assert documentation_mod._validate({"title": "", "body": LONG_BODY}) is None
-    assert documentation_mod._validate({"title": "RTM note", "body": "too short"}) is None
-    assert documentation_mod._validate({"body": LONG_BODY}) is None
-    assert documentation_mod._validate(
-        {"title": "RTM note", "body": f"We diagnosed an infection. {LONG_BODY}"}
-    ) is None
-
-
 def test_low_risk_reason_is_served_from_cache(db, groq_configured, monkeypatch):
     """A deliberate LLM skip must cache. It used to be keyed as though the LLM
     had produced it, so every read missed, re-rendered and INSERTed — eight new
@@ -220,10 +203,10 @@ def test_llm_backed_reason_is_generated_once_then_cached(db, groq_configured, mo
         insights_mod, "complete_json",
         lambda *a, **kw: calls.append(1) or {"reason": "Skin temp +0.4 · RHR +8 vs baseline"},
     )
-    first = get_patient_insight(db, InsightKind.WORKLIST_REASON, "marcus")
+    first = get_patient_insight(db, InsightKind.WORKLIST_REASON, "robert")
     assert first.llm_provider == "groq"
     assert first.content == {"reason": "Skin temp +0.4 · RHR +8 vs baseline"}
-    second = get_patient_insight(db, InsightKind.WORKLIST_REASON, "marcus")
+    second = get_patient_insight(db, InsightKind.WORKLIST_REASON, "robert")
     assert second.id == first.id
     assert len(calls) == 1
 
@@ -238,7 +221,7 @@ def test_repeated_invalid_output_degrades_like_an_outage(db, groq_configured, mo
         lambda *a, **kw: calls.append(1) or {"reason": "x" * 200},  # over the 110-char cap
     )
     monkeypatch.setattr(insights_mod, "PROMPT_VERSION", "storm-test")
-    patient_ids = ["aisha", "linda", "marcus", "priya", "robert", "sofia"]
+    patient_ids = ["aisha", "linda", "steve", "priya", "robert", "sofia"]
     for patient_id in patient_ids:
         insight = get_patient_insight(db, InsightKind.WORKLIST_REASON, patient_id)
         assert insight.llm_provider == "fallback"
@@ -258,7 +241,7 @@ def test_an_accepted_answer_clears_the_rejection_streak(db, groq_configured, mon
                {"reason": "x" * 200}, {"reason": "x" * 200}]
     monkeypatch.setattr(insights_mod, "complete_json", lambda *a, **kw: replies.pop(0))
     monkeypatch.setattr(insights_mod, "PROMPT_VERSION", "streak-test")
-    for patient_id in ("aisha", "linda", "marcus", "sofia"):
+    for patient_id in ("aisha", "linda", "robert", "sofia"):
         get_patient_insight(db, InsightKind.WORKLIST_REASON, patient_id)
     assert replies == []  # all four calls were made
     assert groq_configured.provider_name() == "groq"

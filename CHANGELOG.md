@@ -1,5 +1,28 @@
 # Changelog
 
+## [recovery-copilot 1.5.0] - 2026-09-03
+
+### Removed
+- **The RTM billing platform, entirely**: the compliance engine (`app/rtm/`),
+  monitoring windows and 16-of-30 day counting, enrollment state, provider
+  time logs and interaction records, AI encounter/monthly documentation
+  (`app/llm/documentation.py`), the `/api/patients/{id}/rtm*`,
+  `/api/practice/overview` and RTM action routes (call, schedule-followup,
+  update-plan), the readiness card, worklist monitoring chip and practice
+  overview strip, and the `qualifies_for_rtm` flag on observations. Assign
+  task / Message / Escalate remain and no longer log interactions or time.
+
+### Changed
+- **The roster now carries a real patient**: `steve` (the operator) replaces
+  the synthetic Marcus Reyes. A real patient has no seeded device,
+  observations, check-ins, adherence history or scenario — data arrives only
+  through the live Junction integration — and seeds as `missing_data` until a
+  wearable connects. Robert Hale is now the roster's highest-priority
+  seeded case; no seeded patient reaches the high tier.
+- Tests re-pointed accordingly (269 → 237 collected): golden tiers, ask/draft
+  fallbacks, digest fixtures and engine baseline tests now anchor on the
+  surviving roster.
+
 ## [recovery-copilot 1.4.0] - 2026-09-01
 
 ### Added

@@ -154,13 +154,13 @@ def test_an_unknown_api_path_404s_instead_of_serving_the_shell(client):
     from the outside — the reason app/api/__init__.py no longer swallows
     ImportError — so the namespace has to 404 rather than fall through.
     """
-    response = client.get("/api/practice-overview")  # the real one is /api/practice/overview
+    response = client.get("/api/practice-overview")  # not a route; must 404
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("application/json")
 
-    # The real route still answers, and a client deep link still gets the shell.
-    assert client.get("/api/practice/overview").status_code == 200
-    spa = client.get("/patients/marcus")
+    # A real route still answers, and a client deep link still gets the shell.
+    assert client.get("/api/worklist").status_code == 200
+    spa = client.get("/patients/steve")
     assert spa.status_code == 200
     assert "text/html" in spa.headers["content-type"]
 

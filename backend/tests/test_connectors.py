@@ -212,7 +212,7 @@ def test_engine_ignores_tombstoned_observations(db):
 
 
 def test_engine_day_axis_is_the_materialized_local_date(db):
-    """The engine and the RTM day counter must agree on which day a reading is.
+    """Every reader must agree on which day a reading is.
 
     23:30 in Los Angeles is already the next calendar day in New York — the
     zone this row is stamped with — so start_time.date() and local_date name
@@ -309,18 +309,18 @@ def test_restatement_writes_granularity_through(db):
     assert row.revision == 1
 
 
-def test_restatement_cannot_promote_a_row_into_the_billable_set(db):
-    """rtm/coverage.py counts qualifies_for_rtm rows, so a redelivery over an
-    unsigned path must never be able to set it."""
-    first = _keyed("rtm-guard", Granularity.DAILY_SUMMARY, 10.0)
-    second = _keyed("rtm-guard", Granularity.DAILY_SUMMARY, 11.0, qualifies_for_rtm=True)
+def test_restatement_cannot_flip_provenance(db):
+    """is_patient_reported is provenance, decided once at insert, so a
+    redelivery over an unsigned path must never be able to set it."""
+    first = _keyed("prov-guard", Granularity.DAILY_SUMMARY, 10.0)
+    second = _keyed("prov-guard", Granularity.DAILY_SUMMARY, 11.0, is_patient_reported=True)
 
     assert ingest_observations(db, [first]) == (1, 0, 0)
     assert ingest_observations(db, [second]) == (0, 1, 0)
 
     row = db.scalar(select(Observation).where(Observation.dedupe_key == first.dedupe_key))
     assert row.value_num == 11.0  # the measurement is restated
-    assert row.qualifies_for_rtm is False  # the billing flag is not
+    assert row.is_patient_reported is False  # the provenance flag is not
 
 
 def test_registry_shape():

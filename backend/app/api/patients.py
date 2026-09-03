@@ -30,8 +30,6 @@ def _get_patient(db: Session, patient_id: str) -> Patient:
 @router.get("/{patient_id}")
 def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
     from app.llm.insights import get_patient_insight
-    from app.models.rtm import EnrollmentStatus
-    from app.rtm.coverage import get_current
 
     patient = _get_patient(db, patient_id)
     assessment = ensure_fresh_assessment(db, patient_id)
@@ -49,8 +47,6 @@ def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
     # Patient.devices is ordered newest-connected-first, so an upgraded watch
     # wins over the row that happened to be written first.
     device = patient.devices[0] if patient.devices else None
-    rtm = get_current(db, patient_id)
-    enrollment = db.get(EnrollmentStatus, patient_id)
 
     return {
         "id": patient.id,
@@ -92,13 +88,6 @@ def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
             "provider": summary.llm_provider,
         },
         "actions": actions.content.get("actions", []),
-        "rtm": {
-            "days_with_data": rtm.days_with_data if rtm else 0,
-            "window_days": 30,
-            "target": 16,
-            "qualifies": bool(rtm.qualifies_16_of_30) if rtm else False,
-            "enrolled": bool(enrollment and enrollment.complete),
-        },
         "last_checkin_at": last_checkin.isoformat() if last_checkin else None,
     }
 
@@ -276,10 +265,7 @@ def assign_task(patient_id: str, body: AssignTaskBody, db: Session = Depends(get
     only, and nothing in the product writes one — there is no patient app and no
     completion endpoint — so this task cannot move the adherence rate. The
     status says so rather than letting the caller infer follow-through."""
-    from app.api.rtm import _log
-    from app.models.enums import InteractionKind, TimeLogActivity
-
-    patient = _get_patient(db, patient_id)
+    _get_patient(db, patient_id)
     title = body.title.strip()
     if not title:
         raise HTTPException(status_code=422, detail="Task title is required")
@@ -290,10 +276,6 @@ def assign_task(patient_id: str, body: AssignTaskBody, db: Session = Depends(get
         verified_by="self-report",
     )
     db.add(task)
-    _log(
-        db, patient, InteractionKind.ASSIGN_TASK, f"Task assigned: {title}",
-        TimeLogActivity.CARE_COORDINATION, seconds=60,
-    )
     db.commit()
     return {
         "ok": True,
@@ -306,18 +288,11 @@ def assign_task(patient_id: str, body: AssignTaskBody, db: Session = Depends(get
 def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(get_db)) -> dict:
     """Stub channel — queues intent only. Real delivery arrives with the SMS
     integration; the UI is honest about that."""
-    from app.api.rtm import _log
-    from app.models.enums import InteractionKind, TimeLogActivity
-
     patient = _get_patient(db, patient_id)
     text = body.text.strip()
     if not text:
         raise HTTPException(status_code=422, detail="Message text is required")
     logger.info("Message stub -> %s: %s", patient.id, text[:120])
-    _log(
-        db, patient, InteractionKind.MESSAGE, f"Message queued: {text[:120]}",
-        TimeLogActivity.MESSAGING, seconds=120,
-    )
     db.commit()
     return {"status": "queued_stub"}
 
@@ -337,9 +312,7 @@ def draft_message(patient_id: str, db: Session = Depends(get_db)) -> dict:
 
 @router.post("/{patient_id}/actions/escalate")
 def escalate(patient_id: str, db: Session = Depends(get_db)) -> dict:
-    from app.api.rtm import _log
     from app.engine.pipeline import latest_assessment
-    from app.models.enums import InteractionKind, TimeLogActivity
 
     patient = _get_patient(db, patient_id)
     assessment = latest_assessment(db, patient_id)
@@ -357,9 +330,5 @@ def escalate(patient_id: str, db: Session = Depends(get_db)) -> dict:
         channel=NotificationChannel.IN_APP,
     )
     db.add(notification)
-    _log(
-        db, patient, InteractionKind.ESCALATE, f"Escalated: {top_reason}",
-        TimeLogActivity.CARE_COORDINATION, seconds=120,
-    )
     db.commit()
     return {"ok": True}

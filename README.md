@@ -10,14 +10,15 @@ progressive disclosure. Every LLM narrative is validated in code before it can
 reach a screen: diagnostic language (`detect…`/`diagnos…`) is rejected outright
 and the deterministic renderer takes its place. The product guardrail sentence,
 *monitoring signals for clinician review, not a diagnosis*, is appended in code
-to the patient recovery summary and to RTM document bodies, and stands as a
+to the patient recovery summary, and stands as a
 footnote on the worklist and the patient page. The short-form narratives
 (worklist reasons, suggested actions, the daily briefing, Ask answers, drafts)
 get the validation but not the sentence.
 
-Product direction: **[SPEC.md](SPEC.md)** — the P1 Remote Therapeutic
-Monitoring (RTM) spec that this console is the foundation for. Read its
-implementation-status table before treating any section of it as shipped.
+Product direction: **[SPEC.md](SPEC.md)**. Read its implementation-status
+table before treating any section of it as shipped; the RTM billing platform
+it describes was built and then removed from this codebase (see CHANGELOG
+1.5.0), so its RTM sections are direction, not description.
 
 ## Quickstart
 
@@ -38,7 +39,7 @@ make build && make run     # everything on http://localhost:8000
 `make test` runs the backend suite (269 tests: seed determinism, engine golden
 tiers, baseline stability, guardrail enforcement, API contracts, connector
 idempotency and ingest bounds, the Junction connector end to end against a
-fake Junction, RTM billing gates, LLM deadline and cooldown behaviour,
+fake Junction, LLM deadline and cooldown behaviour,
 static-file containment, AWS persistence). There are no frontend tests. `make lint` runs ESLint over the frontend and ruff over the backend.
 
 ## Deploying
@@ -121,7 +122,7 @@ the database once instead).
   analytics and their own check-in words; always editable, never auto-sent.
 
 Which of these carry a provenance label on screen, exactly: the recovery
-summary, the daily briefing, Ask answers and RTM documents each show an eyebrow
+summary, the daily briefing and Ask answers each show an eyebrow
 reading "AI …" or "Rules-based …" from the row's `llm_provider`. The draft
 returns that field but does not render it, so a deterministic draft still sits
 under an "AI drafts are editable" note. Worklist reasons and suggested actions
@@ -165,8 +166,8 @@ are always deterministic.
   signals), plus Integrations and Notification settings.
 
   - **Care actions** — Assign task, Message, and Escalate live in a glass
-    action bar on every patient record. Each one logs an RTM interaction and
-    provider time. A task is saved to the patient's plan and nothing more:
+    action bar on every patient record. A task is saved to the patient's plan
+    and nothing more:
     there is no patient-facing surface and no completion tracking, so it cannot
     move the adherence rate, and the endpoint returns `assigned_untracked` so
     the UI does not imply follow-through. Message records intent only (no queue
@@ -187,8 +188,7 @@ are always deterministic.
 Two layers, deliberately separated:
 
 1. **Deterministic analytics** (`app/engine/`) — every number on screen is
-   computed here (or, for the billing figures, in the equally deterministic
-   `app/rtm/`). No number is ever produced by a model.
+   computed here. No number is ever produced by a model.
    - **Vitals** are judged against the patient's own pre-op baseline (EWMA
      control charts + CUSUM drift). That baseline is established once, from the
      record at the time, and then held (`engine/baseline_store.py`): data that
@@ -226,8 +226,8 @@ Two layers, deliberately separated:
 2. **Narrative layer** (`app/llm/`) — turns the analytics bundle + check-in
    transcripts into the worklist reason, patient summary, suggested actions,
    and roster briefing. Strict JSON contracts, banned-phrase validation
-   (`detect…`/`diagnos…`), guardrail-sentence enforcement on the summary and on
-   RTM documents, and caching by input hash, so nothing is regenerated until
+   (`detect…`/`diagnos…`), guardrail-sentence enforcement on the summary,
+   and caching by input hash, so nothing is regenerated until
    the data, the tier, the transcript, the prompt version or the provider
    changes.
 
@@ -313,10 +313,8 @@ month-granular ingestion floor — never the surgery date to the day.
   only make Junction retry a delivery that can never become acceptable. The
   demo `mock` endpoint keeps the loud all-or-nothing 422, where an odd date is
   a caller bug.
-- Every Junction row qualifies for RTM day-counting except data a person typed
-  into a health app by hand (Junction's `manual` provider), which is stored as
-  patient-reported. Whether consumer wearables satisfy CMS's device
-  requirement is a billing question this code does not decide.
+- Data a person typed into a health app by hand (Junction's `manual`
+  provider) is stored as patient-reported; everything else is device-sourced.
 
 **The seams underneath are unchanged and shared with the demo source:**
 
@@ -352,72 +350,18 @@ per the review: Human API (absorbed into LexisNexis), Metriport (exited
 wearables), Google Fit (shut down; Junction owns the Fitbit → Google Health
 migration as the same device epoch).
 
-### RTM platform (P1)
+### RTM platform — removed
 
-The **[SPEC.md](SPEC.md)** P1 *provider-side* workflows are implemented end to
-end. The patient-side half of the spec (conversational enrollment and daily
-check-ins) is not built; SPEC.md's status table says which is which.
-
-- **Compliance engine** (`app/rtm/readiness.py`) — deterministic, never the
-  LLM: enrollment (CPT 98975), monitoring-day thresholds (98985/98977 via
-  `app/rtm/coverage.py`'s 16-of-30 window), treatment-management time +
-  live-interaction requirements (98979/98980/98981), per-CPT billing
-  eligibility, a suggested next action, and an automatic **Ready to Bill**
-  state. Every gate measures the same rolling 30-day window, floored at the
-  patient's enrollment, so work done before RTM started is never billable and no
-  gate flips at midnight on the 1st while its neighbour holds. (Minutes and
-  documentation are floored at the enrolling instant; monitoring days at the
-  enrollment date, because a monitoring day is a calendar day.)
-  98975 is offered for the 30 days following enrollment and never again.
-  Known limitation, documented in the module rather than hidden: 98980/98981
-  are defined per calendar month, and a rolling window is not the same thing,
-  so a practice billing off this card at each month end could claim one
-  accrual twice. Closing that needs a record of what has actually been claimed,
-  which a card recomputed per request cannot infer; the card reports the window
-  it measured so the same accrual is recognisable as the same accrual.
-- **Treatment management** — Call / Follow-up / Update plan join the action
-  bar; every action auto-logs an interaction and treatment-management time,
-  and time on a patient record is quietly tracked as chart review.
-- **AI documentation** (`app/llm/documentation.py`) — encounter notes and
-  monthly RTM summaries (two of the five document types SPEC.md §7 lists),
-  drafted by the LLM under the same validation + deterministic-fallback
-  discipline as insights; providers review and approve, and approved documents
-  are never regenerated. The "monthly" summary is titled with the calendar month
-  but its numbers cover the window the billing ladder actually scores: a rolling
-  30 days, floored at the patient's enrollment, read from the same function, so
-  a signed note cannot claim minutes the ladder did not count.
-- **UI** — an RTM readiness card on every patient page (monitoring progress,
-  enrollment checklist, billing chips, documentation behind a disclosure), a
-  monitoring-days chip per worklist row, and a five-number practice overview
-  strip (patients, high risk, ready to bill, adherence, estimated revenue),
-  every number of it read from `GET /api/practice/overview` and the revenue
-  figure labelled "demo rates".
-
-## Demo roster
-
-Seeded deterministically (`app/seed/`): 10 patients across 7 orthopedic
-procedures. Marcus Reyes (TKA day 8) carries a possible-infection signal
-pattern — coupled RHR/temperature rise, falling HRV, activity collapse — that
-exercises every part of the engine, including the high-priority notification
-path. Priya Nair's barely-worn watch exercises the missing-data gate.
-
-Demo webhook (full ingestion path against the seeded DB). Dates are bounded per
-patient, so use a recent one; the seed is generated relative to the day it ran:
-
-```bash
-curl -X POST localhost:8000/api/webhooks/wearables/mock \
-  -H 'Content-Type: application/json' \
-  -d "{\"patient_id\":\"james\",\"records\":[{\"metric_type\":\"steps\",\"date\":\"$(date +%F)\",\"value\":9100,\"unit\":\"count\"}]}"
-```
-
-A date outside the patient's ingestible window, or a physiologically impossible
-value, comes back 422 with the bounds in the message and is recorded as a
-failed webhook event.
+The P1 Remote Therapeutic Monitoring platform (enrollment/billing compliance
+engine, treatment-management time logging, AI encounter documentation, the
+readiness card and practice overview strip) was built here and later removed
+in 1.5.0. SPEC.md still describes it as product direction. The git history
+holds the implementation.
 
 ## Not in v1
 
 - **Auth.** Deliberately open for demos. Every API route is unauthenticated,
-  write paths included (RTM time, document approval, escalations, the demo
+  write paths included (escalations, the demo
   webhook, and now the Junction lifecycle: whoever can reach the console can
   issue a Junction Link for any patient, trigger a back-fill, or disconnect
   an account). The Junction *webhook* is the exception — it is verified

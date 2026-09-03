@@ -34,8 +34,8 @@ class SourceProvider(StrEnum):
     GOOGLE_HEALTH = "google_health"
     # Samsung wearables are reachable only through Health Connect on-device.
     HEALTH_CONNECT = "health_connect"
-    # The RTM-qualifying streams: pain/ROM/HEP adherence are patient-reported,
-    # in-clinic 6MWT/goniometry are clinician-entered.
+    # Pain/ROM/HEP adherence are patient-reported, in-clinic 6MWT/goniometry
+    # are clinician-entered.
     PATIENT_REPORTED = "patient_reported"
     CLINICIAN_ENTERED = "clinician_entered"
 
@@ -78,12 +78,11 @@ class MetricType(StrEnum):
     # personal baseline (can be negative); WHOOP/Withings are ABSOLUTE degC.
     # SKIN_TEMP keeps the absolute convention; deltas land here.
     SKIN_TEMP_DELTA = "skin_temp_delta"
-    # Distinguishes "not worn" from "worn 40 minutes" from "not synced", and is
-    # the evidence an RTM auditor asks for on each qualifying day. Declared
-    # ahead of its use: no connector emits it, and engine/confidence.py gates on
-    # KEY_METRICS coverage instead, which does not include it.
+    # Distinguishes "not worn" from "worn 40 minutes" from "not synced".
+    # Declared ahead of its use: no connector emits it, and engine/confidence.py
+    # gates on KEY_METRICS coverage instead, which does not include it.
     WEAR_TIME_MINUTES = "wear_time_minutes"
-    # --- The RTM-qualifying patient-reported stream (SPEC.md §2, unbuilt) ---
+    # --- The patient-reported stream (SPEC.md §2, unbuilt) ---
     # Declared so the vocabulary is settled, but nothing produces or consumes
     # these yet: there is no patient-facing capture path and the engine analyzes
     # device metrics only (engine/pipeline.py ANALYZED_METRICS).
@@ -137,33 +136,6 @@ class InsightKind(StrEnum):
     SUGGESTED_ACTIONS = "suggested_actions"
     DAILY_BRIEFING = "daily_briefing"
     ASK = "ask"  # roster-level natural-language Q&A (cached per question)
-
-
-class TimeLogActivity(StrEnum):
-    CHART_REVIEW = "chart_review"
-    MESSAGING = "messaging"
-    CALL = "call"
-    DOCUMENTATION = "documentation"
-    CARE_COORDINATION = "care_coordination"
-
-
-class InteractionKind(StrEnum):
-    MESSAGE = "message"
-    CALL = "call"
-    SCHEDULE_FOLLOWUP = "schedule_followup"
-    ESCALATE = "escalate"
-    UPDATE_PLAN = "update_plan"
-    ASSIGN_TASK = "assign_task"
-
-
-class DocumentKind(StrEnum):
-    ENCOUNTER_NOTE = "encounter_note"
-    MONTHLY_SUMMARY = "monthly_summary"
-
-
-class DocumentStatus(StrEnum):
-    DRAFT = "draft"
-    APPROVED = "approved"
 
 
 class NotificationChannel(StrEnum):

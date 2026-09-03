@@ -10,17 +10,29 @@ def _messages(patient_id: str, index: int) -> list[dict]:
     return [{"who": who, "text": text} for who, text in msgs]
 
 
+FEVER_CHECKIN = [
+        {"who": "copilot", "text": "Good morning. Checking in — how are you feeling?"},
+        {"who": "patient", "text": "Honestly, worse. My pain has gotten worse and I felt feverish last night."},
+        {"who": "copilot", "text": "I'm sorry you're feeling worse. Did you take your temperature?"},
+        {"who": "patient", "text": "I didn't have a thermometer handy, but I was sweating and had chills."},
+        {"who": "copilot", "text": "Understood. Is the knee still warm and swollen today?"},
+        {"who": "patient", "text": "Yes, it's warm to the touch and pretty swollen."},
+        {"who": "copilot", "text": "Thank you for telling me. If you develop severe pain or a fever, call the clinic right away."},
+        {"who": "patient", "text": "Okay, I will."},
+    ]
+
+
 def test_acknowledgment_never_wins():
-    """Marcus's latest check-in ends with 'Okay, I will.' — the digest must
-    quote his symptom report instead."""
-    d = digest(_messages("marcus", -1))
+    """A check-in that ends with 'Okay, I will.' — the digest must quote the
+    symptom report instead."""
+    d = digest(FEVER_CHECKIN)
     assert d["highlight"] is not None
     assert "okay" not in d["highlight"].lower()
     assert "worse" in d["highlight"].lower() or "feverish" in d["highlight"].lower()
 
 
-def test_marcus_topics_and_tone():
-    d = digest(_messages("marcus", -1))
+def test_symptom_topics_and_tone():
+    d = digest(FEVER_CHECKIN)
     assert "Pain" in d["topics"]
     assert "Fever/chills" in d["topics"]
     assert d["tone"] == "worse"
@@ -57,7 +69,7 @@ def test_empty_and_ack_only():
 
 
 def test_api_includes_digest(client):
-    body = client.get("/api/patients/marcus/checkins").json()
+    body = client.get("/api/patients/linda/checkins").json()
     latest = body["checkins"][0]
     assert "digest" in latest
     assert latest["digest"]["highlight"] is not None

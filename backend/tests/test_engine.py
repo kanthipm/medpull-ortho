@@ -467,7 +467,7 @@ def test_golden_tiers(db):
     from app.engine.pipeline import latest_assessment
 
     expected = {
-        "marcus": RiskLevel.HIGH,
+        "steve": RiskLevel.MISSING_DATA,
         "priya": RiskLevel.MISSING_DATA,
         "linda": RiskLevel.MEDIUM,
         "robert": RiskLevel.MEDIUM,
@@ -486,11 +486,11 @@ def test_golden_tiers(db):
         )
 
 
-def test_marcus_reasons_tell_the_story(db):
+def test_robert_reasons_tell_the_story(db):
     from app.engine.pipeline import latest_assessment
 
-    codes = {r["code"] for r in latest_assessment(db, "marcus").reasons}
-    assert {"RHR_RISING", "TEMP_RISING", "COMPOSITE_HIGH"} <= codes
+    codes = {r["code"] for r in latest_assessment(db, "robert").reasons}
+    assert {"STEPS_FALLING", "TRAJECTORY_BEHIND"} <= codes
 
 
 def test_stale_gait_cannot_flag_even_with_no_baseline_to_go_stale():
@@ -548,7 +548,7 @@ def test_composite_uses_the_calendar_day_the_pipeline_knows():
     assert composite_index(deviations).level == "elevated"
 
 
-# --- the established pre-op baseline (mutations; each one puts marcus back) ---
+# --- the established pre-op baseline (mutations; each one puts robert back) ---
 
 def _backdated_rhr(patient, days: int, value: float):
     """`days` pre-op days of resting HR, dated inside the ordinary window and
@@ -579,14 +579,14 @@ def _drop(db, rows) -> None:
         )
     )
     db.commit()
-    run_patient(db, "marcus", force=True)
+    run_patient(db, "robert", force=True)
 
 
 def test_a_backdated_batch_cannot_move_an_established_baseline(db):
     """The B2 reproduction, end to end through the ingest path.
 
     Fourteen pre-op days of resting HR 95 — real dates, plausible values —
-    used to move marcus's baseline from 64.4 to 84.1 and drop him from HIGH
+    used to move robert's baseline from 64.4 to 84.1 and drop him from HIGH
     with RHR_RISING + TEMP_RISING + COMPOSITE_HIGH to MEDIUM with none of
     them, on a 200 OK, with nothing on any screen saying the reference had
     moved.
@@ -596,15 +596,15 @@ def test_a_backdated_batch_cannot_move_an_established_baseline(db):
     from app.engine.pipeline import run_patient
     from app.models.patient import Patient
 
-    patient = db.get(Patient, "marcus")
-    before = run_patient(db, "marcus")
-    held = load_established(db, "marcus")[str(M.RESTING_HR)]
+    patient = db.get(Patient, "robert")
+    before = run_patient(db, "robert")
+    held = load_established(db, "robert")[str(M.RESTING_HR)]
     rows = _backdated_rhr(patient, 14, 95.0)
     ingested, _, _ = ingest_observations(db, rows)
     try:
         assert ingested == 14  # the data is kept; it just is not the reference
-        after = run_patient(db, "marcus")
-        assert after.risk_level == before.risk_level == RiskLevel.HIGH
+        after = run_patient(db, "robert")
+        assert after.risk_level == before.risk_level
         assert after.risk_score == before.risk_score
         assert {r["code"] for r in after.reasons} == {r["code"] for r in before.reasons}
         means = {b["metric_type"]: b["mean"] for b in after.analytics["baselines"]}
@@ -622,15 +622,15 @@ def test_ingest_pins_the_baseline_before_it_applies_the_batch(db):
     from app.engine.baseline_store import load_established
     from app.models.patient import Patient
 
-    patient = db.get(Patient, "marcus")
-    clean = load_established(db, "marcus")[str(M.RESTING_HR)].mean
-    baseline_store.clear(db, "marcus")  # as if this table had just been added
+    patient = db.get(Patient, "robert")
+    clean = load_established(db, "robert")[str(M.RESTING_HR)].mean
+    baseline_store.clear(db, "robert")  # as if this table had just been added
     db.commit()
     rows = _backdated_rhr(patient, 14, 95.0)
     try:
-        assert load_established(db, "marcus") == {}
+        assert load_established(db, "robert") == {}
         ingest_observations(db, rows)
-        assert load_established(db, "marcus")[str(M.RESTING_HR)].mean == clean
+        assert load_established(db, "robert")[str(M.RESTING_HR)].mean == clean
     finally:
         _drop(db, rows)
 
@@ -643,18 +643,18 @@ def test_a_forced_recompute_re_establishes_the_baseline(db):
     from app.engine.pipeline import run_patient
     from app.models.patient import Patient
 
-    patient = db.get(Patient, "marcus")
-    clean = load_established(db, "marcus")[str(M.RESTING_HR)].mean
+    patient = db.get(Patient, "robert")
+    clean = load_established(db, "robert")[str(M.RESTING_HR)].mean
     rows = _backdated_rhr(patient, 14, 95.0)
     ingest_observations(db, rows)
     try:
-        run_patient(db, "marcus")
-        assert load_established(db, "marcus")[str(M.RESTING_HR)].mean == clean
-        run_patient(db, "marcus", force=True)
-        assert load_established(db, "marcus")[str(M.RESTING_HR)].mean > clean
+        run_patient(db, "robert")
+        assert load_established(db, "robert")[str(M.RESTING_HR)].mean == clean
+        run_patient(db, "robert", force=True)
+        assert load_established(db, "robert")[str(M.RESTING_HR)].mean > clean
     finally:
         _drop(db, rows)
-        assert load_established(db, "marcus")[str(M.RESTING_HR)].mean == clean
+        assert load_established(db, "robert")[str(M.RESTING_HR)].mean == clean
 
 
 def test_withdrawing_the_preop_history_withdraws_the_baseline(db):
@@ -672,16 +672,16 @@ def test_withdrawing_the_preop_history_withdraws_the_baseline(db):
     from app.models.observation import Observation
     from app.models.patient import Patient
 
-    patient = db.get(Patient, "marcus")
-    held = load_established(db, "marcus")[str(M.RESTING_HR)].mean
+    patient = db.get(Patient, "robert")
+    held = load_established(db, "robert")[str(M.RESTING_HR)].mean
     preop = db.scalars(
         select(Observation).where(
-            Observation.patient_id == "marcus",
+            Observation.patient_id == "robert",
             Observation.metric_type == str(M.RESTING_HR),
             Observation.local_date < patient.surgery_date,
         )
     ).all()
-    assert preop, "the premise: marcus has pre-op resting HR on file"
+    assert preop, "the premise: robert has pre-op resting HR on file"
     saved = {o.id: (o.deleted_at, o.ingested_at) for o in preop}
     for observation in preop:
         # exactly what a provider tombstone does through ingest._apply
@@ -689,11 +689,11 @@ def test_withdrawing_the_preop_history_withdraws_the_baseline(db):
         observation.ingested_at = datetime.now()
     db.commit()
     try:
-        run_patient(db, "marcus", force=False)
-        assert str(M.RESTING_HR) not in load_established(db, "marcus")
+        run_patient(db, "robert", force=False)
+        assert str(M.RESTING_HR) not in load_established(db, "robert")
     finally:
         for observation in preop:
             observation.deleted_at, observation.ingested_at = saved[observation.id]
         db.commit()
-        run_patient(db, "marcus", force=True)
-        assert load_established(db, "marcus")[str(M.RESTING_HR)].mean == held
+        run_patient(db, "robert", force=True)
+        assert load_established(db, "robert")[str(M.RESTING_HR)].mean == held

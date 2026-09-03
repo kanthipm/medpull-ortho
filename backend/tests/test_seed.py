@@ -12,10 +12,10 @@ GAIT = {MetricType.WALKING_SPEED, MetricType.WALKING_ASYMMETRY_PCT, MetricType.D
 
 
 def test_generator_is_deterministic():
-    spec = get_spec("marcus")
+    spec = get_spec("linda")
     today = date.today()
-    a = generate_patient_observations(spec, get_scenario("marcus"), today)
-    b = generate_patient_observations(spec, get_scenario("marcus"), today)
+    a = generate_patient_observations(spec, get_scenario("linda"), today)
+    b = generate_patient_observations(spec, get_scenario("linda"), today)
     assert len(a) == len(b)
     assert [(o.dedupe_key, o.value_num) for o in a] == [(o.dedupe_key, o.value_num) for o in b]
 
@@ -46,18 +46,18 @@ def test_priya_has_sparse_coverage(db):
     assert days / total_days < 0.6
 
 
-def test_marcus_resting_hr_elevated_on_latest_day(db):
+def test_linda_sleep_depressed_on_latest_day(db):
     rows = db.execute(
         select(Observation.start_time, Observation.value_num)
         .where(
-            Observation.patient_id == "marcus",
-            Observation.metric_type == MetricType.RESTING_HR,
+            Observation.patient_id == "linda",
+            Observation.metric_type == MetricType.SLEEP_DURATION,
         )
         .order_by(Observation.start_time)
     ).all()
     pre_op = [v for t, v in rows[:10]]
     latest = rows[-1][1]
     baseline = sum(pre_op) / len(pre_op)
-    # nominal ramp is +8 bpm; allow for day-level noise in both the baseline
-    # window and the latest reading
-    assert latest >= baseline + 4.5
+    # nominal ramp multiplies sleep to 0.75x; allow for day-level noise in
+    # both the baseline window and the latest reading
+    assert latest <= baseline * 0.88

@@ -18,11 +18,6 @@ class TaskSpec:
 
 
 TASKS: dict[str, list[TaskSpec]] = {
-    "steve": [
-        TaskSpec("Walk 10 minutes, twice daily", "Restores knee motion and circulation", "step data"),
-        TaskSpec("Quad sets, 3 sets of 10", "Rebuilds thigh strength that guards the joint", "self-report"),
-        TaskSpec("Ice + elevate 20 minutes after exercise", "Controls swelling", "self-report"),
-    ],
     "linda": [
         TaskSpec("Pendulum swings, 3x daily", "Keeps the shoulder from stiffening", "self-report"),
         TaskSpec("Wear sling except during exercises", "Protects the repair while it heals", "self-report"),
@@ -65,7 +60,6 @@ TASKS: dict[str, list[TaskSpec]] = {
 
 # target completion rate per patient over the last 14 days
 RATES: dict[str, float] = {
-    "steve": 0.62,
     "linda": 0.78,
     "robert": 0.60,
     "sofia": 0.74,

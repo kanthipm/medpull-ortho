@@ -66,12 +66,6 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
     input_hash = compute_input_hash(db, patient_id)
     previous = latest_assessment(db, patient_id)
     if previous is not None and previous.input_hash == input_hash and not force:
-        # The assessment is current, but the RTM monitoring window is a second
-        # stored output of this function and it can be missing or stale on its
-        # own (an empty table, a window that ended yesterday). Nothing else
-        # writes it, so returning here without a look left every RTM surface
-        # agreeing on a count that no longer matched the observations.
-        _refresh_window(db, patient_id, date.today())
         return previous
 
     today = date.today()
@@ -186,48 +180,16 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
         except ImportError:
             pass
 
-    from app.rtm.coverage import update_window
-
-    update_window(db, patient_id, today)
     return assessment
 
 
 def ensure_current(db: Session, patient_id: str) -> RiskAssessment:
-    """The read path's staleness check — assessment AND monitoring window.
-
-    Every surface that renders a patient goes through here, so it owns both of
-    run_patient's stored outputs. Checking only the assessment left a real
-    hole: the input hash is fresh for the rest of the calendar day, so with a
-    monitoring window that was missing or ended yesterday, the worklist chip,
-    the patient page and the RTM card all agreed on a day count that no longer
-    matched the observations — consistent, and consistently wrong, with
-    nothing to make it self-heal until the observation set changed.
-    """
+    """The read path's staleness check: recompute only when observations
+    changed."""
     current = latest_assessment(db, patient_id)
     if current is None or current.input_hash != compute_input_hash(db, patient_id):
         return run_patient(db, patient_id)
-    _refresh_window(db, patient_id, date.today())
     return current
-
-
-def _refresh_window(db: Session, patient_id: str, today: date) -> None:
-    """Bring the RTM monitoring window up to today if it is not already.
-
-    One indexed read on the hot path; it writes only when the stored window is
-    missing or does not cover today, which is at most once per patient per day.
-    """
-    from app.rtm.coverage import WINDOW_DAYS, get_current, update_window
-
-    from datetime import timedelta
-
-    current = get_current(db, patient_id)
-    if (
-        current is not None
-        and current.window_end == today
-        and current.window_start == today - timedelta(days=WINDOW_DAYS - 1)
-    ):
-        return
-    update_window(db, patient_id, today)
 
 
 def run_all(db: Session, force: bool = False) -> list[RiskAssessment]:

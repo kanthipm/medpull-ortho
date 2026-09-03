@@ -12,9 +12,6 @@ import type {
   PatientDetail,
   PatientMetrics,
   PatientWearables,
-  PracticeOverview,
-  RtmDocument,
-  RtmReadiness,
   TimelineEvent,
   WearableConnection,
   WorklistResponse,
@@ -249,119 +246,15 @@ export function useEscalate(id: string) {
   })
 }
 
-export function useRtmStatus(id: string) {
-  return useQuery({
-    queryKey: ['patient', id, 'rtm'],
-    queryFn: () => fetchJson<RtmReadiness>(`/api/patients/${id}/rtm`),
-  })
-}
-
-export function useRtmDocuments(id: string, enabled = true) {
-  return useQuery({
-    queryKey: ['patient', id, 'rtm-documents'],
-    queryFn: () => fetchJson<{ documents: RtmDocument[] }>(`/api/patients/${id}/rtm/documents`),
-    enabled,
-  })
-}
-
-export function usePracticeOverview() {
-  return useQuery({
-    queryKey: ['practice-overview'],
-    queryFn: () => fetchJson<PracticeOverview>('/api/practice/overview'),
-  })
-}
-
-/** Caches an RTM write moves: the patient's own readiness card, and the
- *  practice strip, which sums every patient's minutes into ready-to-bill and
- *  estimated revenue. */
-export function rtmKeys(id: string): QueryKey[] {
-  return [
-    ['patient', id, 'rtm'],
-    ['practice-overview'],
-  ]
-}
-
 /** Caches a recompute moves: the patient record, its worklist row and the
- *  headline above it, the practice strip's needs-review count — which counts
- *  the same tier the headline does, so the two must move together — and the
- *  bell, since a recompute that flips a patient to high writes a notification
+ *  headline above it, and the bell, since a recompute that flips a patient to high writes a notification
  *  server-side. */
 export function recomputeKeys(id: string): QueryKey[] {
   return [
     ['patient', id],
     ['worklist'],
-    ['practice-overview'],
     ['notifications'],
   ]
-}
-
-function useRtmInvalidation(id: string) {
-  const qc = useQueryClient()
-  return () => {
-    for (const queryKey of rtmKeys(id)) qc.invalidateQueries({ queryKey })
-  }
-}
-
-export function useLogCall(id: string) {
-  const invalidate = useRtmInvalidation(id)
-  return useMutation({
-    mutationFn: (call: { minutes: number; note: string }) =>
-      fetchJson<{ ok: boolean; logged_minutes: number }>(`/api/patients/${id}/actions/call`, {
-        method: 'POST',
-        body: JSON.stringify(call),
-      }),
-    onSuccess: invalidate,
-  })
-}
-
-export function useScheduleFollowup(id: string) {
-  const invalidate = useRtmInvalidation(id)
-  return useMutation({
-    mutationFn: (followup: { when: string; note: string }) =>
-      fetchJson<{ ok: boolean }>(`/api/patients/${id}/actions/schedule-followup`, {
-        method: 'POST',
-        body: JSON.stringify(followup),
-      }),
-    onSuccess: invalidate,
-  })
-}
-
-export function useUpdatePlan(id: string) {
-  const invalidate = useRtmInvalidation(id)
-  return useMutation({
-    mutationFn: (summary: string) =>
-      fetchJson<{ ok: boolean }>(`/api/patients/${id}/actions/update-plan`, {
-        method: 'POST',
-        body: JSON.stringify({ summary }),
-      }),
-    onSuccess: invalidate,
-  })
-}
-
-export function useApproveDocument(id: string) {
-  const qc = useQueryClient()
-  const invalidate = useRtmInvalidation(id)
-  return useMutation({
-    mutationFn: (documentId: number) =>
-      fetchJson<{ ok: boolean }>(`/api/patients/${id}/rtm/documents/${documentId}/approve`, {
-        method: 'POST',
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['patient', id, 'rtm-documents'] })
-      invalidate()
-    },
-  })
-}
-
-export function useRegenerateDocument(id: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (documentId: number) =>
-      fetchJson<{ ok: boolean }>(`/api/patients/${id}/rtm/documents/${documentId}/regenerate`, {
-        method: 'POST',
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['patient', id, 'rtm-documents'] }),
-  })
 }
 
 export function useRecompute(id: string) {

@@ -11,10 +11,8 @@ from sqlalchemy import func, select
 from app.config import settings
 from app.models.adherence import AdherenceTask
 from app.models.enums import (
-    GUARDRAIL_SENTENCE,
     CareRole,
     InsightKind,
-    InteractionKind,
     MetricType,
     NotificationChannel,
     NotificationStatus,
@@ -24,7 +22,6 @@ from app.models.insight import Insight
 from app.models.notification import Notification, NotificationPreference
 from app.models.observation import Observation, WebhookEvent
 from app.models.patient import CareTeamMember, Device
-from app.models.rtm import ProviderTimeLog, RtmDocument, RtmInteraction
 
 
 def test_health(client):
@@ -40,19 +37,18 @@ def test_worklist_shape_and_ordering(client):
     priorities = [p["priority"] for p in body["patients"]]
     order = {"high": 0, "medium": 1, "missing_data": 2, "low": 3}
     assert priorities == sorted(priorities, key=lambda p: order[p])
-    assert body["patients"][0]["id"] == "marcus"
+    assert body["patients"][0]["id"] == "robert"
     row = body["patients"][0]
     for field in ("reason", "postop_day", "assigned_provider", "data_confidence", "trajectory"):
         assert field in row
 
 
 def test_patient_detail(client):
-    body = client.get("/api/patients/marcus").json()
-    assert body["risk"]["level"] == "high"
+    body = client.get("/api/patients/robert").json()
+    assert body["risk"]["level"] == "medium"
     assert body["summary"]["text"].strip()
     assert 1 <= len(body["actions"]) <= 4
-    assert body["rtm"]["window_days"] == 30
-    assert body["device"]["provider"] == "apple"
+    assert body["device"]["provider"] == "oura"
 
 
 def test_patient_404(client):
@@ -60,9 +56,10 @@ def test_patient_404(client):
 
 
 def test_metrics_endpoint(client):
-    body = client.get("/api/patients/marcus/metrics").json()
-    assert body["composite"]["level"] == "high"
-    keys = {m["metric_key"] for m in body["metrics"]}
+    body = client.get("/api/patients/robert/metrics").json()
+    assert body["composite"]["level"] == "elevated"
+    body_apple = client.get("/api/patients/aisha/metrics").json()
+    keys = {m["metric_key"] for m in body_apple["metrics"]}
     assert "walking_asymmetry_pct" in keys  # apple patient gets gait cards
     body2 = client.get("/api/patients/linda/metrics").json()
     keys2 = {m["metric_key"] for m in body2["metrics"]}
@@ -70,25 +67,24 @@ def test_metrics_endpoint(client):
 
 
 def test_timeline(client):
-    events = client.get("/api/patients/marcus/timeline").json()["events"]
+    events = client.get("/api/patients/robert/timeline").json()["events"]
     kinds = [e["kind"] for e in events]
     assert kinds[0] == "surgery"
     assert kinds[-1] == "today"
-    assert "change_point" in kinds
 
 
 def test_checkins_newest_first(client):
-    checkins = client.get("/api/patients/marcus/checkins").json()["checkins"]
+    checkins = client.get("/api/patients/linda/checkins").json()["checkins"]
     times = [c["occurred_at"] for c in checkins]
     assert times == sorted(times, reverse=True)
     assert checkins[0]["messages"][0]["who"] in ("patient", "copilot")
 
 
 def test_observations_series(client):
-    body = client.get("/api/patients/marcus/observations?metric_type=steps&days=30").json()
+    body = client.get("/api/patients/robert/observations?metric_type=steps&days=30").json()
     assert body["unit"] == "count"
     assert len(body["points"]) > 10
-    assert client.get("/api/patients/marcus/observations?metric_type=zzz").status_code == 400
+    assert client.get("/api/patients/robert/observations?metric_type=zzz").status_code == 400
 
 
 def test_integrations(client):
@@ -130,12 +126,29 @@ def test_webhook_flow(client):
     assert client.post("/api/webhooks/wearables/mock", json={"bad": 1}).status_code == 422
 
 
-def test_notifications_flow(client):
-    notifications = client.get("/api/notifications?status=all").json()["notifications"]
-    assert any(n["kind"] == "priority_high" and n["patient_id"] == "marcus" for n in notifications)
-    target = notifications[0]
-    assert client.post(f"/api/notifications/{target['id']}/read").json()["ok"] is True
-    assert client.post("/api/notifications/read-all").json()["ok"] is True
+def test_notifications_flow(client, db):
+    row = Notification(
+        patient_id="robert",
+        recipient_id="ct_chen",
+        kind="priority_high",
+        title="Robert Hale — high recovery priority",
+        body="Activity falling vs baseline. Review at /patients/robert.",
+        channel=NotificationChannel.IN_APP,
+        status=NotificationStatus.UNREAD,
+    )
+    db.add(row)
+    db.commit()
+    try:
+        notifications = client.get("/api/notifications?status=all").json()["notifications"]
+        assert any(
+            n["kind"] == "priority_high" and n["patient_id"] == "robert" for n in notifications
+        )
+        target = notifications[0]
+        assert client.post(f"/api/notifications/{target['id']}/read").json()["ok"] is True
+        assert client.post("/api/notifications/read-all").json()["ok"] is True
+    finally:
+        db.delete(db.get(Notification, row.id))
+        db.commit()
 
 
 def test_notification_preferences_roundtrip(client):
@@ -244,11 +257,11 @@ def test_read_all_only_clears_the_channel_the_bell_lists(client, db):
     """`read-all` clears the bell, and the bell lists IN_APP only. Marking an
     out-of-band row read retires an alert nobody was ever shown."""
     out_of_band = Notification(
-        patient_id="marcus",
+        patient_id="robert",
         recipient_id="ct_alvarez",
         kind="priority_high",
-        title="Marcus Reyes — high recovery priority",
-        body="Resting heart rate rising. Review at /patients/marcus.",
+        title="Robert Hale — high recovery priority",
+        body="Resting heart rate rising. Review at /patients/robert.",
         channel=NotificationChannel.SMS,
         status=NotificationStatus.UNREAD,
     )
@@ -275,7 +288,7 @@ def test_observations_exclude_provider_tombstones(client, db):
     row = db.scalars(
         select(Observation)
         .where(
-            Observation.patient_id == "marcus",
+            Observation.patient_id == "robert",
             Observation.metric_type == MetricType.STEPS,
             Observation.deleted_at.is_(None),
         )
@@ -287,7 +300,7 @@ def test_observations_exclude_provider_tombstones(client, db):
     db.commit()
     try:
         points = client.get(
-            "/api/patients/marcus/observations?metric_type=steps&days=30"
+            "/api/patients/robert/observations?metric_type=steps&days=30"
         ).json()["points"]
         assert stamp not in [p["t"] for p in points]
     finally:
@@ -362,11 +375,10 @@ def test_patient_device_is_the_most_recently_connected(client, db):
 
 @pytest.fixture()
 def action_ledger(db):
-    """Every action logs an interaction and billable provider time as a side
-    effect, and the seeded database is session-scoped with no rollback. The RTM
-    stages pinned in test_rtm.py read those same tables, so an action test has
-    to take its rows back out."""
-    tracked = (ProviderTimeLog, RtmInteraction, AdherenceTask, Notification, RtmDocument)
+    """Actions write rows as a side effect, and the seeded database is
+    session-scoped with no rollback, so an action test has to take its rows
+    back out."""
+    tracked = (AdherenceTask, Notification)
     high_water = {model: (db.scalar(select(func.max(model.id))) or 0) for model in tracked}
     yield
     db.expire_all()
@@ -378,9 +390,9 @@ def action_ledger(db):
 
 
 def test_assign_task_is_recorded_but_untracked(client, db, action_ledger):
-    """The task row exists and the time is billable, but nothing reads it back:
-    compute_adherence reads AdherenceRecord only and there is no completion
-    endpoint. The response says so rather than implying tracking."""
+    """The task row exists, but nothing reads it back: compute_adherence
+    reads AdherenceRecord only and there is no completion endpoint. The
+    response says so rather than implying tracking."""
     body = client.post(
         "/api/patients/grace/actions/assign-task",
         json={"title": "Walk 10 minutes twice daily", "why": "Rebuild gait tolerance"},
@@ -392,16 +404,6 @@ def test_assign_task_is_recorded_but_untracked(client, db, action_ledger):
     db.expire_all()
     task = db.get(AdherenceTask, body["task"]["id"])
     assert task.patient_id == "grace" and task.why == "Rebuild gait tolerance"
-    logged = db.scalars(
-        select(RtmInteraction)
-        .where(
-            RtmInteraction.patient_id == "grace",
-            RtmInteraction.kind == InteractionKind.ASSIGN_TASK,
-        )
-        .order_by(RtmInteraction.id.desc())
-        .limit(1)
-    ).first()
-    assert logged is not None and "Walk 10 minutes twice daily" in logged.detail
     assert client.post(
         "/api/patients/grace/actions/assign-task", json={"title": "   "}
     ).status_code == 422
@@ -413,17 +415,6 @@ def test_message_is_a_queued_stub(client, db, action_ledger):
         json={"text": "Checking in — how is the hip feeling today?"},
     ).json()
     assert body == {"status": "queued_stub"}
-    db.expire_all()
-    logged = db.scalars(
-        select(RtmInteraction)
-        .where(
-            RtmInteraction.patient_id == "grace",
-            RtmInteraction.kind == InteractionKind.MESSAGE,
-        )
-        .order_by(RtmInteraction.id.desc())
-        .limit(1)
-    ).first()
-    assert logged is not None and "Message queued" in logged.detail
     assert client.post(
         "/api/patients/grace/actions/message", json={"text": " "}
     ).status_code == 422
@@ -444,44 +435,6 @@ def test_escalate_notifies_the_assigned_provider(client, db, action_ledger):
     assert notification.status == NotificationStatus.UNREAD
     listed = client.get("/api/notifications?status=unread").json()["notifications"]
     assert notification.id in [n["id"] for n in listed]
-
-
-def test_update_plan_logs_chart_review(client, db, action_ledger):
-    assert client.post(
-        "/api/patients/grace/actions/update-plan",
-        json={"summary": "Hold HEP progression until swelling settles"},
-    ).json()["ok"] is True
-    db.expire_all()
-    logged = db.scalars(
-        select(RtmInteraction)
-        .where(
-            RtmInteraction.patient_id == "grace",
-            RtmInteraction.kind == InteractionKind.UPDATE_PLAN,
-        )
-        .order_by(RtmInteraction.id.desc())
-        .limit(1)
-    ).first()
-    assert logged is not None and "swelling" in logged.detail
-    assert client.post(
-        "/api/patients/grace/actions/update-plan", json={"summary": "  "}
-    ).status_code == 422
-
-
-def test_regenerate_replaces_a_draft_in_place(client, action_ledger):
-    """The happy path: a draft regenerates to a fresh, guarded body under the
-    same document id, and stays a draft."""
-    docs = client.get("/api/patients/aisha/rtm/documents").json()["documents"]
-    note = next(d for d in docs if d["kind"] == "encounter_note")
-    assert note["status"] == "draft"
-    fresh = client.post(
-        f"/api/patients/aisha/rtm/documents/{note['id']}/regenerate"
-    ).json()
-    assert fresh["ok"] is True
-    assert fresh["document"]["id"] == note["id"]
-    assert fresh["document"]["status"] == "draft"
-    assert fresh["document"]["body"].endswith(GUARDRAIL_SENTENCE)
-    after = client.get("/api/patients/aisha/rtm/documents").json()["documents"]
-    assert [d["id"] for d in after] == [d["id"] for d in docs]
 
 
 # --- webhook signature verification ------------------------------------------
@@ -658,7 +611,6 @@ def test_every_router_is_wired(client):
         "/api/patients/{patient_id}/wearables/junction/link",
         "/api/webhooks/wearables/{provider}",
         "/api/ask",
-        "/api/patients/{patient_id}/rtm",
     ):
         assert path in paths
 
@@ -675,34 +627,6 @@ def test_every_api_route_runs_on_the_threadpool():
     assert coroutine_routes == []
 
 
-def test_monitoring_window_is_unique_per_patient_and_window(db):
-    """coverage.update_window() selects then inserts. Without the constraint a
-    second writer that missed the select inserts a twin, and get_current()
-    serves whichever copy won the id race."""
-    from sqlalchemy.exc import IntegrityError
-
-    from app.models.rtm import MonitoringWindow
-
-    existing = db.scalars(
-        select(MonitoringWindow).where(MonitoringWindow.patient_id == "marcus").limit(1)
-    ).first()
-    assert existing is not None
-    db.add(
-        MonitoringWindow(
-            patient_id=existing.patient_id,
-            window_start=existing.window_start,
-            window_end=existing.window_end,
-            days_with_data=existing.days_with_data,
-            qualifies_16_of_30=existing.qualifies_16_of_30,
-        )
-    )
-    try:
-        with pytest.raises(IntegrityError):
-            db.commit()
-    finally:
-        db.rollback()
-
-
 def test_disabling_every_channel_silences_the_notification(db):
     """The settings screen lets a provider switch every channel off. The
     notifier used to read only the *enabled* rows and fall back to in-app on an
@@ -717,7 +641,7 @@ def test_disabling_every_channel_silences_the_notification(db):
     from app.models.patient import Patient
     from app.notifications.service import notify_high_priority
 
-    patient = db.get(Patient, "marcus")
+    patient = db.get(Patient, "robert")
     recipient = patient.assigned_provider_id
     prefs = db.scalars(
         select(NotificationPreference).where(
@@ -728,7 +652,7 @@ def test_disabling_every_channel_silences_the_notification(db):
     was = {p.channel: p.enabled for p in prefs}
     assessment = db.scalar(
         select(RiskAssessment)
-        .where(RiskAssessment.patient_id == "marcus")
+        .where(RiskAssessment.patient_id == "robert")
         .order_by(RiskAssessment.computed_at.desc())
         .limit(1)
     )
@@ -736,7 +660,7 @@ def test_disabling_every_channel_silences_the_notification(db):
     def _ids() -> set[int]:
         return set(
             db.scalars(
-                select(Notification.id).where(Notification.patient_id == "marcus")
+                select(Notification.id).where(Notification.patient_id == "robert")
             ).all()
         )
 

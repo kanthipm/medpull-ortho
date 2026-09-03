@@ -31,7 +31,7 @@ class PatientSpec:
     procedure: ProcedureType
     procedure_display: str
     postop_day: int
-    provider: SourceProvider
+    provider: SourceProvider | None  # None = real patient, no seeded device
     device_model: str
     surgeon_id: str
     # discharge N days after surgery (joint replacements 1-2, others 0-1)
@@ -46,7 +46,7 @@ def _surgeon_for(procedure: ProcedureType) -> str:
 
 def _spec(
     pid: str, name: str, age: int, sex: str, proc: ProcedureType, display: str,
-    day: int, provider: SourceProvider, model: str, discharge: int = 1,
+    day: int, provider: SourceProvider | None, model: str, discharge: int = 1,
 ) -> PatientSpec:
     initials = "".join(part[0] for part in name.split()[:2]).upper()
     return PatientSpec(
@@ -57,8 +57,10 @@ def _spec(
 
 
 PATIENTS: list[PatientSpec] = [
-    _spec("steve", "Steve", 63, "M", ProcedureType.TKA,
-          "Total Knee Replacement (TKA)", 8, SourceProvider.APPLE, "Apple Watch Series 10", 2),
+    # The one real patient: no synthetic device, observations, check-ins or
+    # adherence history — data arrives only through the live Junction path.
+    _spec("steve", "Steve", 19, "M", ProcedureType.TKA,
+          "Total Knee Replacement (TKA)", 1, None, "", 1),
     _spec("linda", "Linda Park", 58, "F", ProcedureType.ROTATOR_CUFF,
           "Rotator Cuff Repair", 10, SourceProvider.FITBIT, "Fitbit Charge 6", 0),
     _spec("robert", "Robert Hale", 66, "M", ProcedureType.LUMBAR,

@@ -9,36 +9,6 @@ C = "copilot"
 P = "patient"
 
 CONVERSATIONS: dict[str, list[tuple[int, int, list[tuple[str, str]]]]] = {
-    "steve": [
-        (3, 8, [
-            (C, "Good morning, Steve. How are you feeling today?"),
-            (P, "Not bad. The knee is sore but I got my exercises in yesterday."),
-            (C, "Good to hear you kept up with the exercises. Is the soreness better, worse, or about the same as yesterday?"),
-            (P, "About the same. Maybe a little more swollen in the evening."),
-            (C, "That can happen after activity. Are you icing and elevating after your exercise sessions?"),
-            (P, "Yes, twenty minutes like they showed me."),
-        ]),
-        (1, 8, [
-            (C, "Morning, Steve. How did you sleep, and how is the knee today?"),
-            (P, "Rough night. The pain woke me up a couple of times."),
-            (C, "I'm sorry to hear that. On a scale from mild to severe, how would you describe the pain right now?"),
-            (P, "Worse than the weekend. The pills don't seem to be doing as much."),
-            (C, "Has the pain been increasing gradually or did it change suddenly?"),
-            (P, "It's been creeping up the last few days."),
-            (C, "Thank you. Any new swelling, warmth, or redness around the incision?"),
-            (P, "It does feel warm, and it looks puffier than before."),
-        ]),
-        (0, 8, [
-            (C, "Good morning, Steve. Checking in on the knee — how are you feeling?"),
-            (P, "Honestly, worse. My pain has gotten worse and I felt feverish last night."),
-            (C, "I'm sorry you're feeling worse. Did you take your temperature?"),
-            (P, "I didn't have a thermometer handy, but I was sweating and had chills."),
-            (C, "Understood. Is the knee still warm and swollen today?"),
-            (P, "Yes, it's warm to the touch and pretty swollen."),
-            (C, "Thank you for telling me. Your care team will see this today. If you develop severe pain, spreading redness, or a temperature over 101°F, call the clinic right away."),
-            (P, "Okay, I will."),
-        ]),
-    ],
     "linda": [
         (4, 9, [
             (C, "Hi Linda, how is the shoulder feeling today?"),

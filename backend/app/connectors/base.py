@@ -35,8 +35,8 @@ def local_date_of(start_time: datetime, tz_id: str) -> date:
     trusted as already-local wall time (the seed and mock paths).
 
     This is the product's only day definition. The column it materializes is
-    what the RTM day counter counts (rtm/coverage.py) and what the engine's
-    post-op day axis is built from (engine/dataload.py); no reader may derive a
+    what the engine's post-op day axis is built from (engine/dataload.py); no
+    reader may derive a
     second day from start_time, because func.date() on a naive UTC instant
     moves a West Coast evening onto the next calendar day and the two
     definitions would then disagree about which day a reading belongs to.
@@ -74,12 +74,11 @@ class CanonicalObservation:
     timezone: str = "America/New_York"
     raw_payload: dict[str, Any] | None = None
     # Restatement + provenance (Phase 0): the provider's stable record id, its
-    # own last-modified stamp, laterality, and the RTM/PRO flags.
+    # own last-modified stamp, laterality, and the PRO flag.
     external_id: str | None = None
     source_updated_at: datetime | None = None
     body_site: str | None = None
     side: str | None = None
-    qualifies_for_rtm: bool = False
     is_patient_reported: bool = False
     deleted: bool = False  # provider-delivered tombstone (HealthKit deletedObjects)
 

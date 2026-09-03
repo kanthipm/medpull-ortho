@@ -58,22 +58,25 @@ def seed_core(db: Session, today: date) -> dict[str, int]:
                 assigned_provider_id=spec.surgeon_id,
             )
         )
-        db.add(
-            Device(
-                id=f"dev_{spec.id}",
-                patient_id=spec.id,
-                source_provider=spec.provider,
-                device_model=spec.device_model,
-                connected_at=datetime.combine(surgery - timedelta(days=14), time(10, 0)),
-                last_sync_at=datetime.combine(today, time(7, 30)),
+        if spec.provider is not None:
+            db.add(
+                Device(
+                    id=f"dev_{spec.id}",
+                    patient_id=spec.id,
+                    source_provider=spec.provider,
+                    device_model=spec.device_model,
+                    connected_at=datetime.combine(surgery - timedelta(days=14), time(10, 0)),
+                    last_sync_at=datetime.combine(today, time(7, 30)),
+                )
             )
-        )
     counts["patients"] = len(PATIENTS)
     db.commit()
 
     # observations via the same path real integrations will use
     total_obs = 0
     for spec in PATIENTS:
+        if spec.provider is None:  # real patient — no synthetic observations
+            continue
         obs = generate_patient_observations(spec, get_scenario(spec.id), today)
         ingested, _, _ = ingest_observations(db, obs)
         total_obs += ingested
@@ -129,10 +132,6 @@ def seed_core(db: Session, today: date) -> dict[str, int]:
         db.add(NotificationPreference(recipient_id=ct.id, channel=NotificationChannel.EMAIL, enabled=False))
     db.commit()
 
-    # RTM state (new tables only — never observations; golden tiers depend on them)
-    from app.seed.rtm import seed_rtm
-
-    counts.update(seed_rtm(db, today))
     return counts
 
 

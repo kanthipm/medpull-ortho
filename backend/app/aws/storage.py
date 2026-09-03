@@ -8,8 +8,7 @@ instance hydrates from it. Two access patterns, deliberately different:
   lock — an S3 object created with ``If-None-Match: *``, which S3 makes atomic
   — re-hydrate under it, run, then write back. Writes are therefore fully
   serialized across concurrent instances: no lost updates on the data a
-  provider actually authored (assigned tasks, escalations, RTM time,
-  approved documents).
+  provider actually authored (assigned tasks, escalations).
 
 * **Read requests** never take the lock. They can still dirty the database,
   because the engine recomputes assessments and the LLM layer fills insight

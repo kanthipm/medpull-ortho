@@ -12,9 +12,8 @@ upsert:
   provider's own ``source_updated_at`` says the incoming copy is older than
   what we hold, which counts as a duplicate (out-of-order redelivery);
 * a provider tombstone (``deleted=True``) soft-deletes: the row keeps its
-  identity so the deletion survives re-delivery, and the readers that drive
-  analytics and billing — ``engine/dataload.py`` and ``rtm/coverage.py`` —
-  filter ``deleted_at``.
+  identity so the deletion survives re-delivery, and the reader that drives
+  analytics — ``engine/dataload.py`` — filters ``deleted_at``.
 
 This is also the choke point where an observation's date is bounded. Every
 connector's output reaches the table through here, so it is the only place a
@@ -217,10 +216,8 @@ def _apply(row: Observation, o: CanonicalObservation, content_hash: str) -> None
     external_id is deliberately not written: branch 1 keys on it, so it cannot
     differ, and on branches 2 and 3 it is absent by construction.
 
-    qualifies_for_rtm and is_patient_reported are deliberately not written.
-    They are provenance, decided once at normalize()/insert; making them
-    restatement-mutable would let an unsigned or mock redelivery promote a row
-    into the billable set rtm/coverage.py counts.
+    is_patient_reported is deliberately not written. It is provenance,
+    decided once at normalize()/insert.
     """
     row.value_num = o.value_num
     row.value_json = o.value_json
@@ -385,7 +382,6 @@ def ingest_observations(
                 source_updated_at=_source_stamp(o.source_updated_at),
                 payload_hash=content_hash,
                 deleted_at=datetime.now() if o.deleted else None,
-                qualifies_for_rtm=o.qualifies_for_rtm,
                 is_patient_reported=o.is_patient_reported,
                 dedupe_key=key,
                 raw_payload=o.raw_payload,

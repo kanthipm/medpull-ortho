@@ -9,8 +9,7 @@ provider staring at a "Connect" button should be able to tell apart.
 
 Posture, stated plainly: like every other route in this console these are
 unauthenticated (README, "Not in v1"). The link, back-fill and disconnect
-routes are write paths on the same footing as logging RTM minutes or
-approving a document, and whoever can reach the console can issue a Junction
+routes are write paths, and whoever can reach the console can issue a Junction
 Link for any patient. Putting authentication in front of the console is the
 v1 gap that closes this; nothing here pretends to close it with a token the
 public bundle could not keep secret. What this module does refuse is anything

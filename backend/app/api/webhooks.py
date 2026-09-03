@@ -113,10 +113,7 @@ def _verify_terra(secret: str, headers: Mapping[str, str], body: bytes) -> bool:
 
 
 def _verify_mock(secret: str, headers: Mapping[str, str], body: bytes) -> bool:
-    """The demo connector has no signature by design. Its deliveries are
-    accepted — and everything it produces is structurally non-qualifying for
-    RTM (qualifies_for_rtm stays False at normalize), so an unsigned demo
-    payload can never move a billing number."""
+    """The demo connector has no signature by design."""
     return True
 
 

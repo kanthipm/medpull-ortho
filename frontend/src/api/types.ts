@@ -24,7 +24,6 @@ export interface WorklistPatient {
   assigned_provider: { name: string; role: string }
   data_confidence: DataConfidence
   trajectory: Trajectory
-  rtm: { days: number; target: number; eligible: boolean; enrolled: boolean }
 }
 
 export interface WorklistResponse {
@@ -64,7 +63,6 @@ export interface PatientDetail {
   trajectory: Trajectory
   summary: { text: string; generated_at: string; provider: string }
   actions: SuggestedAction[]
-  rtm: { days_with_data: number; window_days: number; target: number; qualifies: boolean; enrolled: boolean }
   last_checkin_at: string | null
 }
 
@@ -266,62 +264,3 @@ export interface NotificationPreference {
   available: boolean
 }
 
-export interface RtmBillingCode {
-  cpt: string
-  eligible: boolean
-  note: string
-  units: number
-}
-
-export interface RtmReadiness {
-  month: string
-  enrollment: {
-    education_complete: boolean
-    consent_complete: boolean
-    baseline_complete: boolean
-    complete: boolean
-    pathway: string | null
-  }
-  monitoring: {
-    days: number
-    target: number
-    window_days: number
-    eligible: boolean
-    enrolled: boolean
-  }
-  treatment_management: {
-    minutes: number
-    interactive_communication: boolean
-    // the period the minutes were counted over — `billable_from` is the
-    // enrollment date once enrolled, since pre-enrollment minutes are real
-    // work but not billable work
-    counted_from: string
-    counted_to: string
-    billable_from: string | null
-  }
-  documentation_ready: boolean
-  billing: RtmBillingCode[]
-  ready_to_bill: boolean
-  suggested_action: string
-  estimated_value: number
-  recent_interactions: { kind: string; detail: string; occurred_at: string }[]
-}
-
-export interface RtmDocument {
-  id: number
-  kind: 'encounter_note' | 'monthly_summary'
-  title: string
-  body: string
-  status: 'draft' | 'approved'
-  provider: string
-  created_at: string
-  approved_at: string | null
-}
-
-export interface PracticeOverview {
-  rtm_patients: number
-  needs_review: number
-  ready_to_bill: number
-  therapy_adherence_pct: number | null
-  estimated_revenue: number
-}

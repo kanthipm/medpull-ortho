@@ -43,7 +43,6 @@ from app.models.insight import EstablishedBaseline, Insight, RiskAssessment
 from app.models.notification import Notification
 from app.models.observation import Observation, WebhookEvent
 from app.models.patient import Device, Patient
-from app.models.rtm import MonitoringWindow
 
 PATIENT = "jx_test"
 USER_ID = "user-jx-0001"
@@ -89,7 +88,6 @@ def jx_patient(seeded_db):
         WearableConnection,
         RiskAssessment,
         EstablishedBaseline,
-        MonitoringWindow,
         Notification,
         Insight,
     ):
@@ -409,7 +407,6 @@ def test_sleep_summary_maps_every_metric_with_the_right_semantics():
         # hands back, so a later restatement can be ordered against it
         assert row.source_updated_at == datetime.combine(YESTERDAY, datetime.min.time()).replace(hour=15)
         assert row.source_updated_at.tzinfo is None
-        assert row.qualifies_for_rtm is True
         assert row.is_patient_reported is False
         assert row.raw_payload["event_type"] == "daily.data.sleep.created"
         assert "sleep_stream" not in row.raw_payload
@@ -571,11 +568,11 @@ def test_implausible_values_are_dropped_row_by_row():
     assert M.SLEEP_DURATION in {r.metric_type for r in rows}
 
 
-def test_manual_entries_are_patient_reported_and_never_billable():
+def test_manual_entries_are_patient_reported():
     rows = connector_under_test.normalize(
         envelope("daily.data.activity.created", activity_summary(provider="manual")), CTX
     )
-    assert rows and all(r.is_patient_reported and not r.qualifies_for_rtm for r in rows)
+    assert rows and all(r.is_patient_reported for r in rows)
 
 
 def test_normalize_refuses_without_a_resolved_patient_or_a_valid_envelope():

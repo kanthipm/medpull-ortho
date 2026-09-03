@@ -17,9 +17,7 @@ import { PRIORITY, TRAJECTORY_LABEL, URGENCY } from '../../lib/risk'
 import ActionBar from './ActionBar'
 import CheckinHistory from './CheckinHistory'
 import RecoveryTimeline from './RecoveryTimeline'
-import RtmReadinessCard from './RtmReadinessCard'
 import SignalsSection from './SignalsSection'
-import useReviewTimeTracker from './useReviewTimeTracker'
 import WearableConnectionCard from './WearableConnectionCard'
 
 function rise(index: number) {
@@ -29,7 +27,6 @@ function rise(index: number) {
 export default function PatientDetailPage() {
   const { id = '' } = useParams()
   const { data: p, isLoading, isError } = usePatient(id)
-  useReviewTimeTracker(id)
   const recompute = useRecompute(id)
   const toast = useToast()
   const [minHold, setMinHold] = useState(false)
@@ -66,11 +63,6 @@ export default function PatientDetailPage() {
     })
   }
 
-  const rtmValue = !p.rtm.enrolled
-    ? 'Enrolling'
-    : p.rtm.qualifies
-      ? 'Complete'
-      : `${Math.min(p.rtm.days_with_data, p.rtm.target)}/${p.rtm.target}d`
   const trajValue =
     p.trajectory.pct != null && p.trajectory.state !== 'on'
       ? signedPct(p.trajectory.pct)
@@ -114,12 +106,6 @@ export default function PatientDetailPage() {
           className="mt-4"
           items={[
             { key: 'day', label: 'Post-op day', value: `D${p.postop_day}` },
-            {
-              key: 'rtm',
-              label: 'RTM monitoring',
-              value: rtmValue,
-              tone: p.rtm.qualifies ? 'low' : undefined,
-            },
             {
               key: 'traj',
               label: 'Trajectory',
@@ -197,10 +183,6 @@ export default function PatientDetailPage() {
           </SectionCard>
         )}
 
-        <div {...rise(4)}>
-          <RtmReadinessCard patientId={p.id} refreshing={refreshing} />
-        </div>
-
         <div {...rise(5)}>
           <RecoveryTimeline patientId={p.id} trajectory={p.trajectory} refreshing={refreshing} />
         </div>
@@ -210,7 +192,7 @@ export default function PatientDetailPage() {
         </div>
 
         <div {...rise(7)}>
-          <SignalsSection patientId={p.id} rtm={p.rtm} refreshing={refreshing} />
+          <SignalsSection patientId={p.id} refreshing={refreshing} />
         </div>
 
         <div {...rise(8)}>

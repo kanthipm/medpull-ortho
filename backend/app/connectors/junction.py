@@ -1015,7 +1015,6 @@ class JunctionConnector(WearableConnector):
                     timezone=tz_id,
                     external_id=external_id,
                     source_updated_at=_utc_naive(_parse_dt(rec.get("updated_at"))),
-                    qualifies_for_rtm=slug not in MANUAL_PROVIDERS,
                     is_patient_reported=slug in MANUAL_PROVIDERS,
                     raw_payload=provenance,
                 )
@@ -1117,7 +1116,6 @@ class JunctionConnector(WearableConnector):
             timezone=patient.timezone,
             external_id=str(record_id) if record_id else None,
             source_updated_at=_utc_naive(_parse_dt(rec.get("updated_at"))),
-            qualifies_for_rtm=slug not in MANUAL_PROVIDERS,
             is_patient_reported=slug in MANUAL_PROVIDERS,
             raw_payload={
                 "event_type": event_type,
@@ -1198,7 +1196,6 @@ class JunctionConnector(WearableConnector):
                     # samples no record id, so the identity is spelled out
                     # from the source and the UTC instant(s).
                     external_id=_sample_identity(resource, slug, start, end),
-                    qualifies_for_rtm=slug not in MANUAL_PROVIDERS,
                     is_patient_reported=slug in MANUAL_PROVIDERS,
                     raw_payload=provenance,
                 )

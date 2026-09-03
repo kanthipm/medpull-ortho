@@ -2,21 +2,19 @@ import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
-import { usePracticeOverview, useWorklist, type AskResult } from '../../api/queries'
+import { useWorklist, type AskResult } from '../../api/queries'
 import type { WorklistPatient } from '../../api/types'
 import AskBar from './AskBar'
 import AIAttribution from '../../components/AIAttribution'
 import ConfidenceChip from '../../components/ConfidenceChip'
-import InlineReadout from '../../components/InlineReadout'
 import PriorityBadge from '../../components/PriorityBadge'
 import GuardrailFootnote from '../../components/GuardrailFootnote'
 import SectionCard from '../../components/SectionCard'
 import SegmentedControl from '../../components/SegmentedControl'
-import { SkeletonCard, SkeletonLine } from '../../components/Skeleton'
+import { SkeletonCard } from '../../components/Skeleton'
 import EmptyState from '../../components/EmptyState'
 import { longDate, relativeTime } from '../../lib/format'
 import { PRIORITY, type Priority } from '../../lib/risk'
-import { practiceReadout } from './practiceStrip'
 
 type Filter = 'all' | 'high' | 'missing_data'
 
@@ -37,7 +35,6 @@ function headline(stats: { high: number; missing: number }): string {
 
 export default function WorklistPage() {
   const { data, isLoading, isError } = useWorklist()
-  const { data: practice } = usePracticeOverview()
   const [filter, setFilter] = useState<Filter>('all')
   const [askResult, setAskResult] = useState<AskResult | null>(null)
 
@@ -77,19 +74,6 @@ export default function WorklistPage() {
         <h1 className="mt-2.5 text-[clamp(26px,3.6vw,34px)] font-semibold leading-[1.08] tracking-[-.03em] text-ink">
           {headline(data.stats)}
         </h1>
-        <div className="mt-4">
-          {practice ? (
-            <InlineReadout items={practiceReadout(practice)} />
-          ) : (
-            <div className="flex gap-5">
-              <SkeletonLine className="h-6 w-20" />
-              <SkeletonLine className="h-6 w-24" />
-              <SkeletonLine className="h-6 w-28" />
-              <SkeletonLine className="h-6 w-24" />
-              <SkeletonLine className="h-6 w-28" />
-            </div>
-          )}
-        </div>
       </header>
 
       <div className="rise mt-6" style={{ '--rise-delay': '60ms' } as CSSProperties}>
@@ -202,31 +186,6 @@ function WorklistRow({ patient: p, index }: { patient: WorklistPatient; index: n
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[12.5px] leading-snug text-body">{p.reason}</span>
         <ConfidenceChip level={p.data_confidence.level} className="mt-1" />
-      </span>
-      <span
-        className="hidden w-[76px] shrink-0 text-right md:block"
-        title={
-          p.rtm.enrolled
-            ? 'RTM monitoring days since enrollment (16-of-30 target)'
-            : 'RTM enrollment in progress — monitoring days accrue after enrollment'
-        }
-      >
-        {p.rtm.enrolled ? (
-          p.rtm.eligible ? (
-            <span className="text-[10.5px] font-semibold uppercase tracking-[.04em] text-risk-low">
-              Complete
-            </span>
-          ) : (
-            <span className="font-mono text-[12px] font-medium tabular-nums text-muted">
-              {Math.min(p.rtm.days, p.rtm.target)}
-              <span className="text-faint">/{p.rtm.target}d</span>
-            </span>
-          )
-        ) : (
-          <span className="text-[10.5px] font-medium uppercase tracking-[.04em] text-faint">
-            Enrolling
-          </span>
-        )}
       </span>
       <span className="hidden w-32 shrink-0 text-right sm:block">
         <span className="block font-mono text-[11px] font-medium tabular-nums text-muted">

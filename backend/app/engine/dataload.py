@@ -16,10 +16,9 @@ def load_daily_series(db: Session, patient_id: str, surgery_date: date) -> dict[
     Negative index = pre-op. Multiple rows per day are averaged (steps arrive
     as one daily summary per provider, so mean is safe across the board).
 
-    The day axis is the materialized ``local_date`` — the same column the RTM
-    day counter reads (``rtm/coverage.py``). Deriving a second day from
-    ``start_time`` would put a West Coast patient's evening on the next day for
-    the engine and on the correct one for billing, so a patient's post-op day 7
+    The day axis is the materialized ``local_date``. Deriving a second day
+    from ``start_time`` would put a West Coast patient's evening on the next
+    day, so a patient's post-op day 7
     and their 7th monitored day would silently be different days.
 
     Tombstoned rows are excluded: a provider deletion must not keep driving

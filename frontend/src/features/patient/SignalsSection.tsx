@@ -1,4 +1,4 @@
-import { ChevronRight, CircleCheck, CircleDashed } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { usePatientMetrics } from '../../api/queries'
@@ -52,11 +52,9 @@ function MetricCard({
 
 function SignalsBody({
   data,
-  rtm,
   refreshing,
 }: {
   data: PatientMetrics
-  rtm: { days_with_data: number; window_days: number; target: number; qualifies: boolean; enrolled: boolean }
   refreshing: boolean
 }) {
   return (
@@ -132,29 +130,6 @@ function SignalsBody({
             </p>
             <AdherenceDots days={data.adherence.days} rate={data.adherence.rate} />
           </div>
-          <div className="flex items-center gap-2 text-[13px] font-medium text-body">
-            {rtm.qualifies ? (
-              <CircleCheck size={15} className="text-risk-low" />
-            ) : (
-              <CircleDashed size={15} className="text-faint" />
-            )}
-            {rtm.enrolled ? (
-              <>
-                <span className="font-mono tabular-nums">
-                  {rtm.qualifies
-                    ? 'Monitoring complete'
-                    : `${rtm.days_with_data} of ${rtm.target} monitoring days`}
-                </span>
-                <span className="text-[11px] font-medium text-faint">
-                  {rtm.qualifies ? '· 16-day threshold met' : '· below 16-day threshold'}
-                </span>
-              </>
-            ) : (
-              <span className="text-[12px] font-medium text-faint">
-                Monitoring begins at RTM enrollment
-              </span>
-            )}
-          </div>
         </div>
       </SectionCard>
     </div>
@@ -163,11 +138,9 @@ function SignalsBody({
 
 export default function SignalsSection({
   patientId,
-  rtm,
   refreshing,
 }: {
   patientId: string
-  rtm: { days_with_data: number; window_days: number; target: number; qualifies: boolean; enrolled: boolean }
   refreshing: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -198,7 +171,7 @@ export default function SignalsSection({
       {open && (
         <div className="rise mt-2" style={{ '--rise-delay': '0ms' } as CSSProperties}>
           {isLoading && <SkeletonCard lines={4} />}
-          {data && <SignalsBody data={data} rtm={rtm} refreshing={refreshing} />}
+          {data && <SignalsBody data={data} refreshing={refreshing} />}
         </div>
       )}
     </div>
