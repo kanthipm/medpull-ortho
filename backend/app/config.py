@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # Applied to care_team_members rows at startup so real numbers live in the
     # environment, never in the public repo. Empty applies nothing.
     care_team_phones: str = ""
+    # Public base URL for patient check-in links; empty derives from the request.
+    checkin_base_url: str = ""
     # Local Ollama is OPT-IN (cloud-first product direction): leave the URL
     # empty and the chain is Groq -> deterministic fallback. Set OLLAMA_URL
     # explicitly to use a local model as the middle tier.

@@ -1,6 +1,15 @@
 from fastapi import APIRouter
 
-from app.api import ask, integrations, notifications, patients, system, webhooks, worklist
+from app.api import (
+    ask,
+    checkin,
+    integrations,
+    notifications,
+    patients,
+    system,
+    webhooks,
+    worklist,
+)
 
 api_router = APIRouter(prefix="/api")
 
@@ -14,3 +23,4 @@ api_router.include_router(notifications.router)
 api_router.include_router(integrations.router)
 api_router.include_router(webhooks.router)
 api_router.include_router(ask.router)
+api_router.include_router(checkin.router)

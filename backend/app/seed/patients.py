@@ -64,6 +64,8 @@ PATIENTS: list[PatientSpec] = [
           "Total Knee Replacement (TKA)", 1, None, "", 1),
     _spec("guest", "Guest", 45, "M", ProcedureType.TKA,
           "Total Knee Replacement (TKA)", 1, None, "", 1),
+    _spec("kanthi", "Kanthi", 21, "F", ProcedureType.TKA,
+          "Total Knee Replacement (TKA)", 1, None, "", 1),
     _spec("linda", "Linda Park", 58, "F", ProcedureType.ROTATOR_CUFF,
           "Rotator Cuff Repair", 10, SourceProvider.FITBIT, "Fitbit Charge 6", 0),
     _spec("robert", "Robert Hale", 66, "M", ProcedureType.LUMBAR,

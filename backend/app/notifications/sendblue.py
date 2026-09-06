@@ -1,35 +1,15 @@
-"""Sendblue SMS/iMessage delivery for care-team notifications.
+"""Sendblue SMS/iMessage delivery — care-team alerts (``SendblueChannel``) and
+patient check-in invitations (``send_checkin_message``). Outbound only.
 
-Deliberately thin, like ``connectors/junction_client.py``: this module knows
-the host, the auth headers, and the one endpoint it uses. Who gets notified
-and through which channels is decided in ``notifications/service.py``.
-
-Contract (Sendblue REST API):
-
-* ``POST https://api.sendblue.co/api/send-message`` with the
-  ``sb-api-key-id`` / ``sb-api-secret-key`` headers and a JSON body of
-  ``{"number": <E.164>, "content": <text>}``. A 2xx answer means Sendblue
-  accepted the message for delivery (its own status lifecycle continues via
-  optional callbacks the app does not register).
-* Recipients are resolved at send time: ``Notification.recipient_id`` names a
-  ``CareTeamMember`` and the phone lives on that row — never in code, so a
-  number can't leak into the public repo.
-
-With the keys unset the channel behaves exactly like the old stub (logs the
-intent, answers SENT_STUB), which is also what pins the test suite's baseline:
-``conftest.py`` blanks the keys so a developer's ``.env`` cannot send a real
-text from a test run.
-
-One attempt, bounded socket timeout, no retries: on Lambda a notification is
-written while the request holds the S3 write lock (25 s TTL — see
-``app/aws/config.py``), and a retrying send would spend budget the ingest and
-recompute behind it still need. A failed or timed-out call records FAILED and
-moves on; the in-app copy of the same alert is the durable fallback.
+Phone numbers live in the DB or the environment, never in code. With the keys
+unset nothing sends. One bounded attempt, no retries: on Lambda a send runs
+inside the 25 s S3 write-lock TTL, and the in-app alert is the durable fallback.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 import httpx
 
@@ -90,27 +70,72 @@ class SendblueChannel:
             )
             return NotificationStatus.FAILED
 
-        payload = {
-            "number": phone,
-            "content": f"{notification.title}\n{notification.body}",
-        }
-        if settings.sendblue_from_number:
-            payload["from_number"] = settings.sendblue_from_number
-
         try:
-            response = httpx.post(
-                SEND_URL,
-                headers={
-                    "sb-api-key-id": settings.sendblue_api_key,
-                    "sb-api-secret-key": settings.sendblue_api_secret,
-                },
-                json=payload,
-                timeout=TIMEOUT_S,
-            )
-            response.raise_for_status()
+            _post_message(phone, f"{notification.title}\n{notification.body}")
         except httpx.HTTPError as exc:
             logger.warning("Sendblue send to recipient %s failed: %s",
                            notification.recipient_id, exc)
             return NotificationStatus.FAILED
 
         return NotificationStatus.SENT
+
+
+def _post_message(phone: str, content: str) -> httpx.Response:
+    """One bounded attempt; raises httpx.HTTPError on any failure."""
+    payload = {"number": phone, "content": content}
+    if settings.sendblue_from_number:
+        payload["from_number"] = settings.sendblue_from_number
+    response = httpx.post(
+        SEND_URL,
+        headers={
+            "sb-api-key-id": settings.sendblue_api_key,
+            "sb-api-secret-key": settings.sendblue_api_secret,
+        },
+        json=payload,
+        timeout=TIMEOUT_S,
+    )
+    response.raise_for_status()
+    return response
+
+
+CHECKIN_TEMPLATE = (
+    "Hi {patient_name}, your MedPull recovery check-in is ready. "
+    "Tap here to begin: {checkin_url}"
+)
+
+
+@dataclass(frozen=True)
+class CheckinSendResult:
+    sent: bool
+    detail: str
+    status_code: int | None = None
+
+
+def send_checkin_message(
+    phone_number: str, patient_name: str, checkin_url: str
+) -> CheckinSendResult:
+    """Text a patient their check-in link. With either key unset, sends nothing."""
+    if not (settings.sendblue_api_key and settings.sendblue_api_secret):
+        return CheckinSendResult(sent=False, detail="Sendblue keys not configured")
+
+    phone = _e164(phone_number)
+    if phone is None:
+        return CheckinSendResult(
+            sent=False, detail=f"not a usable phone number: {phone_number!r}"
+        )
+
+    content = CHECKIN_TEMPLATE.format(patient_name=patient_name, checkin_url=checkin_url)
+    try:
+        _post_message(phone, content)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Sendblue check-in send to %s failed: %s", phone, exc)
+        return CheckinSendResult(
+            sent=False,
+            detail=f"Sendblue answered {exc.response.status_code}",
+            status_code=exc.response.status_code,
+        )
+    except httpx.HTTPError as exc:
+        logger.warning("Sendblue check-in send to %s failed: %s", phone, exc)
+        return CheckinSendResult(sent=False, detail=f"request failed: {exc}")
+
+    return CheckinSendResult(sent=True, detail="sent")

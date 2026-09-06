@@ -21,6 +21,19 @@ class Checkin(Base):
     )
 
 
+class CheckinInvite(Base):
+    """A one-time tokenized link texted to a patient. Only the hash is stored."""
+
+    __tablename__ = "checkin_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token_hash: Mapped[str] = mapped_column(String, unique=True, index=True)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class CheckinMessage(Base):
     __tablename__ = "checkin_messages"
 
