@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models.enums import NotificationChannel, NotificationStatus
 from app.models.notification import Notification, NotificationPreference
@@ -76,11 +77,17 @@ class PreferenceUpdate(BaseModel):
     min_priority: str = "high"
 
 
-# Channels with a real delivery path. SmsChannel/EmailChannel only log a line
-# and persist a `sent_stub` row that list_notifications never returns, so
-# enabling one would promise an alert that is delivered nowhere and readable
-# nowhere.
-AVAILABLE_CHANNELS = {NotificationChannel.IN_APP}
+# Channels with a real delivery path. EmailChannel only logs a line and
+# persists a `sent_stub` row that list_notifications never returns, so
+# enabling it would promise an alert that is delivered nowhere and readable
+# nowhere. SMS is real exactly when the Sendblue keys are configured —
+# computed per request because on Lambda the keys land on `settings` from SSM
+# at cold start, after this module is imported.
+def _available_channels() -> set[NotificationChannel]:
+    channels = {NotificationChannel.IN_APP}
+    if settings.sendblue_api_key and settings.sendblue_api_secret:
+        channels.add(NotificationChannel.SMS)
+    return channels
 
 
 def _recipients(db: Session, recipient_id: str | None) -> list[str]:
@@ -112,7 +119,7 @@ def _preferences_response(db: Session, recipients: list[str]) -> list[dict]:
                 "channel": str(channel),
                 "enabled": any(p.enabled for p in rows),
                 "min_priority": rows[0].min_priority if rows else "high",
-                "available": channel in AVAILABLE_CHANNELS,
+                "available": channel in _available_channels(),
             }
         )
     return out
@@ -134,7 +141,7 @@ def update_preferences(
     no-op; and the whole batch is validated before anything is written."""
     recipients = _recipients(db, recipient_id)
     for update in updates:
-        if update.enabled and update.channel not in AVAILABLE_CHANNELS:
+        if update.enabled and update.channel not in _available_channels():
             raise HTTPException(
                 status_code=422,
                 detail=f"{update.channel} delivery is not connected yet",
