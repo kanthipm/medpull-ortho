@@ -148,6 +148,10 @@ class NotificationStatus(StrEnum):
     UNREAD = "unread"
     READ = "read"
     SENT_STUB = "sent_stub"
+    # Real out-of-band delivery (Sendblue SMS). FAILED is recorded, never
+    # retried — the in-app copy of the same alert is the durable fallback.
+    SENT = "sent"
+    FAILED = "failed"
 
 
 class AdherenceStatus(StrEnum):

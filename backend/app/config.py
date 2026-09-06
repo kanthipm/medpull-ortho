@@ -38,6 +38,18 @@ class Settings(BaseSettings):
     # one that dwarfs every other in volume — a day of Apple Watch samples is
     # thousands of rows. Off unless someone has a consumer for it.
     junction_ingest_heart_rate_samples: bool = False
+    # Sendblue SMS/iMessage for care-team alerts. Both keys are the switch:
+    # with either empty the SMS channel stays a logging stub, so the test
+    # suite and a keyless checkout behave exactly as before the integration.
+    sendblue_api_key: str = ""
+    sendblue_api_secret: str = ""
+    # Which of the account's Sendblue numbers sends. Optional: with one number
+    # on the account Sendblue picks it, so empty stays valid.
+    sendblue_from_number: str = ""
+    # Care-team phone numbers, "id=+1...,id=+1..." (e.g. "ct_alvarez=+1512...").
+    # Applied to care_team_members rows at startup so real numbers live in the
+    # environment, never in the public repo. Empty applies nothing.
+    care_team_phones: str = ""
     # Local Ollama is OPT-IN (cloud-first product direction): leave the URL
     # empty and the chain is Groq -> deterministic fallback. Set OLLAMA_URL
     # explicitly to use a local model as the middle tier.

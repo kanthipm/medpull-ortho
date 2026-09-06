@@ -1,11 +1,13 @@
-"""Delivery channels. In-app is real; SMS/email are stubs that record intent
-so the preference UI and the eventual Twilio/SES integrations share one path."""
+"""Delivery channels. In-app and SMS (Sendblue) are real; email is a stub that
+records intent so the preference UI and the eventual SES integration share one
+path. SMS degrades to the same stub behavior when the Sendblue keys are unset."""
 
 import logging
 from typing import Protocol
 
 from app.models.enums import NotificationChannel, NotificationStatus
 from app.models.notification import Notification
+from app.notifications.sendblue import SendblueChannel
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +21,6 @@ class InAppChannel:
         return NotificationStatus.UNREAD  # shows in the bell until read
 
 
-class SmsChannel:
-    def send(self, notification: Notification) -> NotificationStatus:
-        logger.info("SMS stub -> %s: %s", notification.recipient_id, notification.title)
-        return NotificationStatus.SENT_STUB
-
-
 class EmailChannel:
     def send(self, notification: Notification) -> NotificationStatus:
         logger.info("Email stub -> %s: %s", notification.recipient_id, notification.title)
@@ -33,6 +29,6 @@ class EmailChannel:
 
 CHANNELS: dict[NotificationChannel, Channel] = {
     NotificationChannel.IN_APP: InAppChannel(),
-    NotificationChannel.SMS: SmsChannel(),
+    NotificationChannel.SMS: SendblueChannel(),
     NotificationChannel.EMAIL: EmailChannel(),
 }

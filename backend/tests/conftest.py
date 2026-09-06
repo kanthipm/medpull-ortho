@@ -28,6 +28,11 @@ os.environ["JUNCTION_REGION"] = "us"
 os.environ["JUNCTION_BASE_URL"] = ""
 os.environ["JUNCTION_LINK_REDIRECT_URL"] = ""
 os.environ["JUNCTION_INGEST_HEART_RATE_SAMPLES"] = "false"
+# Same rule for Sendblue: keys in a developer's .env must never let a test
+# run send a real text — blank keys keep the SMS channel on its stub path.
+os.environ["SENDBLUE_API_KEY"] = ""
+os.environ["SENDBLUE_API_SECRET"] = ""
+os.environ["CARE_TEAM_PHONES"] = ""
 
 from datetime import date  # noqa: E402
 

@@ -9,7 +9,7 @@ from app.api import api_router
 from app.aws import storage
 from app.aws.config import aws_settings
 from app.aws.middleware import S3SqliteMiddleware
-from app.config import PROJECT_DIR
+from app.config import PROJECT_DIR, settings
 from app.database import ensure_schema
 
 app = FastAPI(title="MedPull Recovery Copilot", version="1.0.0")
@@ -18,6 +18,38 @@ app = FastAPI(title="MedPull Recovery Copilot", version="1.0.0")
 # Every request path goes through get_db(), which does the same check; this one
 # covers the startup warmer, which opens its own session.
 ensure_schema()
+
+
+def _apply_care_team_phones() -> None:
+    """CARE_TEAM_PHONES from the environment onto care-team rows.
+
+    Reapplied on every start on purpose: a reseed wipes the rows and a fresh
+    Lambda environment starts from the S3 copy, so a one-shot write could
+    silently lose the numbers SMS delivery depends on. A member id that does
+    not exist yet (pre-seed) just logs and waits for the next start."""
+    import logging
+
+    if not settings.care_team_phones:
+        return
+    from app.database import SessionLocal
+    from app.models.patient import CareTeamMember
+
+    with SessionLocal() as db:
+        for pair in settings.care_team_phones.split(","):
+            member_id, _, phone = pair.strip().partition("=")
+            if not member_id or not phone:
+                continue
+            member = db.get(CareTeamMember, member_id)
+            if member is None:
+                logging.getLogger(__name__).warning(
+                    "CARE_TEAM_PHONES names unknown member %r", member_id
+                )
+                continue
+            member.phone = phone
+        db.commit()
+
+
+_apply_care_team_phones()
 
 
 @app.on_event("startup")
