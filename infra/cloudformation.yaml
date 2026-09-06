@@ -65,6 +65,33 @@ Parameters:
       Optional. Where Junction Link sends a patient after connecting a device.
       Blank leaves them on Junction's own completion screen.
 
+  SendblueApiKeyParameter:
+    Type: String
+    Default: /recovery-copilot/sendblue-api-key
+    Description: >-
+      SSM Parameter Store name (SecureString) holding the Sendblue API key.
+      deploy.sh writes it when SENDBLUE_API_KEY is set; with the parameter
+      absent the SMS channel stays on its logging stub.
+  SendblueApiSecretParameter:
+    Type: String
+    Default: /recovery-copilot/sendblue-api-secret
+    Description: >-
+      SSM Parameter Store name (SecureString) holding the Sendblue API secret.
+      Both Sendblue values must be present for the SMS channel to send.
+  SendblueFromNumber:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional. Which of the account's Sendblue numbers sends (E.164). Blank
+      lets Sendblue pick when the account has one number.
+  CareTeamPhones:
+    Type: String
+    Default: ""
+    Description: >-
+      Care-team phone numbers as "id=+1...,id=+1..." (see CARE_TEAM_PHONES in
+      .env.example). Applied to care_team_members rows at startup so numbers
+      never enter the repo. Blank applies nothing and SMS finds no recipient.
+
   LambdaMemoryMB:
     Type: Number
     Default: 1024
@@ -213,6 +240,8 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GroqApiKeyParameter}"
                   - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JunctionApiKeyParameter}"
                   - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JunctionWebhookSecretParameter}"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SendblueApiKeyParameter}"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SendblueApiSecretParameter}"
               - Effect: Allow
                 # Decrypting a SecureString written under the AWS-managed
                 # aws/ssm key, and only through SSM.
@@ -281,6 +310,12 @@ Resources:
           JUNCTION_ENVIRONMENT: !Ref JunctionEnvironment
           JUNCTION_REGION: !Ref JunctionRegion
           JUNCTION_LINK_REDIRECT_URL: !Ref JunctionLinkRedirectUrl
+          # Sendblue SMS: the two secrets come from Parameter Store at cold
+          # start; the from-number and recipient map are plain configuration.
+          SENDBLUE_API_KEY_PARAMETER: !Ref SendblueApiKeyParameter
+          SENDBLUE_API_SECRET_PARAMETER: !Ref SendblueApiSecretParameter
+          SENDBLUE_FROM_NUMBER: !Ref SendblueFromNumber
+          CARE_TEAM_PHONES: !Ref CareTeamPhones
           # No local model on Lambda: the chain is Groq -> deterministic.
           OLLAMA_URL: ""
           # The warmer is a laptop convenience; on Lambda it would re-run every
@@ -319,6 +354,11 @@ Resources:
           JUNCTION_WEBHOOK_SECRET_PARAMETER: !Ref JunctionWebhookSecretParameter
           JUNCTION_ENVIRONMENT: !Ref JunctionEnvironment
           JUNCTION_REGION: !Ref JunctionRegion
+          SENDBLUE_API_KEY_PARAMETER: !Ref SendblueApiKeyParameter
+          SENDBLUE_API_SECRET_PARAMETER: !Ref SendblueApiSecretParameter
+          # A reseed wipes care-team rows; the phone map re-applies on the
+          # next app import so SMS recipients survive it.
+          CARE_TEAM_PHONES: !Ref CareTeamPhones
           OLLAMA_URL: ""
           WARM_CACHES_ON_STARTUP: "false"
           # The seed holds the write lock for its whole run, so the TTL has to

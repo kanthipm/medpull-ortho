@@ -40,6 +40,8 @@ class AwsSettings(BaseSettings):
     groq_api_key_parameter: str = ""
     junction_api_key_parameter: str = ""
     junction_webhook_secret_parameter: str = ""
+    sendblue_api_key_parameter: str = ""
+    sendblue_api_secret_parameter: str = ""
 
     # The background insight warmer is a laptop convenience. On Lambda it would
     # re-run on every cold start, burn the Groq free-tier quota and race other

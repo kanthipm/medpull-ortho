@@ -5,15 +5,18 @@ function's plaintext environment (where anyone with console read access would
 see them) at no cost. Fetched once per execution environment and cached by the
 module, so the per-request cost is zero.
 
-Three parameters, each optional and each a no-op when its name is unset, so a
+Five parameters, each optional and each a no-op when its name is unset, so a
 plain env var or a local .env keeps working exactly as before:
 
 * ``GROQ_API_KEY_PARAMETER`` → ``settings.groq_api_key``
 * ``JUNCTION_API_KEY_PARAMETER`` → ``settings.junction_api_key``
 * ``JUNCTION_WEBHOOK_SECRET_PARAMETER`` → ``settings.junction_webhook_secret``
+* ``SENDBLUE_API_KEY_PARAMETER`` → ``settings.sendblue_api_key``
+* ``SENDBLUE_API_SECRET_PARAMETER`` → ``settings.sendblue_api_secret``
 
-The deploy always names the Junction parameters, whether or not a value was
-ever stored under them (both are optional: absent, the connector is idle).
+The deploy always names the Junction and Sendblue parameters, whether or not a
+value was ever stored under them (all are optional: absent, that integration
+is idle — the Junction connector, or SMS on its logging stub).
 A parameter that does not exist is therefore an expected state and is logged
 as one line at INFO; a traceback is kept for genuine access failures, which
 are the ones that look like an IAM or KMS problem and are.
@@ -41,6 +44,12 @@ def _parameters() -> list[tuple[str, str, str]]:
             aws_settings.junction_webhook_secret_parameter,
             "junction_webhook_secret",
             "Junction webhook secret",
+        ),
+        (aws_settings.sendblue_api_key_parameter, "sendblue_api_key", "Sendblue API key"),
+        (
+            aws_settings.sendblue_api_secret_parameter,
+            "sendblue_api_secret",
+            "Sendblue API secret",
         ),
     ]
 

@@ -37,6 +37,12 @@ JUNCTION_ENVIRONMENT="${JUNCTION_ENVIRONMENT:-sandbox}"
 JUNCTION_REGION="${JUNCTION_REGION:-$(dotenv_value JUNCTION_REGION)}"
 JUNCTION_REGION="${JUNCTION_REGION:-us}"
 JUNCTION_LINK_REDIRECT_URL="${JUNCTION_LINK_REDIRECT_URL:-$(dotenv_value JUNCTION_LINK_REDIRECT_URL)}"
+# Sendblue SMS. Same shape as Junction: two SSM secrets (optional — absent,
+# the SMS channel stays on its logging stub) and two plain settings.
+SENDBLUE_KEY_PARAM="${SENDBLUE_KEY_PARAM:-/recovery-copilot/sendblue-api-key}"
+SENDBLUE_SECRET_PARAM="${SENDBLUE_SECRET_PARAM:-/recovery-copilot/sendblue-api-secret}"
+SENDBLUE_FROM_NUMBER="${SENDBLUE_FROM_NUMBER:-$(dotenv_value SENDBLUE_FROM_NUMBER)}"
+CARE_TEAM_PHONES="${CARE_TEAM_PHONES:-$(dotenv_value CARE_TEAM_PHONES)}"
 BUDGET_EMAIL="${BUDGET_EMAIL:-}"
 
 RESEED=false
@@ -171,11 +177,13 @@ store_optional_secret() {
       --value "$value" --description "$label for Recovery Copilot" >/dev/null
     info "stored the $label in SSM ($param)"
   else
-    info "no $label — the Junction connector stays idle until one is stored"
+    info "no $label — that integration stays idle until one is stored"
   fi
 }
 store_optional_secret "$JUNCTION_PARAM" JUNCTION_API_KEY "Junction API key"
 store_optional_secret "$JUNCTION_WEBHOOK_PARAM" JUNCTION_WEBHOOK_SECRET "Junction webhook secret"
+store_optional_secret "$SENDBLUE_KEY_PARAM" SENDBLUE_API_KEY "Sendblue API key"
+store_optional_secret "$SENDBLUE_SECRET_PARAM" SENDBLUE_API_SECRET "Sendblue API secret"
 
 # --------------------------------------------------------------------------
 log "Building the Lambda package"
@@ -203,6 +211,10 @@ PARAMS=(
   "JunctionEnvironment=$JUNCTION_ENVIRONMENT"
   "JunctionRegion=$JUNCTION_REGION"
   "JunctionLinkRedirectUrl=$JUNCTION_LINK_REDIRECT_URL"
+  "SendblueApiKeyParameter=$SENDBLUE_KEY_PARAM"
+  "SendblueApiSecretParameter=$SENDBLUE_SECRET_PARAM"
+  "SendblueFromNumber=$SENDBLUE_FROM_NUMBER"
+  "CareTeamPhones=$CARE_TEAM_PHONES"
   "ApiReservedConcurrency=$RESERVED"
 )
 [ -n "$BUDGET_EMAIL" ] && PARAMS+=("BudgetAlertEmail=$BUDGET_EMAIL")
