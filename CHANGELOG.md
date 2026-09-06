@@ -1,5 +1,29 @@
 # Changelog
 
+## [recovery-copilot 1.6.0] - 2026-09-05
+
+### Added
+- **Sendblue SMS delivery for care-team alerts** (`app/notifications/sendblue.py`)
+  — the SMS channel stub is now a real sender: a high-priority alert texts the
+  patient's assigned provider via Sendblue's send-message API. The recipient's
+  phone is resolved at send time from their `care_team_members` row and
+  normalized to E.164; one bounded 5 s attempt, no retries (on Lambda the send
+  runs inside the 25 s S3 write-lock TTL, and the in-app copy of the same alert
+  is the durable fallback). With `SENDBLUE_API_KEY` / `SENDBLUE_API_SECRET`
+  unset the channel behaves exactly like the old stub, which is also the test
+  suite's pinned baseline (`conftest.py` blanks the keys so a developer's
+  `.env` can never send a real text from a test run). Optional
+  `SENDBLUE_FROM_NUMBER` picks which account number sends.
+- **`CARE_TEAM_PHONES`** — care-team phone numbers live in the environment
+  (`"id=+1...,id=+1..."`), applied to `care_team_members` rows on every app
+  start so real numbers never enter the public repo and survive a reseed.
+- **Deploy wiring** — the Sendblue keys join Groq and Junction as SSM
+  SecureStrings read once per cold start (`app/aws/secrets.py`); `deploy.sh`
+  stores them from the environment or `.env`, and `cloudformation.yaml` passes
+  the parameter names, from-number and phone map to both functions.
+- `NotificationStatus` gains `sent` / `failed` so a Sendblue API error is
+  recorded truthfully, never as success.
+
 ## [recovery-copilot 1.5.0] - 2026-09-03
 
 ### Removed
