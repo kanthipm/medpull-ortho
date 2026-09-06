@@ -98,9 +98,10 @@ def _post_message(phone: str, content: str) -> httpx.Response:
     return response
 
 
+# Deliberately carries no patient data: Sendblue sees a phone number, this
+# sentence, and an opaque one-time URL. The page greets by name server-side.
 CHECKIN_TEMPLATE = (
-    "Hi {patient_name}, your MedPull recovery check-in is ready. "
-    "Tap here to begin: {checkin_url}"
+    "Your MedPull recovery check-in is ready. Tap here to begin: {checkin_url}"
 )
 
 
@@ -111,9 +112,7 @@ class CheckinSendResult:
     status_code: int | None = None
 
 
-def send_checkin_message(
-    phone_number: str, patient_name: str, checkin_url: str
-) -> CheckinSendResult:
+def send_checkin_message(phone_number: str, checkin_url: str) -> CheckinSendResult:
     """Text a patient their check-in link. With either key unset, sends nothing."""
     if not (settings.sendblue_api_key and settings.sendblue_api_secret):
         return CheckinSendResult(sent=False, detail="Sendblue keys not configured")
@@ -124,7 +123,7 @@ def send_checkin_message(
             sent=False, detail=f"not a usable phone number: {phone_number!r}"
         )
 
-    content = CHECKIN_TEMPLATE.format(patient_name=patient_name, checkin_url=checkin_url)
+    content = CHECKIN_TEMPLATE.format(checkin_url=checkin_url)
     try:
         _post_message(phone, content)
     except httpx.HTTPStatusError as exc:

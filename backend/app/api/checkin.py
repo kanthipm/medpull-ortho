@@ -84,8 +84,7 @@ def send_invite(
 
     base = settings.checkin_base_url or str(request.base_url).rstrip("/")
     url = f"{base}/checkin/{token}"
-    first_name = patient.name.split()[0]
-    result = send_checkin_message(body.phone, first_name, url)
+    result = send_checkin_message(body.phone, url)
     return {"sent": result.sent, "detail": result.detail, "url": url}
 
 

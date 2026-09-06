@@ -35,7 +35,7 @@ def test_sends_formatted_message_with_normalized_phone(configured, monkeypatch):
 
     monkeypatch.setattr(sendblue.httpx, "post", fake_post)
 
-    result = send_checkin_message("(512) 491-7035", "Steve", "https://medpull.example/checkin/abc")
+    result = send_checkin_message("(512) 491-7035", "https://medpull.example/checkin/abc")
 
     assert result == CheckinSendResult(sent=True, detail="sent")
     (call,) = calls
@@ -44,7 +44,7 @@ def test_sends_formatted_message_with_normalized_phone(configured, monkeypatch):
     assert call["json"] == {
         "number": "+15124917035",
         "content": (
-            "Hi Steve, your MedPull recovery check-in is ready. "
+            "Your MedPull recovery check-in is ready. "
             "Tap here to begin: https://medpull.example/checkin/abc"
         ),
         "from_number": "+15049081262",
@@ -62,7 +62,7 @@ def test_from_number_omitted_when_unset(configured, monkeypatch):
 
     monkeypatch.setattr(sendblue.httpx, "post", fake_post)
 
-    assert send_checkin_message("5124917035", "Steve", "https://x.example/c").sent
+    assert send_checkin_message("5124917035", "https://x.example/c").sent
     assert "from_number" not in calls[0]
 
 
@@ -72,7 +72,7 @@ def test_unconfigured_keys_never_touch_the_network(monkeypatch):
 
     monkeypatch.setattr(sendblue.httpx, "post", explode)
 
-    result = send_checkin_message("+15124917035", "Steve", "https://x.example/c")
+    result = send_checkin_message("+15124917035", "https://x.example/c")
     assert result.sent is False
     assert "not configured" in result.detail
 
@@ -83,7 +83,7 @@ def test_unusable_phone_number_fails_before_any_request(configured, monkeypatch)
 
     monkeypatch.setattr(sendblue.httpx, "post", explode)
 
-    result = send_checkin_message("12", "Steve", "https://x.example/c")
+    result = send_checkin_message("12", "https://x.example/c")
     assert result.sent is False
     assert "phone" in result.detail
 
@@ -91,7 +91,7 @@ def test_unusable_phone_number_fails_before_any_request(configured, monkeypatch)
 def test_api_error_reports_the_status_code(configured, monkeypatch):
     monkeypatch.setattr(sendblue.httpx, "post", lambda *a, **kw: _FakeResponse(401))
 
-    result = send_checkin_message("+15124917035", "Steve", "https://x.example/c")
+    result = send_checkin_message("+15124917035", "https://x.example/c")
     assert result.sent is False
     assert result.status_code == 401
     assert "401" in result.detail
@@ -103,7 +103,7 @@ def test_transport_failure_reports_cleanly(configured, monkeypatch):
 
     monkeypatch.setattr(sendblue.httpx, "post", fake_post)
 
-    result = send_checkin_message("+15124917035", "Steve", "https://x.example/c")
+    result = send_checkin_message("+15124917035", "https://x.example/c")
     assert result.sent is False
     assert result.detail.startswith("request failed")
     assert result.status_code is None
