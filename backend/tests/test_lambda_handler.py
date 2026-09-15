@@ -5,10 +5,13 @@ SSM fetch, the cold-start hydrate — so these tests import it fresh under a
 patched environment rather than relying on module state from another test.
 """
 
+import atexit
 import importlib
 import json
+import shutil
 import sqlite3
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -17,6 +20,11 @@ from app.aws import storage
 from app.aws.config import aws_settings
 from app.config import settings
 from tests.test_aws_storage import FakeS3
+
+# Databases for these tests live under /tmp (see _import_handler); clean them
+# up at interpreter exit rather than leaking one directory per test run.
+_TMP_DIRS: list[str] = []
+atexit.register(lambda: [shutil.rmtree(d, ignore_errors=True) for d in _TMP_DIRS])
 
 
 # app.config and app.aws.* are deliberately NOT rebuilt: the tests monkeypatch
@@ -101,10 +109,16 @@ def _import_handler(monkeypatch, tmp_path, *, db_dir=None, secret=""):
     without ever marking the database dirty and the upload was silently skipped.
     """
     fake = FakeS3()
-    # tmp_path is per-test and already lives under /tmp, so it satisfies the
+    # The handler refuses a database outside /tmp (only /tmp is writable on
+    # Lambda). pytest's tmp_path satisfies that on Linux but not on macOS,
+    # where it lives under /private/var/folders — so the default here is a
+    # directory rooted at /tmp explicitly. See the
     # handler's writable-path guard while keeping runs isolated. A shared fixed
     # filename left a database behind that the next run would hydrate from.
-    db_path = f"{db_dir}/recovery-copilot-handler-test.db" if db_dir else f"{tmp_path}/recovery-copilot-handler-test.db"
+    if db_dir is None:
+        db_dir = tempfile.mkdtemp(dir="/tmp", prefix="handler-test-")
+        _TMP_DIRS.append(db_dir)
+    db_path = f"{db_dir}/recovery-copilot-handler-test.db"
 
     monkeypatch.setattr(settings, "database_url", f"sqlite:///{db_path}")
     monkeypatch.setattr(aws_settings, "s3_bucket", "test-bucket")

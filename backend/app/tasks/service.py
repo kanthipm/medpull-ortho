@@ -150,6 +150,60 @@ def surgical(patient: Patient) -> bool:
     return str(patient.procedure_type) != "NONE"
 
 
+# A care-plan task carries its schedule under payload["care"]. "once" is the
+# only one-shot schedule: every other kind is something the patient does again
+# tomorrow, so completing it today must not retire it.
+RECURRING_SCHEDULES = ("daily", "am_pm", "weekly", "ongoing")
+
+
+def _care(task: AdherenceTask) -> dict[str, Any]:
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    care = payload.get("care")
+    return care if isinstance(care, dict) else {}
+
+
+def schedule_of(task: AdherenceTask) -> str:
+    """The task's schedule. A task with no care payload (assigned ad hoc from
+    the console, or seeded) is one-shot: nothing says it repeats."""
+    return str(_care(task).get("schedule") or "once")
+
+
+def is_recurring(task: AdherenceTask) -> bool:
+    return schedule_of(task) in RECURRING_SCHEDULES
+
+
+def last_done_on(task: AdherenceTask) -> date | None:
+    """The day this task was last completed or skipped, from the payload the
+    completion writes (``completed_at`` is not enough: it is overwritten and
+    a recurring task's status goes back to open)."""
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    raw = payload.get("last_done")
+    if isinstance(raw, str):
+        try:
+            return date.fromisoformat(raw)
+        except ValueError:
+            return None
+    if task.completed_at is not None:
+        return task.completed_at.date()
+    return None
+
+
+def due_again(task: AdherenceTask, today: date | None = None) -> bool:
+    """True when a closed recurring task is owed again today."""
+    if not task.active or not is_recurring(task):
+        return False
+    done = last_done_on(task)
+    return done is None or done < (today or date.today())
+
+
+def closed_for_now(task: AdherenceTask, today: date | None = None) -> bool:
+    """True when the patient has nothing to do on this task right now: a
+    one-shot task that is finished, or a recurring one already done today."""
+    if task.status in OPEN_STATUSES:
+        return False
+    return not due_again(task, today)
+
+
 def question_set_key(task: AdherenceTask) -> str:
     payload = task.payload if isinstance(task.payload, dict) else {}
     qset = payload.get("qset")
@@ -279,8 +333,20 @@ def _hash(token: str) -> str:
 
 
 def mint_token(task: AdherenceTask) -> str:
+    """A fresh link for this task, keeping the one already texted alive.
+
+    The raw token is never stored, so re-minting used to 404 the link in the
+    original text the moment the patient asked for another one. The previous
+    hash is kept beside the current one and ``find_by_token`` accepts either,
+    so both texts work.
+    """
     token = secrets.token_urlsafe(24)
+    previous = task.token_hash
     task.token_hash = _hash(token)
+    if previous and previous != task.token_hash:
+        payload = dict(task.payload or {})
+        payload["prev_token_hash"] = previous
+        task.payload = payload
     return token
 
 
@@ -293,7 +359,16 @@ def deep_link(task: AdherenceTask) -> str:
 
 
 def find_by_token(db: Session, token: str) -> AdherenceTask | None:
-    return db.scalar(select(AdherenceTask).where(AdherenceTask.token_hash == _hash(token)))
+    digest = _hash(token)
+    task = db.scalar(select(AdherenceTask).where(AdherenceTask.token_hash == digest))
+    if task is not None:
+        return task
+    # The link from an earlier text for a task whose token was re-minted.
+    return db.scalar(
+        select(AdherenceTask).where(
+            AdherenceTask.payload["prev_token_hash"].as_string() == digest
+        )
+    )
 
 
 def create_task(
@@ -357,23 +432,33 @@ def dispatch(
     if result.sent:
         task.status = "sent"
         task.sent_at = datetime.now()
+        # A recurring task texted again today is owed again: clear the marker
+        # so the app and the SMS conversation both treat it as open.
+        if is_recurring(task):
+            payload = dict(task.payload or {})
+            payload.pop("last_done", None)
+            task.payload = payload
     else:
         logger.info("Task %s for %s not texted: %s", task.id, patient.id, result.detail)
     return result
 
 
-def open_tasks(db: Session, patient_id: str) -> list[AdherenceTask]:
-    return list(
-        db.scalars(
-            select(AdherenceTask)
-            .where(
-                AdherenceTask.patient_id == patient_id,
-                AdherenceTask.active.is_(True),
-                AdherenceTask.status.in_(OPEN_STATUSES),
-            )
-            .order_by(AdherenceTask.due_at.is_(None), AdherenceTask.due_at, AdherenceTask.id)
-        ).all()
-    )
+def open_tasks(db: Session, patient_id: str, today: date | None = None) -> list[AdherenceTask]:
+    """What the patient still has to do right now.
+
+    Two kinds of row qualify: one that has never been answered (pending or
+    texted), and an active *recurring* care-plan task that was answered on an
+    earlier day — a daily walk is owed again today, and retiring it on its
+    first completion was why an assigned plan emptied out of the app after one
+    check and never came back.
+    """
+    today = today or date.today()
+    rows = db.scalars(
+        select(AdherenceTask)
+        .where(AdherenceTask.patient_id == patient_id, AdherenceTask.active.is_(True))
+        .order_by(AdherenceTask.due_at.is_(None), AdherenceTask.due_at, AdherenceTask.id)
+    ).all()
+    return [t for t in rows if t.status in OPEN_STATUSES or due_again(t, today)]
 
 
 def recent_tasks(db: Session, patient_id: str, limit: int = 30) -> list[AdherenceTask]:
@@ -456,8 +541,13 @@ def complete_task(
     task completes once; a second completion is a ValueError the caller
     turns into 409.
     """
-    if task.status == "done":
-        raise ValueError("This task was already completed")
+    if closed_for_now(task):
+        raise ValueError(
+            "This task was already completed today" if is_recurring(task)
+            else "This task was already completed"
+        )
+    if not task.active:
+        raise ValueError("This task is no longer part of the plan")
     if via not in COMPLETION_CHANNELS:
         raise ValueError(f"Unknown completion channel {via}")
     answers = {k: v for k, v in (answers or {}).items() if v is not None and v != ""}
@@ -482,15 +572,17 @@ def complete_task(
             db.add(CheckinMessage(checkin_id=checkin.id, seq=seq + 1, who="patient", text=text))
             seq += 2
 
+    today = date.today()
     task.status = "done"
     task.completed_at = now
     task.completed_via = via
     task.result = {"answers": answers, "checkin_id": checkin.id if checkin else None}
     payload = dict(task.payload or {})
     payload.pop("sms", None)
+    # The day the patient answered. A recurring task reads this to know it is
+    # owed again tomorrow; a one-shot task is simply done.
+    payload["last_done"] = today.isoformat()
     task.payload = payload
-
-    today = date.today()
     record = db.scalar(
         select(AdherenceRecord).where(
             AdherenceRecord.task_id == task.id, AdherenceRecord.date == today
@@ -518,15 +610,19 @@ def complete_task(
 
 
 def skip_task(db: Session, task: AdherenceTask, via: str) -> None:
-    if task.status == "done":
-        raise ValueError("This task was already completed")
+    if closed_for_now(task):
+        raise ValueError(
+            "This task was already answered today" if is_recurring(task)
+            else "This task was already completed"
+        )
+    today = date.today()
     task.status = "skipped"
     task.completed_at = datetime.now()
     task.completed_via = via
     payload = dict(task.payload or {})
     payload.pop("sms", None)
+    payload["last_done"] = today.isoformat()
     task.payload = payload
-    today = date.today()
     if db.scalar(
         select(AdherenceRecord).where(
             AdherenceRecord.task_id == task.id, AdherenceRecord.date == today
@@ -543,7 +639,12 @@ def skip_task(db: Session, task: AdherenceTask, via: str) -> None:
 
 # --- the SMS conversation ----------------------------------------------------------
 
-START_WORDS = {"1", "start", "yes", "y", "ok", "okay", "go", "begin", "ready", "text", "here"}
+# Only words that can mean nothing but "walk me through the task you texted".
+# "yes", "ok" and "y" used to live here, which meant a patient answering their
+# nurse's question with "yes" got a task questionnaire instead of a reply, and
+# the nurse never saw the answer. Anything else goes to the copilot, which
+# passes it to the care team.
+START_WORDS = {"1", "start", "begin", "ready"}
 APP_WORDS = {"2", "app", "link", "open"}
 SKIP_WORDS = {"skip", "-", "n/a", "na", "pass", "next"}
 STOP_WORDS = {"stop", "cancel", "quit", "later"}
@@ -565,6 +666,17 @@ def _active_conversation(tasks: list[AdherenceTask]) -> AdherenceTask | None:
         if isinstance(sms, dict) and "step" in sms:
             return t
     return None
+
+
+def _texted_task(tasks: list[AdherenceTask]) -> AdherenceTask | None:
+    """The task a "1" is answering: the one texted most recently, since that
+    is the text in front of the patient. Falls back to the newest open task."""
+    if not tasks:
+        return None
+    sent = [t for t in tasks if t.sent_at is not None]
+    if sent:
+        return max(sent, key=lambda t: (t.sent_at, t.id))
+    return max(tasks, key=lambda t: t.id)
 
 
 def _prompt(task: AdherenceTask, step: int, lead: str = "") -> str:
@@ -685,16 +797,16 @@ def handle_inbound_sms(
     if active is not None:
         reply, kind = advance_conversation(db, active, body)
     elif lowered in START_WORDS:
-        if not tasks:
+        task = _texted_task(tasks)
+        if task is None:
             reply, kind = "You're all caught up — nothing is waiting right now.", "no_tasks"
         else:
-            task = next((t for t in tasks if t.status == "sent"), tasks[0])
             reply, kind = start_conversation(task), "task_started"
     elif lowered in APP_WORDS:
-        if not tasks:
+        task = _texted_task(tasks)
+        if task is None:
             reply, kind = "Nothing is waiting right now. Open the MedPull app anytime to see your plan.", "no_tasks"
         else:
-            task = next((t for t in tasks if t.status == "sent"), tasks[0])
             token = mint_token(task)
             url = task_url(base_url, token) if base_url else deep_link(task)
             reply, kind = f"Here you go: {url}", "link_sent"

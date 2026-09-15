@@ -35,19 +35,33 @@ from app.seed.patients import CARE_TEAM, HOSPITALS, PATIENTS
 from app.seed.scenarios import get_scenario
 
 
-def seed_core(db: Session, today: date) -> dict[str, int]:
+def seed_core(
+    db: Session,
+    today: date,
+    *,
+    roster: tuple[list, list] | None = None,
+) -> dict[str, int]:
+    """Build the demo database for one roster.
+
+    ``roster`` is ``(hospitals, patients)`` and defaults to what the product
+    ships (``patients.HOSPITALS`` / ``patients.PATIENTS``). The test suite
+    passes ``patients.full_roster()`` so the synthetic ortho patients its
+    engine fixtures are calibrated against exist without widening the demo
+    the product seeds.
+    """
+    hospitals, patients = roster if roster is not None else (HOSPITALS, PATIENTS)
     counts: dict[str, int] = {}
 
-    for h in HOSPITALS:
+    for h in hospitals:
         db.add(Hospital(id=h.id, name=h.name, system=h.system, city=h.city,
                         state=h.state, timezone=h.timezone))
-    counts["hospitals"] = len(HOSPITALS)
+    counts["hospitals"] = len(hospitals)
 
     for ct in CARE_TEAM:
         db.add(CareTeamMember(id=ct.id, name=ct.name, role=ct.role))
     counts["care_team"] = len(CARE_TEAM)
 
-    for spec in PATIENTS:
+    for spec in patients:
         surgery = today - timedelta(days=spec.postop_day)
         db.add(
             Patient(
@@ -76,12 +90,12 @@ def seed_core(db: Session, today: date) -> dict[str, int]:
                     last_sync_at=datetime.combine(today, time(7, 30)),
                 )
             )
-    counts["patients"] = len(PATIENTS)
+    counts["patients"] = len(patients)
     db.commit()
 
     # observations via the same path real integrations will use
     total_obs = 0
-    for spec in PATIENTS:
+    for spec in patients:
         if spec.provider is None:  # real patient — no synthetic observations
             continue
         obs = generate_patient_observations(spec, get_scenario(spec.id), today)
@@ -91,7 +105,7 @@ def seed_core(db: Session, today: date) -> dict[str, int]:
 
     # check-ins
     n_checkins = 0
-    for spec in PATIENTS:
+    for spec in patients:
         for days_ago, hour, messages in CONVERSATIONS.get(spec.id, []):
             checkin = Checkin(
                 patient_id=spec.id,
@@ -107,7 +121,7 @@ def seed_core(db: Session, today: date) -> dict[str, int]:
 
     # adherence tasks + last-14-day records
     n_records = 0
-    for spec in PATIENTS:
+    for spec in patients:
         specs = adh.TASKS.get(spec.id, [])
         task_rows = []
         for t in specs:
@@ -143,7 +157,7 @@ def seed_core(db: Session, today: date) -> dict[str, int]:
     return counts
 
 
-def warm_engine_and_insights(db: Session) -> None:
+def warm_engine_and_insights(db: Session, patients: list | None = None) -> None:
     from app.engine.pipeline import run_all
 
     assessments = run_all(db)
@@ -152,7 +166,7 @@ def warm_engine_and_insights(db: Session) -> None:
     from app.llm.insights import get_daily_briefing, get_patient_insight
     from app.models.enums import InsightKind
 
-    for spec in PATIENTS:
+    for spec in (patients if patients is not None else PATIENTS):
         for kind in (
             InsightKind.WORKLIST_REASON,
             InsightKind.PATIENT_SUMMARY,

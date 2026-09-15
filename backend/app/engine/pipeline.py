@@ -52,7 +52,7 @@ def compute_input_hash(db: Session, patient_id: str) -> str:
     # check-ins, adherence records and tasks, so a check-in answered by text or
     # a task assigned in the console must invalidate the stored assessment too.
     # One extra query of three scalar subqueries keeps the read path cheap.
-    checkins, records, max_task = db.execute(
+    checkins, records, max_task, active_tasks, closed_tasks = db.execute(
         select(
             select(func.count(Checkin.id))
             .where(Checkin.patient_id == patient_id).scalar_subquery(),
@@ -60,6 +60,17 @@ def compute_input_hash(db: Session, patient_id: str) -> str:
             .where(AdherenceRecord.patient_id == patient_id).scalar_subquery(),
             select(func.max(AdherenceTask.id))
             .where(AdherenceTask.patient_id == patient_id).scalar_subquery(),
+            # A plan changes without any new row: ending a task flips `active`
+            # and answering one flips `status`. Neither moves the counts above,
+            # so the stored assessment used to stay behind a plan the provider
+            # had already changed — the care metrics kept scoring a task the
+            # console showed as ended.
+            select(func.count(AdherenceTask.id))
+            .where(AdherenceTask.patient_id == patient_id,
+                   AdherenceTask.active.is_(True)).scalar_subquery(),
+            select(func.count(AdherenceTask.id))
+            .where(AdherenceTask.patient_id == patient_id,
+                   AdherenceTask.status.in_(("done", "skipped"))).scalar_subquery(),
         )
     ).one()
     # today's date is part of the hash: postop_day and the recent-window stats
@@ -67,9 +78,32 @@ def compute_input_hash(db: Session, patient_id: str) -> str:
     # each day lazily recomputes every assessment.
     payload = (
         f"{patient_id}:{count}:{latest}:{checkins}:{records}:{max_task}:"
-        f"{date.today()}:{ENGINE_VERSION}"
+        f"{active_tasks}:{closed_tasks}:{date.today()}:{ENGINE_VERSION}"
     )
     return hashlib.sha256(payload.encode()).hexdigest()
+
+
+# How many assessments per patient are kept. Each row carries the whole
+# analytics bundle (every metric card, its series and the care report), so they
+# are the largest rows in the database — and the input hash contains today's
+# date, so a patient collects one per day at minimum. Nothing reads history:
+# every consumer asks for the latest. One production chart had 101 rows.
+KEEP_ASSESSMENTS = 3
+
+
+def _prune_assessments(db: Session, patient_id: str) -> None:
+    superseded = db.scalars(
+        select(RiskAssessment.id)
+        .where(RiskAssessment.patient_id == patient_id)
+        .order_by(RiskAssessment.computed_at.desc(), RiskAssessment.id.desc())
+        .offset(KEEP_ASSESSMENTS)
+    ).all()
+    if not superseded:
+        return
+    from sqlalchemy import delete
+
+    db.execute(delete(RiskAssessment).where(RiskAssessment.id.in_(superseded)))
+    db.commit()
 
 
 def latest_assessment(db: Session, patient_id: str) -> RiskAssessment | None:
@@ -223,6 +257,7 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
     )
     db.add(assessment)
     db.commit()
+    _prune_assessments(db, patient_id)
 
     was_high = previous is not None and previous.risk_level == RiskLevel.HIGH
     if risk.level == RiskLevel.HIGH and not was_high:

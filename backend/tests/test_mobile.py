@@ -51,11 +51,14 @@ def _enroll(client, patient_id="steve", hospital_id="hosp_demo", phone=STEVE_PHO
 
 
 def test_hospitals_listed_and_searchable(client):
+    from app.seed.patients import full_roster
+
     body = client.get("/api/mobile/hospitals").json()
     ids = [h["id"] for h in body["hospitals"]]
-    assert ids == ["hosp_demo"]
-    filtered = client.get("/api/mobile/hospitals?q=houston").json()["hospitals"]
-    assert [h["id"] for h in filtered] == ["hosp_demo"]
+    assert set(ids) == {h.id for h in full_roster()[0]}
+    assert "hosp_demo" in ids
+    filtered = client.get("/api/mobile/hospitals?q=methodist").json()["hospitals"]
+    assert [h["id"] for h in filtered] == ["hosp_methodist"]
     assert client.get("/api/mobile/hospitals?q=nowhere").json()["hospitals"] == []
 
 
@@ -79,6 +82,12 @@ def test_patient_search_is_scoped_masked_and_needs_two_chars(client):
                         json={"hospital_id": "hosp_demo", "name": "medha rao"}).json()
     assert found["candidates"][0]["display_name"] == "Medha R."
     assert found["candidates"][0]["procedure_display"] == "General care"
+    # Linda Park is at Methodist: invisible from the demo hospital's roster.
+    assert client.post("/api/mobile/patients/search",
+                       json={"hospital_id": "hosp_demo", "name": "Linda Park"}).json()["candidates"] == []
+    at_methodist = client.post("/api/mobile/patients/search",
+                               json={"hospital_id": "hosp_methodist", "name": "linda"}).json()
+    assert at_methodist["candidates"][0]["display_name"] == "Linda P."
     short = client.post("/api/mobile/patients/search",
                         json={"hospital_id": "hosp_demo", "name": "s"}).json()
     assert short["candidates"] == []

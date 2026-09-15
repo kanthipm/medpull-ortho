@@ -53,10 +53,17 @@ def seeded_db():
     Base.metadata.create_all(engine)
     db = SessionLocal()
     try:
+        from app.seed.patients import full_roster
         from app.seed.seed import seed_core, warm_engine_and_insights
 
-        seed_core(db, date.today())
-        warm_engine_and_insights(db)
+        # The full roster, not the shipped one: the engine's golden tiers,
+        # the baseline-stability checks and most API fixtures are calibrated
+        # against the nine synthetic ortho patients, which the product seed
+        # no longer ships (one demo hospital). Seeding them here keeps that
+        # coverage alive without widening what a deployment gets.
+        hospitals, patients = full_roster()
+        seed_core(db, date.today(), roster=(hospitals, patients))
+        warm_engine_and_insights(db, patients)
         yield db
     finally:
         db.close()

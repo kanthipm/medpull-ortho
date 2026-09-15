@@ -98,7 +98,11 @@ def _validate(kind: InsightKind, content: dict[str, Any]) -> dict[str, Any] | No
             if not briefing or len(briefing) < 30:
                 return None
             content = {"briefing": briefing}
-    except (KeyError, TypeError):
+    except (KeyError, TypeError, AttributeError, ValueError, IndexError):
+        # Model output that parsed as JSON but is not the shape this kind
+        # declares — {"actions": ["call them"]} instead of a list of objects,
+        # so `a.get` raises AttributeError. A malformed narrative must degrade
+        # to the deterministic renderer, never 500 the page that asked for it.
         return None
 
     # The guardrail sentence itself is exempt from the banned-phrase scan.

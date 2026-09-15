@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
@@ -11,9 +12,18 @@ from app.models.library import TaskTemplate
 from app.models.patient import Patient
 from app.plan import ensure_ready
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["worklist"])
 
 TIER_ORDER = {RiskLevel.HIGH: 0, RiskLevel.MEDIUM: 1, RiskLevel.MISSING_DATA: 2, RiskLevel.LOW: 3}
+
+# How many patients on one worklist request may reach the model for their
+# one-line reason. A cold cache misses for every patient at once (an engine or
+# prompt version bump does that), and a dozen sequential Groq calls behind a
+# 30 s edge timeout is a worklist that times out rather than one that is slow.
+# The rest are served the deterministic line, keyed as such, so a later read
+# fills the real key. Highest tier first: that is where the words matter.
+LLM_BUDGET = 4
 
 
 def ensure_fresh_assessment(db: Session, patient_id: str):
@@ -43,21 +53,49 @@ def worklist(db: Session = Depends(get_db)) -> dict:
         ).all()
     )
 
+    # Assessments first, so the tier is known before any narrative is asked
+    # for: the model budget below goes to the rows a clinician reads first.
+    # One patient's failure must not empty the roster — the whole point of
+    # this screen is the other eleven — so a broken patient is reported as a
+    # row that says so and the rest of the worklist is served.
+    scored: list[tuple[Patient, object | None]] = []
+    broken: list[Patient] = []
+    for patient in patients:
+        try:
+            scored.append((patient, ensure_fresh_assessment(db, patient.id)))
+        except Exception:  # noqa: BLE001 — one patient, not the roster
+            logger.exception("worklist: assessment failed for %s", patient.id)
+            broken.append(patient)
+    scored.sort(key=lambda pair: TIER_ORDER.get(RiskLevel(pair[1].risk_level), 9))
+
     rows = []
     stats = {"total": len(patients), "high": 0, "medium": 0, "missing": 0, "low": 0}
-    for patient in patients:
-        assessment = ensure_fresh_assessment(db, patient.id)
-        reason = get_patient_insight(db, InsightKind.WORKLIST_REASON, patient.id)
+    llm_spent = 0
+    for patient, assessment in scored:
         analytics = assessment.analytics
         level = RiskLevel(assessment.risk_level)
         stats_key = "missing" if level == RiskLevel.MISSING_DATA else str(level)
         stats[stats_key] += 1
+        try:
+            reason = get_patient_insight(
+                db, InsightKind.WORKLIST_REASON, patient.id, allow_llm=llm_spent < LLM_BUDGET,
+            )
+            if reason.llm_provider != "fallback":
+                llm_spent += 1
+            reason_text = reason.content.get("reason", "")
+        except Exception:  # noqa: BLE001 — a narrative is not worth a 500
+            logger.exception("worklist: reason failed for %s", patient.id)
+            reason_text = ""
         # Rules over the stored assessment plus a few counts — no LLM, no
         # recompute — so the row can carry its top recommended step.
-        next_step, next_steps_open = next_step_summary(
-            db, patient, assessment, last_checkin_at=last_checkins.get(patient.id),
-            templates=templates,
-        )
+        try:
+            next_step, next_steps_open = next_step_summary(
+                db, patient, assessment, last_checkin_at=last_checkins.get(patient.id),
+                templates=templates,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("worklist: next step failed for %s", patient.id)
+            next_step, next_steps_open = None, 0
         rows.append(
             {
                 "id": patient.id,
@@ -65,7 +103,7 @@ def worklist(db: Session = Depends(get_db)) -> dict:
                 "initials": patient.initials,
                 "priority": level,
                 "risk_score": assessment.risk_score,
-                "reason": reason.content.get("reason", ""),
+                "reason": reason_text,
                 "procedure_display": patient.procedure_display,
                 "postop_day": analytics.get("postop_day"),
                 "days_since_discharge": (datetime.now().date() - patient.discharge_date).days,
@@ -87,18 +125,53 @@ def worklist(db: Session = Depends(get_db)) -> dict:
             }
         )
 
+    # A patient the engine could not score still belongs on the screen: a
+    # silently missing row reads as "nothing to do here".
+    for patient in broken:
+        stats["missing"] += 1
+        rows.append(
+            {
+                "id": patient.id,
+                "name": patient.name,
+                "initials": patient.initials,
+                "priority": RiskLevel.MISSING_DATA,
+                "risk_score": -1,
+                "reason": "Analysis unavailable — open the patient to retry",
+                "procedure_display": patient.procedure_display,
+                "postop_day": None,
+                "days_since_discharge": (datetime.now().date() - patient.discharge_date).days,
+                "last_checkin_at": last_checkins.get(patient.id),
+                "assigned_provider": {
+                    "name": patient.assigned_provider.name,
+                    "role": str(patient.assigned_provider.role),
+                },
+                "data_confidence": {"score": 0.0, "level": "low"},
+                "trajectory": {"state": "unknown", "pct": None},
+                "next_step": None,
+                "next_steps_open": 0,
+            }
+        )
+
     rows.sort(key=lambda r: (TIER_ORDER[r["priority"]], -r["risk_score"]))
     for row in rows:
         row.pop("risk_score")
 
-    briefing = get_daily_briefing(db)
+    try:
+        briefing_text = ""
+        briefing = get_daily_briefing(db)
+        briefing_text = briefing.content.get("briefing", "")
+        briefing_view = {
+            "text": briefing_text,
+            "generated_at": briefing.generated_at.isoformat(),
+            "provider": briefing.llm_provider,
+        }
+    except Exception:  # noqa: BLE001 — the roster matters, the paragraph does not
+        logger.exception("worklist: briefing failed")
+        briefing_view = {"text": "", "generated_at": datetime.now().isoformat(),
+                         "provider": "unavailable"}
     return {
         "as_of": datetime.now().isoformat(),
         "stats": stats,
-        "briefing": {
-            "text": briefing.content.get("briefing", ""),
-            "generated_at": briefing.generated_at.isoformat(),
-            "provider": briefing.llm_provider,
-        },
+        "briefing": briefing_view,
         "patients": rows,
     }

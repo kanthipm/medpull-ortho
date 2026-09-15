@@ -343,8 +343,15 @@ def test_worklist_rows_carry_the_top_step(client, library):
             assert row["next_step"]["state"]["status"] == "open"
             assert {"key", "title", "action", "urgency"} <= set(row["next_step"])
     assert any(r["next_step"] is not None for r in rows)
+    # A low-priority patient never carries an urgent step. Which quiet step
+    # is on top depends on their check-in history: one who has never checked
+    # in is asked for one, everybody else gets the on-track acknowledgement.
     on_track = [r for r in rows if r["priority"] == "low"]
-    assert on_track and all(r["next_step"]["key"] == "ack_on_track" for r in on_track)
+    assert on_track
+    for row in on_track:
+        assert row["next_step"]["urgency"] != "today"
+        expected = "ack_on_track" if row["last_checkin_at"] else "send_checkin"
+        assert row["next_step"]["key"] == expected, (row["id"], row["next_step"]["key"])
 
 
 def test_every_step_string_passes_the_guardrail(client, library):

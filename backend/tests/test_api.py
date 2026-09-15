@@ -32,7 +32,9 @@ def test_health(client):
 
 def test_worklist_shape_and_ordering(client):
     body = client.get("/api/worklist").json()
-    assert body["stats"]["total"] == 12
+    from app.seed.patients import full_roster
+
+    assert body["stats"]["total"] == len(full_roster()[1])
     assert body["briefing"]["text"]
     priorities = [p["priority"] for p in body["patients"]]
     order = {"high": 0, "medium": 1, "missing_data": 2, "low": 3}

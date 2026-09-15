@@ -82,7 +82,9 @@ def test_ask_behind_schedule(db):
 
 def test_ask_missing_data(db):
     result = ask(db, "Anyone with device data gaps?")
-    assert result["patient_ids"] == ["guest", "kanthi", "priya", "steve"]
+    # medha is seeded with no device at all; guest/kanthi/steve are the
+    # history-free real patients and priya's watch coverage is sparse.
+    assert result["patient_ids"] == ["guest", "kanthi", "medha", "priya", "steve"]
 
 
 def test_ask_procedure_filter(db):

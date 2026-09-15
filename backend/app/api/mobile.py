@@ -212,13 +212,20 @@ def _mask_phone(phone: str | None) -> str | None:
 
 
 def _task_view(t: AdherenceTask) -> dict[str, Any]:
+    # The status the PATIENT is in, not the row's history: a recurring
+    # care-plan task answered yesterday is open again today, and the app
+    # decides whether a row is tappable from this field.
+    due = tasks.due_again(t)
     return {
         "id": t.id,
         "kind": t.kind or "custom",
         "kind_label": tasks.KIND_LABELS.get(t.kind or "custom", "Task"),
         "title": t.title,
         "why": t.why,
-        "status": t.status or "pending",
+        "status": "pending" if due else (t.status or "pending"),
+        "recurring": tasks.is_recurring(t),
+        "schedule": tasks.schedule_of(t),
+        "last_done_on": tasks.last_done_on(t).isoformat() if tasks.last_done_on(t) else None,
         "created_at": _iso(t.created_at),
         "due_at": _iso(t.due_at),
         "sent_at": _iso(t.sent_at),
@@ -450,17 +457,25 @@ def _verification_needed() -> bool:
     return settings.mobile_otp_required and sendblue.configured()
 
 
-def _start_verification(db: Session, patient: Patient, phone: str) -> dict:
+def _start_verification(db: Session, patient: Patient, phone: str, *,
+                        send_to: str | None = None) -> dict:
     """Text a one-time code and answer ``verification_required``. Nothing on
-    the patient changes until the code comes back through ``verify``."""
+    the patient changes until the code comes back through ``verify``.
+
+    ``send_to`` is where the code goes when that is not the number being
+    claimed: proving a claim on a chart that already has a number means
+    receiving a code AT that number, so a stranger who guesses a record id
+    cannot take it over with their own phone.
+    """
     code = f"{secrets.randbelow(1_000_000):06d}"
+    destination = send_to or phone
     verification = PhoneVerification(
         patient_id=patient.id, phone=phone, code_hash=_hash(code),
         expires_at=datetime.now() + VERIFICATION_TTL,
     )
     db.add(verification)
     db.commit()
-    delivery = sendblue.send_verification_code(phone, code)
+    delivery = sendblue.send_verification_code(destination, code)
     if not delivery.sent:
         # The code cannot reach them; a session now would be unverified and
         # the app would show a screen waiting for a text that never comes.
@@ -470,21 +485,49 @@ def _start_verification(db: Session, patient: Patient, phone: str) -> dict:
     return {
         "status": "verification_required",
         "verification_id": verification.id,
-        "phone_masked": _mask_phone(phone),
+        "phone_masked": _mask_phone(destination),
         "expires_at": _iso(verification.expires_at),
     }
 
 
-def _claim_phone(db: Session, patient: Patient, phone: str) -> None:
-    """One number, one chart. Enrolling says "this record is me", so the
-    number leaves any other chart that carried it (a clinician's typo, or an
-    earlier sign-up the person abandoned) rather than landing texts on two."""
-    for other in db.scalars(
+def _claim_phone(db: Session, patient: Patient, phone: str, *, verified: bool) -> None:
+    """One number, one chart.
+
+    A *verified* enrollment proves the person holds the number, so it leaves
+    any other chart that carried it (a clinician's typo, an abandoned
+    sign-up). An unverified one may not take a number off someone else's
+    chart — that would silently redirect another patient's texts — so it is
+    refused and the app sends them to find that record instead.
+    """
+    others = db.scalars(
         select(Patient).where(Patient.phone == phone, Patient.id != patient.id)
-    ).all():
+    ).all()
+    if others and not verified:
+        raise HTTPException(
+            status_code=409,
+            detail="That number is already on another record here — go back and find that "
+            "record instead of this one",
+        )
+    for other in others:
         logger.info("Phone moved from %s to %s at enrollment", other.id, patient.id)
         other.phone = None
     patient.phone = phone
+
+
+def _enrollment_is_open(db: Session, patient: Patient, phone: str) -> bool:
+    """Whether this record may be claimed without a texted code.
+
+    Enrolling binds a session to one chart and points the care team's texts
+    at a phone, so it cannot be frictionless for a record that is already
+    somebody's. Open when the chart has no number on file (nobody has
+    claimed it — the state a clinician leaves a new chart in), or when the
+    number given is already the one on file (the same person reinstalling,
+    or the number the clinic put there when they created the chart).
+    Otherwise the code proves the claim.
+    """
+    if not patient.phone:
+        return True
+    return patient.phone == phone
 
 
 @router.post("/enroll")
@@ -500,14 +543,31 @@ def enroll(body: EnrollBody, db: Session = Depends(get_db)) -> dict:
     if body.date_of_birth and patient.date_of_birth and body.date_of_birth != patient.date_of_birth:
         raise HTTPException(status_code=409, detail="Date of birth doesn't match our record")
 
+    # A code is needed when the deployment asks for one, and always when the
+    # record already belongs to a different number — see _enrollment_is_open.
+    open_record = _enrollment_is_open(db, patient, phone)
+    if _verification_needed() or not open_record:
+        if not sendblue.configured():
+            # Nothing can carry a code, and claiming the record unverified
+            # would hand this chart to whoever asked. The clinic can put the
+            # right number on the chart from the console instead.
+            raise HTTPException(
+                status_code=409,
+                detail="That record already has a different number on file. Ask your care "
+                "team to update it, then sign in again.",
+            )
+        # The code goes to the number on file when there is one: receiving it
+        # is what proves the claim.
+        send_to = patient.phone if not open_record else phone
+        started = _start_verification(db, patient, phone, send_to=send_to)
+        # Only fields the verification itself will apply are written here.
+        db.commit()
+        return started
     if not patient.hospital_id:
         patient.hospital_id = body.hospital_id
     if body.date_of_birth and not patient.date_of_birth:
         patient.date_of_birth = body.date_of_birth
-    if _verification_needed():
-        db.commit()
-        return _start_verification(db, patient, phone)
-    _claim_phone(db, patient, phone)
+    _claim_phone(db, patient, phone, verified=False)
     first = _first_enrollment(db, patient)
     token = _issue_session(db, patient, body.device_name, body.app_version)
     if first:
@@ -540,7 +600,7 @@ def verify(body: VerifyBody, db: Session = Depends(get_db)) -> dict:
     patient = db.get(Patient, verification.patient_id)
     if patient is None:
         raise HTTPException(status_code=404, detail="Unknown patient")
-    _claim_phone(db, patient, verification.phone)
+    _claim_phone(db, patient, verification.phone, verified=True)
     first = _first_enrollment(db, patient)
     token = _issue_session(db, patient, body.device_name, body.app_version)
     if first:
@@ -615,6 +675,9 @@ def join(body: JoinBody, db: Session = Depends(get_db)) -> dict:
             "creating a new one",
         )
     name = " ".join(body.name.split())
+    if len(name) < 2:
+        # min_length on the field counts raw characters, so "  " reaches here.
+        raise HTTPException(status_code=422, detail="Enter your full name")
     if body.had_surgery:
         if body.procedure_type not in PROCEDURE_DISPLAY or body.procedure_type == "NONE":
             raise HTTPException(status_code=422, detail="Pick the operation you had")
@@ -684,8 +747,9 @@ def me(patient: Patient = Depends(current_patient), db: Session = Depends(get_db
 def list_tasks(patient: Patient = Depends(current_patient), db: Session = Depends(get_db)) -> dict:
     """Every open task (however old), then the twenty most recent closed ones."""
     open_rows = tasks.open_tasks(db, patient.id)
+    open_ids = {t.id for t in open_rows}
     done_rows = [t for t in tasks.recent_tasks(db, patient.id, limit=60)
-                 if t.status not in tasks.OPEN_STATUSES]
+                 if t.id not in open_ids and t.status not in tasks.OPEN_STATUSES]
     return {"open": [_task_view(t) for t in open_rows], "recent": [_task_view(t) for t in done_rows[:20]]}
 
 
@@ -711,7 +775,8 @@ def complete(
     try:
         checkin = tasks.complete_task(db, task, body.answers, via=via)
     except ValueError as e:
-        raise HTTPException(status_code=409 if "already" in str(e) else 422, detail=str(e))
+        conflict = "already" in str(e) or "no longer part" in str(e)
+        raise HTTPException(status_code=409 if conflict else 422, detail=str(e))
     return {"ok": True, "task": _task_view(task), "checkin_id": checkin.id if checkin else None}
 
 
@@ -727,17 +792,27 @@ def skip(
     return {"ok": True, "task": _task_view(task)}
 
 
+MESSAGE_PAGE = 200
+
+
 @router.get("/messages")
 def list_messages(
     since_id: int = 0, patient: Patient = Depends(current_patient), db: Session = Depends(get_db)
 ) -> dict:
+    """The thread, oldest-first, capped at the most recent ``MESSAGE_PAGE``.
+
+    The cap takes the NEWEST rows: ordering ascending and limiting took the
+    oldest, so a patient past two hundred messages stopped seeing anything
+    new — the app polls this with no cursor and would have shown a thread
+    frozen months back.
+    """
     rows = db.scalars(
         select(Message)
         .where(Message.patient_id == patient.id, Message.id > since_id)
-        .order_by(Message.id)
-        .limit(200)
+        .order_by(Message.id.desc())
+        .limit(MESSAGE_PAGE)
     ).all()
-    return {"messages": [_message_view(m) for m in rows]}
+    return {"messages": [_message_view(m) for m in reversed(rows)]}
 
 
 class MessageBody(BaseModel):

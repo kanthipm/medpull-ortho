@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from app.models import Observation, Patient
 from app.models.enums import MetricType, SourceProvider
 from app.seed.generators import generate_patient_observations
-from app.seed.patients import PATIENTS, get_spec
+from app.seed.patients import full_roster, get_spec
 from app.seed.scenarios import get_scenario
 
 GAIT = {MetricType.WALKING_SPEED, MetricType.WALKING_ASYMMETRY_PCT, MetricType.DOUBLE_SUPPORT_PCT}
@@ -21,7 +21,10 @@ def test_generator_is_deterministic():
 
 
 def test_all_patients_seeded(db):
-    assert db.scalar(select(func.count(Patient.id))) == len(PATIENTS)
+    # conftest seeds patients.full_roster(): the shipped demo hospital plus
+    # the ortho demo roster these fixtures are calibrated against.
+    _, seeded = full_roster()
+    assert db.scalar(select(func.count(Patient.id))) == len(seeded)
 
 
 def test_gait_metrics_only_for_apple_patients(db):
@@ -30,7 +33,8 @@ def test_gait_metrics_only_for_apple_patients(db):
             Observation.metric_type.in_([str(m) for m in GAIT])
         )
     ).all()
-    apple_ids = {p.id for p in PATIENTS if p.provider == SourceProvider.APPLE}
+    _, seeded = full_roster()
+    apple_ids = {p.id for p in seeded if p.provider == SourceProvider.APPLE}
     assert rows, "expected gait observations for apple patients"
     assert {pid for pid, _ in rows} <= apple_ids
 

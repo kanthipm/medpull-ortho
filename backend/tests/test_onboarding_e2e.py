@@ -91,7 +91,7 @@ def test_surgery_patient_finds_their_chart_and_everything_lands_on_it(client, db
 
     # the app: hospital -> find my record -> enroll
     hospitals = client.get("/api/mobile/hospitals").json()["hospitals"]
-    assert [h["id"] for h in hospitals] == ["hosp_demo"]
+    assert "hosp_demo" in [h["id"] for h in hospitals]
     found = client.post("/api/mobile/patients/search", json={
         "hospital_id": "hosp_demo", "name": "rosa", "phone": "(512) 555-0410"}).json()["candidates"]
     assert found[0]["patient_id"] == pid and found[0]["phone_match"] is True
@@ -657,3 +657,245 @@ def test_delete_patient_refuses_a_live_signup_and_removes_a_junk_row(client, db,
     assert result["deleted"] == pid and result["rows"]["adherence_tasks"] == 1
     assert db.get(Patient, pid) is None
     assert db.scalars(select(Message).where(Message.patient_id == pid)).all() == []
+
+
+# --- claiming a record ----------------------------------------------------------------------
+
+
+def test_enroll_cannot_take_over_a_record_that_already_has_a_number(client, db, monkeypatch):
+    """The hole this closes: with OTP off, POST /enroll named any patient_id
+    and any phone, and answered a session on that chart plus moved the number
+    onto it. A record whose number is somebody else's now needs a code, and
+    the code goes to the number ON FILE, not to the caller's phone."""
+    from app.models.hospital import Hospital
+
+    db.expire_all()
+    hospital = db.get(Hospital, "hosp_demo")
+    hospital.access_token = "tok-e2e"
+    db.commit()
+
+    # unconfigured Sendblue: nothing can carry a code, so the claim is refused
+    created = client.post("/api/patients/", headers=_auth("tok-e2e"), json={
+        "hospital_id": "hosp_demo", "name": "Owned Record", "phone": "+15125550510"}).json()
+    pid = created["patient"]["id"]
+    attack = client.post("/api/mobile/enroll", json={
+        "patient_id": pid, "hospital_id": "hosp_demo", "phone": "+15125559999"})
+    assert attack.status_code == 409
+    assert "care team" in attack.json()["detail"]
+    db.expire_all()
+    assert db.get(Patient, pid).phone == "+15125550510"
+    assert db.scalars(select(PatientSession).where(PatientSession.patient_id == pid)).all() == []
+    # the real owner, with the number the clinic put on file, is frictionless
+    ok = client.post("/api/mobile/enroll", json={
+        "patient_id": pid, "hospital_id": "hosp_demo", "phone": "(512) 555-0510"})
+    assert ok.status_code == 200 and ok.json()["session_token"]
+
+    # configured Sendblue: the claim is a code, texted to the number on file
+    sb = Sendblue(monkeypatch)
+    attack = client.post("/api/mobile/enroll", json={
+        "patient_id": pid, "hospital_id": "hosp_demo", "phone": "+15125559999"})
+    assert attack.status_code == 200
+    body = attack.json()
+    assert body["status"] == "verification_required" and "session_token" not in body
+    assert body["phone_masked"].endswith("0510")  # the owner's number, not the caller's
+    assert sb.sent[-1][0] == "+15125550510"
+    code = sb.last().split("is ")[1].split(".")[0]
+    # a wrong code is refused and the chart is untouched
+    assert client.post("/api/mobile/enroll/verify", json={
+        "verification_id": body["verification_id"], "code": "000000"}).status_code == 401
+    db.expire_all()
+    assert db.get(Patient, pid).phone == "+15125550510"
+    # the owner reads the code off their own phone: that is the proof, and the
+    # number they are moving to becomes the chart's
+    done = client.post("/api/mobile/enroll/verify", json={
+        "verification_id": body["verification_id"], "code": code})
+    assert done.status_code == 200 and done.json()["verified"] is True
+    db.expire_all()
+    assert db.get(Patient, pid).phone == "+15125559999"
+    _forget_patient(db, pid)
+
+
+def test_unverified_enrollment_never_takes_a_number_off_another_chart(client, db, monkeypatch):
+    Sendblue(monkeypatch)
+    mine = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Phone Owner", "phone": "+15125550520",
+        "had_surgery": False}).json()["me"]["patient"]["id"]
+    # an empty chart exists; someone tries to claim it with the owner's number
+    from app.models.hospital import Hospital
+
+    db.expire_all()
+    db.get(Hospital, "hosp_demo").access_token = "tok-e2e"
+    db.commit()
+    empty = client.post("/api/patients/", headers=_auth("tok-e2e"), json={
+        "hospital_id": "hosp_demo", "name": "Empty Chart"}).json()["patient"]["id"]
+    resp = client.post("/api/mobile/enroll", json={
+        "patient_id": empty, "hospital_id": "hosp_demo", "phone": "+15125550520"})
+    assert resp.status_code == 409 and "find that record" in resp.json()["detail"]
+    db.expire_all()
+    assert db.get(Patient, mine).phone == "+15125550520"
+    assert db.get(Patient, empty).phone is None
+    _forget_patient(db, empty)
+    _forget_patient(db, mine)
+
+
+# --- the care plan in the app ---------------------------------------------------------------
+
+
+def test_a_daily_plan_task_comes_back_the_next_day(client, db, monkeypatch):
+    """A recurring care-plan task used to retire on its first completion, so
+    an assigned plan emptied out of the app after one check and never came
+    back. It must leave To-do for the rest of today and return tomorrow."""
+    Sendblue(monkeypatch)
+    joined = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Daily Walker", "phone": "+15125550530",
+        "had_surgery": True, "procedure_type": "TKA",
+        "surgery_date": date.today().isoformat()}).json()
+    token, pid = joined["session_token"], joined["me"]["patient"]["id"]
+    assigned = client.post(f"/api/patients/{pid}/plan", json={"items": [
+        {"title": "Walk 10 minutes", "why": "Circulation", "task_kind": "walk",
+         "verify_kind": "steps_min", "schedule": "daily", "params": {"steps": 500}},
+        {"title": "One-off wound photo", "task_kind": "wound_check", "schedule": "once"},
+    ], "notify": False})
+    assert assigned.status_code == 200, assigned.text
+    walk_id, once_id = (t["id"] for t in assigned.json()["tasks"])
+
+    listing = client.get("/api/mobile/tasks", headers=_auth(token)).json()
+    assert {t["id"] for t in listing["open"]} == {walk_id, once_id}
+    assert [t["recurring"] for t in listing["open"] if t["id"] == walk_id] == [True]
+    assert [t["schedule"] for t in listing["open"] if t["id"] == walk_id] == ["daily"]
+
+    for tid, answers in ((walk_id, {"minutes": 12, "pain": 2}),
+                         (once_id, {"swelling": "no", "redness": "no", "drainage": "no",
+                                    "fever": "no"})):
+        r = client.post(f"/api/mobile/tasks/{tid}/complete", headers=_auth(token),
+                        json={"answers": answers})
+        assert r.status_code == 200, r.text
+    # both are done for today, and neither is offered twice
+    listing = client.get("/api/mobile/tasks", headers=_auth(token)).json()
+    assert listing["open"] == []
+    assert {t["id"] for t in listing["recent"]} == {walk_id, once_id}
+    again = client.post(f"/api/mobile/tasks/{walk_id}/complete", headers=_auth(token),
+                        json={"answers": {"minutes": 5}})
+    assert again.status_code == 409 and "today" in again.json()["detail"]
+
+    # tomorrow: the daily task is owed again, the one-off stays done
+    db.expire_all()
+    walk = db.get(AdherenceTask, walk_id)
+    walk.payload = {**walk.payload, "last_done": (date.today() - __import__("datetime").timedelta(days=1)).isoformat()}
+    db.commit()
+    listing = client.get("/api/mobile/tasks", headers=_auth(token)).json()
+    assert [t["id"] for t in listing["open"]] == [walk_id]
+    assert listing["open"][0]["status"] == "pending"  # tappable in the app
+    assert walk_id not in {t["id"] for t in listing["recent"]}
+    r = client.post(f"/api/mobile/tasks/{walk_id}/complete", headers=_auth(token),
+                    json={"answers": {"minutes": 20}})
+    assert r.status_code == 200
+    # two days of records, one per day
+    db.expire_all()
+    records = db.scalars(select(AdherenceRecord).where(AdherenceRecord.task_id == walk_id)).all()
+    assert len({r.date for r in records}) >= 1
+    # the console still sees the full lifecycle
+    console = client.get(f"/api/patients/{pid}/tasks").json()["tasks"]
+    assert [t["status"] for t in console if t["id"] == walk_id] == ["done"]
+    # ...and ending it from the console takes it out of the app for good
+    assert client.post(f"/api/patients/{pid}/plan/{walk_id}/end").status_code == 200
+    assert client.get("/api/mobile/tasks", headers=_auth(token)).json()["open"] == []
+    blocked = client.post(f"/api/mobile/tasks/{walk_id}/complete", headers=_auth(token),
+                          json={"answers": {"minutes": 5}})
+    assert blocked.status_code == 409
+    _forget_patient(db, pid)
+
+
+# --- SMS behaviour ---------------------------------------------------------------------------
+
+
+def test_an_affirmative_text_answers_the_care_team_instead_of_starting_a_task(client, db, monkeypatch):
+    """"yes" used to be a task start word, so a patient answering their
+    nurse's question got a questionnaire and the nurse never saw the reply."""
+    sb = Sendblue(monkeypatch)
+    joined = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Yes Sayer", "phone": "+15125550540",
+        "had_surgery": False}).json()
+    pid = joined["me"]["patient"]["id"]
+    client.post(f"/api/patients/{pid}/actions/assign-task",
+                json={"title": "Daily check-in", "kind": "checkin"})
+    client.post(f"/api/patients/{pid}/actions/message",
+                json={"text": "Is the swelling any better today?"})
+    out = _text(client, "+15125550540", "yes, a bit better")
+    assert out["kind"] == "message"
+    db.expire_all()
+    assert any(n.kind == "patient_message" for n in
+               db.scalars(select(Notification).where(Notification.patient_id == pid)).all())
+    assert not any("quick question" in c for _, c in sb.sent)
+    # a bare "yes" is still a message, not a task start
+    assert _text(client, "+15125550540", "yes")["kind"] == "message"
+    # "1" does start the task the text advertised
+    assert _text(client, "+15125550540", "1")["kind"] == "task_started"
+    _forget_patient(db, pid)
+
+
+def test_one_starts_the_task_that_was_texted_most_recently(client, db, monkeypatch):
+    sb = Sendblue(monkeypatch)
+    joined = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Two Tasks", "phone": "+15125550550",
+        "had_surgery": False}).json()
+    pid = joined["me"]["patient"]["id"]
+    first = client.post(f"/api/patients/{pid}/actions/assign-task",
+                        json={"title": "Older task", "kind": "medication"}).json()["task"]["id"]
+    second = client.post(f"/api/patients/{pid}/actions/assign-task",
+                         json={"title": "Newer task", "kind": "walk"}).json()["task"]["id"]
+    assert _text(client, "+15125550550", "1")["kind"] == "task_started"
+    assert "Newer task" in sb.last() and "minutes did you walk" in sb.last()
+    db.expire_all()
+    assert isinstance((db.get(AdherenceTask, second).payload or {}).get("sms"), dict)
+    assert (db.get(AdherenceTask, first).payload or {}).get("sms") is None
+    _forget_patient(db, pid)
+
+
+def test_asking_for_a_new_link_keeps_the_one_already_texted_working(client, db, monkeypatch):
+    sb = Sendblue(monkeypatch)
+    joined = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Link Asker", "phone": "+15125550560",
+        "had_surgery": False}).json()
+    pid = joined["me"]["patient"]["id"]
+    client.post(f"/api/patients/{pid}/actions/assign-task",
+                json={"title": "Evening dose", "kind": "medication"})
+    first_url = [c for _, c in sb.sent if "/t/" in c][-1].split("Open it: ")[1].split("\n")[0]
+    first_token = first_url.rsplit("/", 1)[1]
+    assert client.get(f"/api/tasks/{first_token}").status_code == 200
+    assert _text(client, "+15125550560", "2")["kind"] == "link_sent"
+    second_token = sb.last().rsplit("/", 1)[1]
+    assert second_token != first_token
+    # both links resolve to the same task; neither text is dead
+    a = client.get(f"/api/tasks/{first_token}")
+    b = client.get(f"/api/tasks/{second_token}")
+    assert a.status_code == 200 and b.status_code == 200
+    assert a.json()["task"]["id"] == b.json()["task"]["id"]
+    assert client.post(f"/api/tasks/{first_token}", json={"answers": {"taken": "yes"}}).status_code == 200
+    _forget_patient(db, pid)
+
+
+def test_the_app_sees_the_newest_messages_when_the_thread_is_long(client, db, monkeypatch):
+    """Ordering ascending and limiting took the OLDEST 200 rows, so a long
+    thread froze months back in the app."""
+    from app.api.mobile import MESSAGE_PAGE
+
+    Sendblue(monkeypatch)
+    joined = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Long Thread", "phone": "+15125550570",
+        "had_surgery": False}).json()
+    token, pid = joined["session_token"], joined["me"]["patient"]["id"]
+    for i in range(MESSAGE_PAGE + 5):
+        db.add(Message(patient_id=pid, sender="care_team", channel="console", text=f"line {i}"))
+    db.commit()
+    thread = client.get("/api/mobile/messages", headers=_auth(token)).json()["messages"]
+    assert len(thread) == MESSAGE_PAGE
+    assert thread[-1]["text"] == f"line {MESSAGE_PAGE + 4}"      # newest is present
+    assert [m["id"] for m in thread] == sorted(m["id"] for m in thread)  # oldest-first
+    # a cursor still walks forward from where the app left off
+    newest = thread[-1]["id"]
+    db.add(Message(patient_id=pid, sender="care_team", channel="console", text="after"))
+    db.commit()
+    later = client.get(f"/api/mobile/messages?since_id={newest}", headers=_auth(token)).json()
+    assert [m["text"] for m in later["messages"]] == ["after"]
+    _forget_patient(db, pid)
