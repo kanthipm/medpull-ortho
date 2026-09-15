@@ -183,6 +183,28 @@ TASK_TEMPLATE = (
 VERIFICATION_TEMPLATE = "Your MedPull verification code is {code}. It expires in 10 minutes."
 
 
+# Onboarding texts. Like every other patient text these carry no name and no
+# clinical detail. Both are placeholders until the product copy is settled.
+WELCOME_TEMPLATE = (
+    "Welcome to MedPull. Your care team can now see your check-ins and send you "
+    "tasks in the app. Reply to this number any time to reach them."
+)
+INVITE_TEMPLATE = (
+    "Your care team set you up on MedPull to follow your recovery. Get the app "
+    "here to start: {app_url}"
+)
+
+
+def send_welcome_message(phone_number: str) -> CheckinSendResult:
+    """The first text a patient gets after they finish onboarding in the app."""
+    return send_sms(phone_number, WELCOME_TEMPLATE)
+
+
+def send_invite_message(phone_number: str) -> CheckinSendResult:
+    """Text a patient a clinician just added, pointing them at the app."""
+    return send_sms(phone_number, INVITE_TEMPLATE.format(app_url=settings.app_download_url))
+
+
 def send_task_message(phone_number: str, title: str, task_url: str) -> CheckinSendResult:
     return send_sms(phone_number, TASK_TEMPLATE.format(title=title[:80], task_url=task_url))
 

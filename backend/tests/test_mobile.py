@@ -516,3 +516,94 @@ def test_portfolio_aggregates_seeded_metrics(client):
     steps = next(m for m in port["metrics"] if m["key"] == "steps")
     assert steps["latest"]["value"] > 0 and len(steps["series"]) >= 7
     assert len([m for m in port["metrics"] if m["label"] == "Heart rate variability"]) <= 1
+
+
+def test_first_enrollment_texts_a_welcome_once_and_writes_the_thread(client, db, monkeypatch):
+    from app.models.mobile import PatientSession
+    from app.notifications import sendblue
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(settings, "sendblue_api_key", "k")
+    monkeypatch.setattr(settings, "sendblue_api_secret", "s")
+    monkeypatch.setattr(settings, "mobile_otp_required", False)
+    monkeypatch.setattr(
+        sendblue, "_post_message",
+        lambda phone, content: sent.append((phone, content)) or _FakeResponse(),
+    )
+    from sqlalchemy import delete
+    db.execute(delete(PatientSession).where(PatientSession.patient_id == "steve"))
+    db.execute(delete(Message).where(Message.patient_id == "steve",
+                                     Message.text == sendblue.WELCOME_TEMPLATE))
+    db.commit()
+
+    headers, _ = _enroll(client)
+    assert [c for _, c in sent] == [sendblue.WELCOME_TEMPLATE]
+    assert sent[0][0] == STEVE_PHONE
+    db.expire_all()
+    welcome = db.scalars(select(Message).where(
+        Message.patient_id == "steve", Message.text == sendblue.WELCOME_TEMPLATE)).all()
+    assert len(welcome) == 1 and welcome[0].sender == "care_team"
+    assert welcome[0].delivery_status == "sent" and welcome[0].external_handle == "mh_test"
+    # the app shows it in the thread
+    thread = client.get("/api/mobile/messages", headers=headers).json()
+    texts = [m["text"] for m in (thread.get("messages") or thread)]
+    assert sendblue.WELCOME_TEMPLATE in texts
+
+    # a second device is not a second welcome
+    _enroll(client)
+    assert len(sent) == 1
+
+
+def test_join_welcomes_on_the_stub_path_without_sending(client, db):
+    from app.notifications import sendblue
+
+    resp = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Welcome Test", "phone": "+15125550377",
+        "had_surgery": False})
+    assert resp.status_code == 200, resp.text
+    pid = resp.json()["me"]["patient"]["id"]
+    rows = db.scalars(select(Message).where(Message.patient_id == pid)).all()
+    assert [r.text for r in rows] == [sendblue.WELCOME_TEMPLATE]
+    assert rows[0].delivery_status == "failed"  # keys blank: nothing left the building
+    _forget_patient(db, pid)
+
+
+def test_creating_a_patient_texts_an_invite_with_the_app_link(client, db, monkeypatch):
+    from app.models.hospital import Hospital
+    from app.notifications import sendblue
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(settings, "sendblue_api_key", "k")
+    monkeypatch.setattr(settings, "sendblue_api_secret", "s")
+    monkeypatch.setattr(settings, "app_download_url", "https://example.test/get-app")
+    monkeypatch.setattr(
+        sendblue, "_post_message",
+        lambda phone, content: sent.append((phone, content)) or _FakeResponse(),
+    )
+    hospital = db.get(Hospital, "hosp_demo")
+    hospital.access_token = "tok-test"
+    db.commit()
+
+    resp = client.post("/api/patients/", headers={"Authorization": "Bearer tok-test"}, json={
+        "hospital_id": "hosp_demo", "name": "Invite Test", "phone": "(512) 555-0388",
+        "procedure_type": "NONE"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["invite"] == {"sent": True, "detail": "sent"}
+    assert sent == [("+15125550388", sendblue.INVITE_TEMPLATE.format(
+        app_url="https://example.test/get-app"))]
+    assert "Invite Test" not in sent[0][1]
+    pid = body["patient"]["id"]
+    db.expire_all()
+    assert db.get(Patient, pid).phone == "+15125550388"
+    rows = db.scalars(select(Message).where(Message.patient_id == pid)).all()
+    assert len(rows) == 1 and rows[0].channel == "sms" and rows[0].delivery_status == "sent"
+
+    # no phone: created, nothing sent, and the response says why
+    resp = client.post("/api/patients/", headers={"Authorization": "Bearer tok-test"}, json={
+        "hospital_id": "hosp_demo", "name": "No Phone", "procedure_type": "NONE"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["invite"]["sent"] is False
+    assert len(sent) == 1
+    _forget_patient(db, resp.json()["patient"]["id"])
+    _forget_patient(db, pid)

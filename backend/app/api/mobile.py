@@ -19,6 +19,7 @@ unverified and says so in its response.
 
 from __future__ import annotations
 
+import logging
 import hashlib
 import re
 import secrets
@@ -45,6 +46,8 @@ from app.models.observation import Observation
 from app.models.patient import Patient
 from app.notifications import sendblue
 from app.tasks import service as tasks
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/mobile", tags=["mobile"])
 # Tokenized task endpoints for the web page a task text links to; no
@@ -99,6 +102,31 @@ def _current_session(authorization: str | None, db: Session) -> PatientSession |
     return db.scalar(select(PatientSession).where(PatientSession.token_hash == _hash(token)))
 
 
+def _first_enrollment(db: Session, patient: Patient) -> bool:
+    """True until the patient has ever held an app session."""
+    return db.scalar(
+        select(PatientSession.id).where(PatientSession.patient_id == patient.id).limit(1)
+    ) is None
+
+
+def _welcome(db: Session, patient: Patient) -> None:
+    """Greet a newly onboarded patient: one line in their thread (so the app
+    shows it even on the SMS stub path) and, with a number and the keys, the
+    same words by text. Never raises: a failed text must not fail enrollment."""
+    message = Message(
+        patient_id=patient.id, sender="care_team", sender_id=patient.assigned_provider_id,
+        channel="app", text=sendblue.WELCOME_TEMPLATE,
+    )
+    db.add(message)
+    if patient.phone:
+        delivery = sendblue.send_welcome_message(patient.phone)
+        message.delivery_status = "sent" if delivery.sent else "failed"
+        message.external_handle = delivery.message_handle
+        if not delivery.sent:
+            logger.info("Welcome text to %s not sent: %s", patient.id, delivery.detail)
+    db.commit()
+
+
 def _issue_session(
     db: Session, patient: Patient, device_name: str | None, app_version: str | None
 ) -> str:
@@ -117,19 +145,33 @@ def _issue_session(
 
 # --- views -----------------------------------------------------------------------
 
+# Patient-facing wording. Brief, warm and deliberately non-specific: the app
+# is a companion, not a readout, so nothing here states a finding.
 RECOVERY_LABEL = {
-    RiskLevel.LOW: ("On track", "Your signals look steady. Keep going."),
-    RiskLevel.MEDIUM: ("Worth a check-in", "A couple of signals moved. Your care team is keeping an eye on it."),
-    RiskLevel.HIGH: ("Care team reviewing", "Your care team has been alerted and will be in touch."),
+    RiskLevel.LOW: ("On track", "Your signals look steady. Nice work — keep doing what you're doing."),
+    RiskLevel.MEDIUM: ("Worth a check-in", "A couple of signals shifted, which happens. Your care team is keeping an eye on it."),
+    RiskLevel.HIGH: ("Care team reviewing", "Your care team has taken a look and will be in touch."),
     RiskLevel.MISSING_DATA: ("Waiting for data", "Connect Apple Health or a wearable so we can follow your recovery."),
 }
 # The same four states, worded for a patient who did not have surgery.
 GENERAL_LABEL = {
-    RiskLevel.LOW: ("Steady", "Your signals look like your usual self."),
-    RiskLevel.MEDIUM: ("Worth a look", "A couple of signals moved from your baseline. Your care team can see it."),
-    RiskLevel.HIGH: ("Care team reviewing", "Your care team has been alerted and will be in touch."),
+    RiskLevel.LOW: ("Steady", "Your signals look like your usual self. Keep it up."),
+    RiskLevel.MEDIUM: ("Worth a look", "A couple of signals moved a little, which happens. Your care team can see it."),
+    RiskLevel.HIGH: ("Care team reviewing", "Your care team has taken a look and will be in touch."),
     RiskLevel.MISSING_DATA: ("Waiting for data", "Connect Apple Health or a wearable and your portfolio fills in on its own."),
 }
+# Signals are arriving but the engine cannot score yet (its coverage gate
+# wants the sleep/HRV/temperature set a phone alone rarely carries). That is
+# not "no data" to the patient, so say something encouraging instead.
+EARLY_SIGNAL_LABEL = "Early days"
+
+
+def early_signal_blurb(signal_days: int) -> str:
+    if signal_days <= 2:
+        return "Your first signals are in — a good start. The picture fills in on its own from here."
+    if signal_days <= 6:
+        return "Your signals are coming through and things are taking shape. So far, so good."
+    return "Your signals have been coming through steadily. Looking like a good stretch — keep it up."
 
 PROCEDURES: list[dict[str, str]] = [
     {"id": "TKA", "label": "Knee replacement"},
@@ -224,12 +266,38 @@ def _wearable_summary(db: Session, patient: Patient) -> dict[str, Any]:
     }
 
 
+def _signal_days(db: Session, patient_id: str, days: int = 14) -> int:
+    """Distinct days in the window with at least one portfolio metric stored,
+    whatever the engine makes of them. What the patient has actually shared."""
+    since = date.today() - timedelta(days=days - 1)
+    wanted = []
+    for key, *_ in PORTFOLIO_METRICS:
+        try:
+            wanted.append(MetricType(key))
+        except ValueError:
+            continue
+    rows = db.scalars(
+        select(Observation.local_date).distinct().where(
+            Observation.patient_id == patient_id,
+            Observation.metric_type.in_(wanted),
+            Observation.local_date >= since,
+            Observation.deleted_at.is_(None),
+            Observation.value_num.is_not(None),
+        )
+    ).all()
+    return len(rows)
+
+
 def me_view(db: Session, patient: Patient) -> dict[str, Any]:
     assessment = ensure_fresh_assessment(db, patient.id)
     analytics = assessment.analytics or {}
     level = RiskLevel(assessment.risk_level)
     surgical = is_surgical(patient)
     label, blurb = (RECOVERY_LABEL if surgical else GENERAL_LABEL)[level]
+    signal_days = _signal_days(db, patient.id)
+    if level == RiskLevel.MISSING_DATA and signal_days > 0:
+        label, blurb = EARLY_SIGNAL_LABEL, early_signal_blurb(signal_days)
+    days_with_data = max((analytics.get("confidence") or {}).get("days_with_data") or 0, signal_days)
     open_tasks = tasks.open_tasks(db, patient.id)
     unread = db.scalars(
         select(Message.id).where(
@@ -276,7 +344,7 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
                 "state": str(assessment.trajectory_state),
                 "pct": assessment.trajectory_pct,
             },
-            "days_with_data": (analytics.get("confidence") or {}).get("days_with_data"),
+            "days_with_data": days_with_data,
             "computed_at": _iso(assessment.computed_at),
         },
         "tasks_open": len(open_tasks),
@@ -402,7 +470,10 @@ def enroll(body: EnrollBody, db: Session = Depends(get_db)) -> dict:
     if body.date_of_birth and not patient.date_of_birth:
         patient.date_of_birth = body.date_of_birth
     patient.phone = phone
+    first = _first_enrollment(db, patient)
     token = _issue_session(db, patient, body.device_name, body.app_version)
+    if first:
+        _welcome(db, patient)
     return {"status": "enrolled", "verified": True, "session_token": token,
             "me": me_view(db, patient)}
 
@@ -432,7 +503,10 @@ def verify(body: VerifyBody, db: Session = Depends(get_db)) -> dict:
     if patient is None:
         raise HTTPException(status_code=404, detail="Unknown patient")
     patient.phone = verification.phone
+    first = _first_enrollment(db, patient)
     token = _issue_session(db, patient, body.device_name, body.app_version)
+    if first:
+        _welcome(db, patient)
     return {"status": "enrolled", "verified": True, "session_token": token,
             "me": me_view(db, patient)}
 
@@ -539,6 +613,7 @@ def join(body: JoinBody, db: Session = Depends(get_db)) -> dict:
     # Frictionless onboarding: skip SMS verification entirely
     patient.phone = phone
     token = _issue_session(db, patient, body.device_name, body.app_version)
+    _welcome(db, patient)
     return {"status": "enrolled", "verified": True, "session_token": token,
             "me": me_view(db, patient)}
 

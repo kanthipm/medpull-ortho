@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # --- the patient app ---------------------------------------------------
     # Custom URL scheme the iOS app registers; task texts deep-link into it.
     mobile_app_scheme: str = "medpull"
+    # Where the invite text sends a new patient to get the app. A placeholder
+    # until the App Store listing exists; set APP_DOWNLOAD_URL to override.
+    app_download_url: str = "https://medpull.org/app"
     # Onboarding verifies the phone with a texted code when Sendblue can send
     # one. Set false to skip the code even with Sendblue configured (demos).
     mobile_otp_required: bool = True

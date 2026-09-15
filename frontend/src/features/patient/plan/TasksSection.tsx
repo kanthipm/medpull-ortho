@@ -1,9 +1,10 @@
-import { ClipboardList, Sparkles } from 'lucide-react'
+import { ClipboardList, Sparkles, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import type { CarePathway } from '../../../api/care'
 import type { DraftTask, PlanTask } from '../../../api/plan'
 import {
   firstNameOf,
+  useDraftTasks,
   useEndPlanTask,
   usePatientPlan,
   useRecordPlanTask,
@@ -54,9 +55,11 @@ export default function TasksSection({
   const library = useTaskTemplates()
   const kinds = library.data?.kinds
   const suggest = useSuggestPlan(patientId)
+  const build = useDraftTasks()
   const endTask = useEndPlanTask(patientId)
   const record = useRecordPlanTask(patientId)
   const [builder, setBuilder] = useState<Builder>(null)
+  const [prompt, setPrompt] = useState('')
 
   const tasks = plan.data?.tasks ?? []
   const active = tasks.filter((t) => t.active !== false)
@@ -69,6 +72,31 @@ export default function TasksSection({
       onSuccess: (r) => setBuilder({ drafts: r.tasks, provider: r.provider }),
       onError: () => toast('Suggestions are not available — try again', 'warning'),
     })
+
+  /** One sentence in, a reviewable draft list out. The AI structures the
+   *  prompt into tasks; nothing is assigned until the clinician confirms in
+   *  the builder, which opens pre-filled. */
+  const runBuild = () => {
+    const text = prompt.trim()
+    if (!text || build.isPending) return
+    build.mutate(
+      { text, patient_id: patientId, pathway: pathway?.key },
+      {
+        onSuccess: (r) => {
+          if (r.tasks.length === 0) {
+            toast('Nothing recognisable in that — try naming the activity, e.g. "walk twice a day"', 'info')
+            return
+          }
+          setPrompt('')
+          setBuilder({
+            drafts: r.tasks.map((t) => ({ ...t, assigned_by: 'ai' as const })),
+            provider: r.provider,
+          })
+        },
+        onError: () => toast('The builder could not draft that — try again', 'warning'),
+      },
+    )
+  }
 
   const markDone = (t: PlanTask) =>
     record.mutate(
@@ -95,6 +123,38 @@ export default function TasksSection({
     <>
       <SectionCard title="Care plan" aside={assignButton}>
         <RefreshOverlay show={refreshing} />
+
+        <form
+          className="mb-3 flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            runBuild()
+          }}
+        >
+          <label className="relative min-w-[220px] flex-1">
+            <Wand2
+              size={13}
+              className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-brand ${build.isPending ? 'animate-pulse' : ''}`}
+            />
+            <input
+              className={`field pl-8 ${build.isPending ? 'shimmer text-transparent' : ''}`}
+              placeholder={`Tell ${first} what to do, e.g. walk twice a day and log pain each evening`}
+              value={prompt}
+              disabled={build.isPending}
+              onChange={(e) => setPrompt(e.target.value)}
+              aria-label="Describe tasks to build with AI"
+            />
+          </label>
+          <button
+            type="submit"
+            className="qa-btn"
+            disabled={!prompt.trim() || build.isPending}
+            title="Turn this sentence into tasks you can review and assign"
+          >
+            <Wand2 size={13} className="text-brand" />
+            {build.isPending ? 'Building…' : 'Build with AI'}
+          </button>
+        </form>
 
         {plan.isLoading && (
           <div className="space-y-3">

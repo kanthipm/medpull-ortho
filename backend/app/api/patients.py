@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel
@@ -16,6 +16,7 @@ from app.models.hospital import Hospital
 from app.models.notification import Notification
 from app.models.observation import Observation
 from app.models.patient import CareTeamMember, Patient
+from app.notifications import sendblue
 
 logger = logging.getLogger(__name__)
 
@@ -495,14 +496,12 @@ def create_patient(
     date_of_birth = None
     if body.surgery_date:
         try:
-            from datetime import date
             surgery_date = date.fromisoformat(body.surgery_date)
         except ValueError:
             raise HTTPException(status_code=422, detail="Invalid surgery date format (use YYYY-MM-DD)")
     
     if body.date_of_birth:
         try:
-            from datetime import date
             date_of_birth = date.fromisoformat(body.date_of_birth)
         except ValueError:
             raise HTTPException(status_code=422, detail="Invalid date of birth format (use YYYY-MM-DD)")
@@ -544,7 +543,7 @@ def create_patient(
         hospital_id=body.hospital_id,
         date_of_birth=date_of_birth,
         care_pathway=care_pathway,
-        phone=body.phone or "",
+        phone=(sendblue.normalize_phone(body.phone) if body.phone else None) or body.phone or "",
     )
     
     # Calculate age if date_of_birth provided
@@ -558,7 +557,23 @@ def create_patient(
     
     db.add(patient)
     db.commit()
-    
+
+    # Tell the patient they have been set up, and keep a line in their thread
+    # so the console can see the invite went out (or why it did not).
+    invite: dict = {"sent": False, "detail": "no phone number on file"}
+    if patient.phone:
+        from app.models.mobile import Message
+
+        delivery = sendblue.send_invite_message(patient.phone)
+        db.add(Message(
+            patient_id=patient.id, sender="care_team", sender_id=assigned_id, channel="sms",
+            text=sendblue.INVITE_TEMPLATE.format(app_url=settings.app_download_url),
+            delivery_status="sent" if delivery.sent else "failed",
+            external_handle=delivery.message_handle,
+        ))
+        db.commit()
+        invite = {"sent": delivery.sent, "detail": delivery.detail}
+
     return {
         "ok": True,
         "patient": {
@@ -567,5 +582,6 @@ def create_patient(
             "hospital_id": patient.hospital_id,
             "procedure_type": patient.procedure_type,
             "surgery_date": patient.surgery_date.isoformat() if patient.surgery_date else None,
-        }
+        },
+        "invite": invite,
     }
