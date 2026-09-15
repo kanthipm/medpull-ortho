@@ -542,3 +542,118 @@ def test_stress_concurrent_requests_do_not_corrupt_a_session(client, db, monkeyp
     thread = client.get("/api/mobile/messages", headers=_auth(token)).json()["messages"]
     assert sum(1 for m in thread if m["sender"] == "patient") == 6
     _forget_patient(db, pid)
+
+
+def test_link_dedupes_overlapping_readings_and_keeps_the_phones_junction_user(client, db, monkeypatch):
+    """One phone, two records, two Junction users, the same Apple Health days
+    delivered to both: the merge must not double-count a day and must keep
+    the Junction user the phone is signed into (the record with the live
+    app session), retiring the other."""
+    from datetime import datetime, time as dtime
+
+    from app.connectors.base import CanonicalObservation
+    from app.connectors.ingest import ingest_observations
+    from app.models.connection import WearableConnection
+    from app.models.enums import ConnectionStatus, Granularity, MetricType, SourceProvider
+    from app.models.observation import Observation
+    from app.models.patient import Device
+
+    Sendblue(monkeypatch)
+    db.expire_all()
+    steve = db.get(Patient, "steve")
+    steve.phone = None
+    db.execute(delete(PatientSession).where(PatientSession.patient_id == "steve"))
+    db.execute(delete(Observation).where(Observation.patient_id == "steve"))
+    db.execute(delete(WearableConnection).where(WearableConnection.patient_id == "steve"))
+    db.commit()
+    signup = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Steve Test", "phone": "+18585550490",
+        "had_surgery": False}).json()
+    token, src = signup["session_token"], signup["me"]["patient"]["id"]
+
+    def reading(pid, day, steps, user):
+        return CanonicalObservation(
+            patient_id=pid, source_provider=SourceProvider.JUNCTION, metric_type=MetricType.STEPS,
+            unit="count", value_num=steps,
+            start_time=datetime.combine(day, dtime.min), end_time=datetime.combine(day, dtime(23, 59)),
+            granularity=Granularity.DAILY_SUMMARY, source_device_id=f"junction:{user}:apple_health_kit",
+            # Junction ids a daily summary per user, so the same day under two
+            # users never shares a record id: the merge must collide by day.
+            timezone="America/Chicago", external_id=f"activity:{user}:{day.isoformat()}",
+        )
+    d1, d2, d3 = (date.today() - __import__("datetime").timedelta(days=n) for n in (3, 2, 1))
+    # the chart's Junction user delivered d1 and d2; the sign-up's user d2 and d3
+    ingest_observations(db, [reading("steve", d1, 1000, "u-chart"), reading("steve", d2, 2000, "u-chart")])
+    ingest_observations(db, [reading(src, d2, 2100, "u-app"), reading(src, d3, 3000, "u-app")])
+    db.add(WearableConnection(patient_id="steve", aggregator=SourceProvider.JUNCTION,
+                              external_user_id="u-chart", client_user_id="c-chart", environment="sandbox",
+                              status=ConnectionStatus.LINKED, last_data_at=datetime.now()))
+    db.add(WearableConnection(patient_id=src, aggregator=SourceProvider.JUNCTION,
+                              external_user_id="u-app", client_user_id="c-app", environment="sandbox",
+                              status=ConnectionStatus.LINKED))
+    db.add(Device(id="junction:u-chart:apple_health_kit", patient_id="steve", source_provider="apple",
+                  device_model="Apple Health via Junction", connected_at=datetime.now()))
+    db.add(Device(id="junction:u-app:apple_health_kit", patient_id=src, source_provider="apple",
+                  device_model="Apple Health via Junction", connected_at=datetime.now()))
+    db.commit()
+
+    linked = client.post("/api/patients/steve/app-link", json={"from_patient_id": src})
+    assert linked.status_code == 200, linked.text
+    body = linked.json()
+    # d2 existed on both: the newer ingest (the sign-up's 2100) replaced the chart's 2000
+    assert body["observations"] == {"moved": 2, "dropped_duplicate": 0, "replaced_older": 1}
+    # the phone holds the live session on the sign-up, so its Junction user survives
+    assert body["wearable"] == {"kept": "u-app", "retired_junction_user": "u-chart"}
+    db.expire_all()
+    rows = db.scalars(select(Observation).where(Observation.patient_id == "steve")
+                      .order_by(Observation.local_date)).all()
+    assert [(r.local_date, r.value_num) for r in rows] == [(d1, 1000.0), (d2, 2100.0), (d3, 3000.0)]
+    assert all(":steve:" in r.dedupe_key for r in rows)
+    conns = db.scalars(select(WearableConnection).where(WearableConnection.patient_id == "steve")).all()
+    assert [c.external_user_id for c in conns] == ["u-app"]
+    devices = {d.id: d.status for d in db.scalars(select(Device).where(Device.patient_id == "steve")).all()}
+    assert devices == {"junction:u-chart:apple_health_kit": "revoked",
+                       "junction:u-app:apple_health_kit": "connected"}
+    # the app sees one Apple Health device, the live one, and three days of steps
+    me = client.get("/api/mobile/me", headers=_auth(token)).json()
+    assert me["patient"]["id"] == "steve" and me["wearables"]["apple_health"]["connected"] is True
+    prog = client.get("/api/mobile/progress?days=5", headers=_auth(token)).json()["days"]
+    assert [d["steps"] for d in prog if d["steps"] is not None] == [1000, 2100, 3000]
+    # a redelivery of d3 for the kept user lands on the moved row, not beside it
+    ingested, updated, dup = ingest_observations(db, [reading("steve", d3, 3050, "u-app")])
+    assert (ingested, updated, dup) == (0, 1, 0)
+    assert db.scalar(select(__import__("sqlalchemy").func.count(Observation.id)).where(
+        Observation.patient_id == "steve", Observation.metric_type == MetricType.STEPS)) == 3
+
+    # tidy the shared database
+    from app.models.insight import EstablishedBaseline
+
+    db.execute(delete(Observation).where(Observation.patient_id == "steve"))
+    db.execute(delete(WearableConnection).where(WearableConnection.patient_id == "steve"))
+    db.execute(delete(Device).where(Device.patient_id == "steve"))
+    db.execute(delete(Message).where(Message.patient_id == "steve"))
+    db.execute(delete(PatientSession).where(PatientSession.patient_id == "steve"))
+    db.execute(delete(EstablishedBaseline).where(EstablishedBaseline.patient_id == "steve"))
+    db.get(Patient, "steve").phone = None
+    db.commit()
+
+
+def test_delete_patient_refuses_a_live_signup_and_removes_a_junk_row(client, db, monkeypatch):
+    from app.identity import IdentityError, delete_patient
+
+    Sendblue(monkeypatch)
+    junk = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Junk Row", "phone": "+15125550495",
+        "had_surgery": False}).json()
+    pid, token = junk["me"]["patient"]["id"], junk["session_token"]
+    client.post(f"/api/patients/{pid}/actions/assign-task", json={"title": "x", "kind": "custom"})
+    import pytest
+
+    with pytest.raises(IdentityError):
+        delete_patient(db, db.get(Patient, pid))
+    client.post("/api/mobile/signout", headers=_auth(token))
+    db.expire_all()
+    result = delete_patient(db, db.get(Patient, pid))
+    assert result["deleted"] == pid and result["rows"]["adherence_tasks"] == 1
+    assert db.get(Patient, pid) is None
+    assert db.scalars(select(Message).where(Message.patient_id == pid)).all() == []
