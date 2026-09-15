@@ -69,7 +69,16 @@ struct TaskDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(task.kindLabel).eyebrow()
+                    HStack(spacing: 6) {
+                        Text(task.kindLabel).eyebrow()
+                        if let schedule = task.scheduleLabel {
+                            Text(schedule)
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(MP.brand)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Capsule().fill(MP.brandTint))
+                        }
+                    }
                     Text(task.title).title(26)
                     if !task.why.isEmpty {
                         Text(task.why).font(.system(size: 14.5)).foregroundStyle(MP.muted)

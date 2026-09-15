@@ -72,10 +72,17 @@ final class HealthConnector {
         }
         state = .connecting
         do {
-            try await VitalClient.identifyExternalUser("medpull:\(patientId)") { _ in
-                let session = try await api.appleSession()
-                return .signInToken(rawToken: session.signInToken)
-            }
+            // The identity carries the Junction user, not just the patient:
+            // the SDK skips re-authentication when the external id is
+            // unchanged, so a chart whose Junction account was replaced (a
+            // record merge, a disconnect and relink) would go on pushing to
+            // the retired account, where our webhook has no mapping and the
+            // data is dropped. Fetching the session first is what lets the
+            // id name the account the backend is actually reading.
+            let session = try await api.appleSession()
+            try await VitalClient.identifyExternalUser(
+                "medpull:\(patientId):\(session.userId)"
+            ) { _ in .signInToken(rawToken: session.signInToken) }
             await VitalHealthKitClient.configure(
                 .init(
                     backgroundDeliveryEnabled: true,

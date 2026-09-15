@@ -126,10 +126,20 @@ def patient_timeline(patient_id: str, db: Session = Depends(get_db)) -> dict:
     assessment = ensure_fresh_assessment(db, patient_id)
     analytics = assessment.analytics
 
-    events: list[dict] = [
-        {"date": patient.surgery_date.isoformat(), "kind": "surgery", "label": "Surgery"},
-        {"date": patient.discharge_date.isoformat(), "kind": "discharge", "label": "Discharged"},
-    ]
+    # surgery_date doubles as the enrollment anchor for a general patient, who
+    # was never operated on and never discharged: labelling their join date
+    # "Surgery" put an operation on the chart of someone who never had one.
+    if str(patient.procedure_type) == "NONE":
+        events: list[dict] = [
+            {"date": patient.surgery_date.isoformat(), "kind": "enrolled",
+             "label": "Monitoring started"},
+        ]
+    else:
+        events = [
+            {"date": patient.surgery_date.isoformat(), "kind": "surgery", "label": "Surgery"},
+            {"date": patient.discharge_date.isoformat(), "kind": "discharge",
+             "label": "Discharged"},
+        ]
 
     checkin_dates = db.scalars(
         select(Checkin.occurred_at).where(Checkin.patient_id == patient_id)

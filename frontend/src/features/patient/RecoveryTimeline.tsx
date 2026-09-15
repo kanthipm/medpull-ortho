@@ -7,6 +7,8 @@ import type { Trajectory } from '../../api/types'
 
 const DOT: Record<string, string> = {
   surgery: 'bg-ink',
+  // A general patient's rail starts when monitoring did, not at an operation.
+  enrolled: 'bg-ink',
   discharge: 'bg-faint',
   flag: 'bg-risk-high',
   change_point: 'bg-risk-med',

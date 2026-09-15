@@ -171,8 +171,27 @@ struct RecoveryTask: Codable, Identifiable, Hashable {
     let completedVia: String?
     let questions: [Question]
     let inSmsConversation: Bool
+    /// A care-plan task the patient does again tomorrow (daily, weekly,
+    /// ongoing) rather than a one-off. The server reports `status` as the
+    /// patient's state for today, so a recurring task that was answered
+    /// yesterday arrives as "pending" again.
+    let recurring: Bool?
+    let schedule: String?
+    let lastDoneOn: String?
 
     var isOpen: Bool { status == "pending" || status == "sent" }
+
+    /// "Daily", "Twice a day"… shown beside the kind. Nil for a one-off.
+    var scheduleLabel: String? {
+        guard recurring == true else { return nil }
+        switch schedule {
+        case "daily": return "Daily"
+        case "am_pm": return "Twice a day"
+        case "weekly": return "Weekly"
+        case "ongoing": return "Ongoing"
+        default: return nil
+        }
+    }
 }
 
 struct TasksResponse: Codable, Equatable {

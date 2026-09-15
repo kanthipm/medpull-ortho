@@ -239,8 +239,18 @@ function WorklistRow({
           {p.name}
         </span>
         <span className="mt-0.5 block truncate text-[11px] font-medium text-faint">
-          {p.procedure_display.replace(/\s*\(.*\)$/, '')} ·{' '}
-          <span className="font-mono">D{p.postop_day}</span>
+          {p.procedure_display.replace(/\s*\(.*\)$/, '')}
+          {p.postop_day != null && (
+            <>
+              {' '}
+              ·{' '}
+              {/* "D6" means post-op day six, which says nothing true about a
+                  patient who never had an operation. */}
+              <span className="font-mono">
+                {p.mode === 'general' ? `${p.postop_day}d` : `D${p.postop_day}`}
+              </span>
+            </>
+          )}
         </span>
       </span>
       <PriorityBadge priority={p.priority} className="hidden shrink-0 lg:inline-flex" />
