@@ -578,6 +578,22 @@ class JunctionConnector(WearableConnector):
                 status="error" if status == "error" else "connected",
                 connected_at=_utc_naive(_parse_dt(p.get("created_on"))),
             )
+        # A provider the patient disconnected at the source (or from Junction's
+        # own page) simply stops appearing in this list. Its Device row used to
+        # stay "connected" for ever, so the console and the app both kept
+        # showing a watch that had been unpaired for weeks as the live source.
+        reported = {p["slug"] for p in snapshot}
+        for device in db.scalars(
+            select(Device).where(
+                Device.patient_id == conn.patient_id,
+                Device.id.like(f"{conn.aggregator}:{conn.external_user_id}:%"),
+            )
+        ).all():
+            slug = device.id.rsplit(":", 1)[-1]
+            if slug not in reported and device.status != "revoked":
+                logger.info("Junction no longer reports %s for %s — retiring the device row",
+                            slug, conn.patient_id)
+                device.status = "revoked"
         self._store_snapshot(conn, snapshot)
         db.commit()
         return snapshot

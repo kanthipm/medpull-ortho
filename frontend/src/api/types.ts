@@ -18,7 +18,11 @@ export interface WorklistPatient {
   priority: Priority
   reason: string
   procedure_display: string
-  postop_day: number
+  /** recovery: had surgery. general: followed without an operation. */
+  mode: 'recovery' | 'general'
+  postop_day: number | null
+  /** A text can reach this patient: a number on file, and texting configured. */
+  can_text: boolean
   days_since_discharge: number
   last_checkin_at: string | null
   assigned_provider: { name: string; role: string }

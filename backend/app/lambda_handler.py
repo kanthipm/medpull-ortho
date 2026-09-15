@@ -69,7 +69,7 @@ def _origin_is_cloudfront(event: dict) -> bool:
 
 
 def _seed(event: dict) -> dict:
-    from app.seed.seed import run_seed
+    from app.seed.seed import refuse_destructive_reseed, run_seed
 
     if not bool(event.get("reset", True)):
         # There is no incremental seed. app.seed builds one fixed roster with
@@ -87,6 +87,12 @@ def _seed(event: dict) -> dict:
         # instance's /tmp: the reset drops only the tables the models declare,
         # and everything else in the file rides along into the upload below.
         storage.hydrate(force=True)
+        # A reseed drops every table. On an empty deployment that is the point;
+        # on a live one it deletes real people, so it has to be asked twice.
+        refusal = refuse_destructive_reseed(bool(event.get("force")))
+        if refusal is not None:
+            logger.warning("Seed refused: %s", refusal["error"])
+            return refusal
         summary = run_seed(reset=True)
         uploaded = storage.persist(conditional=False)
     logger.info("Seed complete: %s (uploaded=%s)", summary, uploaded)

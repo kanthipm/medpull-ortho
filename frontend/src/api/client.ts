@@ -37,7 +37,20 @@ export async function fetchJson<T>(path: string, init?: FetchOptions): Promise<T
       let detail = res.statusText
       try {
         const body = await res.json()
-        if (typeof body.detail === 'string') detail = body.detail
+        if (typeof body.detail === 'string') {
+          detail = body.detail
+        } else if (Array.isArray(body.detail)) {
+          // FastAPI request-validation errors arrive as a list of
+          // {loc, msg, type}. Reading only the string form left the user
+          // looking at "Unprocessable Entity" with no idea which field.
+          const said = body.detail
+            .map((e: { loc?: unknown[]; msg?: string }) => {
+              const field = Array.isArray(e.loc) ? e.loc.filter((x) => x !== 'body').join('.') : ''
+              return field ? `${field}: ${e.msg ?? 'invalid'}` : (e.msg ?? 'invalid')
+            })
+            .join('; ')
+          if (said) detail = said
+        }
       } catch {
         // non-JSON error body — keep statusText
       }

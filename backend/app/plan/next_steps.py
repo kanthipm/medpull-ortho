@@ -190,6 +190,8 @@ def _rules(
     steps: dict[str, Step] = {}
     phase = phase_for(ev.postop_day)
     chronic = not pathway.uses_expected_curve
+    # No operation, no incision and no expected curve to be behind.
+    surgical = str(patient.procedure_type) != "NONE"
     rank = 0
 
     def add(step: Step) -> None:
@@ -208,6 +210,9 @@ def _rules(
     if r1:
         rank += 1
         detail = _detail(ev.reason_text("COMPOSITE_HIGH"), ev.finding("M12", "M13"))
+        # The step stands whether or not a number is on file — the care team
+        # can have one the chart does not. `tel` is None then, and the
+        # console renders it as "no number on file" rather than a dial link.
         add(Step("call_today", "Call the patient today", detail, "today", r1,
                  {"type": "call", "tel": patient.phone}, rank))
         add(_message(
@@ -225,8 +230,13 @@ def _rules(
         for code in vitals:
             detail = _detail(ev.reason_text(code), ev.finding("M12", "M13", "M10"))
             if code == "TEMP_RISING":
-                add(_message("msg_fever_incision", "Ask about fever and the incision", detail,
-                             "today", [code, "M13"], patient, "msg_temperature_ask", rank))
+                # Only a surgical patient has an incision to ask about; the
+                # chronic and general pathways get the same question without it.
+                add(_message("msg_fever_incision",
+                             "Ask about fever" if chronic or not surgical
+                             else "Ask about fever and the incision",
+                             detail, "today", [code, "M13"], patient,
+                             "msg_temperature_ask", rank))
             elif code == "RHR_RISING":
                 add(_message("msg_how_feeling", "Ask how they are feeling today", detail,
                              "today", [code, "M12"], patient, None, rank, _HOW_FEELING))

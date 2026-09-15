@@ -1251,3 +1251,34 @@ def test_hosts_and_configuration():
     with pytest.raises(JunctionNotConfigured):
         JunctionClient("", SANDBOX)
     assert BRAND_BY_SLUG["whoop_v2"] is P.WHOOP and BRAND_BY_SLUG["apple_health_kit"] is P.APPLE
+
+
+def test_a_provider_junction_stops_reporting_is_retired(client, db, connection, fake):
+    """A watch unpaired at the source simply vanishes from Junction's list.
+    Its Device row used to stay "connected" for ever, so the console and the
+    app both went on naming an unpaired watch as the live source."""
+    from app.models.patient import Device
+
+    fake.providers = [
+        {"name": "Oura", "slug": "oura", "created_on": "2026-08-20T10:00:00+00:00",
+         "status": "connected", "resource_availability": {}},
+        {"name": "Garmin", "slug": "garmin", "created_on": "2026-08-21T10:00:00+00:00",
+         "status": "connected", "resource_availability": {}},
+    ]
+    client.post(f"/api/patients/{PATIENT}/wearables/junction/refresh")
+    db.expire_all()
+    assert {d.id.rsplit(":", 1)[-1]: d.status for d in db.scalars(
+        select(Device).where(Device.patient_id == PATIENT)).all()} == {
+        "oura": "connected", "garmin": "connected"}
+
+    # the patient unpairs the Garmin
+    fake.providers = [fake.providers[0]]
+    view = client.post(f"/api/patients/{PATIENT}/wearables/junction/refresh").json()
+    assert [p["slug"] for p in view["connection"]["providers"]] == ["oura"]
+    db.expire_all()
+    statuses = {d.id.rsplit(":", 1)[-1]: d.status for d in db.scalars(
+        select(Device).where(Device.patient_id == PATIENT)).all()}
+    assert statuses == {"oura": "connected", "garmin": "revoked"}
+    # the console's patient header names the live device, not the retired one
+    detail = client.get(f"/api/patients/{PATIENT}").json()
+    assert detail["device"] is not None and "Oura" in detail["device"]["model"]

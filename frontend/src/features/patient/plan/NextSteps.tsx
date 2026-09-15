@@ -34,8 +34,9 @@ const ACTION = {
   acknowledge: { label: 'Mark reviewed', icon: CheckCheck },
 } as const satisfies Record<NextStepActionType, unknown>
 
-function stepActionLabel(step: NextStep, phone: string | null): string {
-  if (step.action.type === 'send_checkin' && !phone) return 'Open check-in link'
+function stepActionLabel(step: NextStep, canText: boolean): string {
+  // "Open check-in link" is the honest label only when no text can carry it.
+  if (step.action.type === 'send_checkin' && !canText) return 'Open check-in link'
   return ACTION[step.action.type]?.label ?? 'Do it'
 }
 
@@ -49,6 +50,7 @@ export default function NextSteps({
   patientName,
   surgeon,
   phone,
+  canText,
   aiActions,
   refreshing,
   onOpen,
@@ -57,6 +59,9 @@ export default function NextSteps({
   patientName: string
   surgeon?: string | null
   phone: string | null
+  /** A text can reach this patient. Separate from `phone`, which is what a
+   *  dial link needs: the worklist knows one without the other. */
+  canText?: boolean
   aiActions: SuggestedAction[]
   refreshing: boolean
   /** `open` steps: "full_stats:M12" | "wearables" | "plan" | "messages". */
@@ -163,6 +168,7 @@ export default function NextSteps({
                             patientId={patientId}
                             step={s}
                             phone={phone}
+                            canText={canText}
                             onMessage={setComposer}
                             onOpen={onOpen}
                           />
@@ -223,6 +229,7 @@ export function NextStepButton({
   patientId,
   step,
   phone,
+  canText,
   compact = false,
   onMessage,
   onOpen,
@@ -230,6 +237,7 @@ export function NextStepButton({
   patientId: string
   step: NextStep
   phone: string | null
+  canText?: boolean
   compact?: boolean
   onMessage: (step: NextStep) => void
   onOpen: (target: string, step: NextStep) => void
@@ -240,7 +248,7 @@ export function NextStepButton({
   const type = step.action.type
   const meta = ACTION[type] ?? ACTION.acknowledge
   const Icon = meta.icon
-  const label = stepActionLabel(step, phone)
+  const label = stepActionLabel(step, canText ?? phone != null)
   const busy = execute.isPending || complete.isPending
 
   const run = (e: MouseEvent) => {
@@ -256,7 +264,14 @@ export function NextStepButton({
     execute.mutate(
       { key: step.key },
       {
-        onSuccess: (r) => toast(resultToast(step, r.result), type === 'escalate' ? 'warning' : 'success'),
+        onSuccess: (r) => {
+          // A check-in for a patient with no phone comes back as a tokenized
+          // link for the clinician to hand over; put it on the clipboard so
+          // the toast is actionable rather than a URL to retype.
+          const url = (r.result as Record<string, unknown> | null)?.url
+          if (typeof url === 'string' && url) void navigator.clipboard?.writeText(url).catch(() => {})
+          toast(resultToast(step, r.result), type === 'escalate' ? 'warning' : 'success')
+        },
         onError: (err) => toast(`${step.title} failed — ${err.message}`, 'warning'),
       },
     )
@@ -318,7 +333,12 @@ function resultToast(step: NextStep, result: Record<string, unknown> | null): st
       return `${n != null ? `${n} task${n === 1 ? '' : 's'}` : 'Tasks'} assigned${sms ? ' — texted' : ''}`
     }
     case 'send_checkin':
-      return sms ? 'Check-in sent by text' : 'Check-in created — waiting in the app'
+      if (sms) return 'Check-in sent by text'
+      // With no phone on file the server mints the tokenized link instead, so
+      // the clinician has something to hand over. It used to be dropped.
+      return typeof result?.url === 'string'
+        ? `Check-in link ready — copied: ${result.url}`
+        : 'Check-in created — waiting in the app'
     case 'escalate':
       return 'Escalated — care team notified'
     case 'call':

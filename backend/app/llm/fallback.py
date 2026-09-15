@@ -73,6 +73,10 @@ def worklist_reason(analytics: dict[str, Any]) -> dict[str, str]:
 def patient_summary(patient_header: dict[str, Any], analytics: dict[str, Any]) -> dict[str, str]:
     name = patient_header.get("name", "The patient").split()[0]
     day = analytics.get("postop_day")
+    # "N days post-op" is false about a patient who did not have surgery; for
+    # them the same number counts days on the programme.
+    surgical = patient_header.get("surgical", True)
+    since = f"{day} days post-op" if surgical else f"{day} days into monitoring"
     level = analytics.get("risk", {}).get("level")
     reasons = analytics.get("risk", {}).get("reasons", [])
     trajectory = analytics.get("trajectory", {})
@@ -83,15 +87,16 @@ def patient_summary(patient_header: dict[str, Any], analytics: dict[str, Any]) -
     if level == RiskLevel.MISSING_DATA:
         pct = int(round((confidence.get("score") or 0) * 100))
         parts.append(
-            f"{name} is {day} days post-op, but only {pct}% of recent days have device data, "
-            "so recovery cannot be assessed reliably."
+            f"{name} is {since}, but only {pct}% of recent days have device data, "
+            f"so {'recovery' if surgical else 'their baseline'} cannot be assessed reliably."
         )
         parts.append("Confirm the wearable is charged, worn, and syncing before reading trends.")
     else:
         opener = {
-            RiskLevel.HIGH: f"{name} is {day} days post-op and several monitoring signals have moved away from baseline together.",
-            RiskLevel.MEDIUM: f"{name} is {day} days post-op with findings worth a look this week.",
-            RiskLevel.LOW: f"{name} is {day} days post-op and recovering as expected.",
+            RiskLevel.HIGH: f"{name} is {since} and several monitoring signals have moved away from baseline together.",
+            RiskLevel.MEDIUM: f"{name} is {since} with findings worth a look this week.",
+            RiskLevel.LOW: (f"{name} is {since} and recovering as expected." if surgical
+                            else f"{name} is {since} and tracking at their usual baseline."),
         }[RiskLevel(level)]
         parts.append(opener)
         texts = _reason_texts([r for r in reasons if r["code"] != "ON_TRACK"], 4)
@@ -99,9 +104,11 @@ def patient_summary(patient_header: dict[str, Any], analytics: dict[str, Any]) -
             parts.append("; ".join(texts) + ".")
         pct = trajectory.get("pct")
         state = trajectory.get("state")
-        if state == "behind" and pct is not None:
+        # The expected curve is a post-surgical construct; a general patient
+        # has no procedure to be behind or ahead of.
+        if surgical and state == "behind" and pct is not None:
             parts.append(f"Functional recovery is tracking {abs(round(pct))}% behind the expected curve for this procedure.")
-        elif state == "ahead" and pct is not None:
+        elif surgical and state == "ahead" and pct is not None:
             parts.append(f"Functional recovery is tracking {abs(round(pct))}% ahead of the expected curve.")
         if adherence.get("assigned") and adherence.get("rate", 1) < 0.7:
             parts.append(f"Task adherence is {int(round(adherence['rate'] * 100))}% over the last two weeks.")

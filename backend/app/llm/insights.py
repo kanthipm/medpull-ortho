@@ -236,6 +236,10 @@ def _header(patient: Patient, postop_day: int) -> dict[str, Any]:
         "sex": patient.sex,
         "procedure": patient.procedure_display,
         "postop_day": postop_day,
+        # A general patient never had an operation, so "day 6 post-op" is
+        # simply false about them. Every narrative reads this instead of
+        # assuming the roster is surgical.
+        "surgical": str(patient.procedure_type) != "NONE",
     }
 
 

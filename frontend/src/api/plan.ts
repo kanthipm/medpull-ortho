@@ -429,8 +429,10 @@ export function usePatientPlan(id: string) {
 export function usePatientDelivery(id: string, detail: PatientDetail | null | undefined) {
   const plan = usePatientPlan(id)
   const phone = patientPhone(detail) ?? plan.data?.summary?.phone ?? null
-  const smsAvailable = plan.data?.summary?.sms_available ?? phone != null
-  return { phone, smsAvailable: smsAvailable && phone != null }
+  // The chart itself says whether this server can text at all (Sendblue keys
+  // present); the plan summary is a fallback for callers that have no detail.
+  const configured = detail?.sms_configured ?? plan.data?.summary?.sms_available ?? true
+  return { phone, smsAvailable: Boolean(configured) && phone != null }
 }
 
 /** Everything a plan write moves: the patient prefix (plan, their task list,

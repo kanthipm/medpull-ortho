@@ -48,8 +48,10 @@ def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
         .limit(1)
     )
     # Patient.devices is ordered newest-connected-first, so an upgraded watch
-    # wins over the row that happened to be written first.
-    device = patient.devices[0] if patient.devices else None
+    # wins over the row that happened to be written first. Retired rows are
+    # skipped: an unpaired watch, or the account a record merge retired, must
+    # not be shown as the live source.
+    device = next((d for d in patient.devices if d.status != "revoked"), None)
     from app.identity import app_status
 
     return {
@@ -562,6 +564,14 @@ def create_patient(
             surgery_date = date.fromisoformat(body.surgery_date)
         except ValueError:
             raise HTTPException(status_code=422, detail="Invalid surgery date format (use YYYY-MM-DD)")
+        # A future date makes post-op day negative, which the coverage window
+        # reads as "no days to assess": the patient would sit in Missing data
+        # for ever while their watch streamed.
+        if surgery_date > date.today():
+            raise HTTPException(
+                status_code=422,
+                detail="Surgery date is in the future — create the record after the operation",
+            )
     
     if body.date_of_birth:
         try:

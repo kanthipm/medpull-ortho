@@ -178,14 +178,21 @@ def assign_plan(
         raise PlanError("No tasks to assign")
     pathway = pathway_for(patient)
     today = date.today()
+    # Resolve and validate EVERY item before creating any task. Resolution is
+    # what rejects an unknown template, a missing title or diagnostic wording,
+    # and it used to run inside the creation loop: item three failing left
+    # items one and two committed and texted, with the caller seeing a 422 and
+    # no way to know half a plan had been assigned.
+    resolved = [resolve_item(db, raw) for raw in items]
     tasks: list[AdherenceTask] = []
-    for raw in items:
-        item, template = resolve_item(db, raw)
+    for item, template in resolved:
         task, _ = create_task(
             db, patient, title=item.title, why=item.why, kind=item.task_kind,
             due_at=item.due_at, notify=False, base_url=base_url, created_by=created_by,
         )
         task.payload = {**(task.payload or {}), "care": care_payload(item, pathway.key, today)}
+        # create_task has flushed the row; the care payload above is what makes
+        # it a plan task, so it must be in place before anything reads it.
         task.verified_by = verified_by_label(item.verify_kind)
         if template is not None:
             template.usage_count = int(template.usage_count or 0) + 1
@@ -378,6 +385,14 @@ def patient_plan(db: Session, patient_id: str, today: date | None = None) -> dic
 
 
 def end_task(db: Session, task_id: int) -> AdherenceTask:
+    """Take a task out of the plan.
+
+    Everything the patient could still do with it goes too: an SMS
+    conversation half-answered on it would otherwise keep asking questions
+    for a task the console has retired, and the app would keep showing it as
+    "started by text". The assessment is recomputed because the care metrics
+    and the next-step rules score the active plan.
+    """
     task = db.get(AdherenceTask, task_id)
     if task is None:
         raise PlanError(f"Unknown task {task_id}")
@@ -386,10 +401,17 @@ def end_task(db: Session, task_id: int) -> AdherenceTask:
         task.status = "skipped"
         task.completed_at = datetime.now()
         task.completed_via = "console"
+    payload = dict(task.payload or {})
+    payload.pop("sms", None)
     care = care_of(task)
     if care is not None:
-        task.payload = {**task.payload, "care": {**care, "ended_on": date.today().isoformat()}}
+        payload["care"] = {**care, "ended_on": date.today().isoformat()}
+    task.payload = payload
     db.commit()
+
+    from app.engine.pipeline import run_patient
+
+    run_patient(db, task.patient_id)
     return task
 
 

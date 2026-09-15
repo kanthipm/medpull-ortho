@@ -67,13 +67,19 @@ final class APIClient {
             request.httpBody = Data("{}".utf8)
         }
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
+        // A GET is safe to repeat, and the server's hiccups are short: a cold
+        // start, or a burst of console traffic taking every Lambda slot for a
+        // second or two. One retry after a short pause hides most of them.
+        var (data, response) = try await attempt(request)
+        var status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if method == "GET" && (status == 0 || status == 429 || status >= 500) {
+            try? await Task.sleep(for: .seconds(1.5))
+            (data, response) = try await attempt(request)
+            status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        }
+        if status == 0 {
             throw APIError(status: 0, detail: "Can't reach MedPull right now. Check your connection.")
         }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             var detail = HTTPURLResponse.localizedString(forStatusCode: status)
             if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -86,6 +92,17 @@ final class APIClient {
             return try decoder.decode(T.self, from: data)
         } catch {
             throw APIError(status: status, detail: "Unexpected answer from the server (\(error.localizedDescription)).")
+        }
+    }
+
+    /// One HTTP attempt. A transport failure (no network, DNS, timeout) comes
+    /// back as status 0 with empty data rather than throwing, so the caller
+    /// can decide whether to retry.
+    private func attempt(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch {
+            return (Data(), URLResponse())
         }
     }
 }

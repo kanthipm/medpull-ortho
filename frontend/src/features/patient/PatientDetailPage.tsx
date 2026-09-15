@@ -133,6 +133,11 @@ export default function PatientDetailPage() {
               {p.age} {p.sex} · {p.procedure_display} · {p.surgeon}
               {p.device && <> · {p.device.model}</>}
             </p>
+            {p.mode === 'general' && (
+              <p className="mt-0.5 text-[12px] font-medium text-faint">
+                No surgery on file · followed on everyday signals
+              </p>
+            )}
             {care.data?.pathway?.name && (
               <p className="mt-0.5 text-[12px] font-medium text-faint">
                 Pathway · {care.data.pathway.name}
@@ -144,10 +149,15 @@ export default function PatientDetailPage() {
         <MetricCluster
           className="mt-4"
           items={[
-            { key: 'day', label: 'Post-op day', value: `D${p.postop_day}` },
+            // A general patient never had an operation: "Post-op day D6" is
+            // simply false about them, and the backend already says which
+            // kind of chart this is.
+            p.mode === 'general'
+              ? { key: 'day', label: 'Days monitored', value: `${p.postop_day ?? 0}` }
+              : { key: 'day', label: 'Post-op day', value: `D${p.postop_day}` },
             {
               key: 'traj',
-              label: 'Trajectory',
+              label: p.mode === 'general' ? 'Vs. baseline' : 'Trajectory',
               value: trajValue,
               tone:
                 p.trajectory.state === 'behind'
@@ -216,6 +226,7 @@ export default function PatientDetailPage() {
             patientName={p.name}
             surgeon={p.surgeon}
             phone={delivery.phone}
+            canText={delivery.smsAvailable}
             aiActions={p.actions}
             refreshing={refreshing}
             onOpen={openTarget}

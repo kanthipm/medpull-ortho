@@ -35,6 +35,56 @@ from app.seed.patients import CARE_TEAM, HOSPITALS, PATIENTS
 from app.seed.scenarios import get_scenario
 
 
+def live_patient_ids(db: Session) -> list[str]:
+    """Patients a reseed would destroy rather than rebuild.
+
+    The roster is written from code with fixed ids, so seeded patients come
+    back. A person who enrolled from the app does not: their session token,
+    their message thread and every observation Apple Health ever delivered
+    are theirs alone. Anyone with a phone number on file or an app session
+    counts as real.
+    """
+    from sqlalchemy import or_, select
+
+    from app.models.mobile import PatientSession
+
+    return list(
+        db.scalars(
+            select(Patient.id).where(
+                or_(
+                    Patient.phone.is_not(None),
+                    Patient.id.in_(select(PatientSession.patient_id)),
+                )
+            ).order_by(Patient.id)
+        ).all()
+    )
+
+
+def refuse_destructive_reseed(force: bool = False) -> dict[str, object] | None:
+    """The refusal a caller should answer with, or None when a reseed is safe.
+
+    ``--reset`` drops every table. On an empty deployment that is the point;
+    on a live one it deletes real people, so it has to be asked for twice.
+    """
+    from app.database import SessionLocal
+
+    if force:
+        return None
+    with SessionLocal() as db:
+        live = live_patient_ids(db)
+    if not live:
+        return None
+    shown = ", ".join(live[:8]) + ("…" if len(live) > 8 else "")
+    return {
+        "ok": False,
+        "error": (
+            f"refusing to reseed: {len(live)} patient(s) have a phone or an app session "
+            f"({shown}). Pass force=true to destroy them."
+        ),
+        "live_patients": live,
+    }
+
+
 def seed_core(
     db: Session,
     today: date,

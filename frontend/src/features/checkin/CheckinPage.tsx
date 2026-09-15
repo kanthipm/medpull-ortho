@@ -154,7 +154,12 @@ export default function CheckinPage() {
 
       {submit.isError && (
         <p className="mt-6 text-[13px] font-medium text-red-500">
-          Couldn't send your answers &mdash; check your connection and try again.
+          {/* A 410 means the link was already used or has expired, and a 422
+              names the answer the form would not take. Telling that patient
+              to check their connection sends them round the same loop. */}
+          {submit.error instanceof ApiError && submit.error.status >= 400 && submit.error.status < 500
+            ? submit.error.message
+            : "Couldn't send your answers — check your connection and try again."}
         </p>
       )}
 

@@ -10,6 +10,7 @@ from app.models.checkin import Checkin
 from app.models.enums import InsightKind, RiskLevel
 from app.models.library import TaskTemplate
 from app.models.patient import Patient
+from app.notifications import sendblue
 from app.plan import ensure_ready
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,13 @@ def worklist(db: Session = Depends(get_db)) -> dict:
                 "risk_score": assessment.risk_score,
                 "reason": reason_text,
                 "procedure_display": patient.procedure_display,
+                "mode": "general" if str(patient.procedure_type) == "NONE" else "recovery",
                 "postop_day": analytics.get("postop_day"),
+                # Whether a text can actually reach them. The row's step used
+                # to be the only hint, so a check-in step for a patient with a
+                # phone was labelled "Open check-in link" purely because that
+                # step carries no tel of its own.
+                "can_text": bool(patient.phone) and sendblue.configured(),
                 "days_since_discharge": (datetime.now().date() - patient.discharge_date).days,
                 "last_checkin_at": last_checkins.get(patient.id),
                 "assigned_provider": {
@@ -138,7 +145,9 @@ def worklist(db: Session = Depends(get_db)) -> dict:
                 "risk_score": -1,
                 "reason": "Analysis unavailable — open the patient to retry",
                 "procedure_display": patient.procedure_display,
+                "mode": "general" if str(patient.procedure_type) == "NONE" else "recovery",
                 "postop_day": None,
+                "can_text": bool(patient.phone) and sendblue.configured(),
                 "days_since_discharge": (datetime.now().date() - patient.discharge_date).days,
                 "last_checkin_at": last_checkins.get(patient.id),
                 "assigned_provider": {

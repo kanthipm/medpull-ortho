@@ -79,29 +79,30 @@ final class AppModel {
     }
 
     func refreshMe() async {
-        do { me = try await api.me() } catch { note(error) }
+        do { me = try await api.me(); clearError() } catch { note(error) }
     }
 
     func refreshTasks() async {
-        do { tasks = try await api.tasks() } catch { note(error) }
+        do { tasks = try await api.tasks(); clearError() } catch { note(error) }
     }
 
     func refreshMessages() async {
-        do { messages = try await api.messages() } catch { note(error) }
+        do { messages = try await api.messages(); clearError() } catch { note(error) }
     }
 
     func refreshProgress() async {
-        do { progress = try await api.progress(days: 14).days } catch { note(error) }
+        do { progress = try await api.progress(days: 14).days; clearError() } catch { note(error) }
     }
 
     func refreshPortfolio() async {
-        do { portfolio = try await api.portfolio(days: 14).metrics } catch { note(error) }
+        do { portfolio = try await api.portfolio(days: 14).metrics; clearError() } catch { note(error) }
     }
 
     func refreshWearables(force: Bool = false) async {
         do {
             let r = force ? try await api.refreshWearables() : try await api.wearables()
             wearables = r.summary
+            clearError()
         } catch { note(error) }
     }
 
@@ -163,6 +164,10 @@ final class AppModel {
             break
         }
     }
+
+    /// A successful request means the server is reachable again: drop a
+    /// banner left over from an earlier failure (cold start, brief outage).
+    private func clearError() { lastError = nil }
 
     private func note(_ error: Error) {
         if let e = error as? APIError, e.isUnauthorized {

@@ -255,6 +255,7 @@ function WorklistRow({
               patientId={p.id}
               step={step}
               phone={step.action.tel ?? null}
+              canText={p.can_text}
               compact
               onMessage={onMessage}
               onOpen={() => navigate(`/patients/${p.id}`)}

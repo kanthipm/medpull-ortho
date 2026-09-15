@@ -165,7 +165,9 @@ def _last_seen(db: Session, patient_id: str) -> datetime:
     return seen or datetime.min
 
 
-def _merge_observations(db: Session, target: Patient, source: Patient) -> dict[str, int]:
+def _merge_observations(
+    db: Session, target: Patient, source: Patient, keep_user: str | None = None
+) -> dict[str, int]:
     """Move the sign-up's readings onto the chart without double counting.
 
     A dedupe key names the patient it was ingested for, so a moved row must
@@ -192,13 +194,32 @@ def _merge_observations(db: Session, target: Patient, source: Patient) -> dict[s
         by_key[row.dedupe_key] = row
         if (k := day_key(row)) is not None:
             by_day[k] = row
+    def from_kept_account(row: Observation) -> bool:
+        # A Junction device id is "junction:<user>:<provider slug>".
+        return bool(keep_user and keep_user in (row.source_device_id or ""))
+
+    def wins(candidate: Observation, holder: Observation) -> bool:
+        """Which of two readings for the same day survives.
+
+        The one delivered by the Junction account that is being KEPT wins,
+        whatever its ingest time: a future restatement of that day arrives
+        with that account's record id, and if the surviving row carried the
+        retired account's id the restatement would land beside it as a second
+        reading for the day and double the total. Ingest time only breaks a
+        tie between rows from the same account.
+        """
+        kept_candidate, kept_holder = from_kept_account(candidate), from_kept_account(holder)
+        if kept_candidate != kept_holder:
+            return kept_candidate
+        return (candidate.ingested_at or datetime.min) > (holder.ingested_at or datetime.min)
+
     counts = {"moved": 0, "dropped_duplicate": 0, "replaced_older": 0}
     for row in db.scalars(select(Observation).where(Observation.patient_id == source.id)).all():
         new_key = row.dedupe_key.replace(f":{source.id}:", f":{target.id}:", 1)
         dk = day_key(row)
         existing = by_key.get(new_key) or (by_day.get(dk) if dk is not None else None)
         if existing is not None:
-            if (row.ingested_at or datetime.min) > (existing.ingested_at or datetime.min):
+            if wins(row, existing):
                 by_key.pop(existing.dedupe_key, None)
                 if (ek := day_key(existing)) is not None:
                     by_day.pop(ek, None)
@@ -280,7 +301,7 @@ def link_app_account(db: Session, target: Patient, source: Patient) -> dict[str,
             update(model).where(model.patient_id == source.id).values(patient_id=target.id)
         )
         counts[model.__tablename__] = result.rowcount
-    observations = _merge_observations(db, target, source)
+    observations = _merge_observations(db, target, source, connections.get("kept"))
     counts["observations"] = observations["moved"]
 
     for model in _DERIVED:
@@ -309,9 +330,16 @@ def link_app_account(db: Session, target: Patient, source: Patient) -> dict[str,
     db.delete(source)
     db.commit()
 
-    from app.engine.pipeline import run_patient
+    # The merge is committed by this point. A failure to re-score must not be
+    # reported as a failed link: the caller would retry and get a 404 for a
+    # source record that no longer exists, and the next read recomputes anyway.
+    try:
+        from app.engine.pipeline import run_patient
 
-    run_patient(db, target.id, force=True)
+        run_patient(db, target.id, force=True)
+    except Exception:  # noqa: BLE001
+        logger.exception("Link %s -> %s: recompute failed; the merge stands",
+                         source.id, target.id)
     logger.info("Linked app record %s into chart %s: %s", source.id, target.id, counts)
     return {
         "linked_from": source.id,
