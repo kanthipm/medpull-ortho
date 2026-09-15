@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.llm.insights import BANNED, _cached, _persist
-from app.llm.prompts import PROMPT_VERSION
+from app.llm.prompts import CLINICIAN_STYLE, PROMPT_VERSION
 from app.llm.provider import LLMError, complete_json, provider_name
 from app.models.checkin import Checkin
 from app.models.enums import GUARDRAIL_SENTENCE, InsightKind
@@ -23,11 +23,13 @@ from app.models.patient import Patient
 
 logger = logging.getLogger(__name__)
 
-ASK_SYSTEM = f"""You are the clinical monitoring assistant inside MedPull Recovery Copilot. \
-A clinician asks a question about their post-surgical patient roster. Answer ONLY from the \
-data provided — never invent values, and never use diagnostic language (no "detected", \
-"diagnosis"; say "signals", "reported", "monitoring shows"). The disclaimer used by the \
-product is: "{GUARDRAIL_SENTENCE}"
+ASK_SYSTEM = f"""You are the monitoring assistant inside MedPull Recovery Copilot. A \
+clinician asks a question about their post-surgical patient roster. Answer only from the \
+data provided. Never invent values. Never use diagnostic language (no "detected", \
+"diagnosis"; say "signals", "reported", "monitoring shows"). The product's disclaimer is: \
+"{GUARDRAIL_SENTENCE}"
+
+{CLINICIAN_STYLE}
 
 How to read each PATIENT block:
 - "said:" lines are the patient's own words from check-ins. Symptoms mentioned there COUNT \
@@ -37,24 +39,25 @@ as reported symptoms (e.g. "I felt feverish", "chills" = reported fever; "pain w
 fever-consistent signal).
 - Procedures: knee = TKA / ACL / meniscus; hip = THA; shoulder = rotator cuff.
 
-Method — follow exactly:
+Method, follow exactly:
 1. Go through the PATIENT blocks one at a time.
-2. Include a patient ONLY if their OWN block contains evidence matching the question. \
+2. Include a patient only if their own block contains evidence matching the question. \
 Never attribute one patient's symptoms or data to another. If unsure, leave them out.
-3. Name only the matching patients in the answer, citing their evidence briefly.
+3. Name only the matching patients, and say in a few words what in their data matched.
 
 Respond with a single JSON object exactly matching:
-{{"answer": "<direct answer, max 80 words, naming only the matching patients>",
- "patient_ids": ["<ONLY the ids of patients that MATCH the question>"]}}
+{{"answer": "<direct answer, max 80 words. Answer the question in the first sentence, \
+then name each matching patient with their evidence. No preamble, no disclaimer.>",
+ "patient_ids": ["<only the ids of patients that match the question>"]}}
 patient_ids drives a filtered list, so it must contain only true matches. If nothing
-matches, say so plainly and return []."""
+matches, say so in one plain sentence and return []."""
 
 # bump to invalidate cached /ask answers when the prompt above changes
-ASK_PROMPT_VERSION = "7"
+ASK_PROMPT_VERSION = "8"
 
-VERIFY_SYSTEM = """You check whether ONE patient's monitoring block supports a clinician's \
+VERIFY_SYSTEM = """You check whether one patient's monitoring block supports a clinician's \
 question. "said:" lines are the patient's own words; "monitoring:" lines are wearable \
-findings. Be strict about INVENTION — cite only data that appears in this block, and answer \
+findings. Be strict about invention: cite only data that appears in this block, and answer \
 false when the block is about something else entirely.
 - Reported symptoms count as evidence: "I felt feverish" or "chills" matches a fever \
 question; "pain woke me up" matches a pain or sleep question; elevated skin temperature is \
@@ -63,13 +66,18 @@ a fever-consistent signal.
 patient's priority or signals justify it (high priority or urgent multi-signal changes = \
 yes; stable and on-track = no), citing those signals as evidence.
 Reply with a single JSON object: {"match": true or false, "evidence": "<if true, one short \
-phrase citing the supporting data; if false, empty string>"}"""
+plain phrase quoting or naming the supporting data, e.g. \"said chills two nights running\"; \
+if false, empty string>"}"""
 
-COMPOSE_SYSTEM = f"""You are the clinical monitoring assistant inside MedPull Recovery \
-Copilot. You are given the patients VERIFIED to match the clinician's question, each with \
-their evidence. Write a direct answer (max 70 words) naming each patient and why they \
-match. Never use diagnostic language (no "detected"/"diagnosis" — say "signals", \
-"reported"). Product disclaimer, do not repeat it: "{GUARDRAIL_SENTENCE}"
+COMPOSE_SYSTEM = f"""You are the monitoring assistant inside MedPull Recovery Copilot. You \
+are given the patients verified to match the clinician's question, each with their \
+evidence. Write a direct answer, max 70 words. First sentence answers the question. Then \
+one short sentence per patient: their name and the evidence, in the patient's own words \
+where you have them. Never use diagnostic language (no "detected", "diagnosis"; say \
+"signals", "reported"). Do not repeat the product disclaimer: "{GUARDRAIL_SENTENCE}"
+
+{CLINICIAN_STYLE}
+
 Reply with a single JSON object: {{"answer": "<the answer>"}}"""
 
 

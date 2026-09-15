@@ -239,9 +239,11 @@ def draft_patient_message(
             "template_body": template_body,
         }
         system = DRAFT_SYSTEM + (
-            "\nWhen 'clinician_intent' is given, the message must say that, in the patient's "
-            "words. Match 'tone' (warm | direct | encouraging). When 'template_body' is given, "
-            "personalize it: keep its meaning, keep it under 320 characters."
+            "\nWhen 'clinician_intent' is given, say exactly that, in words the patient would "
+            "use. Match 'tone': warm (kind, unhurried), direct (say the ask in the first "
+            "sentence), encouraging (name one thing they did well, then the ask). When "
+            "'template_body' is given, keep its meaning, swap in this patient's details, and "
+            "keep it under 320 characters."
         )
         try:
             raw = complete_json(system, f"Context:\n{json.dumps(context, default=str)}",

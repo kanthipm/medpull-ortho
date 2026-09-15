@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.engine.care.pathways import PATHWAYS, Pathway, pathway_by_key, pathway_for
 from app.llm.insights import BANNED
+from app.llm.prompts import PATIENT_STYLE
 from app.llm.provider import (
     LLMError,
     complete_json,
@@ -52,28 +53,39 @@ MAX_TASKS = 6
 TITLE_MAX, WHY_MAX, TARGET_MAX, RATIONALE_MAX = 90, 160, 160, 200
 EARLY_DAYS, MID_DAYS = 14, 42
 
-TASK_BUILDER_SYSTEM = """You turn a clinician's free-text care plan into structured tasks for a \
-patient on a monitored care pathway ("care plan", not "recovery plan": the patient may be \
+TASK_BUILDER_SYSTEM = f"""You turn a clinician's free-text care plan into structured tasks for \
+a patient on a monitored care pathway ("care plan", not "recovery plan": the patient may be \
 recovering from surgery or living with a chronic condition). You are given the verification \
 vocabulary (what data confirms each kind of task and its parameters), the library entries \
 for this pathway, and the patient's context. Rules:
 - Prefer a library entry (return its "template_key") whenever one fits; adjust its "params" \
 when the clinician gave a number ("5 walks" -> bouts 5).
-- Patient-facing "title" and "why" are plain 6th-grade language, warm, and contain NO metric \
-values, scores, percentages or clinical numbers — a count inside the instruction ("three \
-short walks") is fine. "clinical_target" is for the provider.
+- "title" is what the patient sees on their task card: a short instruction starting with a \
+verb, e.g. "Take three short walks today". "why" is one sentence telling them what it does \
+for them, e.g. "Walking keeps the swelling down and gets the knee bending." Neither may \
+contain metric values, scores, percentages or clinical numbers; a count inside the \
+instruction ("three short walks") is fine. "clinical_target" is for the provider and can use \
+clinical terms.
 - Never use diagnostic language (no "detect", "diagnos...").
-- At most 6 tasks. Respond with a single JSON object:
-{"tasks": [{"template_key": "<key or null>", "title": "...", "why": "...", \
+- At most 6 tasks.
+
+{PATIENT_STYLE}
+
+Respond with a single JSON object:
+{{"tasks": [{{"template_key": "<key or null>", "title": "...", "why": "...", \
 "clinical_target": "...", "verify_kind": "<kind>", "task_kind": "<checkin|exercise|walk|\
-medication|wound_check|custom>", "params": {...}, "schedule": "<daily|am_pm|weekly|once|\
+medication|wound_check|custom>", "params": {{...}}, "schedule": "<daily|am_pm|weekly|once|\
 ongoing>", "phase": "<early|mid|late|ongoing>", "feeds": ["M1"], \
-"rationale": "<why this task for this patient, one sentence>"}]}"""
+"rationale": "<one plain sentence for the clinician: which finding or instruction this task \
+answers>"}}]}}"""
 
 SUGGEST_SYSTEM = """You pick 3 to 5 tasks from a care-plan library for one patient, given their \
-pathway, day in program, risk reasons and top findings. Prefer tasks whose data would resolve \
-the open findings, then the phase-appropriate basics. Never use diagnostic language. Respond \
-with a single JSON object: {"tasks": [{"template_key": "<key>", "rationale": "<one sentence>"}]}"""
+pathway, day in program, risk reasons and top findings. Prefer tasks whose data would answer \
+the open findings, then the basics for this phase. Never use diagnostic language. Each \
+"rationale" is one plain sentence a clinician reads in a glance, naming the finding it \
+addresses, e.g. "Temperature has been up three mornings; a daily reading will show whether \
+it settles." No hedging, no filler. Respond with a single JSON object: \
+{"tasks": [{"template_key": "<key>", "rationale": "<one sentence>"}]}"""
 
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\-().\s]{7,}\d)(?!\w)")
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")

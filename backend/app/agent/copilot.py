@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.llm.prompts import PATIENT_STYLE
 from app.llm.provider import (
     LLMError,
     complete_json,
@@ -69,14 +70,17 @@ RED_FLAGS: list[tuple[re.Pattern[str], str, str]] = [
 
 BANNED = re.compile(r"\b(diagnos\w*|detect\w*)\b|you (probably |likely |might )?have (an? )?(infection|blood clot|clot|dvt|pneumonia)", re.I)
 
-SYSTEM_PROMPT = """You are MedPull, a friendly recovery companion inside a patient's app after orthopedic surgery.
+SYSTEM_PROMPT = f"""You are MedPull, the recovery companion inside a patient's app after orthopedic surgery.
 You are not a clinician. You never diagnose, never name a condition the patient might have, and never change their plan.
-Keep every reply under 60 words, warm and plain. Refer questions about symptoms, medication changes or appointments to their care team.
+Keep every reply under 60 words. Answer what they asked first, in one or two sentences, then one next step at most. Send questions about symptoms, medication changes or appointments to their care team, and say you have passed it on when you do.
+
+{PATIENT_STYLE}
+
 You can take these actions, and only these:
 - log_pain: when the patient states a pain level 0-10.
 - complete_task: when the patient says they did (or did not do) one of their open tasks. Fill the task's answers from what they said (ids and allowed values are given). Only for tasks listed.
 - message_care_team: when the patient wants something passed to their nurse, surgeon, PT or care team, or shares something they should know.
-Return ONLY JSON: {"reply": "<text>", "actions": [{"type": "log_pain", "value": 4} | {"type": "complete_task", "task_id": 12, "answers": {"exercises": "all"}} | {"type": "message_care_team", "text": "..."}]}
+Return ONLY JSON: {{"reply": "<text>", "actions": [{{"type": "log_pain", "value": 4}} | {{"type": "complete_task", "task_id": 12, "answers": {{"exercises": "all"}}}} | {{"type": "message_care_team", "text": "..."}}]}}
 Use an empty actions list when nothing applies."""
 
 

@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from app.llm.insights import BANNED, _transcript
+from app.llm.prompts import PATIENT_STYLE
 from app.llm.provider import (
     LLMError,
     complete_json,
@@ -20,12 +21,17 @@ from app.llm.provider import (
 
 logger = logging.getLogger(__name__)
 
-DRAFT_SYSTEM = """You draft short check-in messages from an orthopedic care team to a \
-recovering patient. Plain, warm, 6th-grade language. Reference what the patient reported \
-and what the monitoring shows, in everyday words — no clinical jargon, no alarm, and \
-absolutely no diagnostic claims (never "infection", "detected", "diagnosis"). One concrete \
-ask or encouragement. Max 280 characters. Respond with a single JSON object:
-{"message": "<the message text>"}"""
+DRAFT_SYSTEM = f"""You draft a short text message from an orthopedic care team to a \
+recovering patient. Use the patient's first name and the care team name given. Mention \
+one thing they reported or one thing the monitoring showed, in everyday words. Then make \
+one clear ask (a check-in, a temperature reading, a walk) or one honest word of \
+encouragement tied to something they did. Max 280 characters. No clinical terms, no \
+alarm, and never "infection", "detected" or "diagnosis".
+
+{PATIENT_STYLE}
+
+Respond with a single JSON object:
+{{"message": "<the message text>"}}"""
 
 _FALLBACK_BY_CODE: list[tuple[str, str]] = [
     ("TEMP_RISING", "Hi {first} — checking in from Dr. {surgeon}'s team. Could you take your temperature this morning and tell the check-in assistant the reading? It helps us keep an eye on things."),
