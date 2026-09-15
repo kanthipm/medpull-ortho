@@ -1,5 +1,8 @@
-"""Sendblue SMS/iMessage delivery — care-team alerts (``SendblueChannel``) and
-patient check-in invitations (``send_checkin_message``). Outbound only.
+"""Sendblue SMS/iMessage delivery — care-team alerts (``SendblueChannel``),
+patient check-in invitations (``send_checkin_message``) and every other text
+the patient app's backend sends a patient (``send_sms``: task invitations,
+verification codes, conversation replies, care-team messages). Inbound texts
+arrive through ``api/sendblue_webhook.py``.
 
 Phone numbers live in the DB or the environment, never in code. With the keys
 unset nothing sends. One bounded attempt, no retries: on Lambda a send runs
@@ -110,11 +113,29 @@ class CheckinSendResult:
     sent: bool
     detail: str
     status_code: int | None = None
+    # Sendblue's id for the outbound message, when it answered with one.
+    message_handle: str | None = None
 
 
-def send_checkin_message(phone_number: str, checkin_url: str) -> CheckinSendResult:
-    """Text a patient their check-in link. With either key unset, sends nothing."""
-    if not (settings.sendblue_api_key and settings.sendblue_api_secret):
+def configured() -> bool:
+    """Both keys present. Read per call: on Lambda they land from SSM after import."""
+    return bool(settings.sendblue_api_key and settings.sendblue_api_secret)
+
+
+def normalize_phone(phone_number: str) -> str | None:
+    """Public spelling of the E.164 normalizer, for callers that store numbers."""
+    return _e164(phone_number)
+
+
+def send_sms(phone_number: str, content: str) -> CheckinSendResult:
+    """Text a patient. With either key unset, sends nothing and says so.
+
+    The one outbound primitive every patient-facing text goes through; the
+    result is a value, never an exception, because a failed text must not
+    fail the request that produced it — the task, message or code it
+    carried is already stored and reachable in the app.
+    """
+    if not configured():
         return CheckinSendResult(sent=False, detail="Sendblue keys not configured")
 
     phone = _e164(phone_number)
@@ -123,18 +144,48 @@ def send_checkin_message(phone_number: str, checkin_url: str) -> CheckinSendResu
             sent=False, detail=f"not a usable phone number: {phone_number!r}"
         )
 
-    content = CHECKIN_TEMPLATE.format(checkin_url=checkin_url)
     try:
-        _post_message(phone, content)
+        response = _post_message(phone, content)
     except httpx.HTTPStatusError as exc:
-        logger.warning("Sendblue check-in send to %s failed: %s", phone, exc)
+        logger.warning("Sendblue send to %s failed: %s", phone, exc)
         return CheckinSendResult(
             sent=False,
             detail=f"Sendblue answered {exc.response.status_code}",
             status_code=exc.response.status_code,
         )
     except httpx.HTTPError as exc:
-        logger.warning("Sendblue check-in send to %s failed: %s", phone, exc)
+        logger.warning("Sendblue send to %s failed: %s", phone, exc)
         return CheckinSendResult(sent=False, detail=f"request failed: {exc}")
 
-    return CheckinSendResult(sent=True, detail="sent")
+    handle: str | None = None
+    try:
+        body = response.json()
+        if isinstance(body, dict) and isinstance(body.get("message_handle"), str):
+            handle = body["message_handle"]
+    except (ValueError, AttributeError, TypeError):
+        handle = None  # no body, or not JSON: the send still happened
+    return CheckinSendResult(sent=True, detail="sent", message_handle=handle)
+
+
+def send_checkin_message(phone_number: str, checkin_url: str) -> CheckinSendResult:
+    """Text a patient their check-in link. With either key unset, sends nothing."""
+    return send_sms(phone_number, CHECKIN_TEMPLATE.format(checkin_url=checkin_url))
+
+
+# Task invitations carry the title only — no name, no clinical detail. "1" is
+# the reply the inbound webhook treats as "walk me through it by text".
+TASK_TEMPLATE = (
+    "MedPull: a new task is ready — {title}.\n"
+    "Open it: {task_url}\n"
+    "Or reply 1 to do it right here by text."
+)
+
+VERIFICATION_TEMPLATE = "Your MedPull verification code is {code}. It expires in 10 minutes."
+
+
+def send_task_message(phone_number: str, title: str, task_url: str) -> CheckinSendResult:
+    return send_sms(phone_number, TASK_TEMPLATE.format(title=title[:80], task_url=task_url))
+
+
+def send_verification_code(phone_number: str, code: str) -> CheckinSendResult:
+    return send_sms(phone_number, VERIFICATION_TEMPLATE.format(code=code))

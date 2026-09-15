@@ -26,7 +26,7 @@ Requirements: [uv](https://docs.astral.sh/uv/) and Node 20+.
 
 ```bash
 make setup     # install backend (uv) + frontend (npm) dependencies
-make seed      # create + populate the demo database (10 patients, 2,825 observations)
+make seed      # create + populate the demo database (12 patients, 5,071 observations)
 make dev       # API on :8000 + Vite dev server on :5173
 ```
 
@@ -63,7 +63,7 @@ per call from what's configured and reachable (`app/llm/provider.py`); there
 is no other provider — no OpenAI, Anthropic, or xAI code path anywhere.
 
 - **Groq (the cloud model):** set `GROQ_API_KEY` in `.env` (free tier at
-  console.groq.com). Model: `llama-3.3-70b-versatile` by default — override
+  console.groq.com). Model: `openai/gpt-oss-120b` by default — override
   with `GROQ_MODEL`. Calls go to Groq's OpenAI-compatible chat-completions
   endpoint with JSON response format and retry-after-aware 429 handling.
 - **No LLM at all:** the deterministic engine renders narratives from typed
@@ -358,6 +358,83 @@ readiness card and practice overview strip) was built here and later removed
 in 1.5.0. SPEC.md still describes it as product direction. The git history
 holds the implementation.
 
+## The patient app (`ios/`)
+
+The patient side of the product, grown out of the Vital example app (the
+"vital wrapper" in the sibling `vital-ios` checkout, which is also where the
+SDK is built from — `ios/project.yml` points at it by path). SwiftUI, iOS 17+,
+one `.xcodeproj` generated from `ios/project.yml`:
+
+```bash
+brew install xcodegen
+make ios          # generate the project and open it in Xcode
+make ios-build    # or: build for the iPhone 17 simulator without signing
+```
+
+Point the app at your API from its Profile screen (built-in default is
+`http://localhost:8000`, right for the simulator against `make dev`; a phone
+needs your Mac's LAN address or the deployed host).
+
+What it does, and where each piece lives:
+
+- **Onboarding** (`Features/Onboarding`): pick a hospital, type a name and
+  mobile number, and the roster is searched as you type, scoped to that
+  hospital and masked (first name, last initial, procedure, surgery month).
+  Confirm the match and you are enrolled. With Sendblue configured the
+  number must receive a 6-digit code first; without it (a laptop) enrollment
+  is unverified and the API response says so. The session token lives in the
+  keychain; every later call carries it and can only touch that patient.
+- **Apple Health in one tap** (`Core/HealthConnector.swift`): the backend
+  mints a Vital Sign-In Token for the patient's Junction user
+  (`POST /api/mobile/wearables/apple/session`; the team API key never
+  ships), the SDK is configured with background delivery, and a *single*
+  `ask` carries every resource the engine reads plus Apple's walking metrics
+  — HealthKit shows one sheet with "Turn On All". Walking speed, step
+  length, asymmetry, double support, steadiness, stair speeds and the 6-minute
+  walk never pass through Junction, so the app reads them from HealthKit and
+  posts daily averages to `POST /api/mobile/observations/gait`, which runs
+  them through the same ingest choke point as every connector. Other
+  wearables go through a Junction Link opened in-app, redirecting back to
+  `medpull://wearables/connected`.
+- **Tasks** (`Features/Tasks`, `backend/app/tasks/service.py`): the care team
+  assigns one from the patient page (kind: check-in, exercises, walk,
+  medication, incision check, or custom), and the patient is texted through
+  Sendblue with an `https://<host>/t/<token>` link. That page tries the app
+  (`medpull://tasks/<id>`) and otherwise renders the same question chips on
+  the web; replying **1** to the text instead walks through the questions one
+  by one in Messages (the cursor lives on the task's `payload`). Whichever
+  way it is answered, the result is a check-in transcript the existing
+  history and digest read, plus the `AdherenceRecord` the adherence engine
+  scores — which nothing wrote before the app. Fever, drainage, redness or
+  pain ≥ 8 in an answer raises an in-app alert for the assigned provider.
+- **Messages** (`Features/Messages`): a two-way thread. The console's
+  Message action now writes to it (and texts the patient when a number is on
+  file); a patient's message raises a bell notification for the provider.
+  Inbound texts arrive at `POST /api/webhooks/sendblue/<secret>` — the
+  secret is a path segment because Sendblue does not sign its webhook; with
+  `SENDBLUE_WEBHOOK_SECRET` unset the route answers 503. A number no patient
+  has on file is dropped, never stored.
+- **Talk** (`Features/Voice`, `backend/app/agent/copilot.py`): on-device
+  speech recognition in, spoken reply out. The copilot can log pain, mark a
+  task done from what was said, or pass a note to the care team — nothing
+  else. A deterministic red-flag pass (chest pain, calf pain, incision
+  drainage, fever, a fall) runs before any model call and its wording is what
+  the patient reads, with the care team alerted in the same transaction;
+  model replies are validated against the same banned-language rule as the
+  console's narratives and fall back to keyword intents.
+
+Schema: the app added columns to `patients` and `adherence_tasks`.
+`ensure_schema()` now adds missing nullable or scalar-defaulted columns with
+`ALTER TABLE ... ADD COLUMN` on startup, so an existing database (including
+the S3 copy) picks them up without a reseed. Tests: `tests/test_mobile.py`.
+
+On AWS only `/api/*` reaches the function, so the task page is a SPA route
+(`/t/:token`) and the optional `apple-app-site-association` (served by the
+backend at `/.well-known/` when `IOS_TEAM_ID` is set) has to be uploaded to
+the SPA bucket as well. Not built yet: push notifications (texts are the
+notification channel), Android, and a scheduled daily check-in (the console
+assigns tasks; nothing creates one on a timer).
+
 ## Not in v1
 
 - **Auth.** Deliberately open for demos. Every API route is unauthenticated,
@@ -376,10 +453,9 @@ holds the implementation.
 - **Every wearable path except Junction.** Apple Health and Android Health
   Connect need Junction's mobile SDK inside a patient app, which does not
   exist; Terra stays scaffolded. See the wearable section above.
-- **SMS/email delivery.** Channel stubs record intent; only in-app
-  notifications are deliverable, and the preferences API refuses to enable a
-  channel that would deliver nowhere.
-- **The patient side of the product.** There is no chatbot, no patient app and
-  no write path for check-ins or enrollment outside the seed. Check-in
-  transcripts on screen are seeded conversations.
+- **Email delivery.** The email channel stub records intent only; SMS is
+  real through Sendblue, and the preferences API refuses to enable a channel
+  that would deliver nowhere.
+- **Push notifications and Android.** The patient app is iOS only and is
+  told about new tasks by text, not push (see "The patient app").
 - **FHIR export, multi-clinic tenancy.**

@@ -1,16 +1,18 @@
-import { ChevronRight } from 'lucide-react'
-import { useState } from 'react'
 import type { CSSProperties } from 'react'
-import { usePatientMetrics } from '../../api/queries'
-import type { MetricInsight, PatientMetrics } from '../../api/types'
-import AdherenceDots from '../../components/AdherenceDots'
-import Sparkline from '../../components/charts/Sparkline'
-import TrajectoryChart from '../../components/charts/TrajectoryChart'
-import SectionCard from '../../components/SectionCard'
-import { RefreshOverlay, SkeletonCard } from '../../components/Skeleton'
-import { METRIC_STATUS } from '../../lib/risk'
+import type { MetricInsight, PatientMetrics } from '../../../api/types'
+import AdherenceDots from '../../../components/AdherenceDots'
+import Sparkline from '../../../components/charts/Sparkline'
+import TrajectoryChart from '../../../components/charts/TrajectoryChart'
+import SectionCard from '../../../components/SectionCard'
+import { RefreshOverlay } from '../../../components/Skeleton'
+import { METRIC_STATUS } from '../../../lib/risk'
 
-function MetricCard({
+/** The Signals tab of Full stats — the former "Supporting signals" body
+ *  (trajectory, multi-signal deviation, wearable trend cards, adherence),
+ *  moved here unchanged. Its data comes from the lazy `usePatientMetrics`
+ *  query the tab owns. */
+
+function SignalCard({
   m,
   index,
   refreshing,
@@ -50,7 +52,7 @@ function MetricCard({
   )
 }
 
-function SignalsBody({
+export default function SignalsBody({
   data,
   refreshing,
 }: {
@@ -114,7 +116,7 @@ function SignalsBody({
 
       <div className="grid gap-3 sm:grid-cols-2">
         {data.metrics.map((m, i) => (
-          <MetricCard key={m.metric_key} m={m} index={i} refreshing={refreshing} />
+          <SignalCard key={m.metric_key} m={m} index={i} refreshing={refreshing} />
         ))}
       </div>
 
@@ -132,48 +134,6 @@ function SignalsBody({
           </div>
         </div>
       </SectionCard>
-    </div>
-  )
-}
-
-export default function SignalsSection({
-  patientId,
-  refreshing,
-}: {
-  patientId: string
-  refreshing: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const { data, isLoading } = usePatientMetrics(patientId, open)
-
-  const flaggedCount = data?.metrics.filter((m) => m.status === 'flag').length
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="zone-label group w-full cursor-pointer rounded-btn px-1 py-2 text-left transition-colors duration-150 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
-      >
-        <ChevronRight
-          size={15}
-          className={`shrink-0 text-faint transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
-        />
-        Supporting signals
-        <span className="text-[10.5px] font-medium normal-case tracking-normal text-faint">
-          {open
-            ? 'full detail'
-            : `trajectory · wearable trends · adherence${flaggedCount ? ` · ${flaggedCount} flagged` : ''}`}
-        </span>
-      </button>
-
-      {open && (
-        <div className="rise mt-2" style={{ '--rise-delay': '0ms' } as CSSProperties}>
-          {isLoading && <SkeletonCard lines={4} />}
-          {data && <SignalsBody data={data} refreshing={refreshing} />}
-        </div>
-      )}
     </div>
   )
 }

@@ -15,34 +15,16 @@ from app.database import get_db
 from app.models.checkin import Checkin, CheckinInvite, CheckinMessage
 from app.models.patient import Patient
 from app.notifications.sendblue import send_checkin_message
+from app.tasks.service import CHECKIN_QUESTIONS, PHRASES
 
 router = APIRouter(tags=["checkin"])
 
 INVITE_TTL = timedelta(hours=72)
 
-QUESTIONS = [
-    {"id": "pain", "prompt": "How's your pain today, 0 to 10?", "kind": "scale"},
-    {"id": "swelling", "prompt": "Any new swelling around the incision?", "kind": "yes_no"},
-    {"id": "fever", "prompt": "Any fever or chills?", "kind": "yes_no"},
-    {"id": "sleep", "prompt": "How did you sleep?", "kind": "choice",
-     "options": ["well", "rough"]},
-    {"id": "exercises", "prompt": "Did you get your exercises in?", "kind": "choice",
-     "options": ["all", "some", "none"]},
-    {"id": "note", "prompt": "Anything else you want the care team to know?", "kind": "text"},
-]
-
-# Answers become the patient's own words so checkin_digest picks up topics
-# and reported trend exactly as it does for seeded transcripts.
-_PHRASES = {
-    "swelling": {"yes": "It looks more swollen than yesterday.", "no": "No new swelling."},
-    "fever": {"yes": "I've felt feverish with some chills.", "no": "No fever or chills."},
-    "sleep": {"well": "I slept fine.", "rough": "It was a rough night, I kept waking up."},
-    "exercises": {
-        "all": "I did all my exercises.",
-        "some": "I did some of my exercises.",
-        "none": "I couldn't do my exercises today.",
-    },
-}
+# One question list for every check-in surface: the tokenized web form here,
+# the app's check-in task, and the texted conversation (tasks/service.py).
+QUESTIONS = CHECKIN_QUESTIONS
+_PHRASES = PHRASES
 
 
 def _hash(token: str) -> str:

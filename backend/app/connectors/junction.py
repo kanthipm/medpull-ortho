@@ -415,12 +415,22 @@ class JunctionConnector(WearableConnector):
 
     # -- linking ---------------------------------------------------------------
 
-    def create_link(self, db: Session, patient_id: str) -> LinkSession:
-        """Ensure the patient has a Junction user and mint a Link URL for it.
+    def ensure_user(
+        self, db: Session, patient_id: str, *, deadline: Any = None
+    ) -> WearableConnection:
+        """Make sure the patient has a live Junction user, creating one if
+        needed, and return the mapping row.
 
-        Idempotent from the console's point of view: a second click reuses the
-        same Junction user (resolved by our opaque client_user_id) and mints a
-        fresh token, because tokens are one-time and short-lived.
+        Idempotent: an existing connection in the current environment is
+        returned as is; a missing or disconnected one gets a fresh Junction
+        user under a fresh opaque ``client_user_id`` — a disconnect deleted
+        the previous user, and reusing its reference would either collide
+        with the tombstone or resolve to it. Committed before returning so
+        the user exists whatever the caller does next (a token call that
+        fails must leave the mapping behind rather than orphan the user).
+
+        ``deadline`` is a zero-arg callable returning the seconds left in the
+        caller's budget; the default gives the whole LINK_BUDGET_S.
         """
         patient = db.get(Patient, patient_id)
         if patient is None:
@@ -433,63 +443,78 @@ class JunctionConnector(WearableConnector):
                 f"environment; disconnect it before linking under {env}",
                 status=409,
             )
+        if conn is not None and conn.status != ConnectionStatus.DISCONNECTED:
+            return conn
+        started = time.monotonic()
+
+        def left() -> float:
+            if deadline is not None:
+                return max(MIN_ATTEMPT_S, float(deadline()))
+            return max(MIN_ATTEMPT_S, LINK_BUDGET_S - (time.monotonic() - started))
+
+        with self._client() as client:
+            client_user_id = f"mp_{uuid.uuid4().hex}"
+            floor, _ceiling = ingestible_window(patient.surgery_date, date.today())
+            user = client.resolve_user(
+                client_user_id, deadline_s=left()
+            ) or client.create_user(
+                client_user_id,
+                fallback_time_zone=patient.timezone,
+                # Junction's own ingestion bound, so the aggregator never
+                # even pulls history the ingest window would drop. Rounded
+                # down to the first of the month: the exact floor is the
+                # surgery date minus a constant, and Junction stores this
+                # on the user record, so day precision would hand the
+                # aggregator the surgery date. partition_by_window drops
+                # the few extra weeks this lets through.
+                ingestion_start=floor.replace(day=1),
+                deadline_s=left(),
+            )
+        user_id = user.get("user_id") if isinstance(user, dict) else None
+        if not isinstance(user_id, str) or not user_id:
+            raise JunctionError("Junction did not return a user_id for the new user")
+        if conn is None:
+            conn = WearableConnection(
+                patient_id=patient_id,
+                aggregator=AGGREGATOR,
+                client_user_id=client_user_id,
+                external_user_id=user_id,
+                environment=env,
+            )
+            db.add(conn)
+        else:
+            conn.client_user_id = client_user_id
+            conn.external_user_id = user_id
+            conn.environment = env
+        conn.status = ConnectionStatus.PENDING_LINK
+        conn.providers = None
+        conn.last_error = None
+        db.commit()
+        return conn
+
+    def create_link(
+        self, db: Session, patient_id: str, *, redirect_url: str | None = None
+    ) -> LinkSession:
+        """Ensure the patient has a Junction user and mint a Link URL for it.
+
+        Idempotent from the console's point of view: a second click reuses the
+        same Junction user (resolved by our opaque client_user_id) and mints a
+        fresh token, because tokens are one-time and short-lived.
+
+        ``redirect_url`` overrides the configured one; the patient app passes
+        its own scheme so Junction's hosted page hands control straight back.
+        """
         started = time.monotonic()
 
         def left() -> float:
             # One budget for the whole request, however many calls it takes.
             return max(MIN_ATTEMPT_S, LINK_BUDGET_S - (time.monotonic() - started))
 
+        conn = self.ensure_user(db, patient_id, deadline=left)
         with self._client() as client:
-            if conn is None or conn.status == ConnectionStatus.DISCONNECTED:
-                # A fresh opaque reference every time an account is (re)created:
-                # a disconnect deleted the previous Junction user, and reusing
-                # its client_user_id would either collide with the tombstone
-                # or resolve to it.
-                client_user_id = f"mp_{uuid.uuid4().hex}"
-                floor, _ceiling = ingestible_window(patient.surgery_date, date.today())
-                user = client.resolve_user(
-                    client_user_id, deadline_s=left()
-                ) or client.create_user(
-                    client_user_id,
-                    fallback_time_zone=patient.timezone,
-                    # Junction's own ingestion bound, so the aggregator never
-                    # even pulls history the ingest window would drop. Rounded
-                    # down to the first of the month: the exact floor is the
-                    # surgery date minus a constant, and Junction stores this
-                    # on the user record, so day precision would hand the
-                    # aggregator the surgery date. partition_by_window drops
-                    # the few extra weeks this lets through.
-                    ingestion_start=floor.replace(day=1),
-                    deadline_s=left(),
-                )
-                user_id = user.get("user_id") if isinstance(user, dict) else None
-                if not isinstance(user_id, str) or not user_id:
-                    raise JunctionError("Junction did not return a user_id for the new user")
-                if conn is None:
-                    conn = WearableConnection(
-                        patient_id=patient_id,
-                        aggregator=AGGREGATOR,
-                        client_user_id=client_user_id,
-                        external_user_id=user_id,
-                        environment=env,
-                    )
-                    db.add(conn)
-                else:
-                    conn.client_user_id = client_user_id
-                    conn.external_user_id = user_id
-                    conn.environment = env
-                conn.status = ConnectionStatus.PENDING_LINK
-                conn.providers = None
-                conn.last_error = None
-                # Committed before the token is minted: the Junction user now
-                # exists whatever happens next, and a token call that fails
-                # must leave the mapping behind so the next click reuses that
-                # user instead of orphaning it and creating another.
-                db.commit()
-
             token = client.create_link_token(
                 conn.external_user_id,
-                redirect_url=settings.junction_link_redirect_url.strip() or None,
+                redirect_url=(redirect_url or settings.junction_link_redirect_url).strip() or None,
                 deadline_s=left(),
             )
         url = token.get("link_web_url") if isinstance(token, dict) else None
@@ -498,6 +523,31 @@ class JunctionConnector(WearableConnector):
         conn.last_link_issued_at = datetime.now()
         db.commit()
         return LinkSession(url=url, expires_at=token.get("expires_at"), connection=conn)
+
+    def create_sign_in_token(self, db: Session, patient_id: str) -> dict[str, Any]:
+        """A Vital Sign-In Token for the patient's Junction user, for the
+        mobile SDK. Creates the user first when there is none. Answers the
+        token plus what the app needs to describe the account."""
+        started = time.monotonic()
+
+        def left() -> float:
+            return max(MIN_ATTEMPT_S, LINK_BUDGET_S - (time.monotonic() - started))
+
+        conn = self.ensure_user(db, patient_id, deadline=left)
+        with self._client() as client:
+            body = client.create_sign_in_token(conn.external_user_id, deadline_s=left())
+        token = body.get("sign_in_token") if isinstance(body, dict) else None
+        if not isinstance(token, str) or not token:
+            raise JunctionError("Junction did not return a sign_in_token")
+        conn.last_link_issued_at = datetime.now()
+        db.commit()
+        return {
+            "sign_in_token": token,
+            "user_id": conn.external_user_id,
+            "client_user_id": conn.client_user_id,
+            "environment": conn.environment,
+            "region": settings.junction_region,
+        }
 
     def authorize(self, db: Session, patient_id: str) -> str:
         return self.create_link(db, patient_id).url

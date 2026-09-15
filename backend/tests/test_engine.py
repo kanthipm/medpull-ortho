@@ -698,3 +698,57 @@ def test_withdrawing_the_preop_history_withdraws_the_baseline(db):
         db.commit()
         run_patient(db, "robert", force=True)
         assert load_established(db, "robert")[str(M.RESTING_HR)].mean == held
+
+
+# --- dataload: the additive-metric rule ---------------------------------------
+
+def test_dataload_sums_intraday_buckets_but_keeps_a_daily_summary_alone():
+    """Hourly step buckets from the patient app must add up to the day, and a
+    day that also carries a provider daily summary keeps the summary alone —
+    the buckets are the same steps counted again, not more of them. Every
+    other metric is still the mean of its rows."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.database import Base
+    from app.engine.dataload import load_daily_series
+    from app.models.enums import Granularity, ProcedureType, SourceProvider
+    from app.models.observation import Observation
+    from app.models.patient import Patient
+
+    isolated = create_engine("sqlite://")
+    Base.metadata.create_all(isolated)
+
+    def row(metric: M, day: int, value: float, granularity: Granularity, hour: int = 0):
+        start = datetime.combine(SURGERY_DATE, datetime.min.time()) + pd.Timedelta(
+            days=day, hours=hour
+        )
+        return Observation(
+            patient_id="p", source_provider=SourceProvider.MOCK, metric_type=metric,
+            unit="count", value_num=value, start_time=start, end_time=start,
+            local_date=start.date(), granularity=granularity,
+            dedupe_key=f"{metric}:{day}:{granularity}:{hour}",
+        )
+
+    with Session(isolated) as session:
+        session.add(Patient(
+            id="p", name="P", initials="P", age=50, sex="F",
+            procedure_type=ProcedureType.TKA, procedure_display="TKA",
+            surgery_date=SURGERY_DATE, discharge_date=SURGERY_DATE,
+            surgeon_id="ct", assigned_provider_id="ct",
+        ))
+        session.add_all([
+            row(M.STEPS, 5, 6000.0, Granularity.DAILY_SUMMARY),
+            *[row(M.STEPS, 5, 200.0, Granularity.INTERVAL, hour=h) for h in range(24)],
+            row(M.STEPS, 6, 1000.0, Granularity.INTERVAL, hour=9),
+            row(M.STEPS, 6, 500.0, Granularity.INTERVAL, hour=10),
+            row(M.STEPS, 6, 250.0, Granularity.INTERVAL, hour=11),
+            row(M.RESTING_HR, 5, 60.0, Granularity.INSTANT, hour=1),
+            row(M.RESTING_HR, 5, 70.0, Granularity.INSTANT, hour=2),
+        ])
+        session.commit()
+        series = load_daily_series(session, "p", SURGERY_DATE)
+
+    assert series[str(M.STEPS)].loc[5] == 6000.0   # the summary wins over 24 x 200
+    assert series[str(M.STEPS)].loc[6] == 1750.0   # no summary: the buckets are summed
+    assert series[str(M.RESTING_HR)].loc[5] == 65.0  # non-additive: mean of rows

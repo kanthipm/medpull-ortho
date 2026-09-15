@@ -3,6 +3,11 @@ import type { InvalidateQueryFilters, QueryKey } from '@tanstack/react-query'
 import { fetchJson } from './client'
 import type {
   AppNotification,
+  AssignTaskResult,
+  MessagePatientResult,
+  PatientMessage,
+  PatientTask,
+  TaskKind,
   Checkin,
   IntegrationsResponse,
   JunctionBackfill,
@@ -217,23 +222,62 @@ export function useDraftMessage(id: string) {
   })
 }
 
+export interface AssignTaskBody {
+  title: string
+  why?: string
+  kind?: TaskKind
+  due_at?: string | null
+  /** Text the patient about it (default true; needs Sendblue + a phone on file). */
+  notify?: boolean
+}
+
 export function useAssignTask(id: string) {
+  const qc = useQueryClient()
   return useMutation({
-    mutationFn: (task: { title: string; why: string }) =>
-      fetchJson<{ ok: boolean }>(`/api/patients/${id}/actions/assign-task`, {
+    mutationFn: (body: AssignTaskBody) =>
+      fetchJson<AssignTaskResult>(`/api/patients/${id}/actions/assign-task`, {
         method: 'POST',
-        body: JSON.stringify(task),
+        body: JSON.stringify(body),
       }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['patient', id, 'tasks'] })
+      qc.invalidateQueries({ queryKey: ['patient', id, 'messages'] })
+    },
   })
 }
 
 export function useMessagePatient(id: string) {
+  const qc = useQueryClient()
   return useMutation({
     mutationFn: (text: string) =>
-      fetchJson<{ status: string }>(`/api/patients/${id}/actions/message`, {
+      fetchJson<MessagePatientResult>(`/api/patients/${id}/actions/message`, {
         method: 'POST',
         body: JSON.stringify({ text }),
       }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['patient', id, 'messages'] }),
+  })
+}
+
+export function usePatientTasks(id: string) {
+  return useQuery({
+    queryKey: ['patient', id, 'tasks'],
+    queryFn: () => fetchJson<{ tasks: PatientTask[] }>(`/api/patients/${id}/tasks`),
+  })
+}
+
+export function usePatientMessages(id: string) {
+  return useQuery({
+    queryKey: ['patient', id, 'messages'],
+    queryFn: () => fetchJson<{ messages: PatientMessage[] }>(`/api/patients/${id}/messages`),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useMarkPatientMessagesRead(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchJson(`/api/patients/${id}/messages/read`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['patient', id, 'messages'] }),
   })
 }
 

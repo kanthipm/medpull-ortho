@@ -264,3 +264,72 @@ export interface NotificationPreference {
   available: boolean
 }
 
+
+// --- the patient app's objects, as the console sees them -------------------
+
+export type TaskKind = 'checkin' | 'exercise' | 'walk' | 'medication' | 'wound_check' | 'custom'
+export type TaskStatus = 'pending' | 'sent' | 'done' | 'skipped'
+
+export interface PatientTask {
+  id: number
+  kind: TaskKind
+  kind_label: string
+  title: string
+  why: string
+  status: TaskStatus
+  created_at: string | null
+  due_at: string | null
+  sent_at: string | null
+  completed_at: string | null
+  completed_via: string | null
+  answers: Record<string, string | number> | null
+}
+
+export interface PatientMessage {
+  id: number
+  sender: 'patient' | 'care_team' | 'copilot'
+  sender_id: string | null
+  channel: 'app' | 'sms' | 'voice' | 'console'
+  text: string
+  created_at: string
+  delivery_status: 'sent' | 'failed' | null
+  read_by_care_team: boolean
+}
+
+export interface AssignTaskResult {
+  ok: boolean
+  status: 'assigned' | 'assigned_texted' | 'assigned_not_texted'
+  sms: { sent: boolean; detail: string } | null
+  task: PatientTask
+}
+
+export interface MessagePatientResult {
+  status: 'sent_sms' | 'stored_sms_failed' | 'stored_app_only'
+  detail: string
+  message: PatientMessage
+}
+
+export interface TaskQuestion {
+  id: string
+  prompt: string
+  kind: 'scale' | 'yes_no' | 'choice' | 'text' | 'number'
+  options?: string[]
+  min?: number
+  max?: number
+}
+
+/** GET /api/tasks/<token> — the tokenized web page a task text links to. */
+export interface PublicTask {
+  first_name: string
+  task: {
+    id: number
+    kind: TaskKind
+    kind_label: string
+    title: string
+    why: string
+    status: TaskStatus
+    questions: TaskQuestion[]
+  }
+  deep_link: string
+  completed: boolean
+}

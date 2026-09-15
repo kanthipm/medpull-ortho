@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
     # Webhook signing secrets — empty means that provider's deliveries are
     # rejected (verification fails closed; the mock/demo path needs none).
     terra_signing_secret: str = ""
@@ -52,6 +52,20 @@ class Settings(BaseSettings):
     care_team_phones: str = ""
     # Public base URL for patient check-in links; empty derives from the request.
     checkin_base_url: str = ""
+    # Inbound Sendblue webhook. The secret is a path segment of the URL you
+    # register at Sendblue (POST .../api/webhooks/sendblue/<secret>); with it
+    # unset the route answers 503 and no inbound text is ever processed.
+    sendblue_webhook_secret: str = ""
+    # --- the patient app ---------------------------------------------------
+    # Custom URL scheme the iOS app registers; task texts deep-link into it.
+    mobile_app_scheme: str = "medpull"
+    # Onboarding verifies the phone with a texted code when Sendblue can send
+    # one. Set false to skip the code even with Sendblue configured (demos).
+    mobile_otp_required: bool = True
+    # apple-app-site-association: "<TEAMID>.<bundle id>" is served only when
+    # the team id is set, so a deployment without the app publishes nothing.
+    ios_team_id: str = ""
+    ios_bundle_id: str = "com.medpull.recovery"
     # Local Ollama is OPT-IN (cloud-first product direction): leave the URL
     # empty and the chain is Groq -> deterministic fallback. Set OLLAMA_URL
     # explicitly to use a local model as the middle tier.

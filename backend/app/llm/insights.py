@@ -235,7 +235,46 @@ def _header(patient: Patient, postop_day: int) -> dict[str, Any]:
     }
 
 
-def get_patient_insight(db: Session, kind: InsightKind, patient_id: str) -> Insight:
+def _insight_key(
+    kind: InsightKind, assessment: RiskAssessment, transcript: list[dict[str, str]], provider: str
+) -> str:
+    digest = hashlib.sha256(json.dumps(transcript).encode()).hexdigest()[:16]
+    # risk_level is included so prose can never lag a tier change, even if an
+    # assessment is somehow regenerated under an unchanged input hash.
+    return hashlib.sha256(
+        f"{kind}:{assessment.input_hash}:{assessment.risk_level}:{digest}:"
+        f"{PROMPT_VERSION}:{provider}".encode()
+    ).hexdigest()
+
+
+def insight_is_cached(db: Session, kind: InsightKind, patient_id: str) -> bool:
+    """Whether the next get_patient_insight for this key answers from the
+    cache, i.e. costs no LLM call. The worklist reads this to spend its
+    per-request LLM budget only where a call would actually happen."""
+    assessment = _latest_assessment(db, patient_id)
+    analytics = assessment.analytics
+    skip_llm = (
+        kind == InsightKind.WORKLIST_REASON
+        and analytics.get("risk", {}).get("level") == "low"
+    )
+    provider = "fallback" if skip_llm else provider_name()
+    if provider == "fallback":
+        return True
+    transcript = _transcript(db, patient_id)
+    return _cached(db, patient_id, kind, _insight_key(kind, assessment, transcript, provider), provider) is not None
+
+
+def get_patient_insight(
+    db: Session, kind: InsightKind, patient_id: str, *, allow_llm: bool = True
+) -> Insight:
+    """One narrative for one patient, from the cache when the key matches.
+
+    ``allow_llm=False`` answers a cache miss with the deterministic renderer
+    instead of a model call — stored under the fallback key, so the next read
+    that is allowed to call the model still regenerates it. The worklist uses
+    this to bound how many model calls one request can fan out into: after an
+    engine-version bump every patient misses at once, and twelve Groq calls
+    behind a 30 s edge timeout is a timed-out worklist, not a slow one."""
     patient = db.get(Patient, patient_id)
     if patient is None:
         raise ValueError(f"Unknown patient: {patient_id}")
@@ -254,17 +293,20 @@ def get_patient_insight(db: Session, kind: InsightKind, patient_id: str) -> Insi
     )
     provider = "fallback" if skip_llm else provider_name()
 
-    digest = hashlib.sha256(json.dumps(transcript).encode()).hexdigest()[:16]
-    # risk_level is included so prose can never lag a tier change, even if an
-    # assessment is somehow regenerated under an unchanged input hash.
-    cache_hash = hashlib.sha256(
-        f"{kind}:{assessment.input_hash}:{assessment.risk_level}:{digest}:"
-        f"{PROMPT_VERSION}:{provider}".encode()
-    ).hexdigest()
+    cache_hash = _insight_key(kind, assessment, transcript, provider)
 
     cached = _cached(db, patient_id, kind, cache_hash, provider)
     if cached is not None:
         return cached
+    if provider != "fallback" and not allow_llm:
+        # A model call is not permitted on this read: serve (and cache) the
+        # deterministic text under its own key, leaving the real-provider key
+        # empty so a later, permitted read fills it.
+        provider = "fallback"
+        cache_hash = _insight_key(kind, assessment, transcript, provider)
+        cached = _cached(db, patient_id, kind, cache_hash, provider)
+        if cached is not None:
+            return cached
 
     header = _header(patient, analytics.get("postop_day", 0))
 

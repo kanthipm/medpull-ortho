@@ -4,6 +4,7 @@ import { useNotificationPreferences, useUpdateNotificationPreferences } from '..
 import EmptyState from '../../components/EmptyState'
 import SectionCard from '../../components/SectionCard'
 import { SkeletonCard } from '../../components/Skeleton'
+import SettingsNav from './SettingsNav'
 
 const CHANNEL_META: Record<string, { label: string; description: string; icon: typeof Bell }> = {
   in_app: {
@@ -29,6 +30,7 @@ export default function NotificationSettingsPage() {
 
   const header = (
     <div className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
+      <SettingsNav className="mb-4" />
       <h1 className="text-[26px] font-semibold tracking-[-.03em] text-ink">Notifications</h1>
       <p className="mt-1 text-[13px] font-medium text-muted">
         How the care team is alerted when a patient reaches high recovery priority.

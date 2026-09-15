@@ -5,6 +5,10 @@
 #   ./infra/deploy.sh                 # build, deploy, seed on first run
 #   ./infra/deploy.sh --reseed        # rebuild the demo database too
 #   ./infra/deploy.sh --backend-only  # skip the frontend build/upload
+#   ./infra/deploy.sh --stack-only    # template/parameters only: ships no code
+#
+# Custom domain: set SITE_DOMAIN and SITE_CERTIFICATE_ARN (environment or
+# .env) once the ACM certificate is ISSUED. See infra/README.md.
 #
 # Requires: aws CLI (authenticated), uv, node 20+, zip.
 # AWS CloudShell has all four, which is the easiest way to run this without
@@ -19,7 +23,6 @@ STACK_NAME="${STACK_NAME:-recovery-copilot}"
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 GROQ_PARAM="${GROQ_PARAM:-/recovery-copilot/groq-api-key}"
 ORIGIN_SECRET_PARAM="${ORIGIN_SECRET_PARAM:-/recovery-copilot/origin-verify-secret}"
-GROQ_MODEL="${GROQ_MODEL:-llama-3.3-70b-versatile}"
 # Junction (wearable aggregator). Both secrets are optional: absent, the
 # connector stays idle and the console says "Needs setup". The non-secret
 # settings come from the environment, else recovery-copilot/.env, else the
@@ -30,6 +33,8 @@ dotenv_value() {  # dotenv_value VAR -> its value in $ROOT/.env, or nothing; nev
   # nesting of quotes readable. `|| true` because an absent key is not an error.
   grep -E "^$1=" "$ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '\042\047 ' || true
 }
+GROQ_MODEL="${GROQ_MODEL:-$(dotenv_value GROQ_MODEL)}"
+GROQ_MODEL="${GROQ_MODEL:-openai/gpt-oss-120b}"
 JUNCTION_PARAM="${JUNCTION_PARAM:-/recovery-copilot/junction-api-key}"
 JUNCTION_WEBHOOK_PARAM="${JUNCTION_WEBHOOK_PARAM:-/recovery-copilot/junction-webhook-secret}"
 JUNCTION_ENVIRONMENT="${JUNCTION_ENVIRONMENT:-$(dotenv_value JUNCTION_ENVIRONMENT)}"
@@ -41,16 +46,29 @@ JUNCTION_LINK_REDIRECT_URL="${JUNCTION_LINK_REDIRECT_URL:-$(dotenv_value JUNCTIO
 # the SMS channel stays on its logging stub) and two plain settings.
 SENDBLUE_KEY_PARAM="${SENDBLUE_KEY_PARAM:-/recovery-copilot/sendblue-api-key}"
 SENDBLUE_SECRET_PARAM="${SENDBLUE_SECRET_PARAM:-/recovery-copilot/sendblue-api-secret}"
+# The inbound webhook's secret path segment (patient app). Optional: absent,
+# inbound texts answer 503 while outbound SMS keeps working.
+SENDBLUE_WEBHOOK_PARAM="${SENDBLUE_WEBHOOK_PARAM:-/recovery-copilot/sendblue-webhook-secret}"
 SENDBLUE_FROM_NUMBER="${SENDBLUE_FROM_NUMBER:-$(dotenv_value SENDBLUE_FROM_NUMBER)}"
 CARE_TEAM_PHONES="${CARE_TEAM_PHONES:-$(dotenv_value CARE_TEAM_PHONES)}"
+# Custom domain. Both or neither: the template ignores one without the other.
+# The certificate must already be ISSUED (CloudFront rejects a pending one),
+# and the DNS record lives in whichever account hosts the zone — not here.
+# `-` rather than `:-`: an explicitly empty SITE_DOMAIN= on the command line
+# overrides .env, so a deploy without the domain is possible while .env keeps
+# the values staged for the cutover.
+SITE_DOMAIN="${SITE_DOMAIN-$(dotenv_value SITE_DOMAIN)}"
+SITE_CERTIFICATE_ARN="${SITE_CERTIFICATE_ARN-$(dotenv_value SITE_CERTIFICATE_ARN)}"
 BUDGET_EMAIL="${BUDGET_EMAIL:-}"
 
 RESEED=false
 BACKEND_ONLY=false
+STACK_ONLY=false
 for arg in "$@"; do
   case "$arg" in
     --reseed) RESEED=true ;;
     --backend-only) BACKEND_ONLY=true ;;
+    --stack-only) STACK_ONLY=true; BACKEND_ONLY=true ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown flag: $arg" >&2; exit 1 ;;
   esac
@@ -66,6 +84,7 @@ aws_() { aws --region "$REGION" "$@"; }
 log "Preflight"
 # --------------------------------------------------------------------------
 for tool in aws uv zip; do
+  $STACK_ONLY && [ "$tool" != aws ] && continue
   command -v "$tool" >/dev/null || die "$tool is required but not installed"
 done
 $BACKEND_ONLY || command -v npm >/dev/null || die "npm is required (or pass --backend-only)"
@@ -96,6 +115,25 @@ else
 fi
 
 ARTIFACT_BUCKET="${ARTIFACT_BUCKET:-${STACK_NAME}-artifacts-${ACCOUNT_ID}-${REGION}}"
+
+# Custom domain: refuse early rather than let CloudFormation fail mid-update.
+# ACM is queried in us-east-1 regardless of REGION — CloudFront only accepts
+# certificates from there.
+if [ -n "$SITE_DOMAIN" ] || [ -n "$SITE_CERTIFICATE_ARN" ]; then
+  [ -n "$SITE_DOMAIN" ] && [ -n "$SITE_CERTIFICATE_ARN" ] \
+    || die "SITE_DOMAIN and SITE_CERTIFICATE_ARN must be set together (see infra/README.md, 'Custom domain')"
+  CERT_STATUS="$(aws --region us-east-1 acm describe-certificate \
+    --certificate-arn "$SITE_CERTIFICATE_ARN" --query 'Certificate.Status' --output text 2>/dev/null \
+    || echo NOT_FOUND)"
+  if [ "$CERT_STATUS" != "ISSUED" ]; then
+    info "certificate for $SITE_DOMAIN is $CERT_STATUS — CloudFront needs ISSUED"
+    aws --region us-east-1 acm describe-certificate --certificate-arn "$SITE_CERTIFICATE_ARN" \
+      --query 'Certificate.DomainValidationOptions[].ResourceRecord.[Name,Type,Value]' \
+      --output text 2>/dev/null | sed 's/^/    validation record needed: /'
+    die "add that record in the medpull.org zone and rerun; or unset SITE_DOMAIN to deploy without the domain"
+  fi
+  info "custom domain $SITE_DOMAIN (certificate issued)"
+fi
 
 # --------------------------------------------------------------------------
 log "Artifact bucket"
@@ -184,8 +222,25 @@ store_optional_secret "$JUNCTION_PARAM" JUNCTION_API_KEY "Junction API key"
 store_optional_secret "$JUNCTION_WEBHOOK_PARAM" JUNCTION_WEBHOOK_SECRET "Junction webhook secret"
 store_optional_secret "$SENDBLUE_KEY_PARAM" SENDBLUE_API_KEY "Sendblue API key"
 store_optional_secret "$SENDBLUE_SECRET_PARAM" SENDBLUE_API_SECRET "Sendblue API secret"
+store_optional_secret "$SENDBLUE_WEBHOOK_PARAM" SENDBLUE_WEBHOOK_SECRET "Sendblue webhook secret"
 
 # --------------------------------------------------------------------------
+if $STACK_ONLY; then
+log "Reusing the deployed Lambda package (--stack-only)"
+# --------------------------------------------------------------------------
+  # Ship the template and parameters only. The function keeps whatever zip
+  # the stack already points at, so a working tree mid-change cannot leak
+  # into production through an infrastructure-only update.
+  stack_param() {
+    aws_ cloudformation describe-stacks --stack-name "$STACK_NAME" \
+      --query "Stacks[0].Parameters[?ParameterKey=='$1'].ParameterValue" --output text 2>/dev/null
+  }
+  ARTIFACT_BUCKET="$(stack_param LambdaCodeBucket)"
+  ZIP_KEY="$(stack_param LambdaCodeKey)"
+  [ -n "$ARTIFACT_BUCKET" ] && [ -n "$ZIP_KEY" ] \
+    || die "--stack-only needs an existing stack; run a full deploy first"
+  info "s3://$ARTIFACT_BUCKET/$ZIP_KEY"
+else
 log "Building the Lambda package"
 # --------------------------------------------------------------------------
 "$HERE/build-lambda.sh"
@@ -196,10 +251,20 @@ ZIP_HASH="$(sha256sum "$ZIP" | cut -c1-16)"
 ZIP_KEY="lambda/recovery-copilot-${ZIP_HASH}.zip"
 info "uploading s3://$ARTIFACT_BUCKET/$ZIP_KEY"
 aws_ s3 cp "$ZIP" "s3://$ARTIFACT_BUCKET/$ZIP_KEY" --only-show-errors
+fi
 
 # --------------------------------------------------------------------------
 log "Deploying the stack"
 # --------------------------------------------------------------------------
+# Without a custom domain the links in patient texts need the distribution's
+# host, which the template cannot reference from the function (a cycle). Take
+# it from the previous deploy's output; a first deploy leaves it blank and the
+# next one fills it in.
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-$(aws_ cloudformation describe-stacks --stack-name "$STACK_NAME" \
+  --query "Stacks[0].Outputs[?OutputKey=='SiteUrl'].OutputValue" --output text 2>/dev/null || true)}"
+[ "$PUBLIC_BASE_URL" = "None" ] && PUBLIC_BASE_URL=""
+[ -n "$PUBLIC_BASE_URL" ] && info "public base URL for patient links: $PUBLIC_BASE_URL"
+
 PARAMS=(
   "LambdaCodeBucket=$ARTIFACT_BUCKET"
   "LambdaCodeKey=$ZIP_KEY"
@@ -213,9 +278,14 @@ PARAMS=(
   "JunctionLinkRedirectUrl=$JUNCTION_LINK_REDIRECT_URL"
   "SendblueApiKeyParameter=$SENDBLUE_KEY_PARAM"
   "SendblueApiSecretParameter=$SENDBLUE_SECRET_PARAM"
+  "SendblueWebhookSecretParameter=$SENDBLUE_WEBHOOK_PARAM"
+  "PublicBaseUrl=$PUBLIC_BASE_URL"
   "SendblueFromNumber=$SENDBLUE_FROM_NUMBER"
   "CareTeamPhones=$CARE_TEAM_PHONES"
   "ApiReservedConcurrency=$RESERVED"
+  # Passed even when empty so clearing them in .env removes the alias.
+  "CustomDomainName=$SITE_DOMAIN"
+  "CertificateArn=$SITE_CERTIFICATE_ARN"
 )
 [ -n "$BUDGET_EMAIL" ] && PARAMS+=("BudgetAlertEmail=$BUDGET_EMAIL")
 
@@ -233,6 +303,7 @@ outputs() {
 SITE_URL="$(outputs SiteUrl)"
 DATA_BUCKET="$(outputs DataBucketName)"
 DIST_ID="$(outputs DistributionId)"
+DIST_DOMAIN="$(outputs DistributionDomainName)"
 SEED_FN="$(outputs SeedFunctionName)"
 info "site   $SITE_URL"
 info "bucket $DATA_BUCKET"
@@ -304,13 +375,18 @@ aws_ cloudfront create-invalidation --distribution-id "$DIST_ID" --paths '/*' \
 # --------------------------------------------------------------------------
 log "Smoke test"
 # --------------------------------------------------------------------------
+# Against the distribution's own hostname: it answers whether or not the
+# custom domain's DNS record exists yet.
 sleep 5
-if HEALTH="$(curl -fsS --max-time 60 "$SITE_URL/api/health" 2>/dev/null)"; then
+if HEALTH="$(curl -fsS --max-time 60 "https://$DIST_DOMAIN/api/health" 2>/dev/null)"; then
   info "$HEALTH"
 else
   info "health check did not answer yet — a new distribution takes a few"
-  info "minutes to propagate. Retry: curl $SITE_URL/api/health"
+  info "minutes to propagate. Retry: curl https://$DIST_DOMAIN/api/health"
 fi
 
 log "Done"
 info "$SITE_URL"
+if [ -n "$SITE_DOMAIN" ]; then
+  info "DNS: $SITE_DOMAIN  CNAME  $DIST_DOMAIN   (in the account that hosts the medpull.org zone)"
+fi

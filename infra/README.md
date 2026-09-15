@@ -120,7 +120,13 @@ recommends against creating them at all.
 ./infra/deploy.sh                  # build, deploy, seed on first run
 ./infra/deploy.sh --reseed         # rebuild the demo database (dates shift to today)
 ./infra/deploy.sh --backend-only   # skip the frontend build and upload
+./infra/deploy.sh --stack-only     # template and parameters only; ships no code
 ```
+
+`--stack-only` re-points nothing: the function keeps the zip the stack already
+uses and the SPA in S3 is untouched. It exists so an infrastructure change (a
+domain, a budget, a parameter) can go out from a working tree that is
+mid-change without shipping that change.
 
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
@@ -133,8 +139,54 @@ recommends against creating them at all.
 | `JUNCTION_ENVIRONMENT` | `sandbox` | `sandbox` or `production` — must match the key |
 | `JUNCTION_REGION` | `us` | `us` or `eu` |
 | `JUNCTION_LINK_REDIRECT_URL` | — | Where Junction Link sends a patient afterwards |
+| `SITE_DOMAIN` | — | Custom hostname for the console (e.g. `app.medpull.org`); also read from `.env`. See *Custom domain* |
+| `SITE_CERTIFICATE_ARN` | — | ISSUED ACM certificate in us-east-1 covering `SITE_DOMAIN`; also read from `.env` |
 | `BUDGET_EMAIL` | — | Enables the monthly cost alarm |
 | `API_RESERVED_CONCURRENCY` | `5` | `-1` leaves concurrency unreserved |
+
+## Custom domain
+
+The stack can serve the console on a hostname under medpull.org instead of the
+`*.cloudfront.net` name. Two facts shape how:
+
+- **The apex is taken.** `medpull.org` and `www.medpull.org` are the marketing
+  site (GitHub Pages today, Vercel per `medpullsite`'s deploy notes). The
+  console therefore lives on a subdomain — `app.medpull.org`.
+- **The DNS zone is in a different AWS account.** medpull.org's nameservers
+  are Route 53, but the hosted zone is not in the account this stack deploys
+  to (556683673972) nor in the `medpull` CLI profile's account. It is in a
+  collaborator's account. Nothing in this repo can write to it, so the two
+  DNS records below are handed to whoever can.
+
+The sequence, with what runs where:
+
+1. **Request the certificate** (this account, us-east-1 — CloudFront accepts
+   no other region). Done once; the ARN is in `.env`.
+   ```bash
+   aws acm request-certificate --region us-east-1 \
+     --domain-name app.medpull.org --validation-method DNS
+   aws acm describe-certificate --region us-east-1 --certificate-arn <arn> \
+     --query 'Certificate.DomainValidationOptions[].ResourceRecord'
+   ```
+2. **Add the validation CNAME** (zone owner). ACM issues the certificate
+   within minutes of seeing it; the record can stay forever and lets ACM
+   renew automatically.
+3. **Attach it to the distribution** (this account). With `SITE_DOMAIN` and
+   `SITE_CERTIFICATE_ARN` in `.env`:
+   ```bash
+   ./infra/deploy.sh --stack-only
+   ```
+   The script checks the certificate is ISSUED first and prints the
+   validation record again if it is not. The update also sets
+   `CHECKIN_BASE_URL` on the API function, so patient check-in SMS links
+   carry the public host (behind CloudFront the request's own base URL is
+   the Function URL, which the origin check rejects).
+4. **Add the traffic record** (zone owner):
+   `app.medpull.org  CNAME  <DistributionDomainName output>` — or a Route 53
+   A/AAAA alias to the distribution, which is free of query charges.
+
+Removing the domain is `SITE_DOMAIN=`/`SITE_CERTIFICATE_ARN=` and another
+`--stack-only` deploy; the `*.cloudfront.net` URL keeps working throughout.
 
 ## The Groq hookup
 

@@ -78,6 +78,23 @@ Parameters:
     Description: >-
       SSM Parameter Store name (SecureString) holding the Sendblue API secret.
       Both Sendblue values must be present for the SMS channel to send.
+  SendblueWebhookSecretParameter:
+    Type: String
+    Default: /recovery-copilot/sendblue-webhook-secret
+    Description: >-
+      SSM Parameter Store name (SecureString) holding the secret path segment
+      of the inbound Sendblue webhook (POST /api/webhooks/sendblue/<secret>).
+      deploy.sh writes it when SENDBLUE_WEBHOOK_SECRET is set; absent, the
+      route answers 503 and no inbound text is processed.
+  PublicBaseUrl:
+    Type: String
+    Default: ""
+    Description: >-
+      The site's public origin without a custom domain, e.g. the distribution's
+      https://xxxx.cloudfront.net. deploy.sh fills it from the previous
+      deploy's SiteUrl output (the template cannot reference the distribution
+      from the function without a cycle). Used for the links in patient texts
+      when CustomDomainName is blank.
   SendblueFromNumber:
     Type: String
     Default: ""
@@ -112,6 +129,21 @@ Parameters:
       often start at 10, and reserving all of it would starve the seed
       function.
 
+  CustomDomainName:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional. Hostname the console is served on (e.g. app.medpull.org).
+      Needs CertificateArn too. The DNS record itself is not managed here:
+      the medpull.org zone lives in another AWS account, so someone with
+      access to it points this name at the distribution (see infra/README.md).
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional. ARN of an ISSUED ACM certificate covering CustomDomainName.
+      Must be in us-east-1 — CloudFront accepts certificates from nowhere else.
+
   BudgetAlertEmail:
     Type: String
     Default: ""
@@ -124,6 +156,11 @@ Parameters:
 Conditions:
   HasBudgetEmail: !Not [!Equals [!Ref BudgetAlertEmail, ""]]
   HasReservedConcurrency: !Not [!Equals [!Ref ApiReservedConcurrency, -1]]
+  # Both halves or neither: an alias without a certificate is rejected by
+  # CloudFront, and a certificate without an alias does nothing.
+  HasCustomDomain: !And
+    - !Not [!Equals [!Ref CustomDomainName, ""]]
+    - !Not [!Equals [!Ref CertificateArn, ""]]
 
 Resources:
   # ------------------------------------------------------------------
@@ -242,6 +279,7 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JunctionWebhookSecretParameter}"
                   - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SendblueApiKeyParameter}"
                   - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SendblueApiSecretParameter}"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SendblueWebhookSecretParameter}"
               - Effect: Allow
                 # Decrypting a SecureString written under the AWS-managed
                 # aws/ssm key, and only through SSM.
@@ -314,8 +352,19 @@ Resources:
           # start; the from-number and recipient map are plain configuration.
           SENDBLUE_API_KEY_PARAMETER: !Ref SendblueApiKeyParameter
           SENDBLUE_API_SECRET_PARAMETER: !Ref SendblueApiSecretParameter
+          SENDBLUE_WEBHOOK_SECRET_PARAMETER: !Ref SendblueWebhookSecretParameter
           SENDBLUE_FROM_NUMBER: !Ref SendblueFromNumber
           CARE_TEAM_PHONES: !Ref CareTeamPhones
+          # Patient check-in links carry this host. Behind CloudFront the
+          # request's own base URL is the Function URL, which the origin
+          # check rejects, so without a custom domain the app has no public
+          # host to put in an SMS. (The distribution's domain cannot be used
+          # here: the distribution depends on this function's URL, and the
+          # reference would be circular.)
+          CHECKIN_BASE_URL: !If
+            - HasCustomDomain
+            - !Sub "https://${CustomDomainName}"
+            - !Ref PublicBaseUrl
           # No local model on Lambda: the chain is Groq -> deterministic.
           OLLAMA_URL: ""
           # The warmer is a laptop convenience; on Lambda it would re-run every
@@ -443,6 +492,16 @@ Resources:
         IPV6Enabled: true
         # Cheapest edge footprint (North America + Europe).
         PriceClass: PriceClass_100
+        Aliases: !If
+          - HasCustomDomain
+          - [!Ref CustomDomainName]
+          - !Ref AWS::NoValue
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref CertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
         Origins:
           - Id: spa
             DomainName: !GetAtt DataBucket.RegionalDomainName
@@ -526,9 +585,15 @@ Resources:
 Outputs:
   SiteUrl:
     Description: Open this in a browser.
-    Value: !Sub "https://${Distribution.DomainName}"
+    Value: !If
+      - HasCustomDomain
+      - !Sub "https://${CustomDomainName}"
+      - !Sub "https://${Distribution.DomainName}"
   DistributionId:
     Value: !Ref Distribution
+  DistributionDomainName:
+    Description: DNS target — point the custom domain's CNAME (or alias) here.
+    Value: !GetAtt Distribution.DomainName
   DataBucketName:
     Value: !Ref DataBucket
   ApiFunctionName:

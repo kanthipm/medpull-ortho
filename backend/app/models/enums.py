@@ -11,6 +11,10 @@ class ProcedureType(StrEnum):
     LUMBAR = "LUMBAR"              # lumbar decompression/fusion
     ANKLE = "ANKLE"                # ankle fracture ORIF
     MENISCUS = "MENISCUS"          # meniscus repair
+    # No operation: a patient who joined their hospital's programme through
+    # the app for general or chronic care. The engine scores them against a
+    # flat baseline (no recovery curve) and "post-op day" is days since joining.
+    NONE = "NONE"
 
 
 class SourceProvider(StrEnum):
@@ -91,6 +95,20 @@ class MetricType(StrEnum):
     THERAPY_ADHERENCE = "therapy_adherence"  # HEP sessions completed per day
     EXERCISE_REPS = "exercise_reps"          # count
     PROM_SCORE = "prom_score"                # value_json {instrument, score, ceiling}
+    # --- Functional milestones (Apple flightsClimbed; patient app; task self-report) ---
+    FLIGHTS_CLIMBED = "flights_climbed"      # count/day
+    # transitions/day; value_json {"mean_rise_s": float|None, "source": "imu"|"self_report"}
+    SIT_TO_STAND = "sit_to_stand"
+    # --- Chronic-care pathways (heart failure, COPD, diabetes, hypertension) ---
+    # Declared here so the care-metrics engine (engine/care) has one vocabulary
+    # for every pathway; the seed emits weight and blood pressure for the
+    # Withings patient, the rest arrive through Junction/Dexcom or check-ins.
+    BODY_WEIGHT = "body_weight"                     # kg
+    BLOOD_PRESSURE_SYSTOLIC = "bp_systolic"         # mmHg
+    BLOOD_PRESSURE_DIASTOLIC = "bp_diastolic"       # mmHg
+    BLOOD_GLUCOSE = "blood_glucose"                 # mg/dL (CGM instants or daily summaries)
+    BREATHLESSNESS = "breathlessness"               # 0-4 mMRC-style patient scale
+    FATIGUE = "fatigue"                             # 0-10 patient scale
 
 
 class Granularity(StrEnum):

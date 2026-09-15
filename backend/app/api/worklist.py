@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.checkin import Checkin
 from app.models.enums import InsightKind, RiskLevel
+from app.models.library import TaskTemplate
 from app.models.patient import Patient
+from app.plan import ensure_ready
 
 router = APIRouter(tags=["worklist"])
 
@@ -27,8 +29,13 @@ def ensure_fresh_assessment(db: Session, patient_id: str):
 @router.get("/worklist")
 def worklist(db: Session = Depends(get_db)) -> dict:
     from app.llm.insights import get_daily_briefing, get_patient_insight
+    from app.plan.next_steps import next_step_summary
 
     patients = db.scalars(select(Patient)).all()
+    # The next-step planner names the library tasks a step would assign, so
+    # the library is read once here rather than once per row.
+    ensure_ready(db)
+    templates = db.scalars(select(TaskTemplate).order_by(TaskTemplate.id)).all()
 
     last_checkins = dict(
         db.execute(
@@ -45,6 +52,12 @@ def worklist(db: Session = Depends(get_db)) -> dict:
         level = RiskLevel(assessment.risk_level)
         stats_key = "missing" if level == RiskLevel.MISSING_DATA else str(level)
         stats[stats_key] += 1
+        # Rules over the stored assessment plus a few counts — no LLM, no
+        # recompute — so the row can carry its top recommended step.
+        next_step, next_steps_open = next_step_summary(
+            db, patient, assessment, last_checkin_at=last_checkins.get(patient.id),
+            templates=templates,
+        )
         rows.append(
             {
                 "id": patient.id,
@@ -69,6 +82,8 @@ def worklist(db: Session = Depends(get_db)) -> dict:
                     "state": analytics["trajectory"]["state"],
                     "pct": analytics["trajectory"]["pct"],
                 },
+                "next_step": next_step,
+                "next_steps_open": next_steps_open,
             }
         )
 

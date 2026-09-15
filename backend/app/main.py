@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
+from app.api.applinks import router as applinks_router
 from app.aws import storage
 from app.aws.config import aws_settings
 from app.aws.middleware import S3SqliteMiddleware
@@ -50,6 +51,50 @@ def _apply_care_team_phones() -> None:
 
 
 _apply_care_team_phones()
+
+
+def _ensure_hospitals() -> None:
+    """Hospitals for a database that predates the patient app.
+
+    The additive schema step creates the empty ``hospitals`` table, but the
+    app's first screen needs rows in it and every patient needs a hospital to
+    be found under. A reseed would provide both and also throw away every
+    real patient's observations, so this fills the gap in place: insert the
+    roster's hospitals the table lacks, and give each patient without one the
+    hospital the seed roster assigns. Idempotent and a no-op on a
+    freshly seeded database.
+    """
+    import logging
+
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models.hospital import Hospital
+    from app.models.patient import Patient
+    from app.seed.patients import HOSPITALS, get_spec
+
+    with SessionLocal() as db:
+        known = set(db.scalars(select(Hospital.id)).all())
+        added = 0
+        for h in HOSPITALS:
+            if h.id in known:
+                continue
+            db.add(Hospital(id=h.id, name=h.name, system=h.system, city=h.city,
+                            state=h.state, timezone=h.timezone))
+            known.add(h.id)
+            added += 1
+        if added:
+            db.flush()
+            logging.getLogger(__name__).info("Added %d hospital(s) to an existing database", added)
+        for patient in db.scalars(select(Patient).where(Patient.hospital_id.is_(None))).all():
+            spec = get_spec(patient.id)
+            hospital_id = spec.hospital_id if spec else "hosp_medpull"
+            if hospital_id in known:
+                patient.hospital_id = hospital_id
+        db.commit()
+
+
+_ensure_hospitals()
 
 
 @app.on_event("startup")
@@ -110,6 +155,8 @@ if storage.enabled():
     app.add_middleware(S3SqliteMiddleware)
 
 app.include_router(api_router)
+# Root-level, registered before the SPA catch-all so it wins the path.
+app.include_router(applinks_router)
 
 # Single-process demo mode: serve the built SPA. API routes are registered
 # above, so they win; everything else falls back to index.html for client

@@ -33,9 +33,10 @@ from app.models.enums import MetricType as M
 from app.models.observation import Observation
 from app.models.patient import Patient
 
-# Batch ceiling. The whole ten-patient seed is 2,825 rows delivered in ten
-# calls, the largest of them 585; a real connect-time back-fill is the same
-# order. A payload past this is a provider fault or a hostile body, not data.
+# Batch ceiling. The whole seed is 5,071 rows delivered in nine per-patient
+# calls, the largest of them 1,378 (hourly step and heart-rate buckets for the
+# Apple patients); a real connect-time back-fill is the same order. A payload
+# past this is a provider fault or a hostile body, not data.
 MAX_BATCH_OBSERVATIONS = 5_000
 
 # How far before surgery an observation may be dated. compute_baseline() takes
@@ -80,6 +81,16 @@ PLAUSIBLE_RANGE: dict[str, tuple[float, float]] = {
     str(M.PAIN_NRS): (0.0, 10.0),
     str(M.RANGE_OF_MOTION): (0.0, 360.0),
     str(M.EXERCISE_REPS): (0.0, 10_000.0),
+    str(M.THERAPY_ADHERENCE): (0.0, 1.0),
+    str(M.PROM_SCORE): (0.0, 100.0),
+    str(M.FLIGHTS_CLIMBED): (0.0, 500.0),
+    str(M.SIT_TO_STAND): (0.0, 500.0),
+    str(M.BODY_WEIGHT): (20.0, 400.0),
+    str(M.BLOOD_PRESSURE_SYSTOLIC): (60.0, 260.0),
+    str(M.BLOOD_PRESSURE_DIASTOLIC): (30.0, 160.0),
+    str(M.BLOOD_GLUCOSE): (20.0, 600.0),
+    str(M.BREATHLESSNESS): (0.0, 4.0),
+    str(M.FATIGUE): (0.0, 10.0),
 }
 
 # Observations are dated in patient-local wall time, so a patient east of the

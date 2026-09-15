@@ -312,6 +312,20 @@ class JunctionClient:
             deadline_s=deadline_s,
         )
 
+    def create_sign_in_token(
+        self, user_id: str, *, deadline_s: float = DEFAULT_DEADLINE_S
+    ) -> dict[str, Any]:
+        """Mint a Vital Sign-In Token for the mobile SDK.
+
+        The token is scoped to one user and is what the patient app hands to
+        ``VitalClient.identifyExternalUser``; the team API key never leaves
+        this backend. Short-lived, so the app asks for a fresh one on every
+        launch that needs to (re)authenticate.
+        """
+        return self._request(
+            "POST", f"/v2/user/{user_id}/sign_in_token", deadline_s=deadline_s
+        )
+
     def connected_providers(self, user_id: str) -> list[dict[str, Any]]:
         body = self._request("GET", f"/v2/user/providers/{user_id}", not_found_ok=True)
         if not body:

@@ -1,9 +1,12 @@
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import type { NextStep, WorklistRowWithStep } from '../../api/plan'
+import { useCompleteNextStep } from '../../api/plan'
 import { useWorklist, type AskResult } from '../../api/queries'
-import type { WorklistPatient } from '../../api/types'
+import MessageComposerModal from '../patient/plan/MessageComposerModal'
+import { NextStepButton } from '../patient/plan/NextSteps'
 import AskBar from './AskBar'
 import AIAttribution from '../../components/AIAttribution'
 import ConfidenceChip from '../../components/ConfidenceChip'
@@ -37,6 +40,11 @@ export default function WorklistPage() {
   const { data, isLoading, isError } = useWorklist()
   const [filter, setFilter] = useState<Filter>('all')
   const [askResult, setAskResult] = useState<AskResult | null>(null)
+  // A row's "Message" next step opens the composer for that patient; the
+  // send is logged back as the step's completion.
+  const [composer, setComposer] = useState<{ patient: WorklistRowWithStep; step: NextStep } | null>(
+    null,
+  )
 
   if (isLoading) {
     return (
@@ -141,7 +149,12 @@ export default function WorklistPage() {
               </div>
               <div className="divide-y divide-line">
                 {patients.map((p) => (
-                  <WorklistRow key={p.id} patient={p} index={riseIndex++} />
+                  <WorklistRow
+                    key={p.id}
+                    patient={p}
+                    index={riseIndex++}
+                    onMessage={(step) => setComposer({ patient: p, step })}
+                  />
                 ))}
               </div>
             </div>
@@ -150,12 +163,60 @@ export default function WorklistPage() {
       )}
 
       <GuardrailFootnote className="mt-7" />
+
+      {composer && (
+        <WorklistComposer
+          patient={composer.patient}
+          step={composer.step}
+          onClose={() => setComposer(null)}
+        />
+      )}
     </div>
   )
 }
 
-function WorklistRow({ patient: p, index }: { patient: WorklistPatient; index: number }) {
+/** The composer for a row's message step. Its own component so the
+ *  completion hook is bound to the row's patient id. */
+function WorklistComposer({
+  patient,
+  step,
+  onClose,
+}: {
+  patient: WorklistRowWithStep
+  step: NextStep
+  onClose: () => void
+}) {
+  const complete = useCompleteNextStep(patient.id)
+  const phone = step.action.tel ?? null
+  return (
+    <MessageComposerModal
+      patientId={patient.id}
+      patientName={patient.name}
+      phone={phone}
+      prefill={step.action.prefill ?? ''}
+      onClose={onClose}
+      onSent={(r) =>
+        complete.mutate({
+          key: step.key,
+          result: { message_id: r.message?.id ?? null, status: r.status },
+        })
+      }
+    />
+  )
+}
+
+function WorklistRow({
+  patient: p,
+  index,
+  onMessage,
+}: {
+  patient: WorklistRowWithStep
+  index: number
+  onMessage: (step: NextStep) => void
+}) {
   const high = p.priority === 'high'
+  const navigate = useNavigate()
+  const step = p.next_step ?? null
   return (
     <Link
       to={`/patients/${p.id}`}
@@ -185,7 +246,24 @@ function WorklistRow({ patient: p, index }: { patient: WorklistPatient; index: n
       <PriorityBadge priority={p.priority} className="hidden shrink-0 lg:inline-flex" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[12.5px] leading-snug text-body">{p.reason}</span>
-        <ConfidenceChip level={p.data_confidence.level} className="mt-1" />
+        {step && step.state.status === 'open' ? (
+          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="min-w-0 truncate text-[12px] font-medium text-brand" title={step.detail}>
+              → {step.title}
+            </span>
+            <NextStepButton
+              patientId={p.id}
+              step={step}
+              phone={step.action.tel ?? null}
+              compact
+              onMessage={onMessage}
+              onOpen={() => navigate(`/patients/${p.id}`)}
+            />
+            <ConfidenceChip level={p.data_confidence.level} />
+          </span>
+        ) : (
+          <ConfidenceChip level={p.data_confidence.level} className="mt-1" />
+        )}
       </span>
       <span className="hidden w-32 shrink-0 text-right sm:block">
         <span className="block font-mono text-[11px] font-medium tabular-nums text-muted">

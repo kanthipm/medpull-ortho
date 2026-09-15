@@ -33,8 +33,22 @@ class Patient(Base):
     surgeon_id: Mapped[str] = mapped_column(ForeignKey("care_team_members.id"))
     assigned_provider_id: Mapped[str] = mapped_column(ForeignKey("care_team_members.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    # --- patient-app identity (all nullable: the roster predates the app) ---
+    hospital_id: Mapped[str | None] = mapped_column(
+        ForeignKey("hospitals.id"), nullable=True, index=True
+    )
+    # E.164. Where Sendblue texts task invitations, and how an inbound text is
+    # matched back to a chart. Never seeded from code — entered in the app.
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Hospital-issued medical record number, when the roster has one.
+    mrn: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Which care pathway the engine scores this patient against ("ortho_tka",
+    # "heart_failure", "copd", ...). NULL derives it from procedure_type.
+    care_pathway: Mapped[str | None] = mapped_column(String, nullable=True)
 
     surgeon: Mapped[CareTeamMember] = relationship(foreign_keys=[surgeon_id])
+    hospital = relationship("Hospital")
     assigned_provider: Mapped[CareTeamMember] = relationship(foreign_keys=[assigned_provider_id])
     # Newest connection first: a patient who upgrades a watch keeps both rows,
     # and readers that take devices[0] as "the" device need that to be stable

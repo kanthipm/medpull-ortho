@@ -1,5 +1,5 @@
 .PHONY: setup seed dev dev-backend dev-frontend build run test lint clean \
-        deploy deploy-backend reseed destroy
+        deploy deploy-backend reseed destroy ios ios-build
 
 setup: ## Install backend (uv) and frontend (npm) dependencies
 	cd backend && uv sync
@@ -43,6 +43,13 @@ reseed: ## Rebuild the demo database on AWS (dates shift to today)
 
 destroy: ## Tear the AWS stack down
 	./infra/destroy.sh
+
+ios: ## Generate the Xcode project for the patient app (needs xcodegen) and open it
+	cd ios && xcodegen generate && open MedPull.xcodeproj
+
+ios-build: ## Build the patient app for the iPhone simulator (CI-style, no signing)
+	cd ios && xcodegen generate && xcodebuild -project MedPull.xcodeproj -scheme MedPull \
+		-destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO build
 
 clean: ## Remove the local database, the frontend build, and the Lambda build dir
 	rm -rf backend/data/*.db frontend/dist infra/.build

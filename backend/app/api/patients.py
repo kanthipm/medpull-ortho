@@ -1,19 +1,21 @@
 import logging
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.worklist import ensure_fresh_assessment
+from app.config import settings
 from app.database import get_db
 from app.models.adherence import AdherenceTask
 from app.models.checkin import Checkin
 from app.models.enums import InsightKind, MetricType, NotificationChannel
+from app.models.hospital import Hospital
 from app.models.notification import Notification
 from app.models.observation import Observation
-from app.models.patient import Patient
+from app.models.patient import CareTeamMember, Patient
 
 logger = logging.getLogger(__name__)
 
@@ -252,49 +254,160 @@ def recompute(patient_id: str, db: Session = Depends(get_db)) -> dict:
 class AssignTaskBody(BaseModel):
     title: str
     why: str = ""
+    # checkin | exercise | walk | medication | wound_check | custom
+    kind: str = "custom"
+    due_at: datetime | None = None
+    # Text the patient about it through Sendblue (when configured and the
+    # patient has a number on file). Off records the task for the app only.
+    notify: bool = True
 
 
 class MessageBody(BaseModel):
     text: str
+    # Which care-team member is writing; defaults to the assigned provider.
+    sender_id: str | None = None
+
+
+def _task_view(t: AdherenceTask) -> dict:
+    from app.tasks.service import KIND_LABELS
+
+    return {
+        "id": t.id,
+        "kind": t.kind or "custom",
+        "kind_label": KIND_LABELS.get(t.kind or "custom", "Task"),
+        "title": t.title,
+        "why": t.why,
+        "status": t.status or "pending",
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "due_at": t.due_at.isoformat() if t.due_at else None,
+        "sent_at": t.sent_at.isoformat() if t.sent_at else None,
+        "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+        "completed_via": t.completed_via,
+        "answers": (t.result or {}).get("answers") if t.result else None,
+    }
+
+
+def _message_view(m) -> dict:
+    return {
+        "id": m.id,
+        "sender": m.sender,
+        "sender_id": m.sender_id,
+        "channel": m.channel,
+        "text": m.text,
+        "created_at": m.created_at.isoformat(),
+        "delivery_status": m.delivery_status,
+        "read_by_care_team": m.read_by_care_team_at is not None,
+    }
 
 
 @router.post("/{patient_id}/actions/assign-task")
-def assign_task(patient_id: str, body: AssignTaskBody, db: Session = Depends(get_db)) -> dict:
-    """Records the assignment and the coordination time. Completion is NOT
-    tracked: `engine.adherence.compute_adherence` scores `AdherenceRecord` rows
-    only, and nothing in the product writes one — there is no patient app and no
-    completion endpoint — so this task cannot move the adherence rate. The
-    status says so rather than letting the caller infer follow-through."""
-    _get_patient(db, patient_id)
-    title = body.title.strip()
-    if not title:
-        raise HTTPException(status_code=422, detail="Task title is required")
-    task = AdherenceTask(
-        patient_id=patient_id,
-        title=title[:120],
-        why=body.why.strip()[:200] or "Assigned by care team",
-        verified_by="self-report",
-    )
-    db.add(task)
-    db.commit()
+def assign_task(
+    patient_id: str, body: AssignTaskBody, request: Request, db: Session = Depends(get_db)
+) -> dict:
+    """Create a task in the patient's plan and, by default, text them about
+    it. Completion is tracked: the patient finishes it in the app, by
+    replying to the text, by voice, or on the linked web page, and each
+    completion writes the adherence record the engine scores."""
+    from app.tasks.service import create_task
+
+    patient = _get_patient(db, patient_id)
+    base = settings.checkin_base_url or str(request.base_url).rstrip("/")
+    try:
+        task, sms = create_task(
+            db, patient, title=body.title, why=body.why, kind=body.kind,
+            due_at=body.due_at, notify=body.notify, base_url=base,
+            created_by=patient.assigned_provider_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if sms is None:
+        status = "assigned"
+    elif sms.sent:
+        status = "assigned_texted"
+    else:
+        status = "assigned_not_texted"
     return {
         "ok": True,
-        "status": "assigned_untracked",
-        "task": {"id": task.id, "title": task.title},
+        "status": status,
+        "sms": {"sent": sms.sent, "detail": sms.detail} if sms else None,
+        "task": _task_view(task),
     }
+
+
+@router.get("/{patient_id}/tasks")
+def list_tasks(patient_id: str, db: Session = Depends(get_db)) -> dict:
+    from app.tasks.service import recent_tasks
+
+    _get_patient(db, patient_id)
+    return {"tasks": [_task_view(t) for t in recent_tasks(db, patient_id, limit=50)]}
 
 
 @router.post("/{patient_id}/actions/message")
 def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(get_db)) -> dict:
-    """Stub channel — queues intent only. Real delivery arrives with the SMS
-    integration; the UI is honest about that."""
+    """Write to the patient's thread (the app shows it) and text it through
+    Sendblue when the patient has a number on file and the keys are set."""
+    from app.models.mobile import Message
+    from app.notifications import sendblue
+
     patient = _get_patient(db, patient_id)
     text = body.text.strip()
     if not text:
         raise HTTPException(status_code=422, detail="Message text is required")
-    logger.info("Message stub -> %s: %s", patient.id, text[:120])
+    sender_id = body.sender_id or patient.assigned_provider_id
+    if db.get(CareTeamMember, sender_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown sender: {sender_id}")
+    message = Message(
+        patient_id=patient.id, sender="care_team", sender_id=sender_id, channel="console",
+        text=text,
+    )
+    db.add(message)
+    delivery = None
+    if patient.phone:
+        delivery = sendblue.send_sms(patient.phone, f"From your MedPull care team: {text}")
+        message.delivery_status = "sent" if delivery.sent else "failed"
+        message.external_handle = delivery.message_handle
     db.commit()
-    return {"status": "queued_stub"}
+    if delivery is not None and delivery.sent:
+        status = "sent_sms"
+    elif patient.phone:
+        status = "stored_sms_failed"
+    else:
+        status = "stored_app_only"
+    return {
+        "status": status,
+        "detail": delivery.detail if delivery else "patient has no phone number on file",
+        "message": _message_view(message),
+    }
+
+
+@router.get("/{patient_id}/messages")
+def list_messages(patient_id: str, db: Session = Depends(get_db)) -> dict:
+    from app.models.mobile import Message
+
+    _get_patient(db, patient_id)
+    rows = db.scalars(
+        select(Message).where(Message.patient_id == patient_id).order_by(Message.id).limit(300)
+    ).all()
+    return {"messages": [_message_view(m) for m in rows]}
+
+
+@router.post("/{patient_id}/messages/read")
+def mark_messages_read(patient_id: str, db: Session = Depends(get_db)) -> dict:
+    from app.models.mobile import Message
+
+    _get_patient(db, patient_id)
+    rows = db.scalars(
+        select(Message).where(
+            Message.patient_id == patient_id,
+            Message.sender == "patient",
+            Message.read_by_care_team_at.is_(None),
+        )
+    ).all()
+    now = datetime.now()
+    for m in rows:
+        m.read_by_care_team_at = now
+    db.commit()
+    return {"ok": True, "count": len(rows)}
 
 
 @router.post("/{patient_id}/actions/draft-message")
@@ -332,3 +445,127 @@ def escalate(patient_id: str, db: Session = Depends(get_db)) -> dict:
     db.add(notification)
     db.commit()
     return {"ok": True}
+
+
+class CreatePatientBody(BaseModel):
+    hospital_id: str
+    name: str
+    phone: str | None = None
+    date_of_birth: str | None = None  # YYYY-MM-DD
+    sex: str | None = None  # M, F, X
+    procedure_type: str | None = None  # TKA, THA, etc. or NONE for general
+    surgery_date: str | None = None  # YYYY-MM-DD
+
+
+def require_hospital_auth(
+    authorization: str | None = Header(default=None), 
+    db: Session = Depends(get_db)
+) -> Hospital:
+    """Require valid hospital access token for dashboard operations."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Hospital access token required")
+    token = authorization.split(" ", 1)[1].strip()
+    
+    hospital = db.scalar(select(Hospital).where(Hospital.access_token == token))
+    if hospital is None:
+        raise HTTPException(status_code=401, detail="Invalid hospital access token")
+    if not hospital.active:
+        raise HTTPException(status_code=403, detail="Hospital account inactive")
+    return hospital
+
+
+@router.post("/")
+def create_patient(
+    body: CreatePatientBody, 
+    hospital: Hospital = Depends(require_hospital_auth),
+    db: Session = Depends(get_db)
+) -> dict:
+    """Create a new patient record for the authenticated hospital."""
+    # Ensure the request matches the authenticated hospital
+    if body.hospital_id != hospital.id:
+        raise HTTPException(status_code=403, detail="Cannot create patients for other hospitals")
+    
+    # Validate procedure type if provided
+    from app.api.mobile import PROCEDURE_DISPLAY
+    if body.procedure_type and body.procedure_type not in PROCEDURE_DISPLAY:
+        raise HTTPException(status_code=422, detail="Invalid procedure type")
+    
+    # Parse dates if provided
+    surgery_date = None
+    date_of_birth = None
+    if body.surgery_date:
+        try:
+            from datetime import date
+            surgery_date = date.fromisoformat(body.surgery_date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid surgery date format (use YYYY-MM-DD)")
+    
+    if body.date_of_birth:
+        try:
+            from datetime import date
+            date_of_birth = date.fromisoformat(body.date_of_birth)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid date of birth format (use YYYY-MM-DD)")
+    
+    # Determine procedure type and anchor date
+    if body.procedure_type and body.procedure_type != "NONE":
+        if not surgery_date:
+            raise HTTPException(status_code=422, detail="Surgery date required for surgical patients")
+        procedure = body.procedure_type
+        anchor = surgery_date
+        care_pathway = None
+    else:
+        procedure = "NONE"
+        anchor = surgery_date or date.today()
+        care_pathway = "general_recovery"
+    
+    # Generate unique patient ID
+    from app.api.mobile import _slug
+    patient_id = _slug(body.name, db)
+    
+    # Get default care team
+    from app.api.mobile import _default_provider
+    surgeon_id, assigned_id = _default_provider(db, procedure != "NONE")
+    
+    # Create patient
+    name_parts = body.name.split()
+    patient = Patient(
+        id=patient_id,
+        name=body.name.strip(),
+        initials="".join(part[0] for part in name_parts[:2]).upper(),
+        age=0,  # Will be calculated from date_of_birth if provided
+        sex=(body.sex or "U")[:1].upper() if body.sex else "U",
+        procedure_type=procedure,
+        procedure_display=PROCEDURE_DISPLAY[procedure],
+        surgery_date=anchor,
+        discharge_date=anchor,
+        surgeon_id=surgeon_id,
+        assigned_provider_id=assigned_id,
+        hospital_id=body.hospital_id,
+        date_of_birth=date_of_birth,
+        care_pathway=care_pathway,
+        phone=body.phone or "",
+    )
+    
+    # Calculate age if date_of_birth provided
+    if date_of_birth:
+        today = date.today()
+        patient.age = today.year - date_of_birth.year - (
+            (today.month, today.day) < (date_of_birth.month, date_of_birth.day)
+        )
+        if not 0 <= patient.age <= 120:
+            raise HTTPException(status_code=422, detail="Invalid date of birth")
+    
+    db.add(patient)
+    db.commit()
+    
+    return {
+        "ok": True,
+        "patient": {
+            "id": patient.id,
+            "name": patient.name,
+            "hospital_id": patient.hospital_id,
+            "procedure_type": patient.procedure_type,
+            "surgery_date": patient.surgery_date.isoformat() if patient.surgery_date else None,
+        }
+    }

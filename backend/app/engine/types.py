@@ -145,6 +145,10 @@ class AnalyticsBundle:
     adherence: AdherenceResult
     metrics: list[MetricInsight] = field(default_factory=list)
     baselines: list[Baseline] = field(default_factory=list)
+    # The care-metrics report (engine/care): {"version", "pathway", "headline",
+    # "metrics": [CareMetric.to_dict() ...]}. Already plain JSON — the engine
+    # serializes each metric itself so numpy scalars never reach the column.
+    care_metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

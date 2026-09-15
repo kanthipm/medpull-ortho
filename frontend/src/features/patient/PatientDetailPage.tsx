@@ -1,7 +1,9 @@
 import { ArrowLeft } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useCareMetrics } from '../../api/care'
+import { usePatientDelivery } from '../../api/plan'
 import { usePatient, useRecompute } from '../../api/queries'
 import AIAttribution from '../../components/AIAttribution'
 import ConfidenceChip from '../../components/ConfidenceChip'
@@ -13,11 +15,15 @@ import SectionCard from '../../components/SectionCard'
 import { RefreshOverlay, SkeletonCard } from '../../components/Skeleton'
 import { useToast } from '../../components/Toast'
 import { relativeTime, signedPct } from '../../lib/format'
-import { PRIORITY, TRAJECTORY_LABEL, URGENCY } from '../../lib/risk'
+import { PRIORITY, TRAJECTORY_LABEL } from '../../lib/risk'
 import ActionBar from './ActionBar'
 import CheckinHistory from './CheckinHistory'
+import FullStats from './metrics/FullStats'
+import HeadlineMetrics from './metrics/HeadlineMetrics'
+import MessagesSection from './plan/MessagesSection'
+import NextSteps from './plan/NextSteps'
+import TasksSection from './plan/TasksSection'
 import RecoveryTimeline from './RecoveryTimeline'
-import SignalsSection from './SignalsSection'
 import WearableConnectionCard from './WearableConnectionCard'
 
 function rise(index: number) {
@@ -30,6 +36,33 @@ export default function PatientDetailPage() {
   const recompute = useRecompute(id)
   const toast = useToast()
   const [minHold, setMinHold] = useState(false)
+  // The care-metrics query is shared by the header's pathway line, the
+  // headline tiles and Full stats — one request, one cache entry.
+  const care = useCareMetrics(id)
+  // Full stats is controlled from here so a headline tile can open it on
+  // its own metric's card; the focus clears once the card has been scrolled to.
+  const [fullStatsOpen, setFullStatsOpen] = useState(false)
+  const [focusMetricId, setFocusMetricId] = useState<string | null>(null)
+  const openMetric = useCallback((metricId: string) => {
+    setFullStatsOpen(true)
+    setFocusMetricId(metricId)
+  }, [])
+  const clearFocus = useCallback(() => setFocusMetricId(null), [])
+  // Whether a text can reach this patient — the builder's "Text the plan"
+  // checkbox and the composer's button label read it.
+  const delivery = usePatientDelivery(id, p)
+  // An `open` next step lands on a metric card or scrolls to a section.
+  const openTarget = useCallback(
+    (target: string) => {
+      if (target.startsWith('full_stats:')) {
+        openMetric(target.slice('full_stats:'.length))
+        return
+      }
+      const anchor = target === 'plan' ? 'care-plan' : target
+      document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    },
+    [openMetric],
+  )
   // Only an explicit Refresh shimmers. The recompute stays pending until its
   // invalidated queries have refetched, so this covers the whole round trip
   // without catching the background loads that share the ['patient', id] key.
@@ -99,6 +132,11 @@ export default function PatientDetailPage() {
               {p.age} {p.sex} · {p.procedure_display} · {p.surgeon}
               {p.device && <> · {p.device.model}</>}
             </p>
+            {care.data?.pathway?.name && (
+              <p className="mt-0.5 text-[12px] font-medium text-faint">
+                Pathway · {care.data.pathway.name}
+              </p>
+            )}
           </div>
         </div>
 
@@ -135,6 +173,10 @@ export default function PatientDetailPage() {
           <ActionBar
             patientId={p.id}
             patientName={p.name}
+            surgeon={p.surgeon}
+            pathway={care.data?.pathway}
+            phone={delivery.phone}
+            smsAvailable={delivery.smsAvailable}
             onRefresh={onRefresh}
             refreshing={refreshing}
           />
@@ -158,30 +200,17 @@ export default function PatientDetailPage() {
           <p className="text-[13.5px] font-medium leading-[1.6] text-body">{p.summary.text}</p>
         </SectionCard>
 
-        {p.actions.length > 0 && (
-          <SectionCard title="Suggested follow-up" {...rise(3)}>
-            <RefreshOverlay show={refreshing} />
-            <ul className="divide-y divide-line">
-              {p.actions.map((a, i) => (
-                <li key={i} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <span
-                    className={`chip mt-0.5 shrink-0 uppercase tracking-[.03em] ${URGENCY[a.urgency]?.pill ?? URGENCY.routine.pill}`}
-                  >
-                    {URGENCY[a.urgency]?.label ?? 'Routine'}
-                  </span>
-                  <span>
-                    <span className="block text-[13.5px] font-semibold text-ink">{a.title}</span>
-                    {a.detail && (
-                      <span className="mt-0.5 block text-[12.5px] font-medium leading-snug text-muted">
-                        {a.detail}
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </SectionCard>
-        )}
+        <div {...rise(3)}>
+          <NextSteps
+            patientId={p.id}
+            patientName={p.name}
+            surgeon={p.surgeon}
+            phone={delivery.phone}
+            aiActions={p.actions}
+            refreshing={refreshing}
+            onOpen={openTarget}
+          />
+        </div>
 
         <div {...rise(5)}>
           <RecoveryTimeline patientId={p.id} trajectory={p.trajectory} refreshing={refreshing} />
@@ -192,10 +221,42 @@ export default function PatientDetailPage() {
         </div>
 
         <div {...rise(7)}>
-          <SignalsSection patientId={p.id} refreshing={refreshing} />
+          <HeadlineMetrics patientId={p.id} refreshing={refreshing} onOpen={openMetric} />
         </div>
 
         <div {...rise(8)}>
+          <FullStats
+            patientId={p.id}
+            refreshing={refreshing}
+            open={fullStatsOpen}
+            onOpenChange={setFullStatsOpen}
+            focusMetricId={focusMetricId}
+            onFocusHandled={clearFocus}
+          />
+        </div>
+
+        <div id="care-plan" {...rise(9)}>
+          <TasksSection
+            patientId={p.id}
+            patientName={p.name}
+            pathway={care.data?.pathway}
+            phone={delivery.phone}
+            smsAvailable={delivery.smsAvailable}
+            refreshing={refreshing}
+          />
+        </div>
+
+        <div id="messages" {...rise(10)}>
+          <MessagesSection
+            patientId={p.id}
+            patientName={p.name}
+            surgeon={p.surgeon}
+            phone={delivery.phone}
+            refreshing={refreshing}
+          />
+        </div>
+
+        <div id="wearables" {...rise(11)}>
           <WearableConnectionCard patientId={p.id} patientName={p.name} refreshing={refreshing} />
         </div>
       </div>

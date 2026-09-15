@@ -26,7 +26,8 @@ CAPABILITIES: dict[P, list[M]] = {
     # identifier, and writing SDNN into hrv_rmssd corrupts the EWMA baseline
     # the moment a patient switches platforms. Apple skin temp is a DELTA.
     P.APPLE: CORE + GAIT + [M.HRV_SDNN, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,
-                            M.SKIN_TEMP_DELTA, M.EXERCISE_SESSION],
+                            M.SKIN_TEMP_DELTA, M.EXERCISE_SESSION, M.FLIGHTS_CLIMBED,
+                            M.BODY_WEIGHT],
     P.FITBIT: CORE + [M.HRV_RMSSD, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,
                       M.SKIN_TEMP, M.EXERCISE_SESSION],
     P.GARMIN: CORE + [M.HRV_RMSSD, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,
@@ -38,14 +39,19 @@ CAPABILITIES: dict[P, list[M]] = {
     # skin temperature is absolute Celsius.
     P.WHOOP: [M.RESTING_HR, M.HRV_RMSSD, M.SLEEP_DURATION, M.SLEEP_STAGES,
               M.SPO2, M.RESPIRATORY_RATE, M.SKIN_TEMP, M.CALORIES],
-    P.DEXCOM: [],  # CGM — glucose metrics arrive in a later metric_type expansion
+    P.DEXCOM: [M.BLOOD_GLUCOSE],  # CGM: intraday instants or daily summaries
+    # A Withings account spans the watch, the scale and the BPM cuff, which is
+    # what makes it the one consumer device family that delivers the heart
+    # failure / hypertension inputs (weight, blood pressure) alongside steps.
     P.WITHINGS: [M.STEPS, M.RESTING_HR, M.SLEEP_DURATION, M.SLEEP_STAGES, M.SPO2,
-                 M.CALORIES],
+                 M.CALORIES, M.BODY_WEIGHT, M.BLOOD_PRESSURE_SYSTOLIC,
+                 M.BLOOD_PRESSURE_DIASTOLIC],
     P.POLAR: CORE + [M.HRV_RMSSD, M.SLEEP_STAGES, M.EXERCISE_SESSION],
     P.SAMSUNG: CORE + [M.HRV_RMSSD, M.SLEEP_STAGES, M.SPO2, M.SKIN_TEMP,
                        M.EXERCISE_SESSION],
     P.MOCK: CORE + GAIT + [M.HRV_RMSSD, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,
-                           M.SKIN_TEMP, M.EXERCISE_SESSION],
+                           M.SKIN_TEMP, M.EXERCISE_SESSION, M.FLIGHTS_CLIMBED,
+                           M.BODY_WEIGHT],
     # The aggregator: the union of what connectors/junction.py actually emits
     # from Junction's activity/sleep/workout summaries and its SpO₂,
     # respiratory-rate, HRV and temperature timeseries. Which of these a given
@@ -54,9 +60,11 @@ CAPABILITIES: dict[P, list[M]] = {
     # patient chart reports card by card. HR_SAMPLE is opt-in
     # (JUNCTION_INGEST_HEART_RATE_SAMPLES); gait metrics are not passed
     # through by Junction at all.
-    P.JUNCTION: [M.STEPS, M.RESTING_HR, M.HRV_RMSSD, M.HRV_SDNN, M.SLEEP_DURATION,
-                 M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE, M.SKIN_TEMP,
-                 M.SKIN_TEMP_DELTA, M.ACTIVE_ENERGY, M.CALORIES, M.EXERCISE_SESSION],
+    P.JUNCTION: [M.STEPS, M.RESTING_HR, M.HR_SAMPLE, M.HRV_RMSSD, M.HRV_SDNN,
+                 M.SLEEP_DURATION, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,
+                 M.SKIN_TEMP, M.SKIN_TEMP_DELTA, M.ACTIVE_ENERGY, M.CALORIES,
+                 M.EXERCISE_SESSION, M.BODY_WEIGHT, M.BLOOD_PRESSURE_SYSTOLIC,
+                 M.BLOOD_PRESSURE_DIASTOLIC, M.BLOOD_GLUCOSE],
 }
 
 

@@ -54,6 +54,24 @@ UNITS: dict[MetricType, str] = {
     MetricType.STAIR_SPEED_DOWN: "m/s",
     MetricType.SIX_MIN_WALK: "m",
     MetricType.CALORIES: "kcal",
+    MetricType.HRV_SDNN: "ms",
+    MetricType.SKIN_TEMP_DELTA: "degC",
+    MetricType.WEAR_TIME_MINUTES: "min",
+    # patient-reported / task-fed types the seed emits (engine/care reads them)
+    MetricType.PAIN_NRS: "nrs",
+    MetricType.RANGE_OF_MOTION: "deg",
+    MetricType.THERAPY_ADHERENCE: "fraction",
+    MetricType.EXERCISE_REPS: "count",
+    MetricType.PROM_SCORE: "score",
+    MetricType.FLIGHTS_CLIMBED: "count",
+    MetricType.SIT_TO_STAND: "count",
+    # chronic-care inputs
+    MetricType.BODY_WEIGHT: "kg",
+    MetricType.BLOOD_PRESSURE_SYSTOLIC: "mmHg",
+    MetricType.BLOOD_PRESSURE_DIASTOLIC: "mmHg",
+    MetricType.BLOOD_GLUCOSE: "mg/dL",
+    MetricType.BREATHLESSNESS: "score",
+    MetricType.FATIGUE: "score",
 }
 
 

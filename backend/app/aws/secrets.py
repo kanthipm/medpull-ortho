@@ -5,7 +5,7 @@ function's plaintext environment (where anyone with console read access would
 see them) at no cost. Fetched once per execution environment and cached by the
 module, so the per-request cost is zero.
 
-Five parameters, each optional and each a no-op when its name is unset, so a
+Six parameters, each optional and each a no-op when its name is unset, so a
 plain env var or a local .env keeps working exactly as before:
 
 * ``GROQ_API_KEY_PARAMETER`` → ``settings.groq_api_key``
@@ -13,6 +13,7 @@ plain env var or a local .env keeps working exactly as before:
 * ``JUNCTION_WEBHOOK_SECRET_PARAMETER`` → ``settings.junction_webhook_secret``
 * ``SENDBLUE_API_KEY_PARAMETER`` → ``settings.sendblue_api_key``
 * ``SENDBLUE_API_SECRET_PARAMETER`` → ``settings.sendblue_api_secret``
+* ``SENDBLUE_WEBHOOK_SECRET_PARAMETER`` → ``settings.sendblue_webhook_secret``
 
 The deploy always names the Junction and Sendblue parameters, whether or not a
 value was ever stored under them (all are optional: absent, that integration
@@ -50,6 +51,11 @@ def _parameters() -> list[tuple[str, str, str]]:
             aws_settings.sendblue_api_secret_parameter,
             "sendblue_api_secret",
             "Sendblue API secret",
+        ),
+        (
+            aws_settings.sendblue_webhook_secret_parameter,
+            "sendblue_webhook_secret",
+            "Sendblue webhook secret",
         ),
     ]
 

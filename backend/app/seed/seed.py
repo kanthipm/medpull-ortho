@@ -23,6 +23,7 @@ from app.models import (
     Checkin,
     CheckinMessage,
     Device,
+    Hospital,
     NotificationPreference,
     Patient,
 )
@@ -30,12 +31,17 @@ from app.models.enums import NotificationChannel
 from app.seed import adherence as adh
 from app.seed.conversations import CONVERSATIONS
 from app.seed.generators import generate_patient_observations
-from app.seed.patients import CARE_TEAM, PATIENTS
+from app.seed.patients import CARE_TEAM, HOSPITALS, PATIENTS
 from app.seed.scenarios import get_scenario
 
 
 def seed_core(db: Session, today: date) -> dict[str, int]:
     counts: dict[str, int] = {}
+
+    for h in HOSPITALS:
+        db.add(Hospital(id=h.id, name=h.name, system=h.system, city=h.city,
+                        state=h.state, timezone=h.timezone))
+    counts["hospitals"] = len(HOSPITALS)
 
     for ct in CARE_TEAM:
         db.add(CareTeamMember(id=ct.id, name=ct.name, role=ct.role))
@@ -56,6 +62,7 @@ def seed_core(db: Session, today: date) -> dict[str, int]:
                 discharge_date=surgery + timedelta(days=spec.discharge_offset),
                 surgeon_id=spec.surgeon_id,
                 assigned_provider_id=spec.surgeon_id,
+                hospital_id=spec.hospital_id,
             )
         )
         if spec.provider is not None:
@@ -105,7 +112,8 @@ def seed_core(db: Session, today: date) -> dict[str, int]:
         task_rows = []
         for t in specs:
             row = AdherenceTask(
-                patient_id=spec.id, title=t.title, why=t.why, verified_by=t.verified_by
+                patient_id=spec.id, title=t.title, why=t.why, verified_by=t.verified_by,
+                kind="custom", status="pending", created_at=datetime.combine(today, time(6, 0)),
             )
             db.add(row)
             task_rows.append(row)

@@ -7,6 +7,7 @@ on webhook ingest or re-seed.
 """
 
 import hashlib
+import logging
 from datetime import date
 
 from sqlalchemy import func, select
@@ -16,6 +17,7 @@ from app.engine import ENGINE_VERSION
 from app.engine.adherence import compute_adherence
 from app.engine.baseline import compute_baseline
 from app.engine import baseline_store
+from app.engine.care import build_context, compute_care_metrics, pathway_for, unavailable_bundle
 from app.engine.composite import composite_index
 from app.engine.confidence import coverage
 from app.engine.dataload import load_daily_series
@@ -24,11 +26,15 @@ from app.engine.metrics_cards import build_cards
 from app.engine.risk import score_risk
 from app.engine.trajectory import compare, functional_index, is_anchored
 from app.engine.types import AnalyticsBundle, Baseline, DeviationResult
+from app.models.adherence import AdherenceRecord, AdherenceTask
+from app.models.checkin import Checkin
 from app.models.enums import MetricType as M
 from app.models.enums import RiskLevel
 from app.models.insight import RiskAssessment
 from app.models.observation import Observation
 from app.models.patient import Patient
+
+logger = logging.getLogger(__name__)
 
 ANALYZED_METRICS = [
     M.STEPS, M.WALKING_SPEED, M.RESTING_HR, M.HRV_RMSSD, M.SLEEP_DURATION,
@@ -42,10 +48,27 @@ def compute_input_hash(db: Session, patient_id: str) -> str:
             Observation.patient_id == patient_id
         )
     ).one()
+    # The care metrics (M14/M15, the transcript-derived pain scores) also read
+    # check-ins, adherence records and tasks, so a check-in answered by text or
+    # a task assigned in the console must invalidate the stored assessment too.
+    # One extra query of three scalar subqueries keeps the read path cheap.
+    checkins, records, max_task = db.execute(
+        select(
+            select(func.count(Checkin.id))
+            .where(Checkin.patient_id == patient_id).scalar_subquery(),
+            select(func.count(AdherenceRecord.id))
+            .where(AdherenceRecord.patient_id == patient_id).scalar_subquery(),
+            select(func.max(AdherenceTask.id))
+            .where(AdherenceTask.patient_id == patient_id).scalar_subquery(),
+        )
+    ).one()
     # today's date is part of the hash: postop_day and the recent-window stats
     # shift at midnight even when no new data arrives, so the first request of
     # each day lazily recomputes every assessment.
-    payload = f"{patient_id}:{count}:{latest}:{date.today()}:{ENGINE_VERSION}"
+    payload = (
+        f"{patient_id}:{count}:{latest}:{checkins}:{records}:{max_task}:"
+        f"{date.today()}:{ENGINE_VERSION}"
+    )
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -119,6 +142,21 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
         index, patient.procedure_type, postop_day, anchored=is_anchored(baselines)
     )
     composite = composite_index(deviations, postop_day=postop_day)
+
+    # Task verification: assigned care-plan tasks are confirmed against the
+    # data just loaded and their adherence records written or upgraded, so the
+    # scorer below and M14/M15 read them on this same pass. Guarded: a
+    # verification failure must never take the assessment down. When rows
+    # were written the input hash taken above no longer describes the record
+    # set, so it is refreshed here rather than paid for as a second recompute.
+    try:
+        from app.plan.verification import verify_recent
+
+        if verify_recent(db, patient_id, today, series=series):
+            input_hash = compute_input_hash(db, patient_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("task verification failed for %s", patient_id)
+
     adherence = compute_adherence(db, patient_id, today)
 
     # The gait rule in risk.py takes an absolute threshold rather than a
@@ -141,6 +179,20 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
         postop_day, patient.surgery_date,
     )
 
+    # The care-metrics report objects. Each metric guards itself; this guard
+    # covers the context loaders, so a malformed json row can never take the
+    # risk tier down with it.
+    try:
+        care_metrics = compute_care_metrics(
+            build_context(
+                db, patient, today, postop_day, series, baselines, deviations,
+                confidence, trajectory, composite, adherence,
+            )
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("care metrics failed for %s", patient_id)
+        care_metrics = unavailable_bundle(pathway_for(patient))
+
     bundle = AnalyticsBundle(
         patient_id=patient_id,
         postop_day=postop_day,
@@ -151,6 +203,7 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
         adherence=adherence,
         metrics=cards,
         baselines=list(baselines.values()),
+        care_metrics=care_metrics,
     )
 
     assessment = RiskAssessment(

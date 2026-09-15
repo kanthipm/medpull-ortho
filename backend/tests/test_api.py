@@ -389,35 +389,40 @@ def action_ledger(db):
 
 
 
-def test_assign_task_is_recorded_but_untracked(client, db, action_ledger):
-    """The task row exists, but nothing reads it back: compute_adherence
-    reads AdherenceRecord only and there is no completion endpoint. The
-    response says so rather than implying tracking."""
+def test_assign_task_is_recorded_and_tracked(client, db, action_ledger):
+    """The task lands in the patient's plan with a kind and an open status.
+    Without Sendblue keys nothing is texted, and the status says which; the
+    patient app (tests/test_mobile.py) is what completes it."""
     body = client.post(
         "/api/patients/grace/actions/assign-task",
-        json={"title": "Walk 10 minutes twice daily", "why": "Rebuild gait tolerance"},
+        json={"title": "Walk 10 minutes twice daily", "why": "Rebuild gait tolerance",
+              "kind": "walk"},
     ).json()
     assert body["ok"] is True
-    assert body["status"] == "assigned_untracked"
-    assert body["task"]["title"] == "Walk 10 minutes twice daily"
-
+    assert body["status"] == "assigned_not_texted"
+    assert body["sms"]["sent"] is False
+    assert body["task"]["kind"] == "walk"
+    assert body["task"]["status"] == "pending"
     db.expire_all()
     task = db.get(AdherenceTask, body["task"]["id"])
-    assert task.patient_id == "grace" and task.why == "Rebuild gait tolerance"
-    assert client.post(
-        "/api/patients/grace/actions/assign-task", json={"title": "   "}
-    ).status_code == 422
+    assert task.title == "Walk 10 minutes twice daily"
+    assert task.verified_by == "step data"
+    assert client.post("/api/patients/grace/actions/assign-task",
+                       json={"title": "x", "kind": "nope"}).status_code == 422
 
 
-def test_message_is_a_queued_stub(client, db, action_ledger):
+def test_message_is_stored_on_the_thread(client, db, action_ledger):
+    """A console message lands on the patient's thread (the app reads it);
+    Grace has no phone on file, so nothing is texted and the status says so."""
     body = client.post(
         "/api/patients/grace/actions/message",
         json={"text": "Checking in — how is the hip feeling today?"},
     ).json()
-    assert body == {"status": "queued_stub"}
-    assert client.post(
-        "/api/patients/grace/actions/message", json={"text": " "}
-    ).status_code == 422
+    assert body["status"] == "stored_app_only"
+    assert body["message"]["sender"] == "care_team"
+    assert body["message"]["channel"] == "console"
+    thread = client.get("/api/patients/grace/messages").json()["messages"]
+    assert thread[-1]["text"] == "Checking in — how is the hip feeling today?"
 
 
 def test_escalate_notifies_the_assigned_provider(client, db, action_ledger):
@@ -611,6 +616,22 @@ def test_every_router_is_wired(client):
         "/api/patients/{patient_id}/wearables/junction/link",
         "/api/webhooks/wearables/{provider}",
         "/api/ask",
+        "/api/patients/{patient_id}/care-metrics",
+        "/api/patients/{patient_id}/raw-data",
+        "/api/task-templates",
+        "/api/task-templates/{template_id}",
+        "/api/task-builder/draft",
+        "/api/patients/{patient_id}/plan",
+        "/api/patients/{patient_id}/plan/suggest",
+        "/api/patients/{patient_id}/plan/{task_id}/end",
+        "/api/patients/{patient_id}/plan/{task_id}/record",
+        "/api/message-templates",
+        "/api/message-templates/{template_id}",
+        "/api/patients/{patient_id}/messages/draft",
+        "/api/patients/{patient_id}/next-steps",
+        "/api/patients/{patient_id}/next-steps/{key}/execute",
+        "/api/patients/{patient_id}/next-steps/{key}/complete",
+        "/api/patients/{patient_id}/next-steps/{key}/dismiss",
     ):
         assert path in paths
 
