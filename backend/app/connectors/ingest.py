@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.connectors.base import CanonicalObservation
 from app.engine import baseline_store
+from app.models.enums import Granularity
 from app.models.enums import MetricType as M
 from app.models.observation import Observation
 from app.models.patient import Patient
@@ -248,6 +249,65 @@ def _apply(row: Observation, o: CanonicalObservation, content_hash: str) -> None
     row.ingested_at = datetime.now()
 
 
+def _day_identity(o: "CanonicalObservation") -> tuple | None:
+    """What makes two daily summaries the same measurement.
+
+    A day, for one metric, from one source device or provider slug, on one
+    side of the body. Deliberately NOT the provider's record id: that is an
+    identifier for a delivery, and a provider is free to mint a new one for
+    a day it has already reported. Interval rows are excluded — two buckets
+    inside a day are genuinely different measurements.
+    """
+    if o.granularity is not Granularity.DAILY_SUMMARY:
+        return None
+    return (
+        o.patient_id,
+        str(o.source_provider),
+        str(o.metric_type),
+        o.local_date,
+        o.source_device_id or "na",
+        o.side or "na",
+    )
+
+
+def _daily_index(
+    db: Session,
+    observations: list["CanonicalObservation"],
+    already: dict[str, Observation],
+) -> dict[tuple, Observation]:
+    """Existing daily-summary rows for the (patient, metric, day) triples in
+    this batch, keyed by _day_identity — the rows a re-issued record id would
+    otherwise duplicate."""
+    wanted = [o for o in observations if o.granularity is Granularity.DAILY_SUMMARY]
+    if not wanted:
+        return {}
+    index: dict[tuple, Observation] = {}
+    patients = {o.patient_id for o in wanted}
+    metrics = {o.metric_type for o in wanted}
+    days = {o.local_date for o in wanted}
+    rows = db.scalars(
+        select(Observation).where(
+            Observation.patient_id.in_(patients),
+            Observation.metric_type.in_(metrics),
+            Observation.local_date.in_(days),
+            Observation.granularity == Granularity.DAILY_SUMMARY,
+        )
+    ).all()
+    for row in rows:
+        key = (
+            row.patient_id,
+            str(row.source_provider),
+            str(row.metric_type),
+            row.local_date,
+            row.source_device_id or "na",
+            row.side or "na",
+        )
+        # A row already resolved by dedupe key wins: it is the exact match.
+        if key not in index or row.dedupe_key in already:
+            index[key] = row
+    return index
+
+
 def partition_by_window(
     db: Session, observations: list[CanonicalObservation]
 ) -> tuple[list[CanonicalObservation], list[CanonicalObservation]]:
@@ -364,6 +424,7 @@ def ingest_observations(
             select(Observation).where(Observation.dedupe_key.in_(keys))
         )
     }
+    by_day = _daily_index(db, observations, existing)
 
     ingested = 0
     updated = 0
@@ -372,6 +433,20 @@ def ingest_observations(
         key = o.dedupe_key
         content_hash = payload_hash_of(o)
         row = existing.get(key)
+        if row is None:
+            # The day is the identity of a daily summary. A provider that
+            # re-issues its own record id for a day it has already sent —
+            # Junction does, on every re-sync of Apple Health — would
+            # otherwise land a second row for that day, and every one after
+            # it, so a chart accumulated one row per sync per day.
+            day_key = _day_identity(o)
+            row = by_day.get(day_key) if day_key is not None else None
+            if row is not None:
+                # Adopt the new record id and key so the next delivery hits
+                # the fast path.
+                row.external_id = o.external_id
+                row.dedupe_key = key
+                existing[key] = row
 
         if row is None:
             row = Observation(
@@ -399,6 +474,9 @@ def ingest_observations(
             )
             db.add(row)
             existing[key] = row  # an intra-batch repeat is a restatement, not an insert
+            day_key = _day_identity(o)
+            if day_key is not None:
+                by_day[day_key] = row
             ingested += 1
             continue
 

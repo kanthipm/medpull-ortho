@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parent.parent
@@ -42,6 +43,9 @@ def main() -> int:
                     help="keep only the newest risk_assessments row per patient")
     ap.add_argument("--purge-phone-verifications", action="store_true",
                     help="delete every one-time code row (they expire in 10 minutes anyway)")
+    ap.add_argument("--dedupe-daily", action="store_true",
+                    help="collapse duplicate daily summaries (one per patient/metric/day/device), "
+                         "keeping the most recently ingested")
     ap.add_argument("--delete-patient", action="append", default=[], metavar="ID",
                     help="delete a patient and every row that points at them (no merge)")
     ap.add_argument("--report", action="store_true", help="print the roster and row counts")
@@ -115,6 +119,37 @@ def main() -> int:
             gone = db.execute(delete(RiskAssessment).where(RiskAssessment.id.not_in(keep))).rowcount
             db.commit()
             report["pruned_assessments"] = gone
+        if args.dedupe_daily:
+            # A provider that re-issued its record id for a day it had already
+            # sent left one row per delivery. connectors/ingest.py now treats
+            # the day as the identity; this clears what the old keying left.
+            from app.models.enums import Granularity
+            from app.models.observation import Observation
+
+            rows = db.scalars(
+                select(Observation).where(
+                    Observation.granularity == Granularity.DAILY_SUMMARY,
+                    Observation.deleted_at.is_(None),
+                )
+            ).all()
+            groups: dict[tuple, list] = {}
+            for row in rows:
+                groups.setdefault((
+                    row.patient_id, str(row.source_provider), str(row.metric_type),
+                    row.local_date, row.source_device_id or "na", row.side or "na",
+                ), []).append(row)
+            removed = []
+            for key, group in groups.items():
+                if len(group) < 2:
+                    continue
+                group.sort(key=lambda r: (r.ingested_at or datetime.min, r.id), reverse=True)
+                for loser in group[1:]:
+                    removed.append({"patient": loser.patient_id, "metric": str(loser.metric_type),
+                                    "date": str(loser.local_date), "value": loser.value_num})
+                    db.delete(loser)
+            db.commit()
+            report["deduped_daily"] = {"removed": len(removed), "rows": removed[:20]}
+
         if args.purge_phone_verifications:
             report["purged_phone_verifications"] = db.execute(delete(PhoneVerification)).rowcount
             db.commit()

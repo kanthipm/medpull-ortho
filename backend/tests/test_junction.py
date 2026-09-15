@@ -961,8 +961,12 @@ def test_backfill_pulls_every_resource_ingests_and_reports(client, db, connectio
     assert body["ok"] is True and body["complete"] is True
     assert set(body["resources"]) >= {"activity", "sleep", "workouts", "blood_oxygen", "respiratory_rate", "hrv"}
     assert "heartrate" not in body["resources"]  # opt-in stream, off
-    # 3 activity (oura: no daily RHR) + 6 sleep + 1 workout + 3 SpO2 = 13 rows
-    assert body["ingested"] == 13
+    # 3 activity (oura: no daily RHR) + 6 sleep + 1 workout + 3 SpO2 = 13 rows.
+    # A day this suite already delivered by webhook is restated rather than
+    # inserted again — the day is the identity of a daily summary — so the
+    # thirteen are split between inserts and updates depending on what ran
+    # before this test.
+    assert body["ingested"] + body["updated"] + body["duplicates"] == 13
     assert body["dropped_implausible"] == 0
     (refresh_call,) = fake.calls("POST", "/v2/user/refresh/")
     # Junction is told how long to wait for the provider pulls, inside our own deadline

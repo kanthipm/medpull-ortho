@@ -312,8 +312,13 @@ def test_restatement_writes_granularity_through(db):
 def test_restatement_cannot_flip_provenance(db):
     """is_patient_reported is provenance, decided once at insert, so a
     redelivery over an unsigned path must never be able to set it."""
-    first = _keyed("prov-guard", Granularity.DAILY_SUMMARY, 10.0)
-    second = _keyed("prov-guard", Granularity.DAILY_SUMMARY, 11.0, is_patient_reported=True)
+    # Its own source device: a daily summary is identified by its day, so a
+    # row sharing this patient's day for this metric would be restated rather
+    # than inserted (see test_a_reissued_record_id_restates_the_day).
+    first = _keyed("prov-guard", Granularity.DAILY_SUMMARY, 10.0,
+                   source_device_id="prov-guard-device")
+    second = _keyed("prov-guard", Granularity.DAILY_SUMMARY, 11.0, is_patient_reported=True,
+                    source_device_id="prov-guard-device")
 
     assert ingest_observations(db, [first]) == (1, 0, 0)
     assert ingest_observations(db, [second]) == (0, 1, 0)
@@ -352,3 +357,77 @@ def test_the_junction_connector_is_no_longer_a_stub():
     assert connector.provider is SourceProvider.JUNCTION
     assert connector.drops_out_of_window_rows is True
     assert MockConnector().drops_out_of_window_rows is False
+
+
+def test_a_reissued_record_id_restates_the_day_instead_of_duplicating_it(db):
+    """Junction mints a new record id for a day it has already sent on every
+    re-sync of Apple Health. Keying a daily summary on that id put a second
+    row on the chart for that day, and another on the next sync — one
+    production chart was collecting a row per sync per day."""
+    day = date.today()
+
+    def delivery(record_id: str, steps: float) -> CanonicalObservation:
+        return CanonicalObservation(
+            patient_id="james",
+            source_provider=SourceProvider.JUNCTION,
+            metric_type=MetricType.STEPS,
+            unit="count",
+            value_num=steps,
+            start_time=datetime.combine(day, time.min),
+            end_time=datetime.combine(day, time(23, 59, 59)),
+            granularity=Granularity.DAILY_SUMMARY,
+            source_device_id="apple_health_kit",
+            external_id=record_id,
+        )
+
+    assert ingest_observations(db, [delivery("sync-1", 3331.0)]) == (1, 0, 0)
+    # the same day, re-issued under a different id: a restatement, not a row
+    assert ingest_observations(db, [delivery("sync-2", 3345.0)]) == (0, 1, 0)
+    def apple_rows() -> list[Observation]:
+        # Scoped to this delivery's device: james is a seeded Fitbit patient
+        # and already has a steps summary of his own for today.
+        return list(db.scalars(
+            select(Observation).where(
+                Observation.patient_id == "james",
+                Observation.metric_type == MetricType.STEPS,
+                Observation.local_date == day,
+                Observation.granularity == Granularity.DAILY_SUMMARY,
+                Observation.source_device_id == "apple_health_kit",
+            )
+        ).all())
+
+    rows = apple_rows()
+    assert len(rows) == 1
+    assert rows[0].value_num == 3345.0
+    # the row adopted the newest id, so the next delivery hits the fast path
+    assert rows[0].external_id == "sync-2"
+    assert ingest_observations(db, [delivery("sync-2", 3345.0)]) == (0, 0, 1)
+
+    # a DIFFERENT provider reporting the same day stays its own row: two
+    # wearables genuinely disagree and the engine needs to see both
+    other = delivery("oura-1", 2900.0)
+    other.source_device_id = "oura"
+    assert ingest_observations(db, [other]) == (1, 0, 0)
+    assert len(apple_rows()) == 1, "the other provider's day is its own row"
+    assert db.scalar(select(func.count(Observation.id)).where(
+        Observation.patient_id == "james",
+        Observation.metric_type == MetricType.STEPS,
+        Observation.local_date == day,
+        Observation.granularity == Granularity.DAILY_SUMMARY,
+        Observation.source_device_id == "oura",
+    )) == 1
+
+    # and an intraday bucket is not a daily summary: it is left alone
+    bucket = delivery("bucket-1", 120.0)
+    bucket.granularity = Granularity.INTERVAL
+    bucket.start_time = datetime.combine(day, time(9, 0))
+    bucket.end_time = datetime.combine(day, time(10, 0))
+    assert ingest_observations(db, [bucket]) == (1, 0, 0)
+
+    for row in db.scalars(select(Observation).where(
+            Observation.patient_id == "james",
+            Observation.metric_type == MetricType.STEPS,
+            Observation.local_date == day,
+            Observation.source_device_id.in_(("apple_health_kit", "oura")))).all():
+        db.delete(row)
+    db.commit()
