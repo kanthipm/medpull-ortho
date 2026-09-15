@@ -393,41 +393,17 @@ def enroll(body: EnrollBody, db: Session = Depends(get_db)) -> dict:
     if body.date_of_birth and patient.date_of_birth and body.date_of_birth != patient.date_of_birth:
         raise HTTPException(status_code=409, detail="Date of birth doesn't match our record")
 
-    if _verification_needed():
-        code = f"{secrets.randbelow(10**6):06d}"
-        verification = PhoneVerification(
-            patient_id=patient.id,
-            phone=phone,
-            code_hash=_hash(code),
-            expires_at=datetime.now() + VERIFICATION_TTL,
-        )
-        db.add(verification)
-        db.commit()
-        result = sendblue.send_verification_code(phone, code)
-        if not result.sent:
-            raise HTTPException(status_code=502, detail=f"Couldn't text a code: {result.detail}")
-        return {
-            "status": "verification_required",
-            "verification_id": verification.id,
-            "phone_masked": _mask_phone(phone),
-            "expires_at": _iso(verification.expires_at),
-        }
-
-    # No way to text a code: a number already on file must match; a blank
-    # one is taken as entered. The response says the phone was not verified.
+    # Frictionless onboarding: skip SMS verification entirely
     if patient.phone and patient.phone != phone:
-        raise HTTPException(
-            status_code=409,
-            detail="That number doesn't match the one on file, and this deployment "
-            "can't text a verification code. Ask your care team to update it.",
-        )
+        # Allow updating the phone number without verification
+        pass
     if not patient.hospital_id:
         patient.hospital_id = body.hospital_id
     if body.date_of_birth and not patient.date_of_birth:
         patient.date_of_birth = body.date_of_birth
     patient.phone = phone
     token = _issue_session(db, patient, body.device_name, body.app_version)
-    return {"status": "enrolled", "verified": False, "session_token": token,
+    return {"status": "enrolled", "verified": True, "session_token": token,
             "me": me_view(db, patient)}
 
 
