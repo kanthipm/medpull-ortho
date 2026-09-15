@@ -195,7 +195,7 @@ PROCEDURE_DISPLAY = {
 
 
 def is_surgical(patient: Patient) -> bool:
-    return str(patient.procedure_type) != "NONE"
+    return tasks.surgical(patient)
 
 
 def _hospital_view(h: Hospital | None) -> dict[str, Any] | None:
@@ -224,7 +224,7 @@ def _task_view(t: AdherenceTask) -> dict[str, Any]:
         "sent_at": _iso(t.sent_at),
         "completed_at": _iso(t.completed_at),
         "completed_via": t.completed_via,
-        "questions": tasks.QUESTION_SETS.get(t.kind or "custom", tasks.QUESTION_SETS["custom"]),
+        "questions": tasks.questions_for(t),
         "result": t.result,
         "in_sms_conversation": isinstance((t.payload or {}).get("sms"), dict),
     }
@@ -386,7 +386,9 @@ def search_candidates(
     db: Session, hospital_id: str, name: str, phone: str | None, dob: date | None
 ) -> list[dict[str, Any]]:
     """Roster matches for a typed name, scored: exact word 2, prefix 1,
-    matching phone or date of birth +3. Masked before it leaves."""
+    matching phone or date of birth +3. A record whose phone matches is
+    listed even when the typed name does not (a chart under "Steve" found
+    by someone typing "Steve Test"). Masked before it leaves."""
     needle = _tokens(name)
     if not needle or len("".join(needle)) < SEARCH_MIN_CHARS:
         return []
@@ -401,10 +403,10 @@ def search_candidates(
                 score += 2
             elif any(w.startswith(t) for w in words):
                 score += 1
-        if score == 0:
-            continue
         phone_match = bool(normalized_phone and p.phone and p.phone == normalized_phone)
         dob_match = bool(dob and p.date_of_birth and p.date_of_birth == dob)
+        if score == 0 and not phone_match:
+            continue
         score += 3 * phone_match + 3 * dob_match
         scored.append((score, p, phone_match, dob_match))
     scored.sort(key=lambda s: (-s[0], s[1].name))
@@ -448,6 +450,43 @@ def _verification_needed() -> bool:
     return settings.mobile_otp_required and sendblue.configured()
 
 
+def _start_verification(db: Session, patient: Patient, phone: str) -> dict:
+    """Text a one-time code and answer ``verification_required``. Nothing on
+    the patient changes until the code comes back through ``verify``."""
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    verification = PhoneVerification(
+        patient_id=patient.id, phone=phone, code_hash=_hash(code),
+        expires_at=datetime.now() + VERIFICATION_TTL,
+    )
+    db.add(verification)
+    db.commit()
+    delivery = sendblue.send_verification_code(phone, code)
+    if not delivery.sent:
+        # The code cannot reach them; a session now would be unverified and
+        # the app would show a screen waiting for a text that never comes.
+        raise HTTPException(
+            status_code=502, detail=f"We couldn't text a code to that number ({delivery.detail})"
+        )
+    return {
+        "status": "verification_required",
+        "verification_id": verification.id,
+        "phone_masked": _mask_phone(phone),
+        "expires_at": _iso(verification.expires_at),
+    }
+
+
+def _claim_phone(db: Session, patient: Patient, phone: str) -> None:
+    """One number, one chart. Enrolling says "this record is me", so the
+    number leaves any other chart that carried it (a clinician's typo, or an
+    earlier sign-up the person abandoned) rather than landing texts on two."""
+    for other in db.scalars(
+        select(Patient).where(Patient.phone == phone, Patient.id != patient.id)
+    ).all():
+        logger.info("Phone moved from %s to %s at enrollment", other.id, patient.id)
+        other.phone = None
+    patient.phone = phone
+
+
 @router.post("/enroll")
 def enroll(body: EnrollBody, db: Session = Depends(get_db)) -> dict:
     patient = db.get(Patient, body.patient_id)
@@ -461,20 +500,19 @@ def enroll(body: EnrollBody, db: Session = Depends(get_db)) -> dict:
     if body.date_of_birth and patient.date_of_birth and body.date_of_birth != patient.date_of_birth:
         raise HTTPException(status_code=409, detail="Date of birth doesn't match our record")
 
-    # Frictionless onboarding: skip SMS verification entirely
-    if patient.phone and patient.phone != phone:
-        # Allow updating the phone number without verification
-        pass
     if not patient.hospital_id:
         patient.hospital_id = body.hospital_id
     if body.date_of_birth and not patient.date_of_birth:
         patient.date_of_birth = body.date_of_birth
-    patient.phone = phone
+    if _verification_needed():
+        db.commit()
+        return _start_verification(db, patient, phone)
+    _claim_phone(db, patient, phone)
     first = _first_enrollment(db, patient)
     token = _issue_session(db, patient, body.device_name, body.app_version)
     if first:
         _welcome(db, patient)
-    return {"status": "enrolled", "verified": True, "session_token": token,
+    return {"status": "enrolled", "verified": False, "session_token": token,
             "me": me_view(db, patient)}
 
 
@@ -502,7 +540,7 @@ def verify(body: VerifyBody, db: Session = Depends(get_db)) -> dict:
     patient = db.get(Patient, verification.patient_id)
     if patient is None:
         raise HTTPException(status_code=404, detail="Unknown patient")
-    patient.phone = verification.phone
+    _claim_phone(db, patient, verification.phone)
     first = _first_enrollment(db, patient)
     token = _issue_session(db, patient, body.device_name, body.app_version)
     if first:
@@ -565,10 +603,16 @@ def join(body: JoinBody, db: Session = Depends(get_db)) -> dict:
     phone = sendblue.normalize_phone(body.phone)
     if phone is None:
         raise HTTPException(status_code=422, detail="Enter a valid mobile number")
-    if db.scalar(select(Patient).where(Patient.phone == phone)) is not None:
+    holder = tasks.patient_for_phone(db, phone)
+    if holder is not None:
+        # The person is already on a roster (they enrolled before, or a
+        # clinician created their chart with this number). The app reads
+        # this 409 and takes them to "find my record", where the phone
+        # match surfaces that chart even under a different spelling.
         raise HTTPException(
             status_code=409,
-            detail="That number is already on a record here — go back and find your record instead",
+            detail="That number is already on a record — find your record instead of "
+            "creating a new one",
         )
     name = " ".join(body.name.split())
     if body.had_surgery:
@@ -610,11 +654,12 @@ def join(body: JoinBody, db: Session = Depends(get_db)) -> dict:
     db.add(patient)
     db.commit()
 
-    # Frictionless onboarding: skip SMS verification entirely
+    if _verification_needed():
+        return _start_verification(db, patient, phone)
     patient.phone = phone
     token = _issue_session(db, patient, body.device_name, body.app_version)
     _welcome(db, patient)
-    return {"status": "enrolled", "verified": True, "session_token": token,
+    return {"status": "enrolled", "verified": False, "session_token": token,
             "me": me_view(db, patient)}
 
 
@@ -637,9 +682,10 @@ def me(patient: Patient = Depends(current_patient), db: Session = Depends(get_db
 
 @router.get("/tasks")
 def list_tasks(patient: Patient = Depends(current_patient), db: Session = Depends(get_db)) -> dict:
-    rows = tasks.recent_tasks(db, patient.id)
-    open_rows = [t for t in rows if t.status in tasks.OPEN_STATUSES and t.active]
-    done_rows = [t for t in rows if t.status not in tasks.OPEN_STATUSES]
+    """Every open task (however old), then the twenty most recent closed ones."""
+    open_rows = tasks.open_tasks(db, patient.id)
+    done_rows = [t for t in tasks.recent_tasks(db, patient.id, limit=60)
+                 if t.status not in tasks.OPEN_STATUSES]
     return {"open": [_task_view(t) for t in open_rows], "recent": [_task_view(t) for t in done_rows[:20]]}
 
 

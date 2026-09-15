@@ -170,7 +170,7 @@ private struct IdentityStep: View {
 
     var body: some View {
         StepScaffold(eyebrow: "Step 3 of 5", title: "Find your record",
-                     subtitle: "Your name as it's on file at \(model.hospital?.name ?? "the hospital"), and the mobile number we can text.") {
+                     subtitle: "Your name as it's on file at \(model.hospital?.name ?? "the hospital"), and the mobile number we can text. A number the clinic already has finds you on its own.") {
             VStack(spacing: 14) {
                 TextField("Full name", text: $model.name)
                     .textFieldStyle(FieldStyle())
@@ -209,10 +209,10 @@ private struct IdentityStep: View {
                             .buttonStyle(.plain)
                         }
                         if !model.searching && model.candidates.isEmpty {
-                            Text("Check the spelling, or ask the clinic which name they enrolled you under.")
+                            Text("Check the spelling, or ask the clinic which name they enrolled you under. If they have your number, typing it above finds you too.")
                                 .font(.system(size: 13)).foregroundStyle(MP.muted)
-                            Button("Not on the list? Join with your details instead") {
-                                model.choose(.joinAfterSurgery)
+                            Button("Not on the list? Join as a new patient instead") {
+                                model.choose(.joinGeneral)
                             }
                             .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(MP.brand)
                         }
@@ -399,15 +399,15 @@ private struct PathStep: View {
 
     var body: some View {
         StepScaffold(eyebrow: "Step 2 of 5", title: "How are you joining?",
-                     subtitle: "\(model.hospital?.name ?? "Your hospital") follows patients with and without a surgery.") {
+                     subtitle: "\(model.hospital?.name ?? "Your hospital") follows patients with and without a surgery. Either way, one record: what your care team sees is what you see here.") {
             VStack(spacing: 12) {
-                pathCard(icon: "person.crop.circle.badge.plus", title: "I'm a patient here",
-                         detail: "Join as a general patient. Your activity, sleep and vitals build a portfolio your care team can see.") {
-                    model.choose(.joinGeneral)
-                }
-                pathCard(icon: "bandage.fill", title: "I'm recovering from surgery",
-                         detail: "Find the record your surgical team already created, or add your operation and date.") {
+                pathCard(icon: "person.text.rectangle", title: "My care team set me up",
+                         detail: "The clinic already has a record for you (or you've used MedPull before). Find it so their messages and tasks reach this phone.") {
                     model.choose(.findRecord)
+                }
+                pathCard(icon: "person.crop.circle.badge.plus", title: "I'm new here",
+                         detail: "Create your record now — with or without a surgery. Your activity, sleep and vitals build a portfolio your care team can see.") {
+                    model.choose(.joinGeneral)
                 }
             }
         } footer: {
@@ -444,12 +444,14 @@ private struct JoinStep: View {
     @State private var dob = Calendar.current.date(byAdding: .year, value: -40, to: Date())!
 
     private var surgical: Bool { model.path == .joinAfterSurgery }
+    private var surgicalBinding: Binding<Bool> {
+        Binding(get: { model.path == .joinAfterSurgery },
+                set: { model.path = $0 ? .joinAfterSurgery : .joinGeneral })
+    }
 
     var body: some View {
-        StepScaffold(eyebrow: "Step 3 of 5", title: surgical ? "Your surgery" : "About you",
-                     subtitle: surgical
-                        ? "We'll create your record at \(model.hospital?.name ?? "the hospital") with the operation you had."
-                        : "This creates your record at \(model.hospital?.name ?? "the hospital"). Nothing else is needed to get started.") {
+        StepScaffold(eyebrow: "Step 3 of 5", title: "About you",
+                     subtitle: "This creates your record at \(model.hospital?.name ?? "the hospital"). If you had an operation, add it and we follow your recovery; otherwise we follow your everyday signals.") {
             VStack(spacing: 14) {
                 TextField("Full name", text: $model.name)
                     .textFieldStyle(FieldStyle()).textContentType(.name).autocorrectionDisabled()
@@ -465,10 +467,18 @@ private struct JoinStep: View {
                         .datePickerStyle(.compact)
                         .onChange(of: dob) { _, d in model.dateOfBirth = d }
                 }
+                Toggle(isOn: surgicalBinding) {
+                    Text("I'm recovering from an operation").font(.system(size: 15, weight: .medium)).foregroundStyle(MP.ink)
+                }
+                .tint(MP.brand)
                 if surgical {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Operation").eyebrow()
-                        FlowProcedures(procedures: model.procedures, selected: $model.procedure)
+                        if model.procedures.isEmpty {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            FlowProcedures(procedures: model.procedures, selected: $model.procedure)
+                        }
                         DatePicker("Surgery date", selection: $model.surgeryDate, in: ...Date(), displayedComponents: .date)
                             .datePickerStyle(.compact)
                             .font(.system(size: 15, weight: .medium))
@@ -485,7 +495,7 @@ private struct JoinStep: View {
             Button("Back") { model.go(.path) }
                 .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.brand)
         }
-        .task { if surgical { await model.loadProcedures(api: app.api) } }
+        .task(id: surgical) { if surgical { await model.loadProcedures(api: app.api) } }
     }
 }
 

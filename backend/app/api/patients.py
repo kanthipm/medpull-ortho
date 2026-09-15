@@ -50,6 +50,7 @@ def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
     # Patient.devices is ordered newest-connected-first, so an upgraded watch
     # wins over the row that happened to be written first.
     device = patient.devices[0] if patient.devices else None
+    from app.identity import app_status
 
     return {
         "id": patient.id,
@@ -57,6 +58,14 @@ def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
         "initials": patient.initials,
         "age": patient.age,
         "sex": patient.sex,
+        "mode": "general" if str(patient.procedure_type) == "NONE" else "recovery",
+        "hospital_id": patient.hospital_id,
+        "hospital": patient.hospital.name if patient.hospital else None,
+        # The console's contact with the person: where texts go, and whether
+        # the patient app is signed in on this chart.
+        "phone": patient.phone or None,
+        "sms_configured": sendblue.configured(),
+        "app": app_status(db, patient),
         "procedure_display": patient.procedure_display,
         "postop_day": analytics.get("postop_day"),
         "surgery_date": patient.surgery_date.isoformat(),
@@ -448,6 +457,60 @@ def escalate(patient_id: str, db: Session = Depends(get_db)) -> dict:
     return {"ok": True}
 
 
+class ContactBody(BaseModel):
+    phone: str | None = None
+    # Move the number here when another chart already holds it.
+    force: bool = False
+
+
+@router.patch("/{patient_id}/contact")
+def update_contact(patient_id: str, body: ContactBody, db: Session = Depends(get_db)) -> dict:
+    """Set (or clear) the number the console texts. Refuses a number that is
+    on another chart unless ``force`` moves it, so one number maps to one
+    patient and inbound texts cannot land on the wrong chart."""
+    from app.identity import IdentityError, app_status, set_phone
+
+    patient = _get_patient(db, patient_id)
+    try:
+        result = set_phone(db, patient, body.phone, force=body.force)
+    except IdentityError as e:
+        raise HTTPException(status_code=e.status, detail=e.detail)
+    return {**result, "app": app_status(db, patient)}
+
+
+@router.get("/{patient_id}/app-link/candidates")
+def app_link_candidates(patient_id: str, db: Session = Depends(get_db)) -> dict:
+    """Records this chart could be linked to: other patients who signed in
+    on the app or have a phone — the person's own sign-up, usually."""
+    from app.identity import app_status, link_candidates
+
+    patient = _get_patient(db, patient_id)
+    return {"app": app_status(db, patient), "phone": patient.phone or None,
+            "candidates": link_candidates(db, patient)}
+
+
+class LinkBody(BaseModel):
+    from_patient_id: str
+
+
+@router.post("/{patient_id}/app-link")
+def link_app(patient_id: str, body: LinkBody, db: Session = Depends(get_db)) -> dict:
+    """Fold another record (the one the app enrolled against) into this
+    chart. The app session, thread, tasks and data move here and the other
+    record is deleted, so the phone acts as this chart from the next request."""
+    from app.identity import IdentityError, app_status, link_app_account
+
+    patient = _get_patient(db, patient_id)
+    source = db.get(Patient, body.from_patient_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail=f"Unknown patient: {body.from_patient_id}")
+    try:
+        result = link_app_account(db, patient, source)
+    except IdentityError as e:
+        raise HTTPException(status_code=e.status, detail=e.detail)
+    return {**result, "app": app_status(db, patient)}
+
+
 class CreatePatientBody(BaseModel):
     hospital_id: str
     name: str
@@ -518,6 +581,22 @@ def create_patient(
         anchor = surgery_date or date.today()
         care_pathway = "general_recovery"
     
+    # The number texts go to: valid or absent, never a raw string that every
+    # send would then reject, and never one already on another chart.
+    phone: str | None = None
+    if body.phone and body.phone.strip():
+        phone = sendblue.normalize_phone(body.phone)
+        if phone is None:
+            raise HTTPException(status_code=422, detail="Enter a valid mobile number")
+        holder = db.scalar(select(Patient).where(Patient.phone == phone))
+        if holder is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"That number is already on {holder.name} ({holder.id})",
+            )
+    if not body.name.strip():
+        raise HTTPException(status_code=422, detail="Name is required")
+
     # Generate unique patient ID
     from app.api.mobile import _slug
     patient_id = _slug(body.name, db)
@@ -543,7 +622,7 @@ def create_patient(
         hospital_id=body.hospital_id,
         date_of_birth=date_of_birth,
         care_pathway=care_pathway,
-        phone=(sendblue.normalize_phone(body.phone) if body.phone else None) or body.phone or "",
+        phone=phone,
     )
     
     # Calculate age if date_of_birth provided

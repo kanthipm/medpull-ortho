@@ -127,6 +127,12 @@ final class OnboardingModel {
                 hadSurgery: path == .joinAfterSurgery, procedureType: procedure?.id,
                 surgeryDate: surgeryDate)
             try handle(r, app: app)
+        } catch let e as APIError where e.status == 409 {
+            // The number is already on a record here (the clinic created it,
+            // or this person enrolled before). Don't dead-end: take them to
+            // find-my-record, where the phone match lists that record.
+            choose(.findRecord)
+            self.error = "This number is already on a record at \(hospital.name). Pick it below and you're in."
         } catch {
             self.error = error.localizedDescription
         }

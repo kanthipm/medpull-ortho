@@ -62,9 +62,10 @@ class Settings(BaseSettings):
     # Where the invite text sends a new patient to get the app. A placeholder
     # until the App Store listing exists; set APP_DOWNLOAD_URL to override.
     app_download_url: str = "https://medpull.org/app"
-    # Onboarding verifies the phone with a texted code when Sendblue can send
-    # one. Set false to skip the code even with Sendblue configured (demos).
-    mobile_otp_required: bool = True
+    # Onboarding can verify the phone with a texted code when Sendblue can
+    # send one. Off by default (frictionless enrollment); set true to require
+    # the code before a session is issued.
+    mobile_otp_required: bool = False
     # apple-app-site-association: "<TEAMID>.<bundle id>" is served only when
     # the team id is set, so a deployment without the app publishes nothing.
     ios_team_id: str = ""

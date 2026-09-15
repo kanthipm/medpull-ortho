@@ -20,8 +20,11 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from sqlalchemy import select
+
 from app.config import settings
 from app.database import get_db
+from app.models.mobile import Message
 from app.tasks.service import handle_inbound_sms
 
 logger = logging.getLogger(__name__)
@@ -65,18 +68,48 @@ def inbound_sms(
     return _handle(request, body, db)
 
 
-def _handle(request: Request, body: dict[str, Any], db: Session) -> dict:
+# Sendblue's lifecycle statuses for a message we sent. Only the terminal
+# ones move the thread line: QUEUED/SENT stay "sent", ERROR is "failed", and
+# DELIVERED/READ mean the phone has it.
+_DELIVERED = {"DELIVERED", "READ"}
+_FAILED = {"ERROR", "UNDELIVERED", "FAILED"}
 
+
+def _outbound_status(body: dict[str, Any], db: Session) -> dict:
+    handle = body.get("message_handle")
+    status = str(body.get("status") or "").upper()
+    if not isinstance(handle, str) or not handle:
+        return {"handled": False, "reason": "outbound_status", "status": status}
+    message = db.scalar(
+        select(Message).where(Message.external_handle == handle, Message.sender != "patient")
+    )
+    if message is None:
+        return {"handled": False, "reason": "outbound_status", "status": status}
+    new = "delivered" if status in _DELIVERED else "failed" if status in _FAILED else None
+    if new is None or message.delivery_status == new:
+        return {"handled": False, "reason": "outbound_status", "status": status}
+    if new == "failed":
+        logger.warning("Sendblue reports message %s failed: %s %s", handle,
+                       body.get("error_code"), body.get("error_message"))
+    message.delivery_status = new
+    db.commit()
+    return {"handled": True, "reason": "outbound_status", "status": status,
+            "message_id": message.id}
+
+
+def _handle(request: Request, body: dict[str, Any], db: Session) -> dict:
     if body.get("is_outbound") is True:
-        # A delivery status for something we sent. Nothing to do yet.
-        return {"handled": False, "reason": "outbound_status"}
+        return _outbound_status(body, db)
     from_number = body.get("from_number") or body.get("number")
     content = body.get("content") or ""
     if not isinstance(from_number, str) or not isinstance(content, str) or not content.strip():
         return {"handled": False, "reason": "empty"}
+    handle = body.get("message_handle")
+    if not isinstance(handle, str) or not handle:
+        handle = None
 
     base = settings.checkin_base_url or str(request.base_url).rstrip("/")
-    outcome = handle_inbound_sms(db, from_number, content, base_url=base)
+    outcome = handle_inbound_sms(db, from_number, content, base_url=base, message_handle=handle)
     return {
         "handled": outcome.handled,
         "kind": outcome.kind,

@@ -18,6 +18,7 @@ import { relativeTime, signedPct } from '../../lib/format'
 import { PRIORITY, TRAJECTORY_LABEL } from '../../lib/risk'
 import ActionBar from './ActionBar'
 import CheckinHistory from './CheckinHistory'
+import ContactCard from './ContactCard'
 import FullStats from './metrics/FullStats'
 import HeadlineMetrics from './metrics/HeadlineMetrics'
 import MessagesSection from './plan/MessagesSection'
@@ -179,6 +180,15 @@ export default function PatientDetailPage() {
             smsAvailable={delivery.smsAvailable}
             onRefresh={onRefresh}
             refreshing={refreshing}
+          />
+        </div>
+        <div className="mt-3">
+          <ContactCard
+            patientId={p.id}
+            patientName={p.name}
+            phone={p.phone}
+            app={p.app}
+            smsConfigured={p.sms_configured}
           />
         </div>
       </div>

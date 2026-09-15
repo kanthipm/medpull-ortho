@@ -45,12 +45,30 @@ export interface SuggestedAction {
   urgency: Urgency
 }
 
+/** Whether the patient app is signed in on this chart (GET /api/patients/:id). */
+export interface AppEnrollment {
+  enrolled: boolean
+  ever_enrolled: boolean
+  device_name: string | null
+  app_version: string | null
+  last_seen_at: string | null
+}
+
 export interface PatientDetail {
   id: string
   name: string
   initials: string
   age: number
   sex: string
+  /** recovery: had surgery. general: followed without an operation. */
+  mode: 'recovery' | 'general'
+  hospital_id: string | null
+  hospital: string | null
+  /** E.164, where the console texts; null when nothing is on file. */
+  phone: string | null
+  /** Sendblue keys are set on the server, so a number on file can be texted. */
+  sms_configured: boolean
+  app: AppEnrollment
   procedure_display: string
   postop_day: number
   surgery_date: string
@@ -292,8 +310,45 @@ export interface PatientMessage {
   channel: 'app' | 'sms' | 'voice' | 'console'
   text: string
   created_at: string
-  delivery_status: 'sent' | 'failed' | null
+  delivery_status: 'sent' | 'delivered' | 'failed' | null
   read_by_care_team: boolean
+}
+
+/** PATCH /api/patients/:id/contact */
+export interface ContactResult {
+  phone: string | null
+  previous: string | null
+  moved_from: string[]
+  app: AppEnrollment
+}
+
+/** GET /api/patients/:id/app-link/candidates — another record that could be
+ *  this person's app sign-up. */
+export interface AppLinkCandidate {
+  patient_id: string
+  name: string
+  hospital_id: string | null
+  mode: 'recovery' | 'general'
+  procedure_display: string
+  phone_masked: string | null
+  phone_match: boolean
+  name_match: boolean
+  app: AppEnrollment
+}
+
+export interface AppLinkCandidates {
+  app: AppEnrollment
+  phone: string | null
+  candidates: AppLinkCandidate[]
+}
+
+export interface AppLinkResult {
+  linked_from: string
+  patient_id: string
+  phone: string | null
+  filled: string[]
+  moved: Record<string, number>
+  app: AppEnrollment
 }
 
 export interface AssignTaskResult {

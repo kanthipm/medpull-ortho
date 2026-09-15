@@ -38,7 +38,7 @@ def _forget_patient(db, patient_id: str) -> None:
     db.commit()
 
 
-def _enroll(client, patient_id="steve", hospital_id="hosp_medpull", phone=STEVE_PHONE):
+def _enroll(client, patient_id="steve", hospital_id="hosp_demo", phone=STEVE_PHONE):
     resp = client.post(
         "/api/mobile/enroll",
         json={"patient_id": patient_id, "hospital_id": hospital_id, "phone": phone,
@@ -53,28 +53,34 @@ def _enroll(client, patient_id="steve", hospital_id="hosp_medpull", phone=STEVE_
 def test_hospitals_listed_and_searchable(client):
     body = client.get("/api/mobile/hospitals").json()
     ids = [h["id"] for h in body["hospitals"]]
-    assert "hosp_medpull" in ids and "hosp_demo" in ids and len(ids) == 6
-    filtered = client.get("/api/mobile/hospitals?q=methodist").json()["hospitals"]
-    assert [h["id"] for h in filtered] == ["hosp_methodist"]
+    assert ids == ["hosp_demo"]
+    filtered = client.get("/api/mobile/hospitals?q=houston").json()["hospitals"]
+    assert [h["id"] for h in filtered] == ["hosp_demo"]
+    assert client.get("/api/mobile/hospitals?q=nowhere").json()["hospitals"] == []
+
+
+def test_every_seeded_patient_is_findable_under_a_listed_hospital(client, db):
+    """The seed and the app's first screen agree: a roster patient under a
+    hospital the app does not list could never enroll."""
+    listed = {h["id"] for h in client.get("/api/mobile/hospitals").json()["hospitals"]}
+    for p in db.scalars(select(Patient)).all():
+        assert p.hospital_id in listed, f"{p.id} sits under unlisted hospital {p.hospital_id!r}"
 
 
 def test_patient_search_is_scoped_masked_and_needs_two_chars(client):
     resp = client.post("/api/mobile/patients/search",
-                       json={"hospital_id": "hosp_medpull", "name": "ste"})
+                       json={"hospital_id": "hosp_demo", "name": "ste"})
     assert resp.status_code == 200
     cands = resp.json()["candidates"]
     assert [c["patient_id"] for c in cands] == ["steve"]
     assert cands[0]["display_name"] == "Steve"
     assert "surgery_month" in cands[0] and "phone" not in cands[0]
-    # Linda Park is at Methodist: invisible from the MedPull institute.
-    empty = client.post("/api/mobile/patients/search",
-                        json={"hospital_id": "hosp_medpull", "name": "Linda Park"}).json()
-    assert empty["candidates"] == []
     found = client.post("/api/mobile/patients/search",
-                        json={"hospital_id": "hosp_methodist", "name": "linda"}).json()
-    assert found["candidates"][0]["display_name"] == "Linda P."
+                        json={"hospital_id": "hosp_demo", "name": "medha rao"}).json()
+    assert found["candidates"][0]["display_name"] == "Medha R."
+    assert found["candidates"][0]["procedure_display"] == "General care"
     short = client.post("/api/mobile/patients/search",
-                        json={"hospital_id": "hosp_medpull", "name": "s"}).json()
+                        json={"hospital_id": "hosp_demo", "name": "s"}).json()
     assert short["candidates"] == []
     assert client.post("/api/mobile/patients/search",
                        json={"hospital_id": "nope", "name": "steve"}).status_code == 404
@@ -84,7 +90,7 @@ def test_enroll_without_sendblue_is_unverified_and_issues_session(client, db):
     headers, body = _enroll(client)
     assert body["verified"] is False
     assert body["me"]["patient"]["id"] == "steve"
-    assert body["me"]["patient"]["hospital"]["id"] == "hosp_medpull"
+    assert body["me"]["patient"]["hospital"]["id"] == "hosp_demo"
     assert body["me"]["recovery"]["label"] in {
         "On track", "Worth a check-in", "Care team reviewing", "Waiting for data",
     }
@@ -100,29 +106,35 @@ def test_enroll_without_sendblue_is_unverified_and_issues_session(client, db):
 
 def test_enroll_refuses_wrong_hospital_and_bad_phone(client):
     resp = client.post("/api/mobile/enroll", json={
-        "patient_id": "linda", "hospital_id": "hosp_medpull", "phone": "+15125550199"})
+        "patient_id": "guest", "hospital_id": "hosp_elsewhere", "phone": "+15125550199"})
     assert resp.status_code == 409
     resp = client.post("/api/mobile/enroll", json={
-        "patient_id": "steve", "hospital_id": "hosp_medpull", "phone": "12"})
+        "patient_id": "steve", "hospital_id": "hosp_demo", "phone": "12"})
     assert resp.status_code == 422
+    assert client.post("/api/mobile/enroll", json={
+        "patient_id": "nobody", "hospital_id": "hosp_demo", "phone": "+15125550199"}).status_code == 404
 
 
 def test_enroll_with_sendblue_requires_a_code(client, db, monkeypatch):
+    """OTP is opt-in (MOBILE_OTP_REQUIRED): switched on, no session is
+    issued until the texted code comes back."""
     from app.api import mobile
     from app.notifications import sendblue
 
     sent: list[tuple[str, str]] = []
     monkeypatch.setattr(settings, "sendblue_api_key", "k")
     monkeypatch.setattr(settings, "sendblue_api_secret", "s")
+    monkeypatch.setattr(settings, "mobile_otp_required", True)
     monkeypatch.setattr(
         sendblue, "_post_message",
         lambda phone, content: sent.append((phone, content)) or _FakeResponse(),
     )
     resp = client.post("/api/mobile/enroll", json={
-        "patient_id": "guest", "hospital_id": "hosp_medpull", "phone": "+15125550177"})
+        "patient_id": "guest", "hospital_id": "hosp_demo", "phone": "+15125550177"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "verification_required"
+    assert "session_token" not in body
     assert body["phone_masked"].endswith("0177")
     assert len(sent) == 1 and "verification code is" in sent[0][1]
     code = sent[0][1].split("is ")[1].split(".")[0]
@@ -373,9 +385,53 @@ def test_inbound_sms_webhook_is_gated_and_runs_the_conversation(client, db, monk
     assert any(m.sender == "copilot" and "pain today" in m.text for m in thread)
 
     # free text with nothing open goes to the care team
+    before = len(db.scalars(select(Message).where(Message.patient_id == "steve")).all())
     r = text("Can you tell my nurse the swelling is down?").json()
     assert r["kind"] == "message"
     assert "care team" in sent[-1][1].lower()
+    db.expire_all()
+    after = db.scalars(select(Message).where(Message.patient_id == "steve")
+                       .order_by(Message.id)).all()
+    # exactly two new lines: the patient's text and the one texted reply
+    assert [m.sender for m in after[before:]] == ["patient", "copilot"]
+    assert after[-1].delivery_status == "sent" and after[-1].channel == "sms"
+
+    # Sendblue retries a delivery it did not get a 2xx for: the same handle
+    # twice is processed once, and the count of thread lines does not move.
+    dup = client.post("/api/webhooks/sendblue/whsec-test", json={
+        "from_number": "+15125550142", "content": "hello again", "is_outbound": False,
+        "message_handle": "mh_in_1"})
+    assert dup.json()["handled"] is True
+    replies = len(sent)
+    again = client.post("/api/webhooks/sendblue/whsec-test", json={
+        "from_number": "+15125550142", "content": "hello again", "is_outbound": False,
+        "message_handle": "mh_in_1"})
+    assert again.status_code == 200 and again.json()["handled"] is False
+    assert again.json()["kind"] == "duplicate" and len(sent) == replies
+
+    # a status callback for one of our texts moves the thread line
+    db.expire_all()
+    ours = db.scalars(select(Message).where(Message.patient_id == "steve",
+                                            Message.external_handle == "mh_test")).all()
+    assert ours, "outbound lines carry Sendblue's handle"
+    r = client.post("/api/webhooks/sendblue/whsec-test", json={
+        "is_outbound": True, "status": "DELIVERED", "message_handle": "mh_test"})
+    assert r.json()["handled"] is True
+    db.expire_all()
+    assert db.get(Message, r.json()["message_id"]).delivery_status == "delivered"
+    r = client.post("/api/webhooks/sendblue/whsec-test", json={
+        "is_outbound": True, "status": "ERROR", "message_handle": "mh_test",
+        "error_code": 22, "error_message": "number not reachable"})
+    assert r.json()["handled"] is True
+    db.expire_all()
+    assert db.get(Message, r.json()["message_id"]).delivery_status == "failed"
+    # unknown handle, malformed bodies: 200 and ignored, never a 500
+    assert client.post("/api/webhooks/sendblue/whsec-test",
+                       json={"is_outbound": True, "status": "DELIVERED",
+                             "message_handle": "nope"}).json()["handled"] is False
+    for junk in ({}, {"content": 5}, {"from_number": 5, "content": "x"},
+                 {"from_number": "+15125550142", "content": "   "}, {"is_outbound": "yes"}):
+        assert client.post("/api/webhooks/sendblue/whsec-test", json=junk).status_code == 200
 
 
 def test_parse_free_answer_variants():
@@ -481,7 +537,13 @@ def test_join_as_general_patient_without_surgery(client, db):
     assert found and found[0]["display_name"] == "Medha R."
     dup = client.post("/api/mobile/join", json={
         "hospital_id": "hosp_demo", "name": "Medha Rao", "phone": "+15125550301"})
-    assert dup.status_code == 409
+    assert dup.status_code == 409 and "find your record" in dup.json()["detail"]
+    # ...but the phone alone finds the record on the find-my-record path,
+    # even under a spelling that shares no word with the chart
+    by_phone = client.post("/api/mobile/patients/search", json={
+        "hospital_id": "hosp_demo", "name": "Zed Q", "phone": "+15125550301"}).json()["candidates"]
+    assert [c["patient_id"] for c in by_phone] == [me["id"]]
+    assert by_phone[0]["phone_match"] is True and by_phone[0]["confidence"] == "high"
     headers = {"Authorization": f"Bearer {body['session_token']}"}
     port = client.get("/api/mobile/portfolio", headers=headers).json()
     assert port["metrics"] == []
@@ -508,7 +570,7 @@ def test_join_with_surgery_needs_procedure_and_date(client, db):
 
 
 def test_portfolio_aggregates_seeded_metrics(client):
-    headers, _ = _enroll(client, patient_id="aisha", hospital_id="hosp_methodist",
+    headers, _ = _enroll(client, patient_id="ana", hospital_id="hosp_demo",
                          phone="+15125550304")
     port = client.get("/api/mobile/portfolio?days=14", headers=headers).json()
     keys = {m["key"] for m in port["metrics"]}

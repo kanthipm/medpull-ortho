@@ -147,10 +147,12 @@ def send_sms(phone_number: str, content: str) -> CheckinSendResult:
     try:
         response = _post_message(phone, content)
     except httpx.HTTPStatusError as exc:
-        logger.warning("Sendblue send to %s failed: %s", phone, exc)
+        reason = _error_reason(exc.response)
+        logger.warning("Sendblue send to %s failed: %s %s", phone, exc, reason or "")
         return CheckinSendResult(
             sent=False,
-            detail=f"Sendblue answered {exc.response.status_code}",
+            detail=f"Sendblue answered {exc.response.status_code}"
+            + (f": {reason}" if reason else ""),
             status_code=exc.response.status_code,
         )
     except httpx.HTTPError as exc:
@@ -165,6 +167,23 @@ def send_sms(phone_number: str, content: str) -> CheckinSendResult:
     except (ValueError, AttributeError, TypeError):
         handle = None  # no body, or not JSON: the send still happened
     return CheckinSendResult(sent=True, detail="sent", message_handle=handle)
+
+
+def _error_reason(response: httpx.Response) -> str:
+    """Sendblue's own words for a refused send ("Cannot send messages to
+    self", an unverified number...), so the console can show why rather
+    than a bare status code. Empty when the body is not JSON or says nothing."""
+    try:
+        body = response.json()
+    except (ValueError, AttributeError, TypeError):
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    for key in ("message", "error_message", "error", "detail"):
+        value = body.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:160]
+    return ""
 
 
 def send_checkin_message(phone_number: str, checkin_url: str) -> CheckinSendResult:

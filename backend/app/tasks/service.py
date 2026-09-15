@@ -63,8 +63,21 @@ CHECKIN_QUESTIONS: list[dict[str, Any]] = [
     {"id": "note", "prompt": "Anything else you want the care team to know?", "kind": "text"},
 ]
 
+# The same check-in for a patient who did not have surgery: no incision, no
+# post-op exercises. Picked by ``create_task`` (payload["qset"]) so a
+# general patient is never asked about swelling around an incision.
+GENERAL_CHECKIN_QUESTIONS: list[dict[str, Any]] = [
+    {"id": "pain", "prompt": "Any pain today, 0 to 10?", "kind": "scale"},
+    {"id": "sleep", "prompt": "How did you sleep?", "kind": "choice",
+     "options": ["well", "rough"]},
+    {"id": "activity", "prompt": "Did you get some activity in today?", "kind": "choice",
+     "options": ["all", "some", "none"]},
+    {"id": "note", "prompt": "Anything else you want the care team to know?", "kind": "text"},
+]
+
 QUESTION_SETS: dict[str, list[dict[str, Any]]] = {
     "checkin": CHECKIN_QUESTIONS,
+    "checkin_general": GENERAL_CHECKIN_QUESTIONS,
     "exercise": [
         {"id": "exercises", "prompt": "Did you get through the set?", "kind": "choice",
          "options": ["all", "some", "none"]},
@@ -116,6 +129,11 @@ PHRASES: dict[str, dict[str, str]] = {
         "no": "I missed a dose of my medication.",
     },
     "done": {"yes": "I got it done.", "no": "I couldn't get to it today."},
+    "activity": {
+        "all": "I got my activity in today.",
+        "some": "I got some activity in today.",
+        "none": "I didn't get any activity in today.",
+    },
 }
 
 # Answers that should reach the care team as an alert, not just a transcript.
@@ -124,6 +142,26 @@ _ALERT_PAIN = 8
 
 _YES = {"yes", "y", "yeah", "yep", "yup", "sure", "true", "1"}
 _NO = {"no", "n", "nope", "nah", "false", "0", "none"}
+
+
+
+def surgical(patient: Patient) -> bool:
+    """Had an operation (followed along a recovery curve) vs. a general patient."""
+    return str(patient.procedure_type) != "NONE"
+
+
+def question_set_key(task: AdherenceTask) -> str:
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    qset = payload.get("qset")
+    if isinstance(qset, str) and qset in QUESTION_SETS:
+        return qset
+    return task.kind if task.kind in QUESTION_SETS else "custom"
+
+
+def questions_for(task: AdherenceTask) -> list[dict[str, Any]]:
+    """The questions this task asks: its kind's set, unless creation pinned
+    another (a general patient's check-in)."""
+    return QUESTION_SETS[question_set_key(task)]
 
 
 # --- answers -------------------------------------------------------------------
@@ -286,6 +324,8 @@ def create_task(
         due_at=due_at,
         payload={"created_by": created_by} if created_by else {},
     )
+    if kind == "checkin" and not surgical(patient):
+        task.payload = {**(task.payload or {}), "qset": "checkin_general"}
     db.add(task)
     db.flush()
     result = dispatch(db, task, patient, base_url) if notify else None
@@ -351,8 +391,9 @@ def recent_tasks(db: Session, patient_id: str, limit: int = 30) -> list[Adherenc
 
 
 def transcript(kind: str, answers: dict[str, Any]) -> list[tuple[str, str]]:
-    """(prompt, patient sentence) pairs for the answers given. Raises
-    ValueError on an answer the question does not accept."""
+    """(prompt, patient sentence) pairs for the answers given. ``kind`` is a
+    task kind or a question-set key. Raises ValueError on an answer the
+    question does not accept."""
     pairs: list[tuple[str, str]] = []
     for q in QUESTION_SETS.get(kind, QUESTION_SETS["custom"]):
         raw = answers.get(q["id"])
@@ -420,7 +461,7 @@ def complete_task(
     if via not in COMPLETION_CHANNELS:
         raise ValueError(f"Unknown completion channel {via}")
     answers = {k: v for k, v in (answers or {}).items() if v is not None and v != ""}
-    pairs = transcript(task.kind, answers)
+    pairs = transcript(question_set_key(task), answers)
     if not pairs and task.kind == "checkin":
         raise ValueError("No answers given")
 
@@ -527,7 +568,7 @@ def _active_conversation(tasks: list[AdherenceTask]) -> AdherenceTask | None:
 
 
 def _prompt(task: AdherenceTask, step: int, lead: str = "") -> str:
-    qs = QUESTION_SETS.get(task.kind, QUESTION_SETS["custom"])
+    qs = questions_for(task)
     q = qs[step]
     return f"{lead}{q['prompt']} {answer_hint(q)}".strip()
 
@@ -536,7 +577,7 @@ def start_conversation(task: AdherenceTask) -> str:
     payload = dict(task.payload or {})
     payload["sms"] = {"step": 0, "answers": {}, "started_at": datetime.now().isoformat()}
     task.payload = payload
-    n = len(QUESTION_SETS.get(task.kind, QUESTION_SETS["custom"]))
+    n = len(questions_for(task))
     lead = f"{task.title} — {n} quick question{'s' if n != 1 else ''}. "
     return _prompt(task, 0, lead)
 
@@ -545,7 +586,7 @@ def advance_conversation(db: Session, task: AdherenceTask, body: str) -> tuple[s
     """Consume one texted answer. Returns (reply, outcome kind)."""
     payload = dict(task.payload or {})
     sms = dict(payload.get("sms") or {"step": 0, "answers": {}})
-    qs = QUESTION_SETS.get(task.kind, QUESTION_SETS["custom"])
+    qs = questions_for(task)
     step = int(sms.get("step", 0))
     answers = dict(sms.get("answers") or {})
     lowered = body.strip().lower()
@@ -577,8 +618,34 @@ def advance_conversation(db: Session, task: AdherenceTask, body: str) -> tuple[s
     return _prompt(task, step), "conversation_step"
 
 
+def patient_for_phone(db: Session, phone: str) -> Patient | None:
+    """The chart a number belongs to. Numbers are meant to be unique, but a
+    roster can carry the same one twice (a clinician typed it on a chart the
+    patient later signed up beside). Then the record that is actually using
+    the app wins, and after that the newest."""
+    from app.models.mobile import PatientSession
+
+    rows = db.scalars(select(Patient).where(Patient.phone == phone)).all()
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return rows[0]
+
+    def last_seen(p: Patient) -> datetime:
+        seen = db.scalar(
+            select(PatientSession.last_seen_at)
+            .where(PatientSession.patient_id == p.id, PatientSession.revoked_at.is_(None))
+            .order_by(PatientSession.last_seen_at.desc())
+            .limit(1)
+        )
+        return seen or datetime.min
+
+    return max(rows, key=lambda p: (last_seen(p), p.created_at or datetime.min))
+
+
 def handle_inbound_sms(
-    db: Session, from_phone: str, text: str, *, base_url: str = ""
+    db: Session, from_phone: str, text: str, *, base_url: str = "",
+    message_handle: str | None = None,
 ) -> InboundOutcome:
     """Everything an inbound Sendblue text can mean, in one place.
 
@@ -591,15 +658,25 @@ def handle_inbound_sms(
     phone = sendblue.normalize_phone(from_phone)
     if phone is None:
         return InboundOutcome(None, False, None, "unknown_number")
-    patient = db.scalar(select(Patient).where(Patient.phone == phone))
+    patient = patient_for_phone(db, phone)
     if patient is None:
         logger.info("Inbound text from a number no patient has on file")
         return InboundOutcome(None, False, None, "unknown_number")
     body = (text or "").strip()
     if not body:
         return InboundOutcome(patient.id, False, None, "empty")
+    # Sendblue retries a delivery it did not get a 2xx for. The same text
+    # processed twice would answer a conversation question twice, so the
+    # message handle is the dedupe key when the payload carries one.
+    if message_handle and db.scalar(
+        select(Message.id).where(
+            Message.sender == "patient", Message.external_handle == message_handle
+        ).limit(1)
+    ) is not None:
+        return InboundOutcome(patient.id, False, None, "duplicate")
 
-    db.add(Message(patient_id=patient.id, sender="patient", channel="sms", text=body[:2000]))
+    db.add(Message(patient_id=patient.id, sender="patient", channel="sms", text=body[:2000],
+                   external_handle=message_handle))
     db.flush()
 
     tasks = open_tasks(db, patient.id)
@@ -624,8 +701,10 @@ def handle_inbound_sms(
     else:
         from app.agent.copilot import respond
 
+        # The thread lines are written here (with the delivery status), so the
+        # copilot records neither the patient's line nor its own reply.
         result = respond(db, patient, body, channel="sms", record_patient_line=False,
-                         default_to_care_team=True)
+                         record_reply=False, default_to_care_team=True)
         reply, kind = result["reply"], "message"
 
     delivery = sendblue.send_sms(phone, reply)

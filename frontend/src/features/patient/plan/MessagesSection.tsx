@@ -129,9 +129,11 @@ function Bubble({ m, first }: { m: PatientMessage; first: string }) {
   const who = inbound ? first : m.sender === 'copilot' ? 'Copilot' : 'Care team'
   const status = inbound
     ? { label: 'received', pill: 'bg-soft text-muted' }
-    : m.delivery_status === 'sent'
-      ? { label: 'sent', pill: 'bg-risk-low-bg text-risk-low' }
-      : m.delivery_status === 'failed'
+    : m.delivery_status === 'delivered'
+      ? { label: 'delivered', pill: 'bg-risk-low-bg text-risk-low' }
+      : m.delivery_status === 'sent'
+        ? { label: 'texted', pill: 'bg-risk-low-bg text-risk-low' }
+        : m.delivery_status === 'failed'
         ? { label: 'failed', pill: 'bg-risk-high-bg text-risk-high' }
         : { label: 'in app', pill: 'bg-soft text-muted' }
   return (

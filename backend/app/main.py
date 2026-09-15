@@ -86,10 +86,15 @@ def _ensure_hospitals() -> None:
         if added:
             db.flush()
             logging.getLogger(__name__).info("Added %d hospital(s) to an existing database", added)
-        for patient in db.scalars(select(Patient).where(Patient.hospital_id.is_(None))).all():
+        fallback = HOSPITALS[0].id if HOSPITALS else None
+        # A patient whose hospital is unknown (NULL, or an id the roster no
+        # longer seeds) is unfindable from the app: give them the seeded one.
+        for patient in db.scalars(select(Patient)).all():
+            if patient.hospital_id in known:
+                continue
             spec = get_spec(patient.id)
-            hospital_id = spec.hospital_id if spec else "hosp_medpull"
-            if hospital_id in known:
+            hospital_id = spec.hospital_id if spec and spec.hospital_id in known else fallback
+            if hospital_id is not None:
                 patient.hospital_id = hospital_id
         db.commit()
 

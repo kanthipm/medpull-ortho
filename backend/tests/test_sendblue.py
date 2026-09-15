@@ -9,8 +9,14 @@ from app.notifications.sendblue import CheckinSendResult, send_checkin_message
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int = 200):
+    def __init__(self, status_code: int = 200, body: dict | None = None):
         self.status_code = status_code
+        self._body = body
+
+    def json(self):
+        if self._body is None:
+            raise ValueError("no body")
+        return self._body
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -107,3 +113,15 @@ def test_transport_failure_reports_cleanly(configured, monkeypatch):
     assert result.sent is False
     assert result.detail.startswith("request failed")
     assert result.status_code is None
+
+
+def test_api_error_carries_sendblues_reason(configured, monkeypatch):
+    """The account's own number as the recipient is the one 400 a demo hits:
+    the console must read "Cannot send messages to self", not just "400"."""
+    monkeypatch.setattr(
+        sendblue.httpx, "post",
+        lambda *a, **kw: _FakeResponse(400, {"status": "ERROR", "message": "Cannot send messages to self"}),
+    )
+    result = sendblue.send_sms("+15049081262", "hi")
+    assert result.sent is False and result.status_code == 400
+    assert result.detail == "Sendblue answered 400: Cannot send messages to self"

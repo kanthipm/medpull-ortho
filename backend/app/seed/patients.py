@@ -56,7 +56,7 @@ class PatientSpec:
     surgeon_id: str
     # discharge N days after surgery (joint replacements 1-2, others 0-1)
     discharge_offset: int = 1
-    hospital_id: str = "hosp_medpull"
+    hospital_id: str = "hosp_demo"
 
 
 def _surgeon_for(procedure: ProcedureType) -> str:
@@ -68,7 +68,7 @@ def _surgeon_for(procedure: ProcedureType) -> str:
 def _spec(
     pid: str, name: str, age: int, sex: str, proc: ProcedureType, display: str,
     day: int, provider: SourceProvider | None, model: str, discharge: int = 1,
-    hospital: str = "hosp_medpull",
+    hospital: str = "hosp_demo",
 ) -> PatientSpec:
     initials = "".join(part[0] for part in name.split()[:2]).upper()
     return PatientSpec(

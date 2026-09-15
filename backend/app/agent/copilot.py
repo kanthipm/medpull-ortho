@@ -83,6 +83,29 @@ You can take these actions, and only these:
 Return ONLY JSON: {{"reply": "<text>", "actions": [{{"type": "log_pain", "value": 4}} | {{"type": "complete_task", "task_id": 12, "answers": {{"exercises": "all"}}}} | {{"type": "message_care_team", "text": "..."}}]}}
 Use an empty actions list when nothing applies."""
 
+# The same companion for a patient who did not have surgery: their hospital
+# follows their signals (steps, sleep, heart, weight...) and sends tasks.
+GENERAL_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
+    "the recovery companion inside a patient's app after orthopedic surgery",
+    "the health companion inside a patient's app; this patient has NOT had surgery — "
+    "their hospital's care team follows their everyday health signals",
+)
+
+# Red-flag wording assumes an operation; for a general patient the same
+# advice reads without it.
+_GENERAL_REPLACEMENTS = (
+    (" after surgery", ""),
+    ("I'm sorry — a fall needs to be checked", "I'm sorry — a fall needs to be checked"),
+)
+
+
+def _for_patient(text: str, patient: Patient) -> str:
+    if tasks.surgical(patient):
+        return text
+    for old, new in _GENERAL_REPLACEMENTS:
+        text = text.replace(old, new)
+    return text
+
 
 def _context(db: Session, patient: Patient, open_tasks: list[AdherenceTask]) -> str:
     from app.engine.pipeline import latest_assessment
@@ -91,14 +114,17 @@ def _context(db: Session, patient: Patient, open_tasks: list[AdherenceTask]) -> 
     postop = None
     if assessment is not None:
         postop = (assessment.analytics or {}).get("postop_day")
-    lines = [
-        f"Patient first name: {patient.name.split()[0]}",
-        f"Procedure: {patient.procedure_display}",
-        f"Post-op day: {postop if postop is not None else 'unknown'}",
-        "Open tasks:" if open_tasks else "Open tasks: none",
-    ]
+    lines = [f"Patient first name: {patient.name.split()[0]}"]
+    if tasks.surgical(patient):
+        lines += [
+            f"Procedure: {patient.procedure_display}",
+            f"Post-op day: {postop if postop is not None else 'unknown'}",
+        ]
+    else:
+        lines.append("No surgery: a general patient followed by their hospital's care team")
+    lines.append("Open tasks:" if open_tasks else "Open tasks: none")
     for t in open_tasks:
-        qs = tasks.QUESTION_SETS.get(t.kind, tasks.QUESTION_SETS["custom"])
+        qs = tasks.questions_for(t)
         fields = ", ".join(
             f"{q['id']}: {'/'.join(q.get('options') or ['yes', 'no']) if q['kind'] in ('yes_no', 'choice') else q['kind']}"
             for q in qs
@@ -237,7 +263,10 @@ def _apply(
             applied.append({**a, "title": task.title})
             notes.append(f"Marked \"{task.title}\" as done.")
         elif a["type"] == "message_care_team":
-            db.add(Message(patient_id=patient.id, sender="patient", channel=channel, text=a["text"]))
+            # The patient's own line is already on the thread (recorded by
+            # respond() or by the SMS handler); a second copy of it here
+            # showed every forwarded note twice. The action's work is the
+            # care-team notification.
             tasks.notify_care_team(db, patient, f"{patient.name} sent a message", a["text"], "patient_message")
             applied.append(a)
             notes.append("Passed that along to your care team.")
@@ -260,10 +289,11 @@ def respond(
     *,
     channel: str = "app",
     record_patient_line: bool = True,
+    record_reply: bool = True,
     default_to_care_team: bool = False,
 ) -> dict[str, Any]:
     """One turn. Records the patient's line and the reply on the thread
-    (unless the caller already did) and returns what happened."""
+    (unless the caller does that itself) and returns what happened."""
     text = (text or "").strip()
     open_tasks = tasks.open_tasks(db, patient.id)
     if not text:
@@ -284,7 +314,7 @@ def respond(
     if not flags:  # a red flag gets the deterministic script, never a model's words
         try:
             raw = complete_json(
-                SYSTEM_PROMPT,
+                SYSTEM_PROMPT if tasks.surgical(patient) else GENERAL_SYSTEM_PROMPT,
                 f"{_context(db, patient, open_tasks)}\n\nPatient said: {json.dumps(text)}",
                 num_predict=300,
                 temperature=0.3,
@@ -304,7 +334,7 @@ def respond(
     applied, notes = _apply(db, patient, intent["actions"], channel, open_tasks)
 
     if flags:
-        reply = " ".join(dict.fromkeys(f for f, _ in flags))
+        reply = " ".join(dict.fromkeys(_for_patient(f, patient) for f, _ in flags))
         if notes:
             reply += " " + " ".join(notes)
     elif provider != "fallback" and intent["reply"]:
@@ -323,6 +353,7 @@ def respond(
         )
     reply = reply[:MAX_REPLY_CHARS]
 
-    db.add(Message(patient_id=patient.id, sender="copilot", channel=channel, text=reply))
+    if record_reply:
+        db.add(Message(patient_id=patient.id, sender="copilot", channel=channel, text=reply))
     db.commit()
     return {"reply": reply, "actions": applied, "flagged": bool(flags), "provider": provider}

@@ -20,6 +20,9 @@ import type {
   TimelineEvent,
   WearableConnection,
   WorklistResponse,
+  AppLinkCandidates,
+  AppLinkResult,
+  ContactResult,
 } from './types'
 
 export function useWorklist() {
@@ -278,6 +281,49 @@ export function useMarkPatientMessagesRead(id: string) {
   return useMutation({
     mutationFn: () => fetchJson(`/api/patients/${id}/messages/read`, { method: 'POST' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['patient', id, 'messages'] }),
+  })
+}
+
+/** The number the console texts. A number already on another chart is a 409
+ *  unless `force` moves it here; the server keeps one number per patient. */
+export function useUpdateContact(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { phone: string | null; force?: boolean }) =>
+      fetchJson<ContactResult>(`/api/patients/${id}/contact`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['patient', id] })
+      qc.invalidateQueries({ queryKey: ['worklist'] })
+    },
+  })
+}
+
+export function useAppLinkCandidates(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['patient', id, 'app-link-candidates'],
+    queryFn: () => fetchJson<AppLinkCandidates>(`/api/patients/${id}/app-link/candidates`),
+    enabled,
+  })
+}
+
+/** Fold an app sign-up (another patient record) into this chart. The other
+ *  record is deleted server-side, so every cache that could name it goes. */
+export function useLinkApp(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (fromPatientId: string) =>
+      fetchJson<AppLinkResult>(`/api/patients/${id}/app-link`, {
+        method: 'POST',
+        body: JSON.stringify({ from_patient_id: fromPatientId }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['patient'] })
+      qc.invalidateQueries({ queryKey: ['worklist'] })
+      qc.invalidateQueries({ queryKey: ['notifications'] })
+    },
   })
 }
 

@@ -32,7 +32,11 @@ os.environ["JUNCTION_INGEST_HEART_RATE_SAMPLES"] = "false"
 # run send a real text — blank keys keep the SMS channel on its stub path.
 os.environ["SENDBLUE_API_KEY"] = ""
 os.environ["SENDBLUE_API_SECRET"] = ""
+os.environ["SENDBLUE_WEBHOOK_SECRET"] = ""  # the inbound route answers 503 until a test sets one
+os.environ["SENDBLUE_FROM_NUMBER"] = ""
 os.environ["CARE_TEAM_PHONES"] = ""
+os.environ["CHECKIN_BASE_URL"] = ""
+os.environ["MOBILE_OTP_REQUIRED"] = "false"
 
 from datetime import date  # noqa: E402
 
