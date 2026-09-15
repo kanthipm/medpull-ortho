@@ -30,14 +30,6 @@ HOSPITALS: list[HospitalSpec] = [
     # The demo org: anyone can join it from the app as a general patient, so
     # a demo works with no roster entry. Rename to the partner org's name.
     HospitalSpec("hosp_demo", "MedPull Demo Hospital", "Houston", "TX", "Demo organization"),
-    HospitalSpec("hosp_medpull", "MedPull Orthopedic Institute", "Houston", "TX"),
-    HospitalSpec("hosp_methodist", "Houston Methodist Hospital", "Houston", "TX",
-                 "Houston Methodist"),
-    HospitalSpec("hosp_hermann", "Memorial Hermann Orthopedic & Spine", "Houston", "TX",
-                 "Memorial Hermann"),
-    HospitalSpec("hosp_stlukes", "Baylor St. Luke's Medical Center", "Houston", "TX",
-                 "CommonSpirit"),
-    HospitalSpec("hosp_utsw", "UT Southwestern Medical Center", "Dallas", "TX"),
 ]
 
 
@@ -97,24 +89,11 @@ PATIENTS: list[PatientSpec] = [
           "Total Knee Replacement (TKA)", 1, None, "", 1),
     _spec("kanthi", "Kanthi", 21, "F", ProcedureType.TKA,
           "Total Knee Replacement (TKA)", 1, None, "", 1),
-    _spec("linda", "Linda Park", 58, "F", ProcedureType.ROTATOR_CUFF,
-          "Rotator Cuff Repair", 10, SourceProvider.FITBIT, "Fitbit Charge 6", 0, "hosp_methodist"),
-    _spec("robert", "Robert Hale", 66, "M", ProcedureType.LUMBAR,
-          "Lumbar Decompression", 6, SourceProvider.OURA, "Oura Ring Gen4", 1, "hosp_hermann"),
-    _spec("sofia", "Sofia Marino", 47, "F", ProcedureType.ANKLE,
-          "Ankle Fracture ORIF", 21, SourceProvider.OURA, "Oura Ring Gen4", 1, "hosp_stlukes"),
-    _spec("aisha", "Aisha Bello", 71, "F", ProcedureType.THA,
-          "Total Hip Replacement (THA)", 15, SourceProvider.APPLE, "Apple Watch SE 3", 2, "hosp_methodist"),
-    _spec("priya", "Priya Nair", 64, "F", ProcedureType.THA,
-          "Total Hip Replacement (THA)", 9, SourceProvider.WITHINGS, "Withings ScanWatch 2", 2, "hosp_utsw"),
-    _spec("grace", "Grace Kim", 69, "F", ProcedureType.THA,
-          "Total Hip Replacement (THA)", 3, SourceProvider.WHOOP, "WHOOP 5.0", 2, "hosp_hermann"),
-    _spec("david", "David Osei", 24, "M", ProcedureType.ACL,
-          "ACL Reconstruction", 34, SourceProvider.APPLE, "Apple Watch Ultra 3", 0, "hosp_stlukes"),
-    _spec("james", "James Whitfield", 70, "M", ProcedureType.TKA,
-          "Total Knee Replacement (TKA)", 40, SourceProvider.FITBIT, "Fitbit Sense 3", 2, "hosp_utsw"),
-    _spec("elena", "Elena Ruiz", 33, "F", ProcedureType.MENISCUS,
-          "Meniscus Repair", 19, SourceProvider.APPLE, "Apple Watch Series 10", 0, "hosp_methodist"),
+    # Demo patients for MedPull Demo Hospital
+    _spec("medha", "Medha Rao", 35, "F", ProcedureType.NONE,
+          "General care", 0, None, "", 0, "hosp_demo"),
+    _spec("ana", "Ana Lee", 28, "F", ProcedureType.TKA,
+          "Total Knee Replacement (TKA)", 5, SourceProvider.APPLE, "Apple Watch Series 9", 1, "hosp_demo"),
 ]
 
 
