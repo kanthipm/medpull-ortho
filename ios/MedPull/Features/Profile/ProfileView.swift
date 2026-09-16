@@ -1,6 +1,8 @@
 import SwiftUI
+import UIKit
 
 struct ProfileView: View {
+    private var voice: SpokenVoice { SpokenVoice.shared }
     @Environment(AppModel.self) private var app
     @Environment(Appearance.self) private var appearance
     @Environment(\.dismiss) private var dismiss
@@ -56,14 +58,24 @@ struct ProfileView: View {
                     Text("System follows your iPhone's Display & Brightness setting.")
                 }
                 Section {
-                    row("Spoken replies", SpeechController.voiceLabel)
+                    // Read through the observable so this row updates the
+                    // moment the voice changes — the person is coming straight
+                    // back from Settings having just downloaded one, and a
+                    // stale label here is what makes it look like it failed.
+                    row("Spoken replies", voice.label)
+                    if !voice.hasWantedVoice {
+                        Button("Open Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                    }
                 } header: {
                     Text("Voice")
                 } footer: {
-                    // We can't download a voice for them, so say where it is.
-                    Text(SpeechController.hasNaturalVoice
-                         ? "The voice MedPull talks back with on the Talk tab."
-                         : "This iPhone only has Apple's basic voice, which sounds flat. Settings → Accessibility → Spoken Content → Voices → English has free Premium voices (try Ava or Evan) — download one and MedPull uses it automatically.")
+                    // No API can download a voice, so the copy has to say so
+                    // and say exactly where it is.
+                    Text(voice.advice)
                 }
                 Section {
                     TextField("Server URL", text: $serverURL)

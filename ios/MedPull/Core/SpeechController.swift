@@ -21,55 +21,12 @@ final class SpeechController {
     private let synthesizer = AVSpeechSynthesizer()
     private let synthDelegate = SynthDelegate()
 
-    /// Voices that are worse than the compact default, or that Apple doesn't
-    /// let a third-party app use at all.
-    private static let unusableVoicePrefixes = [
-        "com.apple.eloquence",               // formant voices; robotic by design
-        "com.apple.speech.synthesis.voice",  // novelty (Albert, Bells, Bad News)
-        "com.apple.ttsbundle.siri",          // Siri's voices are off-limits to us
-    ]
-
-    /// The best voice installed on this phone, resolved once.
-    ///
-    /// `AVSpeechSynthesisVoice(language:)` hands back the *compact* voice — the
-    /// flat, robotic one — even when something far better is installed. iOS 16
-    /// added enhanced and premium (neural) voices: free, but over 100MB each, so
-    /// the phone only has them once someone downloads them in Settings →
-    /// Accessibility → Spoken Content → Voices. Prefer the best available and
-    /// fall back gracefully, since we can't trigger that download ourselves.
-    static let bestVoice: AVSpeechSynthesisVoice? = {
-        let usable = AVSpeechSynthesisVoice.speechVoices().filter { voice in
-            !unusableVoicePrefixes.contains { voice.identifier.hasPrefix($0) }
-        }
-        let enUS = usable.filter { $0.language == "en-US" }
-        return (enUS.isEmpty ? usable : enUS).min { rank($0) < rank($1) }
-    }()
-
-    /// Best first: highest quality, then a known-good name so a phone with two
-    /// premium voices installed picks the same one every launch.
-    private static let preferredNames = ["Ava", "Evan", "Zoe", "Nathan", "Joelle", "Samantha"]
-
-    private static func rank(_ voice: AVSpeechSynthesisVoice) -> (Int, Int, String) {
-        (-voice.quality.rawValue,
-         preferredNames.firstIndex(of: voice.name) ?? preferredNames.count,
-         voice.name)
-    }
-
-    /// What the phone will actually speak with, for the Profile screen.
-    static var voiceLabel: String {
-        guard let voice = bestVoice else { return "System default" }
-        switch voice.quality {
-        case .premium: return "\(voice.name) (Premium)"
-        case .enhanced: return "\(voice.name) (Enhanced)"
-        default: return voice.name
-        }
-    }
-
-    /// False when only the compact voice is installed, which is when the
-    /// spoken replies sound like a 2011 satnav.
-    static var hasNaturalVoice: Bool {
-        (bestVoice?.quality.rawValue ?? 0) > AVSpeechSynthesisVoiceQuality.default.rawValue
-    }
+    /// Which voice to speak with lives in `SpokenVoice`, which re-resolves
+    /// itself when the system's voice list changes. It used to be a one-shot
+    /// `static let` here, which meant a voice downloaded while the app was
+    /// running was never picked up.
+    static var voiceLabel: String { SpokenVoice.shared.label }
+    static var hasNaturalVoice: Bool { SpokenVoice.shared.isNatural }
 
     init() {
         synthesizer.delegate = synthDelegate
@@ -162,11 +119,27 @@ final class SpeechController {
     func speak(_ text: String) {
         guard !text.isEmpty else { return }
         stopSpeaking()
+
+        // Listening leaves the session in .playAndRecord with mode
+        // .measurement, and .measurement deliberately strips output
+        // processing and gain — speaking through it is thin and quiet rather
+        // than absent, which is exactly what "the voice doesn't work" sounds
+        // like. Every utterance therefore puts the session back to playback
+        // first. The failure is reported instead of being swallowed by `try?`:
+        // an unexplained silence is the worst version of this bug.
         let audio = AVAudioSession.sharedInstance()
-        try? audio.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-        try? audio.setActive(true)
+        do {
+            try audio.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try audio.setActive(true)
+        } catch {
+            errorText = "Couldn't switch to playback audio: \(error.localizedDescription)"
+            // Fall through and speak anyway — a quiet reply beats none.
+        }
+
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = Self.bestVoice ?? AVSpeechSynthesisVoice(language: "en-US")
+        // `voiceWithLanguage` is the fallback, not the default: it hands back
+        // the compact voice, which is the flat one this all started with.
+        utterance.voice = SpokenVoice.shared.voice ?? AVSpeechSynthesisVoice(language: "en-US")
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.95
         isSpeaking = true
         synthesizer.speak(utterance)
