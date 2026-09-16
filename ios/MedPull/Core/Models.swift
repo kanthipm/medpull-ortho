@@ -207,11 +207,19 @@ struct CompleteResponse: Codable {
 struct ChatMessage: Codable, Identifiable, Hashable {
     let id: Int
     let sender: String   // patient | care_team | copilot
+    /// Who stands behind the message: "care_team" when a clinician wrote,
+    /// approved or triggered it, "ai" when the app answered for itself.
+    /// Older rows omit it, and untagged is the right default for those.
+    let authoredBy: String?
+    /// The clinician's name, when one is behind it. Nil for the copilot.
+    let authorName: String?
     let channel: String
     let text: String
     let createdAt: String?
     let deliveryStatus: String?
     let read: Bool
+
+    var fromClinician: Bool { authoredBy == "care_team" }
 }
 
 struct MessagesResponse: Codable { let messages: [ChatMessage] }

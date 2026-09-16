@@ -67,6 +67,13 @@ class Message(Base):
     read_by_patient_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     read_by_care_team_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # sent | delivered | failed | None (nothing was sent out-of-band for this line)
+    # Who stands behind this message: "care_team" when a clinician wrote,
+    # approved or triggered it, "ai" when the copilot produced it on its own.
+    # NULL on rows written before the distinction existed, read as "ai" —
+    # untagged is the default everywhere, and only a clinician's name is a
+    # claim worth making. ``sender`` says which side of the thread a message
+    # is on; this says whether a person authorised what it claims.
+    authored_by: Mapped[str | None] = mapped_column(String, nullable=True)
     delivery_status: Mapped[str | None] = mapped_column(String, nullable=True)
     # Why a send failed, in the provider's own words ("This phone number is
     # not defined."). Without it a clinician saw "not delivered" and had no

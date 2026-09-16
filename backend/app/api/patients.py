@@ -309,11 +309,28 @@ def _task_view(t: AdherenceTask) -> dict:
     }
 
 
-def _message_view(m) -> dict:
+def _authorship(m, db: Session | None = None) -> dict:
+    """Who stands behind this message, for the UI to label.
+
+    ``kind`` is "care_team" only when a clinician wrote, approved or triggered
+    it; everything else reads as "ai", including the rows written before the
+    column existed. The copilot is the default and the UI shows no badge for
+    it — a tag is a claim, and only a person's name is worth making one about.
+    """
+    kind = m.authored_by or ("care_team" if m.sender == "care_team" else "ai")
+    name = None
+    if kind == "care_team" and m.sender_id and db is not None:
+        member = db.get(CareTeamMember, m.sender_id)
+        name = member.name if member else None
+    return {"kind": kind, "name": name}
+
+
+def _message_view(m, db: Session | None = None) -> dict:
     return {
         "id": m.id,
         "sender": m.sender,
         "sender_id": m.sender_id,
+        "authored_by": _authorship(m, db),
         "channel": m.channel,
         "text": m.text,
         "created_at": m.created_at.isoformat(),
@@ -377,16 +394,30 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
     if not text:
         raise HTTPException(status_code=422, detail="Message text is required")
     sender_id = body.sender_id or patient.assigned_provider_id
-    if db.get(CareTeamMember, sender_id) is None:
+    member = db.get(CareTeamMember, sender_id)
+    if member is None:
         raise HTTPException(status_code=404, detail=f"Unknown sender: {sender_id}")
+    # A clinician typed or approved this, so it is theirs to stand behind and
+    # it goes out under their name. The stored copy keeps the text as written;
+    # only the outbound text carries the tag and loses the patient's name.
     message = Message(
         patient_id=patient.id, sender="care_team", sender_id=sender_id, channel="console",
-        text=text,
+        text=text, authored_by="care_team",
     )
     db.add(message)
     delivery = None
     if patient.phone:
-        delivery = sendblue.send_sms(patient.phone, f"From your MedPull care team: {text}")
+        # The link is only worth sending when it goes somewhere the patient
+        # can use. Someone already on the app has this message in their thread
+        # and can simply reply to the text; someone who has never enrolled has
+        # one useful destination, which is the app itself.
+        from app.identity import app_status
+
+        enrolled = app_status(db, patient)["ever_enrolled"]
+        delivery = sendblue.send_care_team_message(
+            patient.phone, text, member=member, patient_name=patient.name,
+            link=None if enrolled else settings.app_download_url,
+        )
         message.delivery_status = "sent" if delivery.sent else "failed"
         message.delivery_detail = None if delivery.sent else delivery.detail
         message.external_handle = delivery.message_handle
@@ -400,7 +431,7 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
     return {
         "status": status,
         "detail": delivery.detail if delivery else "patient has no phone number on file",
-        "message": _message_view(message),
+        "message": _message_view(message, db),
     }
 
 
@@ -412,7 +443,7 @@ def list_messages(patient_id: str, db: Session = Depends(get_db)) -> dict:
     rows = db.scalars(
         select(Message).where(Message.patient_id == patient_id).order_by(Message.id).limit(300)
     ).all()
-    return {"messages": [_message_view(m) for m in rows]}
+    return {"messages": [_message_view(m, db) for m in rows]}
 
 
 @router.post("/{patient_id}/messages/read")

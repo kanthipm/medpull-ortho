@@ -311,6 +311,13 @@ export interface PatientMessage {
   id: number
   sender: 'patient' | 'care_team' | 'copilot'
   sender_id: string | null
+  /**
+   * Who stands behind the message, as opposed to which side of the thread it
+   * is on. `care_team` means a clinician wrote, approved or triggered it and
+   * it carries their name; `ai` is the copilot speaking for itself and shows
+   * no badge, because untagged is the default the patient already assumes.
+   */
+  authored_by: { kind: 'care_team' | 'ai'; name: string | null }
   channel: 'app' | 'sms' | 'voice' | 'console'
   text: string
   created_at: string

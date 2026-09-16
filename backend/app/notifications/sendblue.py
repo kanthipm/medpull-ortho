@@ -12,6 +12,7 @@ inside the 25 s S3 write-lock TTL, and the in-app alert is the durable fallback.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 
 import httpx
@@ -195,8 +196,87 @@ def _post_message(phone: str, content: str) -> httpx.Response:
 # Deliberately carries no patient data: Sendblue sees a phone number, this
 # sentence, and an opaque one-time URL. The page greets by name server-side.
 CHECKIN_TEMPLATE = (
-    "Your MedPull recovery check-in is ready. Tap here to begin: {checkin_url}"
+    "Your MedPull recovery check-in is ready."
 )
+
+
+# --- composition: attribution, the tappable link, and name redaction ---------
+#
+# Three rules every outbound patient text obeys, applied in one place so a new
+# send path cannot quietly opt out of them.
+#
+# 1. Attribution. A message the copilot wrote on its own carries no tag — that
+#    is the default and the patient already knows they are talking to an app.
+#    A message a clinician wrote, approved or triggered is tagged with their
+#    name, because "your surgeon says this" and "the app says this" are not
+#    the same claim and the patient must be able to tell them apart.
+# 2. No name. Sendblue, the carrier and anyone reading the lock screen see a
+#    phone number and a sentence, never who the patient is. The app greets
+#    them by name behind their session; a text never does.
+# 3. One tappable link, labelled, on its own line, so iMessage renders it as a
+#    link preview rather than burying it mid-sentence.
+
+CARE_TEAM_TAG = "{name} (your care team)"
+
+
+def clinician_tag(member: CareTeamMember | None) -> str:
+    """The attribution prefix for a clinician-sanctioned text, or "" for the
+    copilot's own words. Names already carry their credential ("Dr. Chen",
+    "Maya Torres, RN"), so the role is not repeated."""
+    if member is None or not (member.name or "").strip():
+        return ""
+    return CARE_TEAM_TAG.format(name=member.name.strip())
+
+
+def redact_name(content: str, patient_name: str | None) -> str:
+    """Take the patient's own name back out of an outbound text.
+
+    The templates never add one, but a clinician typing in the console and a
+    model writing a reply both reach for "Hi Marcus" without thinking, and
+    that is the one thing these texts must not carry. Matches the full name
+    and each part of it on a word boundary, case-insensitively, and repairs
+    the punctuation the removal leaves behind ("Hi , how" -> "Hi, how").
+    """
+    if not content or not patient_name:
+        return content
+    parts = [p for p in re.split(r"\s+", patient_name.strip()) if len(p) > 2]
+    candidates = sorted({patient_name.strip(), *parts}, key=len, reverse=True)
+    out = content
+    for candidate in candidates:
+        out = re.sub(rf"\b{re.escape(candidate)}\b", "", out, flags=re.IGNORECASE)
+    # Repair what the cut leaves behind: "Hi , how" -> "Hi, how", a line that
+    # now opens on the dash that followed the name, and a sentence whose first
+    # word lost its capital because the name was carrying it.
+    out = re.sub(r"[ \t]+([,.!?;:])", r"\1", out)
+    out = re.sub(r"(?m)^[ \t]*[,–—-][ \t]*", "", out)
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    out = out.strip()
+    if out and out[0].islower():
+        out = out[0].upper() + out[1:]
+    return out
+
+
+def compose(
+    body: str,
+    *,
+    patient_name: str | None = None,
+    member: CareTeamMember | None = None,
+    link: str | None = None,
+    link_label: str = "Open in MedPull",
+) -> str:
+    """One outbound text: attribution, then the message, then the link.
+
+    ``member`` set means a clinician stands behind this message and it is
+    tagged with their name; left unset it is the copilot's own words and
+    carries no tag, which is the default state of every automated text.
+    """
+    text = redact_name((body or "").strip(), patient_name)
+    tag = clinician_tag(member)
+    if tag:
+        text = f"{tag}: {text}" if text else tag
+    if link:
+        text = f"{text}\n\n{link_label}: {link}" if text else f"{link_label}: {link}"
+    return text
 
 
 @dataclass(frozen=True)
@@ -305,16 +385,25 @@ def _error_reason(response: httpx.Response) -> str:
     return ""
 
 
-def send_checkin_message(phone_number: str, checkin_url: str) -> CheckinSendResult:
-    """Text a patient their check-in link. With either key unset, sends nothing."""
-    return send_sms(phone_number, CHECKIN_TEMPLATE.format(checkin_url=checkin_url))
+def send_checkin_message(
+    phone_number: str, checkin_url: str, *, member: CareTeamMember | None = None
+) -> CheckinSendResult:
+    """Text a patient their check-in link. With either key unset, sends nothing.
+
+    ``member`` tags the text when a clinician asked for this check-in; left
+    unset it is the copilot's routine invitation and carries no tag.
+    """
+    return send_sms(
+        phone_number,
+        compose(CHECKIN_TEMPLATE, member=member, link=checkin_url,
+                link_label="Start your check-in"),
+    )
 
 
 # Task invitations carry the title only — no name, no clinical detail. "1" is
 # the reply the inbound webhook treats as "walk me through it by text".
 TASK_TEMPLATE = (
-    "MedPull: a new task is ready — {title}.\n"
-    "Open it: {task_url}\n"
+    "A new task is ready — {title}.\n"
     "Or reply 1 to do it right here by text."
 )
 
@@ -328,23 +417,72 @@ WELCOME_TEMPLATE = (
     "tasks in the app. Reply to this number any time to reach them."
 )
 INVITE_TEMPLATE = (
-    "Your care team set you up on MedPull to follow your recovery. Get the app "
-    "here to start: {app_url}"
+    "Your care team set you up on MedPull to follow your recovery."
 )
 
 
 def send_welcome_message(phone_number: str) -> CheckinSendResult:
     """The first text a patient gets after they finish onboarding in the app."""
-    return send_sms(phone_number, WELCOME_TEMPLATE)
+    return send_sms(phone_number, compose(WELCOME_TEMPLATE))
 
 
-def send_invite_message(phone_number: str) -> CheckinSendResult:
-    """Text a patient a clinician just added, pointing them at the app."""
-    return send_sms(phone_number, INVITE_TEMPLATE.format(app_url=settings.app_download_url))
+def send_invite_message(
+    phone_number: str, *, member: CareTeamMember | None = None
+) -> CheckinSendResult:
+    """Text a patient a clinician just added, pointing them at the app.
+
+    A clinician did this by hand, so the invitation says who — an unexplained
+    text about a medical app is exactly the kind a patient ignores.
+    """
+    return send_sms(
+        phone_number,
+        compose(INVITE_TEMPLATE, member=member, link=settings.app_download_url,
+                link_label="Get the app"),
+    )
 
 
-def send_task_message(phone_number: str, title: str, task_url: str) -> CheckinSendResult:
-    return send_sms(phone_number, TASK_TEMPLATE.format(title=title[:80], task_url=task_url))
+def send_task_message(
+    phone_number: str,
+    title: str,
+    task_url: str,
+    *,
+    member: CareTeamMember | None = None,
+    patient_name: str | None = None,
+) -> CheckinSendResult:
+    """Text a patient about a task. Tagged when a clinician assigned it, which
+    is the usual case; an automatically scheduled task carries no tag."""
+    return send_sms(
+        phone_number,
+        compose(
+            TASK_TEMPLATE.format(title=title[:80]),
+            patient_name=patient_name,
+            member=member,
+            link=task_url,
+            link_label="Open the task",
+        ),
+    )
+
+
+def send_care_team_message(
+    phone_number: str,
+    text: str,
+    *,
+    member: CareTeamMember | None = None,
+    patient_name: str | None = None,
+    link: str | None = None,
+    link_label: str = "Get the app",
+) -> CheckinSendResult:
+    """A message written in the console, or by the copilot on the thread.
+
+    The one send path where the body is free text somebody typed, so it is
+    also the one most likely to carry the patient's name — ``compose`` takes
+    it back out.
+    """
+    return send_sms(
+        phone_number,
+        compose(text, patient_name=patient_name, member=member, link=link,
+                link_label=link_label),
+    )
 
 
 def send_verification_code(phone_number: str, code: str) -> CheckinSendResult:

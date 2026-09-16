@@ -49,9 +49,11 @@ def test_sends_formatted_message_with_normalized_phone(configured, monkeypatch):
     assert call["headers"] == {"sb-api-key-id": "key-id", "sb-api-secret-key": "key-secret"}
     assert call["json"] == {
         "number": "+15124917035",
+        # The link sits on its own labelled line so iMessage renders it as a
+        # tappable link rather than burying it mid-sentence.
         "content": (
-            "Your MedPull recovery check-in is ready. "
-            "Tap here to begin: https://medpull.example/checkin/abc"
+            "Your MedPull recovery check-in is ready.\n\n"
+            "Start your check-in: https://medpull.example/checkin/abc"
         ),
         "from_number": "+15049081262",
     }

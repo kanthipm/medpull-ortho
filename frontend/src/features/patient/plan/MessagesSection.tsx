@@ -126,7 +126,11 @@ export default function MessagesSection({
 function Bubble({ m, first }: { m: PatientMessage; first: string }) {
   const inbound = m.sender === 'patient'
   const Icon = CHANNEL_ICON[m.channel] ?? Smartphone
-  const who = inbound ? first : m.sender === 'copilot' ? 'Copilot' : 'Care team'
+  // A clinician's message says so by name; the copilot's says nothing, which
+  // is what "AI is the default" means — a badge is a claim, and only a person
+  // standing behind the words is a claim worth printing.
+  const clinician = !inbound && m.authored_by?.kind === 'care_team' ? m.authored_by.name : null
+  const who = inbound ? first : clinician ? clinician : 'Copilot'
   const status = inbound
     ? { label: 'received', pill: 'bg-soft text-muted' }
     : m.delivery_status === 'delivered'
@@ -153,6 +157,11 @@ function Bubble({ m, first }: { m: PatientMessage; first: string }) {
             <span aria-label="Unread" className="h-1.5 w-1.5 rounded-full bg-brand" />
           )}
           <span>{who}</span>
+          {clinician && (
+            <span className="chip bg-brand-tint normal-case tracking-normal text-brand">
+              Care team approved
+            </span>
+          )}
           <span className="inline-flex items-center gap-1">
             <Icon size={10} /> {m.channel}
           </span>

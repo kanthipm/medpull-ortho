@@ -31,7 +31,7 @@ from app.models.checkin import Checkin, CheckinMessage
 from app.models.enums import AdherenceStatus, NotificationChannel
 from app.models.mobile import Message
 from app.models.notification import Notification
-from app.models.patient import Patient
+from app.models.patient import CareTeamMember, Patient
 from app.notifications import sendblue
 
 logger = logging.getLogger(__name__)
@@ -408,6 +408,19 @@ def create_task(
     return task, result
 
 
+def assigning_clinician(db: Session, task: AdherenceTask) -> CareTeamMember | None:
+    """The clinician who assigned this task, when one did.
+
+    ``create_task`` records them on the payload. A task with no ``created_by``
+    was produced by the system — a recurring schedule firing, a plan step the
+    copilot executed — and nobody's name belongs on it.
+    """
+    created_by = (task.payload or {}).get("created_by")
+    if not created_by:
+        return None
+    return db.get(CareTeamMember, created_by)
+
+
 def dispatch(
     db: Session, task: AdherenceTask, patient: Patient, base_url: str
 ) -> sendblue.CheckinSendResult:
@@ -418,13 +431,24 @@ def dispatch(
         return sendblue.CheckinSendResult(sent=False, detail="patient has no phone number on file")
     token = mint_token(task)
     url = task_url(base_url, token) if base_url else deep_link(task)
-    result = sendblue.send_task_message(patient.phone, task.title, url)
+    # A task a clinician assigned goes out under their name: "do this" carries
+    # different weight from a person than from an app. A task the system
+    # scheduled has no clinician behind it and stays untagged.
+    member = assigning_clinician(db, task)
+    result = sendblue.send_task_message(
+        patient.phone, task.title, url, member=member, patient_name=patient.name
+    )
     db.add(
         Message(
             patient_id=patient.id,
-            sender="copilot",
+            sender="care_team" if member is not None else "copilot",
+            sender_id=member.id if member is not None else None,
             channel="sms",
-            text=sendblue.TASK_TEMPLATE.format(title=task.title[:80], task_url=url),
+            text=sendblue.compose(
+                sendblue.TASK_TEMPLATE.format(title=task.title[:80]),
+                member=member, link=url, link_label="Open the task",
+            ),
+            authored_by="care_team" if member is not None else "ai",
             delivery_status="sent" if result.sent else "failed",
             delivery_detail=None if result.sent else result.detail,
             external_handle=result.message_handle,
@@ -820,6 +844,9 @@ def handle_inbound_sms(
                          record_reply=False, default_to_care_team=True)
         reply, kind = result["reply"], "message"
 
+    # The copilot answering a text speaks for itself: no clinician tag, and
+    # no name — compose strips one the model may have reached for.
+    reply = sendblue.compose(reply, patient_name=patient.name)
     delivery = sendblue.send_sms(phone, reply)
     db.add(
         Message(
@@ -827,6 +854,7 @@ def handle_inbound_sms(
             sender="copilot",
             channel="sms",
             text=reply,
+            authored_by="ai",
             delivery_status="sent" if delivery.sent else "failed",
             delivery_detail=None if delivery.sent else delivery.detail,
             external_handle=delivery.message_handle,

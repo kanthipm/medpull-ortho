@@ -96,7 +96,13 @@ struct Bubble: View {
 
     private var mine: Bool { message.sender == "patient" }
 
+    /// A clinician's message is signed with their name; the app's own words
+    /// are not, because that is the patient's default assumption and a badge
+    /// on everything would make the one that matters invisible.
     private var who: String {
+        if message.fromClinician {
+            return message.authorName ?? "Care team"
+        }
         switch message.sender {
         case "care_team": return "Care team"
         case "copilot": return message.channel == "sms" ? "MedPull · text" : "MedPull"
@@ -116,6 +122,13 @@ struct Bubble: View {
                     .strokeBorder(mine ? .clear : MP.line))
             HStack(spacing: 4) {
                 Text(who)
+                if message.fromClinician {
+                    Text("Care team approved")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(MP.brandTint))
+                        .foregroundStyle(MP.brand)
+                }
                 Text("·")
                 Text(Dates.relative(message.createdAt))
                 if message.deliveryStatus == "failed" {

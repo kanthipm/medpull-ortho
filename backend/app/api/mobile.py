@@ -238,10 +238,38 @@ def _task_view(t: AdherenceTask) -> dict[str, Any]:
     }
 
 
-def _message_view(m: Message) -> dict[str, Any]:
+def _authored_by(m: Message) -> str:
+    """"care_team" when a clinician stands behind this message, else "ai".
+
+    Rows written before the column existed fall back to what ``sender`` says,
+    so an old thread still labels a clinician's message correctly.
+    """
+    return m.authored_by or ("care_team" if m.sender == "care_team" else "ai")
+
+
+def _author_names(db: Session, rows: list[Message]) -> dict[str, str]:
+    """Clinician names for a page of messages, in one query rather than one
+    per row — a thread is read on every poll of the app's message screen."""
+    ids = {m.sender_id for m in rows if m.sender_id and _authored_by(m) == "care_team"}
+    if not ids:
+        return {}
+    from app.models.patient import CareTeamMember
+
+    return {
+        member.id: member.name
+        for member in db.scalars(select(CareTeamMember).where(CareTeamMember.id.in_(ids))).all()
+    }
+
+
+def _message_view(m: Message, author_names: dict[str, str] | None = None) -> dict[str, Any]:
+    kind = _authored_by(m)
     return {
         "id": m.id,
         "sender": m.sender,
+        # The patient is told who is speaking: their clinician by name, or
+        # nothing at all, which is the app answering for itself.
+        "authored_by": kind,
+        "author_name": (author_names or {}).get(m.sender_id or "") if kind == "care_team" else None,
         "channel": m.channel,
         "text": m.text,
         "created_at": _iso(m.created_at),
@@ -814,7 +842,7 @@ def list_messages(
         .order_by(Message.id.desc())
         .limit(MESSAGE_PAGE)
     ).all()
-    return {"messages": [_message_view(m) for m in reversed(rows)]}
+    return {"messages": [_message_view(m, _author_names(db, rows)) for m in reversed(rows)]}
 
 
 class MessageBody(BaseModel):

@@ -264,7 +264,10 @@ def test_console_sets_the_phone_and_refuses_a_number_on_another_chart(client, db
     assert db.get(Patient, other_id).phone is None
     # now the console reaches the phone
     r = client.post("/api/patients/steve/actions/message", json={"text": "Hello again"}).json()
-    assert r["status"] == "sent_sms" and sb.last().endswith("Hello again")
+    # A console message goes out under the clinician's name: the patient is
+    # told a person sent this, not the app.
+    assert r["status"] == "sent_sms"
+    assert sb.last().startswith("Dr. Alvarez (your care team): Hello again")
     # inbound from that number lands on steve, not the sign-up
     out = _text(client, "+15125550440", "1")
     assert out["matched_patient"] is True
@@ -863,7 +866,7 @@ def test_asking_for_a_new_link_keeps_the_one_already_texted_working(client, db, 
     pid = joined["me"]["patient"]["id"]
     client.post(f"/api/patients/{pid}/actions/assign-task",
                 json={"title": "Evening dose", "kind": "medication"})
-    first_url = [c for _, c in sb.sent if "/t/" in c][-1].split("Open it: ")[1].split("\n")[0]
+    first_url = [c for _, c in sb.sent if "/t/" in c][-1].split("Open the task: ")[1].split("\n")[0]
     first_token = first_url.rsplit("/", 1)[1]
     assert client.get(f"/api/tasks/{first_token}").status_code == 200
     assert _text(client, "+15125550560", "2")["kind"] == "link_sent"

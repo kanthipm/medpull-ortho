@@ -107,14 +107,23 @@ def _for_patient(text: str, patient: Patient) -> str:
     return text
 
 
-def _context(db: Session, patient: Patient, open_tasks: list[AdherenceTask]) -> str:
+def _context(
+    db: Session, patient: Patient, open_tasks: list[AdherenceTask], channel: str = "app"
+) -> str:
     from app.engine.pipeline import latest_assessment
 
     assessment = latest_assessment(db, patient.id)
     postop = None
     if assessment is not None:
         postop = (assessment.analytics or {}).get("postop_day")
-    lines = [f"Patient first name: {patient.name.split()[0]}"]
+    # A text is not a private surface: it sits on a lock screen, and the
+    # carrier and Sendblue both see it. So the name goes in only when the
+    # reply stays inside the app, where the patient is already signed in.
+    # ``sendblue.compose`` strips one that slips through anyway.
+    if channel == "sms":
+        lines = ["Patient name: do not use it, and do not greet by name — this reply is a text"]
+    else:
+        lines = [f"Patient first name: {patient.name.split()[0]}"]
     if tasks.surgical(patient):
         lines += [
             f"Procedure: {patient.procedure_display}",
@@ -315,7 +324,7 @@ def respond(
         try:
             raw = complete_json(
                 SYSTEM_PROMPT if tasks.surgical(patient) else GENERAL_SYSTEM_PROMPT,
-                f"{_context(db, patient, open_tasks)}\n\nPatient said: {json.dumps(text)}",
+                f"{_context(db, patient, open_tasks, channel)}\n\nPatient said: {json.dumps(text)}",
                 num_predict=300,
                 temperature=0.3,
             )
@@ -354,6 +363,9 @@ def respond(
     reply = reply[:MAX_REPLY_CHARS]
 
     if record_reply:
-        db.add(Message(patient_id=patient.id, sender="copilot", channel=channel, text=reply))
+        # The copilot's own words: no clinician stands behind them, so the
+        # thread records them as AI-authored and the UI leaves them untagged.
+        db.add(Message(patient_id=patient.id, sender="copilot", channel=channel,
+                       text=reply, authored_by="ai"))
     db.commit()
     return {"reply": reply, "actions": applied, "flagged": bool(flags), "provider": provider}

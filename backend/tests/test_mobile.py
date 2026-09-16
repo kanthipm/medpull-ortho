@@ -661,8 +661,10 @@ def test_creating_a_patient_texts_an_invite_with_the_app_link(client, db, monkey
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["invite"] == {"sent": True, "detail": "sent"}
-    assert sent == [("+15125550388", sendblue.INVITE_TEMPLATE.format(
-        app_url="https://example.test/get-app"))]
+    assert sent == [(
+        "+15125550388",
+        f"{sendblue.INVITE_TEMPLATE}\n\nGet the app: https://example.test/get-app",
+    )]
     assert "Invite Test" not in sent[0][1]
     pid = body["patient"]["id"]
     db.expire_all()
