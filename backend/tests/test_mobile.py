@@ -22,17 +22,24 @@ def _forget_patient(db, patient_id: str) -> None:
     the session-scoped seeded database is the roster again afterwards."""
     from sqlalchemy import delete
 
+    from app.models.attachment import Attachment
     from app.models.checkin import Checkin, CheckinMessage
     from app.models.insight import EstablishedBaseline, Insight, RiskAssessment
     from app.models.mobile import PatientSession, PhoneVerification
     from app.models.observation import Observation
+    from app.storage import blobs
 
     checkin_ids = db.scalars(select(Checkin.id).where(Checkin.patient_id == patient_id)).all()
     if checkin_ids:
         db.execute(delete(CheckinMessage).where(CheckinMessage.checkin_id.in_(checkin_ids)))
-    for model in (Checkin, RiskAssessment, Insight, EstablishedBaseline, PatientSession,
-                  PhoneVerification, Message, Notification, AdherenceRecord, AdherenceTask,
-                  Observation):
+    # Files first: the rows are the only record of which objects were this
+    # patient's, and the next test reuses the same slug for its own patient.
+    blobs.delete_keys(list(db.scalars(
+        select(Attachment.storage_key).where(Attachment.patient_id == patient_id)).all()))
+    blobs.delete_patient_blobs(patient_id)
+    for model in (Attachment, Checkin, RiskAssessment, Insight, EstablishedBaseline,
+                  PatientSession, PhoneVerification, Message, Notification, AdherenceRecord,
+                  AdherenceTask, Observation):
         db.execute(delete(model).where(model.patient_id == patient_id))
     db.execute(delete(Patient).where(Patient.id == patient_id))
     db.commit()

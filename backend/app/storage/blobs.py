@@ -92,6 +92,58 @@ def check_type(content_type: str | None) -> str:
     return normalized
 
 
+# The first bytes of each type we accept. A declared content type decides
+# the extension and the header a browser acts on, so it has to be checked
+# against what actually arrived: the bytes never pass through the API on the
+# presigned path, and "image/jpeg" is a claim until something reads it.
+_MAGIC: dict[str, tuple[tuple[int, bytes], ...]] = {
+    "image/jpeg": (((0, b"\xff\xd8\xff"),),),
+    "image/png": (((0, b"\x89PNG\r\n\x1a\n"),),),
+    # ISO-BMFF: a box length, then "ftyp", then a brand.
+    "image/heic": (((4, b"ftyp"),),),
+    "image/heif": (((4, b"ftyp"),),),
+    "image/webp": (((0, b"RIFF"), (8, b"WEBP")),),
+    "application/pdf": (((0, b"%PDF-"),),),
+}
+
+
+def sniff(head: bytes, content_type: str) -> None:
+    """Refuse bytes that are not what they were declared to be.
+
+    Only the front of the file is needed, which is what makes this cheap
+    enough to do on a range read rather than a download.
+    """
+    patterns = _MAGIC.get(content_type)
+    if not patterns:
+        raise BlobError(f"{content_type} is not one we accept")
+    for alternative in patterns:
+        if all(head[offset:offset + len(marker)] == marker for offset, marker in alternative):
+            return
+    raise BlobError(
+        f"That file does not look like {content_type}. Try exporting it again, "
+        "or send it as a JPEG or PDF."
+    )
+
+
+def head_bytes(key: str, count: int = 1024) -> bytes:
+    """The first bytes of a stored object, without fetching the whole thing."""
+    if enabled_s3():
+        from app.aws.storage import client
+
+        try:
+            obj = client().get_object(
+                Bucket=aws_settings.s3_bucket, Key=key, Range=f"bytes=0-{count - 1}"
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise BlobError("That file is no longer available") from exc
+        return obj["Body"].read()
+    path = local_root() / key
+    if not path.is_file():
+        raise BlobError("That file is no longer available")
+    with path.open("rb") as fh:
+        return fh.read(count)
+
+
 def check_size(byte_size: int) -> int:
     if byte_size <= 0:
         raise BlobError("That file is empty")
@@ -125,7 +177,6 @@ def put(key: str, data: bytes, content_type: str) -> StoredBlob:
             ContentType=content_type,
             # A browser must render or download this, never run it.
             ContentDisposition="inline",
-            ServerSideEncryption="AES256",
         )
     else:
         path = local_root() / key
@@ -172,7 +223,7 @@ def read(key: str) -> bytes:
     return path.read_bytes()
 
 
-def download_url(key: str, filename: str | None = None) -> str | None:
+def download_url(key: str, content_type: str, filename: str | None = None) -> str | None:
     """A short-lived URL a client can fetch the bytes from directly, or None
     when there is no object store to presign against (the laptop path, where
     the API streams instead)."""
@@ -180,36 +231,73 @@ def download_url(key: str, filename: str | None = None) -> str | None:
         return None
     from app.aws.storage import client
 
-    params: dict[str, str] = {"Bucket": aws_settings.s3_bucket, "Key": key}
+    # The type the server validated, never whatever is stored on the object:
+    # a file that reached S3 with a scriptable type must not come back as
+    # one. Images are shown inline; anything else is a download.
+    served_type = content_type if content_type in ALLOWED_TYPES else "application/octet-stream"
+    disposition = "inline" if served_type.startswith("image/") else "attachment"
     if filename:
-        # Quotes and newlines out: this lands in a response header.
+        # Quotes, newlines and paths out: this lands in a response header.
         safe = "".join(c for c in filename if c.isalnum() or c in " ._-")[:80]
-        params["ResponseContentDisposition"] = f'inline; filename="{safe}"'
+        disposition = f'{disposition}; filename="{safe}"'
+    params: dict[str, str] = {
+        "Bucket": aws_settings.s3_bucket,
+        "Key": key,
+        "ResponseContentType": served_type,
+        "ResponseContentDisposition": disposition,
+        # A URL that stops working in five minutes must not be sitting in a
+        # shared cache after it does.
+        "ResponseCacheControl": "no-store",
+    }
     return client().generate_presigned_url(
         "get_object", Params=params, ExpiresIn=DOWNLOAD_TTL_S
     )
 
 
-def upload_url(key: str, content_type: str) -> str | None:
-    """A short-lived URL the client may PUT bytes to, bypassing the API's own
-    payload ceiling. None without an object store.
+@dataclass(frozen=True)
+class UploadTicket:
+    """Everything a client needs to send the bytes itself, and nothing more."""
 
-    The signature pins the content type, so a client cannot promise a JPEG
-    and upload something else, and it must send that exact header.
+    url: str
+    fields: dict[str, str]
+    max_bytes: int
+    expires_in: int
+
+
+def upload_ticket(key: str, content_type: str) -> UploadTicket | None:
+    """A short-lived form the client posts the bytes to, bypassing the API's
+    own payload ceiling. None without an object store, where the API takes
+    the bytes itself.
+
+    A presigned POST rather than a presigned PUT, because only the POST
+    policy can bound the body: a signed PUT pins the key and the type but
+    accepts any length up to S3's own five-gigabyte limit, so the size cap
+    would have been advice rather than a rule. The policy states the cap,
+    S3 enforces it, and an oversized body is refused before it lands.
+
+    Server-side encryption is deliberately not signed: the bucket encrypts
+    by default, and signing it would make every client echo an exact
+    ``x-amz-server-side-encryption`` header or get SignatureDoesNotMatch.
     """
     if not enabled_s3():
         return None
     from app.aws.storage import client
 
-    return client().generate_presigned_url(
-        "put_object",
-        Params={
-            "Bucket": aws_settings.s3_bucket,
-            "Key": key,
-            "ContentType": content_type,
-            "ServerSideEncryption": "AES256",
-        },
+    signed = client().generate_presigned_post(
+        Bucket=aws_settings.s3_bucket,
+        Key=key,
+        Fields={"Content-Type": content_type},
+        Conditions=[
+            {"Content-Type": content_type},
+            ["content-length-range", 1, MAX_BYTES],
+        ],
         ExpiresIn=UPLOAD_TTL_S,
+    )
+    return UploadTicket(
+        url=signed["url"],
+        fields={str(k): str(v) for k, v in signed["fields"].items()},
+        max_bytes=MAX_BYTES,
+        expires_in=UPLOAD_TTL_S,
     )
 
 
@@ -253,8 +341,22 @@ def delete(key: str) -> bool:
     return True
 
 
+def delete_keys(keys: list[str]) -> int:
+    """Delete exactly these objects. What a chart's removal uses: a key keeps
+    the patient id it was minted under, and a record merge moves the row to
+    another chart without moving the object, so the rows are the truth about
+    what belongs to whom."""
+    removed = 0
+    for key in keys:
+        if delete(key):
+            removed += 1
+    return removed
+
+
 def delete_patient_blobs(patient_id: str) -> int:
-    """Every file for one patient, for a chart that is being removed."""
+    """Everything still sitting under one patient's prefix. A sweep for
+    orphans — bytes uploaded against a ticket whose row never confirmed —
+    not the authoritative delete, which is ``delete_keys``."""
     prefix = f"{PREFIX}/{patient_id}/"
     if enabled_s3():
         from app.aws.storage import client

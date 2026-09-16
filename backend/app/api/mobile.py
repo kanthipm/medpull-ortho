@@ -261,7 +261,11 @@ def _author_names(db: Session, rows: list[Message]) -> dict[str, str]:
     }
 
 
-def _message_view(m: Message, author_names: dict[str, str] | None = None) -> dict[str, Any]:
+def _message_view(
+    m: Message,
+    author_names: dict[str, str] | None = None,
+    attachments: dict[int, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     kind = _authored_by(m)
     return {
         "id": m.id,
@@ -275,6 +279,9 @@ def _message_view(m: Message, author_names: dict[str, str] | None = None) -> dic
         "created_at": _iso(m.created_at),
         "delivery_status": m.delivery_status,
         "delivery_detail": m.delivery_detail,
+        # Files on this line. Always a list, so a client never has to tell
+        # "none" from "this server is older than attachments".
+        "attachments": (attachments or {}).get(m.id, []),
         "read": m.read_by_patient_at is not None,
     }
 
@@ -842,25 +849,45 @@ def list_messages(
         .order_by(Message.id.desc())
         .limit(MESSAGE_PAGE)
     ).all()
-    return {"messages": [_message_view(m, _author_names(db, rows)) for m in reversed(rows)]}
+    from app.api.attachments import attachments_for
+
+    ordered = list(reversed(rows))
+    names, files = _author_names(db, rows), attachments_for(db, ordered)
+    return {"messages": [_message_view(m, names, files) for m in ordered]}
 
 
 class MessageBody(BaseModel):
-    text: str = Field(min_length=1, max_length=2000)
+    # A photo with no caption is the commonest attachment there is, so an
+    # empty body is valid as long as something else is attached.
+    text: str = Field(default="", max_length=2000)
+    attachment_ids: list[int] = Field(default_factory=list, max_length=8)
 
 
 @router.post("/messages")
 def send_message(
     body: MessageBody, patient: Patient = Depends(current_patient), db: Session = Depends(get_db)
 ) -> dict:
+    from app.api.attachments import attachments_for, claim
+
     text = body.text.strip()
-    if not text:
-        raise HTTPException(status_code=422, detail="Message text is required")
+    if not text and not body.attachment_ids:
+        raise HTTPException(status_code=422, detail="Write something, or attach a file")
     message = Message(patient_id=patient.id, sender="patient", channel="app", text=text)
     db.add(message)
-    tasks.notify_care_team(db, patient, f"{patient.name} sent a message", text, "patient_message")
+    db.flush()
+    attached = claim(db, patient, body.attachment_ids, message)
+    # What the care team is told. A photo with no caption must still say what
+    # arrived, or the bell reads as an empty message.
+    if text:
+        summary = text
+    elif attached == 1:
+        summary = "Sent a photo or file"
+    else:
+        summary = f"Sent {attached} photos or files"
+    tasks.notify_care_team(db, patient, f"{patient.name} sent a message", summary,
+                           "patient_message")
     db.commit()
-    return {"ok": True, "message": _message_view(message)}
+    return {"ok": True, "message": _message_view(message, None, attachments_for(db, [message]))}
 
 
 @router.post("/messages/read")

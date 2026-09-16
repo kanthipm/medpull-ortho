@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api import (
     ask,
+    attachments,
     care,
     checkin,
     integrations,
@@ -33,3 +34,5 @@ api_router.include_router(mobile.public_router)
 api_router.include_router(sendblue_webhook.router)
 api_router.include_router(care.router)
 api_router.include_router(plan.router)
+api_router.include_router(attachments.router)
+api_router.include_router(attachments.console_router)

@@ -23,6 +23,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.models.adherence import AdherenceRecord, AdherenceTask
+from app.models.attachment import Attachment
 from app.models.checkin import Checkin, CheckinInvite
 from app.models.connection import WearableConnection
 from app.models.insight import EstablishedBaseline, Insight, RiskAssessment
@@ -163,6 +164,10 @@ def set_phone(db: Session, patient: Patient, phone: str | None, *, force: bool =
 _MOVED = (
     PatientSession, PhoneVerification, Message, AdherenceTask, AdherenceRecord,
     TaskVerification, Checkin, CheckinInvite, Notification, Device, CareAction,
+    # Files on the thread move with it. Their storage keys keep the patient id
+    # they were minted under, which is why every read authorises through the
+    # row and every purge follows the rows rather than the key prefix.
+    Attachment,
 )
 # Derived rows: dropped on both sides and recomputed for the chart.
 _DERIVED = (RiskAssessment, EstablishedBaseline)
@@ -448,6 +453,18 @@ def delete_patient(db: Session, patient: Patient) -> dict[str, Any]:
         counts["checkin_messages"] = db.execute(
             delete(CheckinMessage).where(CheckinMessage.checkin_id.in_(checkin_ids))
         ).rowcount
+    # The bytes go before the rows that point at them: once the rows are
+    # gone there is nothing left that knows which objects were this
+    # patient's, and an orphaned wound photo is the one kind of leftover
+    # this product must not have.
+    from app.storage import blobs
+
+    keys = list(db.scalars(
+        select(Attachment.storage_key).where(Attachment.patient_id == patient.id)
+    ).all())
+    counts["attachment_blobs"] = blobs.delete_keys(keys)
+    counts["attachment_blobs"] += blobs.delete_patient_blobs(patient.id)
+
     for model in (*_MOVED, Observation, WearableConnection, *_DERIVED):
         counts[model.__tablename__] = db.execute(
             delete(model).where(model.patient_id == patient.id)

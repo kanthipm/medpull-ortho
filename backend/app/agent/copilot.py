@@ -146,9 +146,24 @@ def _context(
         .limit(6)
     ).all()
     if recent:
+        from app.models.attachment import Attachment
+
+        with_files = set(db.scalars(select(Attachment.message_id).where(
+            Attachment.message_id.in_([m.id for m in recent]),
+            Attachment.confirmed_at.is_not(None),
+            Attachment.deleted_at.is_(None),
+        )).all())
         lines.append("Recent thread (newest last):")
         for m in reversed(recent):
-            lines.append(f"  {m.sender}: {m.text[:160]}")
+            # A photo with no caption is a real message. Left as an empty
+            # string the model reads a blank line and answers as if nothing
+            # was said; named, it can at least acknowledge the photo and say
+            # a person will look at it. It must never describe one — nothing
+            # here has seen the image.
+            said = m.text[:160]
+            if m.id in with_files:
+                said = f"{said} [sent a photo or file, which you cannot see]".strip()
+            lines.append(f"  {m.sender}: {said}")
     return "\n".join(lines)
 
 

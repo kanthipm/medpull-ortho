@@ -2,7 +2,7 @@ import logging
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -285,7 +285,10 @@ class AssignTaskBody(BaseModel):
 
 
 class MessageBody(BaseModel):
-    text: str
+    # Empty is valid when a file is attached: a clinician sending a sheet of
+    # exercises has nothing to add in words.
+    text: str = ""
+    attachment_ids: list[int] = Field(default_factory=list, max_length=8)
     # Which care-team member is writing; defaults to the assigned provider.
     sender_id: str | None = None
 
@@ -325,7 +328,8 @@ def _authorship(m, db: Session | None = None) -> dict:
     return {"kind": kind, "name": name}
 
 
-def _message_view(m, db: Session | None = None) -> dict:
+def _message_view(m, db: Session | None = None,
+                  attachments: dict[int, list] | None = None) -> dict:
     return {
         "id": m.id,
         "sender": m.sender,
@@ -336,6 +340,7 @@ def _message_view(m, db: Session | None = None) -> dict:
         "created_at": m.created_at.isoformat(),
         "delivery_status": m.delivery_status,
         "delivery_detail": m.delivery_detail,
+        "attachments": (attachments or {}).get(m.id, []),
         "read_by_care_team": m.read_by_care_team_at is not None,
     }
 
@@ -391,8 +396,8 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
 
     patient = _get_patient(db, patient_id)
     text = body.text.strip()
-    if not text:
-        raise HTTPException(status_code=422, detail="Message text is required")
+    if not text and not body.attachment_ids:
+        raise HTTPException(status_code=422, detail="Write something, or attach a file")
     sender_id = body.sender_id or patient.assigned_provider_id
     member = db.get(CareTeamMember, sender_id)
     if member is None:
@@ -405,6 +410,10 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
         text=text, authored_by="care_team",
     )
     db.add(message)
+    db.flush()
+    from app.api.attachments import attachments_for, claim
+
+    attached = claim(db, patient, body.attachment_ids, message)
     delivery = None
     if patient.phone:
         # The link is only worth sending when it goes somewhere the patient
@@ -414,8 +423,18 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
         from app.identity import app_status
 
         enrolled = app_status(db, patient)["ever_enrolled"]
+        # A file is never sent as provider media: that publishes a patient's
+        # photograph to an unauthenticated URL. The text says one arrived and
+        # the app is where it can be seen, which is also why an enrolled
+        # patient needs no link — it is already in their thread.
+        body_text = text
+        if attached and not text:
+            body_text = "Your care team sent you a file." if attached == 1 else (
+                f"Your care team sent you {attached} files.")
+        elif attached:
+            body_text = f"{text} ({attached} attached)"
         delivery = sendblue.send_care_team_message(
-            patient.phone, text, member=member, patient_name=patient.name,
+            patient.phone, body_text, member=member, patient_name=patient.name,
             link=None if enrolled else settings.app_download_url,
         )
         message.delivery_status = "sent" if delivery.sent else "failed"
@@ -431,7 +450,7 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
     return {
         "status": status,
         "detail": delivery.detail if delivery else "patient has no phone number on file",
-        "message": _message_view(message, db),
+        "message": _message_view(message, db, attachments_for(db, [message])),
     }
 
 
@@ -440,10 +459,14 @@ def list_messages(patient_id: str, db: Session = Depends(get_db)) -> dict:
     from app.models.mobile import Message
 
     _get_patient(db, patient_id)
+    from app.api.attachments import attachments_for
+
     rows = db.scalars(
         select(Message).where(Message.patient_id == patient_id).order_by(Message.id).limit(300)
     ).all()
-    return {"messages": [_message_view(m, db) for m in rows]}
+    # One query for three hundred lines, beside the clinician-name lookup.
+    files = attachments_for(db, rows)
+    return {"messages": [_message_view(m, db, files) for m in rows]}
 
 
 @router.post("/{patient_id}/messages/read")

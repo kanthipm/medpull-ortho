@@ -186,6 +186,26 @@ Resources:
         # Cheap point-in-time recovery for the database — a few MB per version,
         # expired after a week by the rule below.
         Status: Enabled
+      CorsConfiguration:
+        # The console uploads a file straight to S3 with a presigned POST, so
+        # the browser sends a preflight first and S3 answers it only from this
+        # rule. The distribution's own domain cannot be named here — it
+        # depends on this bucket, so referencing it back is a CloudFormation
+        # cycle — hence the cloudfront.net wildcard, plus the custom domain
+        # when there is one and the Vite dev server for local work.
+        CorsRules:
+          - Id: attachment-uploads
+            AllowedMethods: [PUT, POST, GET, HEAD]
+            AllowedOrigins: !If
+              - HasCustomDomain
+              - - https://*.cloudfront.net
+                - !Sub "https://${CustomDomainName}"
+                - http://localhost:5173
+              - - https://*.cloudfront.net
+                - http://localhost:5173
+            AllowedHeaders: [content-type]
+            ExposedHeaders: [ETag]
+            MaxAge: 3000
       LifecycleConfiguration:
         Rules:
           - Id: expire-old-database-versions
@@ -199,6 +219,16 @@ Resources:
             Status: Enabled
             Prefix: web/
             NoncurrentVersionExpirationInDays: 7
+            ExpiredObjectDeleteMarker: true
+          # Versioning is on for the whole bucket, so deleting an attachment
+          # only writes a delete marker: without this the photo a patient
+          # withdrew stays recoverable in the bucket for ever. One day, not
+          # the seven used for db/ and web/, because this is the only prefix
+          # where "deleted" is a promise to a patient rather than a tidy-up.
+          - Id: expire-deleted-attachments
+            Status: Enabled
+            Prefix: attachments/
+            NoncurrentVersionExpirationInDays: 1
             ExpiredObjectDeleteMarker: true
           - Id: abort-incomplete-uploads
             Status: Enabled
@@ -260,6 +290,18 @@ Resources:
                   - s3:PutObject
                   - s3:DeleteObject
                 Resource: !Sub "${DataBucket.Arn}/db/*"
+              - Effect: Allow
+                # Patient files (app/storage/blobs.py). A presigned URL
+                # carries the signer's authority and no more, so without this
+                # every upload ticket and download link the function mints
+                # would be refused by S3 rather than by us. Deliberately a
+                # separate statement from db/*: a mistake in one prefix
+                # cannot widen the other.
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${DataBucket.Arn}/attachments/*"
               - Effect: Allow
                 # Without ListBucket, S3 answers a HEAD for a missing key with
                 # 403 instead of 404, and the "database not seeded yet" path
