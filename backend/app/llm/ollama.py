@@ -21,7 +21,11 @@ KEEP_ALIVE = "30m"  # keep the model resident between insight generations
 
 
 def complete_json(
-    system: str, user: str, num_predict: int = 700, temperature: float = 0.45
+    system: str,
+    user: str,
+    num_predict: int = 700,
+    temperature: float = 0.45,
+    deadline_s: float | None = None,
 ) -> dict:
     if not settings.ollama_url:
         raise LLMError("Ollama disabled (no OLLAMA_URL)")
@@ -46,7 +50,11 @@ def complete_json(
     # to distinguish a blip from an outage, and the next tier is a working
     # deterministic renderer.
     try:
-        response = httpx.post(f"{settings.ollama_url}/api/chat", json=body, timeout=TIMEOUT)
+        response = httpx.post(
+            f"{settings.ollama_url}/api/chat",
+            json=body,
+            timeout=min(TIMEOUT, deadline_s) if deadline_s else TIMEOUT,
+        )
         response.raise_for_status()
         content = response.json().get("message", {}).get("content", "")
         if not content.strip():

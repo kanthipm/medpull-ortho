@@ -669,6 +669,15 @@ def skip_task(db: Session, task: AdherenceTask, via: str) -> None:
 # nurse's question with "yes" got a task questionnaire instead of a reply, and
 # the nurse never saw the answer. Anything else goes to the copilot, which
 # passes it to the care team.
+# How long the model may take to answer an inbound text. The whole
+# webhook runs inside the database write lock (app/aws/middleware.py),
+# whose TTL is 25 s, and that budget also covers downloading the
+# database at the start and uploading it at the end. The provider's own
+# default bound plus one in-flight attempt lands close enough to the TTL
+# to risk the lock being broken mid-request, so this path asks for less
+# and takes the deterministic reply when the model cannot make it.
+SMS_REPLY_DEADLINE_S = 7.0
+
 START_WORDS = {"1", "start", "begin", "ready"}
 APP_WORDS = {"2", "app", "link", "open"}
 SKIP_WORDS = {"skip", "-", "n/a", "na", "pass", "next"}
@@ -841,12 +850,30 @@ def handle_inbound_sms(
         # The thread lines are written here (with the delivery status), so the
         # copilot records neither the patient's line nor its own reply.
         result = respond(db, patient, body, channel="sms", record_patient_line=False,
-                         record_reply=False, default_to_care_team=True)
+                         record_reply=False, default_to_care_team=True,
+                         deadline_s=SMS_REPLY_DEADLINE_S)
         reply, kind = result["reply"], "message"
 
     # The copilot answering a text speaks for itself: no clinician tag, and
     # no name — compose strips one the model may have reached for.
     reply = sendblue.compose(reply, patient_name=patient.name)
+
+    # A text cannot be unsent, and this reply only makes sense if the rows
+    # behind it survive. The whole handler runs under the database write
+    # lock; if that lock has been taken over, the persist after this request
+    # will refuse and everything here is discarded — including the dedupe
+    # row — so sending now would text the patient and then answer them a
+    # second time when the provider retries. Better to send nothing: the
+    # retry finds no record and runs the exchange cleanly.
+    from app.aws import storage
+
+    if not storage.holds_lock(unknown_as_held=True):
+        logger.warning(
+            "Not replying to %s: the database write lock was taken over, so this "
+            "exchange will be discarded and retried", patient.id,
+        )
+        return InboundOutcome(patient.id, False, None, "lock_lost")
+
     delivery = sendblue.send_sms(phone, reply)
     db.add(
         Message(

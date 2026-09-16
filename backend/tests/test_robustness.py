@@ -360,3 +360,98 @@ def test_unusable_phone_numbers_are_refused_at_every_door(client, db, phone):
     assert client.post("/api/mobile/join", json={
         "hospital_id": "hosp_demo", "name": "Phone Probe", "phone": phone,
         "had_surgery": False}).status_code == 422
+
+
+# --- an irreversible side effect under the write lock ----------------------------
+
+
+def test_no_reply_is_texted_when_the_write_lock_was_taken_over(client, db, monkeypatch):
+    """The failure this prevents: the handler texts the patient, the lock
+    turns out to have been broken, the persist refuses, and every row —
+    including the dedupe key — is discarded. The provider retries, finds no
+    record, and the patient is answered twice. Sending nothing makes the
+    retry the whole exchange."""
+    from app.aws import storage
+    from app.config import settings
+    from app.notifications import sendblue
+    from tests.test_mobile import _FakeResponse
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(settings, "sendblue_api_key", "k")
+    monkeypatch.setattr(settings, "sendblue_api_secret", "s")
+    monkeypatch.setattr(settings, "sendblue_webhook_secret", "whsec-lock")
+    monkeypatch.setattr(sendblue, "_post_message",
+                        lambda phone, content: sent.append((phone, content)) or _FakeResponse())
+    db.expire_all()
+    steve = db.get(Patient, "steve")
+    steve.phone = "+15125550902"
+    db.commit()
+
+    def text(content: str):
+        return client.post("/api/webhooks/sendblue/whsec-lock", json={
+            "from_number": "+15125550902", "content": content, "is_outbound": False})
+
+    # normally the reply goes out
+    first = text("hello there")
+    assert first.status_code == 200 and first.json()["handled"] is True
+    assert sent, "the reply is texted when the lock is ours"
+    before = len(sent)
+
+    # now the lock has been taken over by another writer
+    monkeypatch.setattr(storage, "holds_lock", lambda **kw: False)
+    lost = text("hello again")
+    assert lost.status_code == 200
+    body = lost.json()
+    assert body["kind"] == "lock_lost" and body["handled"] is False
+    assert len(sent) == before, "nothing may be texted once the rows cannot persist"
+
+    # an inconclusive check is not a refusal: a patient must not be left
+    # unanswered because S3 hiccuped
+    calls: list[dict] = []
+
+    def unknown(**kw):
+        calls.append(kw)
+        return kw.get("unknown_as_held", False)
+
+    monkeypatch.setattr(storage, "holds_lock", unknown)
+    assert text("and again").json()["handled"] is True
+    assert calls and calls[0]["unknown_as_held"] is True
+    assert len(sent) > before
+
+    from sqlalchemy import delete
+
+    db.execute(delete(Message).where(Message.patient_id == "steve"))
+    db.get(Patient, "steve").phone = None
+    db.commit()
+
+
+def test_the_inbound_reply_asks_the_model_for_less_time_than_the_lock_allows(monkeypatch):
+    """The provider's default wall clock plus one in-flight attempt lands
+    close to the lock's 25s TTL, and that budget also has to cover the
+    database download and upload around the handler."""
+    from app.aws.config import aws_settings
+    from app.llm import groq
+    from app.tasks.service import SMS_REPLY_DEADLINE_S
+
+    assert SMS_REPLY_DEADLINE_S + groq.TIMEOUT < aws_settings.lock_ttl_seconds, (
+        "a reply's worst case must fit inside the lock TTL with room for the "
+        "database round trip"
+    )
+    assert SMS_REPLY_DEADLINE_S < groq.DEADLINE, "this path is stricter than the default"
+
+
+def test_a_tighter_deadline_reaches_the_provider(monkeypatch):
+    from app.llm import groq, provider
+
+    seen: dict = {}
+
+    def fake(system, user, temperature=0.45, deadline_s=None):
+        seen["deadline_s"] = deadline_s
+        return {"reply": "ok", "actions": []}
+
+    monkeypatch.setattr(provider, "provider_name", lambda: "groq")
+    monkeypatch.setattr(groq, "complete_json", fake)
+    provider.complete_json("sys", "user", deadline_s=7.0)
+    assert seen["deadline_s"] == 7.0
+    # and the provider never widens its own bound
+    assert min(groq.DEADLINE, 99.0) == groq.DEADLINE

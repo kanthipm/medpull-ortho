@@ -1,6 +1,7 @@
 """Import every model so Base.metadata knows the full schema."""
 
 from app.models.adherence import AdherenceRecord, AdherenceTask
+from app.models.attachment import Attachment
 from app.models.checkin import Checkin, CheckinMessage
 from app.models.connection import WearableConnection
 from app.models.hospital import Hospital
@@ -14,6 +15,7 @@ from app.models.patient import CareTeamMember, Device, Patient
 __all__ = [
     "AdherenceRecord",
     "AdherenceTask",
+    "Attachment",
     "CareAction",
     "MessageTemplate",
     "TaskTemplate",

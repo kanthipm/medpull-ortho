@@ -129,17 +129,29 @@ def model_name() -> str | None:
 
 
 def complete_json(
-    system: str, user: str, num_predict: int = 700, temperature: float = 0.45
+    system: str,
+    user: str,
+    num_predict: int = 700,
+    temperature: float = 0.45,
+    deadline_s: float | None = None,
 ) -> dict:
     """Dispatch one JSON completion to the active real-LLM provider.
-    Raises LLMError when none is available or the call fails."""
+    Raises LLMError when none is available or the call fails.
+
+    ``deadline_s`` tightens the provider's own wall-clock bound for callers
+    that are holding something more valuable than a request thread — the
+    inbound-text path holds the database write lock, and the default bound
+    plus one in-flight attempt lands close enough to that lock's TTL to
+    matter.
+    """
     provider = provider_name()
     if provider == "groq":
         from app.llm import groq
 
-        return groq.complete_json(system, user, temperature=temperature)
+        return groq.complete_json(system, user, temperature=temperature, deadline_s=deadline_s)
     if provider == "ollama":
         from app.llm import ollama
 
-        return ollama.complete_json(system, user, num_predict=num_predict, temperature=temperature)
+        return ollama.complete_json(system, user, num_predict=num_predict,
+                                    temperature=temperature, deadline_s=deadline_s)
     raise LLMError("No LLM provider available")

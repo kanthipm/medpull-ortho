@@ -380,13 +380,20 @@ def _forget_lock() -> None:
         _state["lock_etag"] = None
 
 
-def holds_lock() -> bool:
+def holds_lock(*, unknown_as_held: bool = False) -> bool:
     """Whether the lock object still carries our token.
 
     The TTL exists so a writer that died cannot wedge the database, which
     means a live-but-slow writer can have its lock broken out from under it.
     Checking before the upload is what stops that writer from overwriting
     the new holder's work.
+
+    ``unknown_as_held`` is for callers asking a different question: "is it
+    still safe to do something I cannot take back", such as texting a
+    patient whose reply has to persist. There, an S3 blip must not become a
+    patient who gets no answer at all, so an inconclusive check reads as
+    held and the persist stays the real gate. A definite "someone else holds
+    it" is still False either way.
     """
     if not enabled():
         return True
@@ -400,6 +407,10 @@ def holds_lock() -> bool:
     except Exception as e:  # noqa: BLE001
         if hasattr(e, "response") and _is_missing(e):
             return False  # released or deleted: not ours any more
+        if unknown_as_held:
+            logger.warning("Could not read the write lock; assuming it is still ours",
+                           exc_info=True)
+            return True
         raise
     return held_token == token
 

@@ -45,11 +45,11 @@ DEADLINE = 15.0
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 
-def _sleep_fits(pause: float, started: float) -> bool:
+def _sleep_fits(pause: float, started: float, deadline: float = DEADLINE) -> bool:
     """A pause is only taken when it fits inside the deadline as well as the
     retry budget — slow attempts spend the same clock, so the budget alone
     does not bound the call."""
-    return pause > 0 and time.monotonic() - started + pause <= DEADLINE
+    return pause > 0 and time.monotonic() - started + pause <= deadline
 
 
 def _retry_after_seconds(headers: httpx.Headers, text: str) -> float:
@@ -103,9 +103,14 @@ def _fetch(body: dict, headers: dict, budget: float) -> tuple[int, httpx.Headers
             )
 
 
-def complete_json(system: str, user: str, temperature: float = 0.45) -> dict:
+def complete_json(
+    system: str, user: str, temperature: float = 0.45, deadline_s: float | None = None
+) -> dict:
+    """One JSON completion. ``deadline_s`` overrides DEADLINE downwards for a
+    caller that cannot afford the default wall clock — see provider.py."""
     if not settings.groq_api_key:
         raise LLMError("No GROQ_API_KEY configured")
+    deadline = min(DEADLINE, deadline_s) if deadline_s else DEADLINE
 
     body = {
         "model": settings.groq_model,
@@ -124,7 +129,7 @@ def complete_json(system: str, user: str, temperature: float = 0.45) -> dict:
     for attempt in range(MAX_ATTEMPTS):
         # The attempt's own timeout is clipped to what is left of the deadline,
         # so a slow response can never carry the call past it.
-        remaining = DEADLINE - (time.monotonic() - started)
+        remaining = deadline - (time.monotonic() - started)
         if remaining <= 0:
             break
         try:
@@ -137,7 +142,7 @@ def complete_json(system: str, user: str, temperature: float = 0.45) -> dict:
                     _retry_after_seconds(response_headers, text) + 0.5,
                     MAX_TOTAL_WAIT - waited,
                 )
-                if attempt == MAX_ATTEMPTS - 1 or not _sleep_fits(pause, started):
+                if attempt == MAX_ATTEMPTS - 1 or not _sleep_fits(pause, started, deadline):
                     break
                 time.sleep(pause)
                 waited += pause

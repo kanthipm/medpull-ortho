@@ -300,6 +300,7 @@ def respond(
     record_patient_line: bool = True,
     record_reply: bool = True,
     default_to_care_team: bool = False,
+    deadline_s: float | None = None,
 ) -> dict[str, Any]:
     """One turn. Records the patient's line and the reply on the thread
     (unless the caller does that itself) and returns what happened."""
@@ -327,6 +328,10 @@ def respond(
                 f"{_context(db, patient, open_tasks, channel)}\n\nPatient said: {json.dumps(text)}",
                 num_predict=300,
                 temperature=0.3,
+                # A caller holding something more valuable than a request
+                # thread says how long it can wait; past that, the
+                # deterministic reply is the answer.
+                deadline_s=deadline_s,
             )
             active = provider_name()
             intent = _validate_model_output(raw, {t.id for t in open_tasks})
