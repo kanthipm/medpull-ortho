@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.llm.prose import humanize_codes
 from app.models.checkin import Checkin
 from app.models.enums import InsightKind, RiskLevel
 from app.models.library import TaskTemplate
@@ -83,7 +84,8 @@ def worklist(db: Session = Depends(get_db)) -> dict:
             )
             if reason.llm_provider != "fallback":
                 llm_spent += 1
-            reason_text = reason.content.get("reason", "")
+            # The model sometimes echoes a tier code ("risk missing_data").
+            reason_text = humanize_codes(reason.content.get("reason", ""))
         except Exception:  # noqa: BLE001 — a narrative is not worth a 500
             logger.exception("worklist: reason failed for %s", patient.id)
             reason_text = ""
