@@ -4,10 +4,12 @@ import { uploadAttachment } from '../../api/attachments'
 import type { MessageAttachment } from '../../api/types'
 import { useToast } from '../../components/Toast'
 
-/** What the backend accepts (app/storage/blobs.ALLOWED_TYPES). Kept in the
- *  picker too so a clinician is told before the upload rather than after. */
-export const ACCEPT =
-  'image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.heic,.heif'
+/** What the picker offers. A subset of what the server accepts
+ *  (app/storage/blobs.ALLOWED_TYPES): HEIC is left out deliberately, because
+ *  no browser but Safari can draw it, so a clinician would attach a photo
+ *  and then watch this page fail to show it. The patient's app still sends
+ *  HEIC — it transcodes to JPEG before upload. */
+export const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf'
 
 /** More than a handful on one message is a folder, not a message. Matches
  *  the cap the message endpoint enforces. */

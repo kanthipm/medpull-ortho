@@ -107,9 +107,16 @@ function Thumb({ patientId, a }: { patientId: string; a: MessageAttachment }) {
   const [open, setOpen] = useState(false)
 
   if (failed) {
+    // An Apple photo that reached us untranscoded is the one case with a
+    // real answer, and "could not be loaded" sent people looking for a
+    // network fault instead.
+    const heic = a.content_type === 'image/heic' || a.content_type === 'image/heif'
     return (
       <span className="flex items-center gap-1.5 rounded-row border border-line bg-soft px-2 py-1.5 text-[11.5px] font-medium text-muted">
-        <ImageOff size={12} /> That photo could not be loaded
+        <ImageOff size={12} />
+        {heic
+          ? 'This photo is in Apple’s HEIC format, which this browser cannot show'
+          : 'That photo could not be loaded'}
       </span>
     )
   }
