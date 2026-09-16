@@ -49,6 +49,9 @@ def main() -> int:
     ap.add_argument("--dedupe-daily", action="store_true",
                     help="collapse duplicate daily summaries (one per patient/metric/day/device), "
                          "keeping the most recently ingested")
+    ap.add_argument("--revoke-sessions", action="append", default=[], metavar="PATIENT",
+                    help="sign the patient app out of this chart (a lost phone, or "
+                         "before deleting a chart that is signed in)")
     ap.add_argument("--delete-message", action="append", default=[], type=int, metavar="ID",
                     help="remove one thread line and any files on it, bytes included")
     ap.add_argument("--delete-patient", action="append", default=[], metavar="ID",
@@ -108,6 +111,28 @@ def main() -> int:
                     link_app_account(db, target, source, force=True))
             except IdentityError as e:
                 raise SystemExit(f"link refused: {e.detail}")
+        if args.revoke_sessions:
+            # delete_patient refuses a chart the app is signed in on, because
+            # that is how a patient's own history gets destroyed by an
+            # operator tidying up. Signing out is the deliberate step that
+            # unlocks it — and on its own, what a lost phone needs.
+            from app.models.mobile import PatientSession
+
+            for patient_id in args.revoke_sessions:
+                if db.get(Patient, patient_id) is None:
+                    raise SystemExit(f"unknown patient {patient_id}")
+                rows = db.scalars(
+                    select(PatientSession).where(
+                        PatientSession.patient_id == patient_id,
+                        PatientSession.revoked_at.is_(None),
+                    )
+                ).all()
+                for row in rows:
+                    row.revoked_at = datetime.now()
+                db.commit()
+                report.setdefault("revoked_sessions", []).append(
+                    {"patient": patient_id, "sessions": len(rows)}
+                )
         if args.delete_message:
             # A line sent by mistake, or a probe left by a deploy check. The
             # bytes go with the row: an orphaned object in storage is a
