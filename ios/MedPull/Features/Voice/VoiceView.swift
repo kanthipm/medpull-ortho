@@ -24,13 +24,13 @@ struct VoiceView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Talk to MedPull").title(28)
                                 Text("Say things like “my pain is a 4”, “I did my exercises”, or “tell my nurse the swelling is down”.")
-                                    .font(.system(size: 14)).foregroundStyle(MP.muted)
+                                    .font(.mp(14)).foregroundStyle(MP.muted)
                             }
                             .padding(.top, 8)
                             ForEach(turns) { t in
                                 VStack(alignment: t.who == "you" ? .trailing : .leading, spacing: 3) {
                                     Text(t.text)
-                                        .font(.system(size: 15))
+                                        .font(.mp(15))
                                         .foregroundStyle(t.who == "you" ? .white : MP.ink)
                                         .padding(.horizontal, 14).padding(.vertical, 10)
                                         .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -42,7 +42,7 @@ struct VoiceView: View {
                                 .id(t.id)
                             }
                             if speech.isListening && !speech.transcript.isEmpty {
-                                Text(speech.transcript).font(.system(size: 15)).foregroundStyle(MP.muted).italic()
+                                Text(speech.transcript).font(.mp(15)).foregroundStyle(MP.muted).italic()
                                     .frame(maxWidth: .infinity, alignment: .trailing)
                             }
                             if thinking { ProgressView().frame(maxWidth: .infinity, alignment: .leading) }
@@ -71,7 +71,7 @@ struct VoiceView: View {
                     Circle().fill(speech.isListening ? MP.riskHigh : MP.brand).frame(width: 84, height: 84)
                         .shadow(color: (speech.isListening ? MP.riskHigh : MP.brand).opacity(0.35), radius: 18, y: 6)
                     Image(systemName: speech.isListening ? "stop.fill" : "mic.fill")
-                        .font(.system(size: 30, weight: .semibold)).foregroundStyle(.white)
+                        .font(.mp(30, weight: .semibold)).foregroundStyle(.white)
                 }
                 .scaleEffect(speech.isListening ? 1.06 : 1)
                 .animation(.spring(duration: 0.3), value: speech.isListening)
@@ -79,14 +79,14 @@ struct VoiceView: View {
             .buttonStyle(.plain)
             .disabled(thinking)
             Text(speech.isListening ? "Listening… tap to send" : speech.isSpeaking ? "Speaking…" : "Tap to talk")
-                .font(.system(size: 13, weight: .medium)).foregroundStyle(MP.muted)
+                .font(.mp(13, weight: .medium)).foregroundStyle(MP.muted)
             HStack(spacing: 8) {
                 TextField("Or type it", text: $typed)
                     .textFieldStyle(FieldStyle())
                     .submitLabel(.send)
                     .onSubmit { sendTyped() }
                 Button { sendTyped() } label: {
-                    Image(systemName: "arrow.up").font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
+                    Image(systemName: "arrow.up").font(.mp(16, weight: .bold)).foregroundStyle(.white)
                         .frame(width: 44, height: 44)
                         .background(Circle().fill(typed.trimmingCharacters(in: .whitespaces).isEmpty ? MP.faint : MP.brand))
                 }

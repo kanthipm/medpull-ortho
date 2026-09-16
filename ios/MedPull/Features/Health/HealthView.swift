@@ -43,21 +43,21 @@ struct HealthView: View {
         Card(tint: appleConnected) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Label("Apple Health", systemImage: "heart.fill").font(.system(size: 15, weight: .semibold)).foregroundStyle(MP.ink)
+                    Label("Apple Health", systemImage: "heart.fill").font(.mp(15, weight: .semibold)).foregroundStyle(MP.ink)
                     Spacer()
                     StatusPill(text: appleConnected ? "Connected" : "Not connected", tone: appleConnected ? .low : .missing)
                 }
                 if appleConnected {
                     if !app.health.syncLine.isEmpty {
-                        Text(app.health.syncLine).font(.system(size: 13)).foregroundStyle(MP.muted)
+                        Text(app.health.syncLine).font(.mp(13)).foregroundStyle(MP.muted)
                     } else if let last = app.wearables?.appleHealth.lastSyncAt {
-                        Text("Last data \(Dates.relative(last))").font(.system(size: 13)).foregroundStyle(MP.muted)
+                        Text("Last data \(Dates.relative(last))").font(.mp(13)).foregroundStyle(MP.muted)
                     } else {
                         Text("Syncing in the background. Data appears on your care team's console as it arrives.")
-                            .font(.system(size: 13)).foregroundStyle(MP.muted)
+                            .font(.mp(13)).foregroundStyle(MP.muted)
                     }
                     if let g = app.health.lastGaitUpload {
-                        Text(g).font(.system(size: 12.5)).foregroundStyle(MP.faint)
+                        Text(g).font(.mp(12.5)).foregroundStyle(MP.faint)
                     }
                     HStack(spacing: 10) {
                         SecondaryButton(title: "Sync now", icon: "arrow.triangle.2.circlepath") {
@@ -75,7 +75,7 @@ struct HealthView: View {
                     }
                 } else {
                     Text("One tap connects steps, sleep, heart rate, workouts and Apple's walking metrics. Nothing is written to Health.")
-                        .font(.system(size: 14)).foregroundStyle(MP.body)
+                        .font(.mp(14)).foregroundStyle(MP.body)
                     if !(app.me?.features.appleHealth ?? false) {
                         ErrorBanner(text: "This server isn't connected to Junction yet, so there is nowhere for Health data to go.")
                     }
@@ -97,20 +97,20 @@ struct HealthView: View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Label("Wearables", systemImage: "applewatch.radiowaves.left.and.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(MP.ink)
+                    Label("Wearables", systemImage: "applewatch.radiowaves.left.and.right").font(.mp(15, weight: .semibold)).foregroundStyle(MP.ink)
                     Spacer()
                 }
                 let devices = app.wearables?.devices ?? []
                 if devices.isEmpty {
                     Text("Oura, Garmin, WHOOP, Fitbit, Withings, Polar — sign in once on their page and it syncs on its own.")
-                        .font(.system(size: 14)).foregroundStyle(MP.body)
+                        .font(.mp(14)).foregroundStyle(MP.body)
                 } else {
                     ForEach(devices) { d in
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(d.model).font(.system(size: 14.5, weight: .semibold)).foregroundStyle(MP.ink)
+                                Text(d.model).font(.mp(14.5, weight: .semibold)).foregroundStyle(MP.ink)
                                 Text(d.lastSyncAt.map { "Synced \(Dates.relative($0))" } ?? "Waiting for first sync")
-                                    .font(.system(size: 12.5)).foregroundStyle(MP.muted)
+                                    .font(.mp(12.5)).foregroundStyle(MP.muted)
                             }
                             Spacer()
                             StatusPill(text: d.status.capitalized, tone: d.status == "connected" ? .low : d.status == "error" ? .high : .missing)
@@ -138,7 +138,7 @@ struct HealthView: View {
                     Text("Your portfolio · last two weeks").eyebrow()
                     Spacer()
                     if !app.portfolio.isEmpty {
-                        Text("\(app.portfolio.count) signals").font(.system(size: 11.5, weight: .medium)).foregroundStyle(MP.faint)
+                        Text("\(app.portfolio.count) signals").font(.mp(11.5, weight: .medium)).foregroundStyle(MP.faint)
                     }
                 }
                 if app.portfolio.isEmpty {
@@ -164,10 +164,10 @@ struct MetricChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(metric.label).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(MP.ink)
+                Text(metric.label).font(.mp(13.5, weight: .semibold)).foregroundStyle(MP.ink)
                 Spacer()
                 Text(metric.latestText).font(.system(size: 15, weight: .semibold, design: .monospaced)).foregroundStyle(MP.ink)
-                Text(metric.unit).font(.system(size: 11)).foregroundStyle(MP.faint)
+                Text(metric.unit).font(.mp(11)).foregroundStyle(MP.faint)
             }
             Chart(metric.series) { pt in
                 if isBar {
@@ -183,11 +183,11 @@ struct MetricChart: View {
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 4)) { value in
                     AxisValueLabel {
-                        if let raw = value.as(String.self) { Text(Dates.shortDay(raw)).font(.system(size: 9)) }
+                        if let raw = value.as(String.self) { Text(Dates.shortDay(raw)).font(.mp(9)) }
                     }
                 }
             }
-            .chartYAxis { AxisMarks(position: .leading) { AxisGridLine(); AxisValueLabel().font(.system(size: 9)) } }
+            .chartYAxis { AxisMarks(position: .leading) { AxisGridLine(); AxisValueLabel().font(.mp(9)) } }
             .frame(height: 96)
         }
     }

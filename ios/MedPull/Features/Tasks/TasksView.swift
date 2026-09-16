@@ -81,7 +81,7 @@ struct TaskDetailView: View {
                         Text(task.kindLabel).eyebrow()
                         if let schedule = task.scheduleLabel {
                             Text(schedule)
-                                .font(.system(size: 10.5, weight: .semibold))
+                                .font(.mp(10.5, weight: .semibold))
                                 .foregroundStyle(MP.brand)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(Capsule().fill(MP.brandTint))
@@ -89,7 +89,7 @@ struct TaskDetailView: View {
                     }
                     Text(task.title).title(26)
                     if !task.why.isEmpty {
-                        Text(task.why).font(.system(size: 14.5)).foregroundStyle(MP.muted)
+                        Text(task.why).font(.mp(14.5)).foregroundStyle(MP.muted)
                     }
                     if task.inSmsConversation {
                         ErrorBanner(text: "You started this one by text. Finishing it here is fine — the text thread will close.")
@@ -98,10 +98,10 @@ struct TaskDetailView: View {
                 if done {
                     Card(tint: true) {
                         HStack(spacing: 10) {
-                            Image(systemName: "checkmark.seal.fill").foregroundStyle(MP.riskLow).font(.system(size: 22))
+                            Image(systemName: "checkmark.seal.fill").foregroundStyle(MP.riskLow).font(.mp(22))
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Sent to your care team").font(.system(size: 15, weight: .semibold)).foregroundStyle(MP.ink)
-                                Text("They'll see it with their next review.").font(.system(size: 13)).foregroundStyle(MP.muted)
+                                Text("Sent to your care team").font(.mp(15, weight: .semibold)).foregroundStyle(MP.ink)
+                                Text("They'll see it with their next review.").font(.mp(13)).foregroundStyle(MP.muted)
                             }
                         }
                     }
@@ -115,7 +115,7 @@ struct TaskDetailView: View {
                         submit()
                     }
                     Button("Skip this one") { skip() }
-                        .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.muted)
+                        .font(.mp(14, weight: .medium)).foregroundStyle(MP.muted)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -167,7 +167,7 @@ struct QuestionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(question.prompt).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(MP.ink)
+            Text(question.prompt).font(.mp(15.5, weight: .semibold)).foregroundStyle(MP.ink)
             switch question.kind {
             case "scale":
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {

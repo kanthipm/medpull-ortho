@@ -32,6 +32,16 @@ targets:
       properties:
         CFBundleDisplayName: MedPull
         MedPullAPIBaseURL: $(MEDPULL_API_BASE_URL)
+        # The bundled typeface. XcodeGen rewrites Info.plist from this
+        # spec on every generate, so the key has to live here — added to the
+        # plist directly it would vanish on the next `make ios`. The files
+        # sit in MedPull/Resources/Fonts and are picked up as resources by
+        # the `sources: - path: MedPull` rule above.
+        UIAppFonts:
+          - EBGaramond-Regular.ttf
+          - EBGaramond-Medium.ttf
+          - EBGaramond-SemiBold.ttf
+          - EBGaramond-Bold.ttf
         CFBundleURLTypes:
           - CFBundleURLName: com.medpull.recovery
             CFBundleURLSchemes: [medpull]

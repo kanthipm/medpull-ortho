@@ -50,6 +50,13 @@
 	<string>Talk to MedPull instead of typing — the microphone is only on while you hold the button.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>MedPull turns what you say into text so it can log your pain, mark tasks done, or pass a note to your care team.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>EBGaramond-Regular.ttf</string>
+		<string>EBGaramond-Medium.ttf</string>
+		<string>EBGaramond-SemiBold.ttf</string>
+		<string>EBGaramond-Bold.ttf</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

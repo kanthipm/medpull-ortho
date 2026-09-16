@@ -63,7 +63,7 @@ private struct StepScaffold<Content: View, Footer: View>: View {
                     Text(eyebrow).eyebrow()
                     Text(title).title(28)
                     if let subtitle {
-                        Text(subtitle).font(.system(size: 15)).foregroundStyle(MP.muted)
+                        Text(subtitle).font(.mp(15)).foregroundStyle(MP.muted)
                     }
                     content().padding(.top, 18)
                 }
@@ -91,12 +91,12 @@ private struct WelcomeStep: View {
                 HStack(spacing: 10) {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(MP.brand).frame(width: 38, height: 38)
-                        .overlay(Image(systemName: "waveform.path.ecg").foregroundStyle(.white).font(.system(size: 18, weight: .semibold)))
+                        .overlay(Image(systemName: "waveform.path.ecg").foregroundStyle(.white).font(.mp(18, weight: .semibold)))
                     Text("MedPull").font(.display(20)).foregroundStyle(MP.ink)
                 }
                 Text("Your health,\nin one place.").title(34).lineSpacing(2)
                 Text("Join your hospital, connect your watch, and your care team sees the whole picture — steps, sleep, heart, and how you're feeling. About two minutes to set up.")
-                    .font(.system(size: 16)).foregroundStyle(MP.body).lineSpacing(3)
+                    .font(.mp(16)).foregroundStyle(MP.body).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 22)
@@ -104,7 +104,7 @@ private struct WelcomeStep: View {
             VStack(spacing: 10) {
                 PrimaryButton(title: "Get started", icon: "arrow.right") { model.go(.hospital) }
                 Text("Monitoring signals for your care team — not a diagnosis.")
-                    .font(.system(size: 12)).foregroundStyle(MP.faint)
+                    .font(.mp(12)).foregroundStyle(MP.faint)
                     .frame(maxWidth: .infinity)
             }
             .padding(.horizontal, 22).padding(.bottom, 18)
@@ -137,12 +137,12 @@ private struct HospitalStep: View {
                             HStack(spacing: 12) {
                                 Image(systemName: "building.2.fill").foregroundStyle(MP.brand).frame(width: 22)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(h.name).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(MP.ink)
+                                    Text(h.name).font(.mp(15.5, weight: .semibold)).foregroundStyle(MP.ink)
                                     Text([h.system, "\(h.city), \(h.state)"].compactMap { $0 }.joined(separator: " · "))
-                                        .font(.system(size: 12.5)).foregroundStyle(MP.muted)
+                                        .font(.mp(12.5)).foregroundStyle(MP.muted)
                                 }
                                 Spacer()
-                                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(MP.faint)
+                                Image(systemName: "chevron.right").font(.mp(13, weight: .semibold)).foregroundStyle(MP.faint)
                             }
                             .padding(.vertical, 13)
                             .contentShape(Rectangle())
@@ -193,10 +193,10 @@ private struct IdentityStep: View {
                             Button { model.selected = c } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: model.selected?.id == c.id ? "checkmark.circle.fill" : "circle")
-                                        .font(.system(size: 22)).foregroundStyle(model.selected?.id == c.id ? MP.brand : MP.faint)
+                                        .font(.mp(22)).foregroundStyle(model.selected?.id == c.id ? MP.brand : MP.faint)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(c.displayName).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(MP.ink)
-                                        Text("\(c.procedureDisplay) · \(c.surgeryMonth)").font(.system(size: 12.5)).foregroundStyle(MP.muted)
+                                        Text(c.displayName).font(.mp(15.5, weight: .semibold)).foregroundStyle(MP.ink)
+                                        Text("\(c.procedureDisplay) · \(c.surgeryMonth)").font(.mp(12.5)).foregroundStyle(MP.muted)
                                     }
                                     Spacer()
                                     if c.phoneMatch { StatusPill(text: "Number matches", tone: .low) }
@@ -210,11 +210,11 @@ private struct IdentityStep: View {
                         }
                         if !model.searching && model.candidates.isEmpty {
                             Text("Check the spelling, or ask the clinic which name they enrolled you under. If they have your number, typing it above finds you too.")
-                                .font(.system(size: 13)).foregroundStyle(MP.muted)
+                                .font(.mp(13)).foregroundStyle(MP.muted)
                             Button("Not on the list? Join as a new patient instead") {
                                 model.choose(.joinGeneral)
                             }
-                            .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(MP.brand)
+                            .font(.mp(13.5, weight: .semibold)).foregroundStyle(MP.brand)
                         }
                     }
                     .padding(.top, 6)
@@ -227,7 +227,7 @@ private struct IdentityStep: View {
                 Task { await model.enroll(api: app.api, app: app) }
             }
             Button("Back") { model.go(.path) }
-                .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.brand)
+                .font(.mp(14, weight: .medium)).foregroundStyle(MP.brand)
         }
         .task(id: "\(model.name)|\(model.phone)") {
             try? await Task.sleep(for: .milliseconds(350))
@@ -259,7 +259,7 @@ private struct VerifyStep: View {
                 Task { await model.verify(api: app.api, app: app) }
             }
             Button("Send a new code") { Task { await model.resend(api: app.api, app: app) } }
-                .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.brand)
+                .font(.mp(14, weight: .medium)).foregroundStyle(MP.brand)
         }
         .onAppear { focused = true }
     }
@@ -277,15 +277,15 @@ private struct HealthStep: View {
             VStack(spacing: 12) {
                 Card(tint: true) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("What we read", systemImage: "heart.text.square.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(MP.ink)
+                        Label("What we read", systemImage: "heart.text.square.fill").font(.mp(14, weight: .semibold)).foregroundStyle(MP.ink)
                         ForEach(["Steps, distance and stairs", "Sleep and resting heart rate", "Walking speed, step length and steadiness", "Workouts and exercise minutes"], id: \.self) { line in
                             HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(MP.brand).padding(.top, 3)
-                                Text(line).font(.system(size: 14)).foregroundStyle(MP.body)
+                                Image(systemName: "checkmark").font(.mp(12, weight: .bold)).foregroundStyle(MP.brand).padding(.top, 3)
+                                Text(line).font(.mp(14)).foregroundStyle(MP.body)
                             }
                         }
                         Text("We never write to Health. Turn any type off on the next screen and we simply won't read it.")
-                            .font(.system(size: 12.5)).foregroundStyle(MP.muted).padding(.top, 4)
+                            .font(.mp(12.5)).foregroundStyle(MP.muted).padding(.top, 4)
                     }
                 }
                 if !(app.me?.features.appleHealth ?? true) {
@@ -295,7 +295,7 @@ private struct HealthStep: View {
                 if app.health.state == .connected {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.seal.fill").foregroundStyle(MP.riskLow)
-                        Text("Connected — first sync is running").font(.system(size: 14, weight: .semibold)).foregroundStyle(MP.ink)
+                        Text("Connected — first sync is running").font(.mp(14, weight: .semibold)).foregroundStyle(MP.ink)
                     }
                 }
             }
@@ -317,7 +317,7 @@ private struct HealthStep: View {
                     }
                 }
                 Button("Skip for now") { model.go(.wearable) }
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.brand)
+                    .font(.mp(14, weight: .medium)).foregroundStyle(MP.brand)
             }
         }
     }
@@ -336,7 +336,7 @@ private struct WearableStep: View {
             VStack(spacing: 12) {
                 HStack(spacing: 8) {
                     ForEach(["Oura", "Garmin", "WHOOP", "Fitbit", "Withings"], id: \.self) { b in
-                        Text(b).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(MP.body)
+                        Text(b).font(.mp(12.5, weight: .semibold)).foregroundStyle(MP.body)
                             .padding(.horizontal, 10).padding(.vertical, 6)
                             .background(Capsule().fill(MP.soft))
                     }
@@ -354,7 +354,7 @@ private struct WearableStep: View {
                 }
             }
             Button(app.health.state == .connected ? "Not now" : "Skip") { model.go(.done) }
-                .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.brand)
+                .font(.mp(14, weight: .medium)).foregroundStyle(MP.brand)
         }
         .sheet(item: $link) { url in
             SafariView(url: url).ignoresSafeArea()
@@ -378,12 +378,12 @@ private struct DoneStep: View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer()
             VStack(alignment: .leading, spacing: 14) {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 44)).foregroundStyle(MP.riskLow)
+                Image(systemName: "checkmark.circle.fill").font(.mp(44)).foregroundStyle(MP.riskLow)
                 Text("You're set, \(app.me?.patient.firstName ?? "there").").title(32)
                 Text(app.me?.patient.isRecovery == true
                      ? "When a task is ready we'll text you. Do it right there in Messages, or open the app — either way your care team sees it."
                      : "Your portfolio fills in as your data arrives. When your care team asks for something we'll text you, and you can answer right there or in the app.")
-                    .font(.system(size: 16)).foregroundStyle(MP.body).lineSpacing(3)
+                    .font(.mp(16)).foregroundStyle(MP.body).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 22)
@@ -412,7 +412,7 @@ private struct PathStep: View {
             }
         } footer: {
             Button("Different hospital") { model.go(.hospital) }
-                .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.brand)
+                .font(.mp(14, weight: .medium)).foregroundStyle(MP.brand)
         }
     }
 
@@ -420,16 +420,16 @@ private struct PathStep: View {
         Button(action: action) {
             Card {
                 HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: icon).font(.system(size: 22, weight: .semibold)).foregroundStyle(MP.brand)
+                    Image(systemName: icon).font(.mp(22, weight: .semibold)).foregroundStyle(MP.brand)
                         .frame(width: 40, height: 40)
                         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(MP.brandTint))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(MP.ink)
-                        Text(detail).font(.system(size: 13.5)).foregroundStyle(MP.muted).lineSpacing(2)
+                        Text(title).font(.mp(16, weight: .semibold)).foregroundStyle(MP.ink)
+                        Text(detail).font(.mp(13.5)).foregroundStyle(MP.muted).lineSpacing(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(MP.faint).padding(.top, 10)
+                    Image(systemName: "chevron.right").font(.mp(13, weight: .semibold)).foregroundStyle(MP.faint).padding(.top, 10)
                 }
             }
         }
@@ -458,7 +458,7 @@ private struct JoinStep: View {
                 TextField("Mobile number", text: $model.phone)
                     .textFieldStyle(FieldStyle()).textContentType(.telephoneNumber).keyboardType(.phonePad)
                 Toggle(isOn: $hasDOB) {
-                    Text("Add date of birth").font(.system(size: 15, weight: .medium)).foregroundStyle(MP.ink)
+                    Text("Add date of birth").font(.mp(15, weight: .medium)).foregroundStyle(MP.ink)
                 }
                 .tint(MP.brand)
                 .onChange(of: hasDOB) { _, on in model.dateOfBirth = on ? dob : nil }
@@ -468,7 +468,7 @@ private struct JoinStep: View {
                         .onChange(of: dob) { _, d in model.dateOfBirth = d }
                 }
                 Toggle(isOn: surgicalBinding) {
-                    Text("I'm recovering from an operation").font(.system(size: 15, weight: .medium)).foregroundStyle(MP.ink)
+                    Text("I'm recovering from an operation").font(.mp(15, weight: .medium)).foregroundStyle(MP.ink)
                 }
                 .tint(MP.brand)
                 if surgical {
@@ -481,7 +481,7 @@ private struct JoinStep: View {
                         }
                         DatePicker("Surgery date", selection: $model.surgeryDate, in: ...Date(), displayedComponents: .date)
                             .datePickerStyle(.compact)
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.mp(15, weight: .medium))
                     }
                     .padding(.top, 4)
                 }
@@ -493,7 +493,7 @@ private struct JoinStep: View {
                 Task { await model.join(api: app.api, app: app) }
             }
             Button("Back") { model.go(.path) }
-                .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.brand)
+                .font(.mp(14, weight: .medium)).foregroundStyle(MP.brand)
         }
         .task(id: surgical) { if surgical { await model.loadProcedures(api: app.api) } }
     }

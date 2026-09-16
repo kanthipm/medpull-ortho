@@ -18,8 +18,8 @@ struct ProfileView: View {
                         HStack(spacing: 14) {
                             Initials(text: me.patient.initials, size: 48)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(me.patient.name).font(.system(size: 17, weight: .semibold))
-                                Text(me.patient.procedureDisplay).font(.system(size: 13)).foregroundStyle(MP.muted)
+                                Text(me.patient.name).font(.mp(17, weight: .semibold))
+                                Text(me.patient.procedureDisplay).font(.mp(13)).foregroundStyle(MP.muted)
                             }
                         }
                         .padding(.vertical, 4)
@@ -108,7 +108,7 @@ struct ProfileView: View {
             Spacer()
             Text(value).foregroundStyle(MP.ink).multilineTextAlignment(.trailing)
         }
-        .font(.system(size: 15))
+        .font(.mp(15))
     }
 
     private func saveServer() {

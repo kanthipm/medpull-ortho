@@ -5,7 +5,20 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Roboto', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        // Garamond itself ships with Office and macOS but not reliably
+        // anywhere else, so the web face is EB Garamond, the open-licensed
+        // revival, with the locally installed cuts named first for anyone
+        // who has them. Monospace stays Roboto Mono: it carries the numbers
+        // in tables and charts, where a serif's old-style figures and
+        // proportional widths would stop columns lining up.
+        sans: [
+          '"EB Garamond"',
+          'Garamond',
+          '"Adobe Garamond Pro"',
+          '"Apple Garamond"',
+          'Georgia',
+          'serif',
+        ],
         mono: ['"Roboto Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       colors: {

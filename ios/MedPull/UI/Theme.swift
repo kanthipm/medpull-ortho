@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The console's design tokens (frontend/src/index.css), so the app and the
 /// provider console read as one product. Light/dark pairs mirror `:root` and
@@ -69,22 +70,82 @@ enum MP {
 }
 
 extension Font {
+    /// The app's typeface, in one place so the face is one edit.
+    ///
+    /// Garamond ships with Office and macOS but not with iOS, so the bundled
+    /// face is EB Garamond, the open-licensed revival, which is also what the
+    /// console loads — the two surfaces are meant to look like one product.
+    /// Four static cuts rather than the variable font, because `.weight()`
+    /// does not drive a variable axis on a custom face; the nearest cut is
+    /// picked here instead. A missing file falls back to the system face, so
+    /// a build that lost its resources is plain rather than broken.
+    static func mp(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .custom(MPFont.name(for: weight), size: size)
+    }
+
     static func display(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .default)
+        .mp(size, weight: weight)
+    }
+}
+
+enum MPFont {
+    static let family = "EB Garamond"
+
+    /// EB Garamond carries 400/500/600/700; everything lighter reads as
+    /// regular and everything heavier as bold.
+    static func name(for weight: Font.Weight) -> String {
+        switch weight {
+        case .ultraLight, .thin, .light, .regular: return "EBGaramond-Regular"
+        case .medium: return "EBGaramond-Medium"
+        case .semibold: return "EBGaramond-SemiBold"
+        case .bold, .heavy, .black: return "EBGaramond-Bold"
+        default: return "EBGaramond-Regular"
+        }
+    }
+
+    /// The UIKit half of the app — navigation titles, the tab bar, the
+    /// segmented control on Profile, the rows of a native List — draws with
+    /// the system face no matter what SwiftUI's `.font` says, so those
+    /// proxies are set once at launch. Without this the app is half Garamond
+    /// and half San Francisco, most visibly on the Profile sheet.
+    @MainActor
+    static func applyUIKitAppearance() {
+        func font(_ size: CGFloat, _ weight: Font.Weight) -> UIFont {
+            UIFont(name: name(for: weight), size: size)
+                ?? .systemFont(ofSize: size, weight: weight == .bold ? .bold : .regular)
+        }
+
+        let nav = UINavigationBarAppearance()
+        nav.configureWithDefaultBackground()
+        nav.titleTextAttributes = [.font: font(17, .semibold)]
+        nav.largeTitleTextAttributes = [.font: font(32, .bold)]
+        UINavigationBar.appearance().standardAppearance = nav
+        UINavigationBar.appearance().scrollEdgeAppearance = nav
+        UINavigationBar.appearance().compactAppearance = nav
+
+        UISegmentedControl.appearance().setTitleTextAttributes([.font: font(14, .medium)], for: .normal)
+        UISegmentedControl.appearance().setTitleTextAttributes([.font: font(14, .semibold)], for: .selected)
+        UITabBarItem.appearance().setTitleTextAttributes([.font: font(10, .medium)], for: .normal)
+        UIBarButtonItem.appearance().setTitleTextAttributes([.font: font(17, .regular)], for: .normal)
     }
 }
 
 extension View {
     /// The console's `.micro` eyebrow: small caps, tracked out, muted.
+    /// Tracked a little wider than the sans version was: a serif's uppercase
+    /// runs tighter, and these are 11pt.
     func eyebrow() -> some View {
-        self.font(.system(size: 11, weight: .semibold))
+        self.font(.mp(11, weight: .semibold))
             .textCase(.uppercase)
-            .kerning(0.8)
+            .kerning(1.0)
             .foregroundStyle(MP.muted)
     }
 
+    /// Tracking sits at zero here. The -0.6 it used to carry was tuned to
+    /// pull San Francisco's wide caps together at display sizes; a Garamond
+    /// is already tightly fitted and the same value reads cramped.
     func title(_ size: CGFloat = 26) -> some View {
-        self.font(.display(size)).tracking(-0.6).foregroundStyle(MP.ink)
+        self.font(.display(size)).foregroundStyle(MP.ink)
             .fixedSize(horizontal: false, vertical: true)
             .lineLimit(nil)
     }

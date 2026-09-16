@@ -69,10 +69,10 @@ struct CheckinView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Daily check-in")
-                    .font(.system(size: 20, weight: .semibold)).foregroundStyle(MP.ink)
+                    .font(.mp(20, weight: .semibold)).foregroundStyle(MP.ink)
                 Spacer()
                 Text(isReview ? "Review" : "\(step + 1) of \(questions.count)")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(MP.muted)
+                    .font(.mp(13, weight: .medium)).foregroundStyle(MP.muted)
                     .monospacedDigit()
             }
             HStack(spacing: 6) {
@@ -92,7 +92,7 @@ struct CheckinView: View {
     private func question(_ q: Question) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(q.prompt)
-                .font(.system(size: 24, weight: .semibold))
+                .font(.mp(24, weight: .semibold))
                 .foregroundStyle(MP.ink)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -129,10 +129,10 @@ struct CheckinView: View {
     private var review: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(answered == 0 ? "Nothing answered yet" : "Here's what goes to your care team")
-                .font(.system(size: 22, weight: .semibold)).foregroundStyle(MP.ink)
+                .font(.mp(22, weight: .semibold)).foregroundStyle(MP.ink)
             if answered == 0 {
                 Text("Tap any question to answer it, or send nothing and do it later.")
-                    .font(.system(size: 14.5)).foregroundStyle(MP.muted)
+                    .font(.mp(14.5)).foregroundStyle(MP.muted)
             }
             Card(padding: 0) {
                 VStack(spacing: 0) {
@@ -141,15 +141,15 @@ struct CheckinView: View {
                             HStack(alignment: .top, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(q.prompt)
-                                        .font(.system(size: 13)).foregroundStyle(MP.muted)
+                                        .font(.mp(13)).foregroundStyle(MP.muted)
                                         .multilineTextAlignment(.leading)
                                     Text(spoken(q))
-                                        .font(.system(size: 15, weight: .medium))
+                                        .font(.mp(15, weight: .medium))
                                         .foregroundStyle(answers[q.id] == nil ? MP.faint : MP.ink)
                                         .multilineTextAlignment(.leading)
                                 }
                                 Spacer(minLength: 8)
-                                Image(systemName: "pencil").font(.system(size: 12, weight: .semibold))
+                                Image(systemName: "pencil").font(.mp(12, weight: .semibold))
                                     .foregroundStyle(MP.brand)
                             }
                             .padding(.horizontal, 16).padding(.vertical, 12)
@@ -192,7 +192,7 @@ struct CheckinView: View {
             HStack {
                 if step > 0 {
                     Button("Back") { withAnimation { typing = false; step -= 1 } }
-                        .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.muted)
+                        .font(.mp(14, weight: .medium)).foregroundStyle(MP.muted)
                 }
                 Spacer()
                 if !isReview {
@@ -203,7 +203,7 @@ struct CheckinView: View {
                         if let id = current?.id { answers.removeValue(forKey: id) }
                         withAnimation { typing = false; step += 1 }
                     }
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.muted)
+                    .font(.mp(14, weight: .medium)).foregroundStyle(MP.muted)
                 }
             }
             .frame(minHeight: 22)
@@ -259,7 +259,7 @@ private struct ScaleAnswer: View {
             ZStack {
                 if value == nil {
                     Text("Drag to answer")
-                        .font(.system(size: 15, weight: .medium)).foregroundStyle(MP.faint)
+                        .font(.mp(15, weight: .medium)).foregroundStyle(MP.faint)
                 } else {
                     VStack(spacing: 0) {
                         Text("\(number)")
@@ -268,7 +268,7 @@ private struct ScaleAnswer: View {
                             .foregroundStyle(tone)
                             .contentTransition(.numericText())
                         Text(painting ? Pain.word(number) : "out of 10")
-                            .font(.system(size: 14, weight: .medium)).foregroundStyle(MP.muted)
+                            .font(.mp(14, weight: .medium)).foregroundStyle(MP.muted)
                     }
                 }
             }
@@ -282,9 +282,9 @@ private struct ScaleAnswer: View {
             .tint(tone)
 
             HStack {
-                Text(painting ? "No pain" : "0").font(.system(size: 12)).foregroundStyle(MP.faint)
+                Text(painting ? "No pain" : "0").font(.mp(12)).foregroundStyle(MP.faint)
                 Spacer()
-                Text(painting ? "Worst imaginable" : "10").font(.system(size: 12)).foregroundStyle(MP.faint)
+                Text(painting ? "Worst imaginable" : "10").font(.mp(12)).foregroundStyle(MP.faint)
             }
         }
     }
@@ -327,10 +327,10 @@ private struct ChoiceAnswer: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 20))
+                            .font(.mp(20))
                             .foregroundStyle(selected ? MP.brand : MP.line)
                         Text(Self.labels[opt] ?? opt.capitalized)
-                            .font(.system(size: 17, weight: .medium))
+                            .font(.mp(17, weight: .medium))
                             .foregroundStyle(MP.ink)
                         Spacer()
                     }
@@ -366,11 +366,11 @@ private struct CheckinDoneView: View {
         VStack(spacing: 14) {
             Spacer()
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 54)).foregroundStyle(MP.riskLow)
+                .font(.mp(54)).foregroundStyle(MP.riskLow)
             Text("Sent to your care team")
-                .font(.system(size: 21, weight: .semibold)).foregroundStyle(MP.ink)
+                .font(.mp(21, weight: .semibold)).foregroundStyle(MP.ink)
             Text("That's today done. They'll see it with their next review.")
-                .font(.system(size: 14.5)).foregroundStyle(MP.muted)
+                .font(.mp(14.5)).foregroundStyle(MP.muted)
                 .multilineTextAlignment(.center)
             Spacer()
         }

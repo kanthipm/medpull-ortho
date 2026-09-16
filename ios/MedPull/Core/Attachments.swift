@@ -148,7 +148,7 @@ struct AttachmentImageView: View {
             } else if cache.didFail(attachment) {
                 HStack(spacing: 6) {
                     Image(systemName: "photo.badge.exclamationmark")
-                    Text("This photo could not be loaded").font(.system(size: 12.5, weight: .medium))
+                    Text("This photo could not be loaded").font(.mp(12.5, weight: .medium))
                 }
                 .foregroundStyle(MP.muted)
                 .padding(.horizontal, 12).padding(.vertical, 10)
@@ -173,15 +173,15 @@ struct AttachmentFileView: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: attachment.contentType == "application/pdf" ? "doc.richtext" : "doc")
-                .font(.system(size: 15))
+                .font(.mp(15))
                 .foregroundStyle(MP.brand)
             VStack(alignment: .leading, spacing: 1) {
                 Text(attachment.displayName)
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .font(.mp(13.5, weight: .semibold))
                     .foregroundStyle(MP.ink)
                     .lineLimit(1)
                 Text(attachment.sizeLabel)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.mp(11.5, weight: .medium))
                     .foregroundStyle(MP.muted)
             }
         }
@@ -202,7 +202,7 @@ struct AttachmentStrip: View {
                 ForEach(attachments) { a in
                     if a.isWithdrawn {
                         Text(a.isImage ? "Photo taken back" : "File taken back")
-                            .font(.system(size: 12, weight: .medium)).italic()
+                            .font(.mp(12, weight: .medium)).italic()
                             .foregroundStyle(MP.faint)
                     } else if a.isImage {
                         AttachmentImageView(attachment: a)

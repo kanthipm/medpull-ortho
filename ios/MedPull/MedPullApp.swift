@@ -9,6 +9,10 @@ struct MedPullApp: App {
             _ application: UIApplication,
             didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
         ) -> Bool {
+            // Navigation titles, the tab bar and anything else UIKit draws
+            // ignore SwiftUI's font, so the typeface is set on those proxies
+            // before the first screen appears.
+            MPFont.applyUIKitAppearance()
             // Restores the Health SDK's stored configuration so background
             // delivery keeps running across launches without re-asking.
             VitalHealthKitClient.automaticConfiguration()

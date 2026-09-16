@@ -78,7 +78,7 @@ struct MessagesView: View {
             Text("Messages").title(28)
             if let team = app.me?.patient.careTeam, !team.isEmpty {
                 Text("Your care team: " + team.map(\.name).joined(separator: ", "))
-                    .font(.system(size: 13)).foregroundStyle(MP.muted)
+                    .font(.mp(13)).foregroundStyle(MP.muted)
             }
         }
         .padding(.top, 8).padding(.bottom, 6)
@@ -92,7 +92,7 @@ struct MessagesView: View {
                 Button {
                     picking = true
                 } label: {
-                    Image(systemName: "paperclip").font(.system(size: 17, weight: .medium))
+                    Image(systemName: "paperclip").font(.mp(17, weight: .medium))
                         .foregroundStyle(MP.brand)
                         .frame(width: 40, height: 44)
                 }
@@ -105,7 +105,7 @@ struct MessagesView: View {
                 Button {
                     send()
                 } label: {
-                    Image(systemName: "arrow.up").font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
+                    Image(systemName: "arrow.up").font(.mp(16, weight: .bold)).foregroundStyle(.white)
                         .frame(width: 44, height: 44)
                         .background(Circle().fill(canSend ? MP.brand : MP.faint))
                 }
@@ -128,14 +128,14 @@ struct MessagesView: View {
                 ForEach(pending) { a in
                     HStack(spacing: 5) {
                         Image(systemName: a.isImage ? "photo" : "doc")
-                            .font(.system(size: 11, weight: .semibold)).foregroundStyle(MP.brand)
-                        Text(a.displayName).font(.system(size: 12, weight: .medium))
+                            .font(.mp(11, weight: .semibold)).foregroundStyle(MP.brand)
+                        Text(a.displayName).font(.mp(12, weight: .medium))
                             .foregroundStyle(MP.ink).lineLimit(1)
-                        Text(a.sizeLabel).font(.system(size: 11)).foregroundStyle(MP.faint)
+                        Text(a.sizeLabel).font(.mp(11)).foregroundStyle(MP.faint)
                         Button {
                             remove(a)
                         } label: {
-                            Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                            Image(systemName: "xmark").font(.mp(9, weight: .bold))
                                 .foregroundStyle(MP.faint)
                         }
                         .accessibilityLabel("Remove \(a.displayName)")
@@ -147,7 +147,7 @@ struct MessagesView: View {
                 if uploading {
                     HStack(spacing: 5) {
                         ProgressView().controlSize(.mini)
-                        Text("Adding…").font(.system(size: 12, weight: .medium))
+                        Text("Adding…").font(.mp(12, weight: .medium))
                             .foregroundStyle(MP.muted)
                     }
                     .padding(.horizontal, 9).padding(.vertical, 6)
@@ -257,7 +257,7 @@ struct Bubble: View {
         VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
             if !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(message.text)
-                    .font(.system(size: 15))
+                    .font(.mp(15))
                     .foregroundStyle(mine ? .white : MP.ink)
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -273,7 +273,7 @@ struct Bubble: View {
                 Text(who)
                 if message.fromClinician {
                     Text("Care team approved")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.mp(10, weight: .semibold))
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(MP.brandTint))
                         .foregroundStyle(MP.brand)
@@ -284,7 +284,7 @@ struct Bubble: View {
                     Text("· not delivered by text").foregroundStyle(MP.riskMed)
                 }
             }
-            .font(.system(size: 11.5)).foregroundStyle(MP.faint)
+            .font(.mp(11.5)).foregroundStyle(MP.faint)
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .padding(mine ? .leading : .trailing, 48)
@@ -304,8 +304,8 @@ struct Bubble: View {
             Task { await app.refreshTasks() }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "arrow.right.circle.fill").font(.system(size: 14, weight: .semibold))
-                Text(label).font(.system(size: 14.5, weight: .semibold))
+                Image(systemName: "arrow.right.circle.fill").font(.mp(14, weight: .semibold))
+                Text(label).font(.mp(14.5, weight: .semibold))
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 16).frame(minHeight: 40)

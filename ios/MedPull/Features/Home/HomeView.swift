@@ -25,7 +25,7 @@ struct HomeView: View {
                     }
                     if let error = app.lastError { ErrorBanner(text: error) }
                     Text("Monitoring signals for your care team — not a diagnosis.")
-                        .font(.system(size: 12)).foregroundStyle(MP.faint).padding(.top, 6)
+                        .font(.mp(12)).foregroundStyle(MP.faint).padding(.top, 6)
                 }
                 .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 24)
             }
@@ -46,7 +46,7 @@ struct HomeView: View {
                     Text(me.patient.isRecovery
                          ? "Day \(me.patient.postopDay ?? 0) · \(me.patient.procedureDisplay)"
                          : "\(me.patient.hospital?.name ?? "Your hospital") · \(me.patient.daysEnrolled == 0 ? "joined today" : "member for \(me.patient.daysEnrolled) days")")
-                        .font(.system(size: 13.5, weight: .medium)).foregroundStyle(MP.muted)
+                        .font(.mp(13.5, weight: .medium)).foregroundStyle(MP.muted)
                 }
             }
             Spacer()
@@ -69,7 +69,7 @@ struct HomeView: View {
                     Spacer()
                     StatusPill(text: me.recovery.label, tone: tone)
                 }
-                Text(me.recovery.blurb).font(.system(size: 15, weight: .medium)).foregroundStyle(MP.ink).lineSpacing(2)
+                Text(me.recovery.blurb).font(.mp(15, weight: .medium)).foregroundStyle(MP.ink).lineSpacing(2)
                 HStack(spacing: 18) {
                     if let day = me.patient.postopDay, me.patient.isRecovery {
                         stat("Post-op day", "D\(day)")
@@ -100,7 +100,7 @@ struct HomeView: View {
                     Text("Your portfolio").eyebrow()
                     Spacer()
                     Button("Details") { app.selectedTab = .health }
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(MP.brand)
+                        .font(.mp(13, weight: .semibold)).foregroundStyle(MP.brand)
                 }
                 .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)
                 if app.portfolio.isEmpty {
@@ -110,13 +110,13 @@ struct HomeView: View {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                         ForEach(Array(app.portfolio.prefix(6))) { m in
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(m.label).font(.system(size: 11, weight: .medium)).foregroundStyle(MP.muted)
+                                Text(m.label).font(.mp(11, weight: .medium)).foregroundStyle(MP.muted)
                                     .lineLimit(1).minimumScaleFactor(0.8)
                                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                                     Text(m.latestText).font(.system(size: 18, weight: .semibold, design: .monospaced)).foregroundStyle(MP.ink)
-                                    Text(m.unit).font(.system(size: 10.5)).foregroundStyle(MP.faint)
+                                    Text(m.unit).font(.mp(10.5)).foregroundStyle(MP.faint)
                                 }
-                                Text(Dates.shortDay(m.latest.date)).font(.system(size: 10.5)).foregroundStyle(MP.faint)
+                                Text(Dates.shortDay(m.latest.date)).font(.mp(10.5)).foregroundStyle(MP.faint)
                             }
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -131,7 +131,7 @@ struct HomeView: View {
 
     private func stat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(MP.muted)
+            Text(label).font(.mp(11, weight: .medium)).foregroundStyle(MP.muted)
             Text(value).font(.system(size: 17, weight: .semibold, design: .monospaced)).foregroundStyle(MP.ink)
         }
     }
@@ -144,7 +144,7 @@ struct HomeView: View {
                     Spacer()
                     if !app.tasks.open.isEmpty {
                         Button("All tasks") { app.selectedTab = .tasks }
-                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(MP.brand)
+                            .font(.mp(13, weight: .semibold)).foregroundStyle(MP.brand)
                     }
                 }
                 .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 6)
@@ -176,9 +176,9 @@ struct HomeView: View {
         Button(action: action) {
             Card(padding: 14) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Image(systemName: icon).font(.system(size: 18, weight: .semibold)).foregroundStyle(MP.brand)
-                    Text(title).font(.system(size: 14.5, weight: .semibold)).foregroundStyle(MP.ink)
-                    Text(subtitle).font(.system(size: 12.5)).foregroundStyle(MP.muted)
+                    Image(systemName: icon).font(.mp(18, weight: .semibold)).foregroundStyle(MP.brand)
+                    Text(title).font(.mp(14.5, weight: .semibold)).foregroundStyle(MP.ink)
+                    Text(subtitle).font(.mp(12.5)).foregroundStyle(MP.muted)
                 }
             }
         }
@@ -189,11 +189,11 @@ struct HomeView: View {
         Button { app.selectedTab = .health } label: {
             Card {
                 HStack(spacing: 12) {
-                    Image(systemName: "heart.fill").font(.system(size: 20)).foregroundStyle(MP.riskHigh)
+                    Image(systemName: "heart.fill").font(.mp(20)).foregroundStyle(MP.riskHigh)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Connect Apple Health").font(.system(size: 14.5, weight: .semibold)).foregroundStyle(MP.ink)
+                        Text("Connect Apple Health").font(.mp(14.5, weight: .semibold)).foregroundStyle(MP.ink)
                         Text("One tap, and your steps, sleep and heart data build your portfolio on their own.")
-                            .font(.system(size: 12.5)).foregroundStyle(MP.muted)
+                            .font(.mp(12.5)).foregroundStyle(MP.muted)
                     }
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(MP.faint)
@@ -220,26 +220,26 @@ struct TaskRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: icon).font(.system(size: 16, weight: .semibold)).foregroundStyle(MP.brand)
+            Image(systemName: icon).font(.mp(16, weight: .semibold)).foregroundStyle(MP.brand)
                 .frame(width: 30, height: 30)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(MP.brandTint))
             VStack(alignment: .leading, spacing: 2) {
-                Text(task.title).font(.system(size: 15, weight: .semibold)).foregroundStyle(MP.ink)
+                Text(task.title).font(.mp(15, weight: .semibold)).foregroundStyle(MP.ink)
                     .strikethrough(task.status == "done", color: MP.faint)
                 HStack(spacing: 6) {
-                    Text(task.kindLabel).font(.system(size: 12.5)).foregroundStyle(MP.muted)
+                    Text(task.kindLabel).font(.mp(12.5)).foregroundStyle(MP.muted)
                     if task.status == "done", let via = task.completedVia {
-                        Text("· done by \(via)").font(.system(size: 12.5)).foregroundStyle(MP.muted)
+                        Text("· done by \(via)").font(.mp(12.5)).foregroundStyle(MP.muted)
                     } else if task.inSmsConversation {
-                        Text("· in progress by text").font(.system(size: 12.5)).foregroundStyle(MP.riskMed)
+                        Text("· in progress by text").font(.mp(12.5)).foregroundStyle(MP.riskMed)
                     } else if let due = task.dueAt {
-                        Text("· due \(Dates.relative(due))").font(.system(size: 12.5)).foregroundStyle(MP.muted)
+                        Text("· due \(Dates.relative(due))").font(.mp(12.5)).foregroundStyle(MP.muted)
                     }
                 }
             }
             Spacer()
             if task.isOpen {
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(MP.faint)
+                Image(systemName: "chevron.right").font(.mp(13, weight: .semibold)).foregroundStyle(MP.faint)
             } else {
                 Image(systemName: task.status == "done" ? "checkmark.circle.fill" : "minus.circle")
                     .foregroundStyle(task.status == "done" ? MP.riskLow : MP.faint)

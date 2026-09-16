@@ -90,7 +90,7 @@
 }
 
 body {
-  @apply min-h-screen text-ink antialiased;
+  @apply min-h-screen font-sans text-ink antialiased;
   background: rgb(var(--canvas));
   transition: background-color 0.2s ease, color 0.15s ease;
 }
