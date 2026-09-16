@@ -35,40 +35,58 @@ from app.seed.patients import CARE_TEAM, HOSPITALS, PATIENTS
 from app.seed.scenarios import get_scenario
 
 
-def unrebuildable_patient_ids(db: Session) -> list[str]:
-    """Patients a reseed would destroy rather than rebuild.
+def patients_in_real_use(db: Session) -> list[str]:
+    """Patients a real person has used: a phone number on file, or an app
+    session. Their session token, message thread and Apple Health history
+    are theirs alone and exist nowhere in code.
 
-    Three ways to qualify, and the third is the one that is easy to miss:
-
-    * a phone number on file, or an app session — a real person, whose
-      session token, message thread and Apple Health history are theirs
-      alone and exist nowhere in code;
-    * an id the shipped roster does not contain. The seed rebuilds exactly
-      the patients written in ``PATIENTS``; anyone else in the database got
-      there some other way (a clinician created the chart, someone joined
-      from the app, a demo-data script wrote them) and a reseed simply
-      deletes them.
-
-    That last clause matters more than it looks: clearing the phone numbers
-    off a set of demo patients — a reasonable thing to do — would otherwise
-    take them out from under this guard entirely.
+    This is the "is anybody actually behind this record" question. It is
+    NOT the question a reseed asks — see ``unrebuildable_patient_ids`` —
+    and the two must stay separate: a caller that subtracts a protective
+    set from a delete set needs the narrow one, or its cleanup quietly
+    stops removing anything.
     """
-    from sqlalchemy import select
+    from sqlalchemy import or_, select
 
     from app.models.mobile import PatientSession
 
+    return list(
+        db.scalars(
+            select(Patient.id)
+            .where(
+                or_(
+                    Patient.phone.is_not(None),
+                    Patient.id.in_(select(PatientSession.patient_id)),
+                )
+            )
+            .order_by(Patient.id)
+        ).all()
+    )
+
+
+def unrebuildable_patient_ids(db: Session) -> list[str]:
+    """Patients a reseed would destroy rather than rebuild.
+
+    Everything ``patients_in_real_use`` returns, plus every id the shipped
+    roster does not contain. The seed rebuilds exactly the patients written
+    in ``PATIENTS``; anyone else in the database got there some other way
+    (a clinician created the chart, someone joined from the app, a
+    demo-data script wrote them) and a reseed simply deletes them.
+
+    That second clause matters more than it looks: clearing the phone
+    numbers off a set of demo patients — a reasonable thing to do — would
+    otherwise take them out from under this guard entirely.
+
+    Use this ONLY to refuse a destructive rebuild. It is deliberately
+    close to "every patient in the database", so subtracting it from a
+    delete set leaves nothing to delete.
+    """
+    from sqlalchemy import select
+
     shipped = {spec.id for spec in PATIENTS}
-    with_session = set(db.scalars(select(PatientSession.patient_id)).all())
-    rows = db.execute(select(Patient.id, Patient.phone).order_by(Patient.id)).all()
-    return [
-        patient_id
-        for patient_id, phone in rows
-        if phone is not None or patient_id in with_session or patient_id not in shipped
-    ]
-
-
-# The old name, for callers that predate the broader definition.
-live_patient_ids = unrebuildable_patient_ids
+    in_use = set(patients_in_real_use(db))
+    every = db.scalars(select(Patient.id).order_by(Patient.id)).all()
+    return [pid for pid in every if pid in in_use or pid not in shipped]
 
 
 def refuse_destructive_reseed(force: bool = False) -> dict[str, object] | None:

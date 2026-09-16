@@ -244,7 +244,7 @@ def test_the_reseed_refuses_to_delete_real_patients(db):
     """`{"action": "seed"}` drops every table. On a live deployment that
     deletes the app sessions on people's phones, their threads and every
     observation Apple Health ever delivered."""
-    from app.seed.seed import live_patient_ids, refuse_destructive_reseed
+    from app.seed.seed import patients_in_real_use, refuse_destructive_reseed
 
     # Enrolling in this suite leaves Steve with a number on file.
     steve = db.get(Patient, "steve")
@@ -252,7 +252,7 @@ def test_the_reseed_refuses_to_delete_real_patients(db):
     steve.phone = "+15125550142"
     db.commit()
     try:
-        assert "steve" in live_patient_ids(db)
+        assert "steve" in patients_in_real_use(db)
         refusal = refuse_destructive_reseed()
         assert refusal is not None
         assert "refusing to reseed" in refusal["error"]
@@ -272,7 +272,7 @@ def test_the_guard_covers_a_patient_the_seed_cannot_rebuild(db, monkeypatch):
     otherwise take them out from under the guard entirely."""
     from app.seed import seed as seed_module
     from app.seed.patients import PATIENTS, _spec
-    from app.seed.seed import unrebuildable_patient_ids
+    from app.seed.seed import patients_in_real_use, unrebuildable_patient_ids
 
     marker = Patient(
         id="robustness-probe", name="Probe Person", initials="PP", age=40, sex="F",
@@ -285,6 +285,10 @@ def test_the_guard_covers_a_patient_the_seed_cannot_rebuild(db, monkeypatch):
     try:
         # not in the shipped roster: a reseed would delete it for good
         assert "robustness-probe" in unrebuildable_patient_ids(db)
+        # ...but nobody has used it, so it is not a record in real use. The
+        # two questions are separate on purpose: a cleanup that subtracted
+        # the reseed set from its delete set would stop deleting anything.
+        assert "robustness-probe" not in patients_in_real_use(db)
 
         # pretend the seed does know how to rebuild it, with no phone and no
         # session: now it is genuinely disposable
@@ -295,16 +299,18 @@ def test_the_guard_covers_a_patient_the_seed_cannot_rebuild(db, monkeypatch):
         monkeypatch.setattr(seed_module, "PATIENTS", [*PATIENTS, rebuildable])
         assert "robustness-probe" not in unrebuildable_patient_ids(db)
 
-        # a phone alone puts it back under the guard
+        # a phone alone puts it back under the guard, and into real use
         marker.phone = "+15125550699"
         db.commit()
         assert "robustness-probe" in unrebuildable_patient_ids(db)
+        assert "robustness-probe" in patients_in_real_use(db)
 
         # so does an app session, with no phone at all
         marker.phone = None
         db.add(PatientSession(patient_id="robustness-probe", token_hash="probe-hash"))
         db.commit()
         assert "robustness-probe" in unrebuildable_patient_ids(db)
+        assert "robustness-probe" in patients_in_real_use(db)
     finally:
         db.execute(delete(PatientSession).where(PatientSession.patient_id == "robustness-probe"))
         db.execute(delete(Message).where(Message.patient_id == "robustness-probe"))
