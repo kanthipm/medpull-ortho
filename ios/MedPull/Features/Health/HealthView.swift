@@ -186,7 +186,7 @@ struct MetricChart: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(metric.label).font(.copyMedium).foregroundStyle(MP.ink)
                 Spacer()
-                Text(metric.latestText).font(.monoCopyLarge).foregroundStyle(MP.ink)
+                Text(metric.latestText).font(.figuresCopyLarge).foregroundStyle(MP.ink)
                 Text(metric.unit).font(.label).foregroundStyle(MP.muted)
             }
             // TWO SERIES TOKENS, AND THAT IS THE CAP. Daily totals are bars

@@ -164,7 +164,7 @@ struct Initials: View {
     /// Snapped to the ladder instead of `size * 0.34`: the two call sites are
     /// 40pt (-> 14) and 48pt (-> 16), which is 0.35 and 0.33 of the disc.
     private var glyph: Font {
-        .mono(size >= 48 ? MPSize.copyLarge : MPSize.copy, weight: .medium)
+        .figures(size >= 48 ? MPSize.copyLarge : MPSize.copy, weight: .medium)
     }
 
     var body: some View {

@@ -403,7 +403,7 @@ private struct VerifyStep: View {
                     // Measured on the screenshot with the code prefilled,
                     // glyph advances came out 8.67 / 6.33 / 9.33 / 9.67 /
                     // 10.33pt — proportional Instrument Sans 16, not a
-                    // monospace column. Keeping a dead `.font(.monoSubhead)`
+                    // monospace column. Keeping a dead `.font(.figuresSubhead)`
                     // here would just be the same lie in newer words; the
                     // hook has to come from Components.swift (see `handoff`).
                     .focused($focused)

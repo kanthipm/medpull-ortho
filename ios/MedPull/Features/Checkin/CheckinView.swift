@@ -307,14 +307,14 @@ private struct ScaleAnswer: View {
                         // typeface mid-screen and because a readout that
                         // changes on every drag needs equal digit advances or
                         // it shifts under the thumb. `.semibold` -> the 500
-                        // ceiling, which `Font.mono` clamps: `.system(weight:)`
+                        // ceiling, which `Font.figures` clamps: `.system(weight:)`
                         // is the one path that can still draw a real San
                         // Francisco Semibold, since MPFont.name(for:) only
                         // protects `.mp`. It stays fixed-size rather than
                         // fluid: `.system(size:)` has no `relativeTo`, and a
                         // tabular readout that grows is a readout that clips.
                         Text("\(number)")
-                            .font(.monoDisplay(MPSize.displayXL))
+                            .font(.figuresDisplay(MPSize.displayXL))
                             .monospacedDigit()
                             .foregroundStyle(readoutInk)
                             .contentTransition(.numericText())

@@ -28,5 +28,8 @@ export function shortDate(iso: string): string {
 export function signedPct(pct: number | null | undefined): string {
   if (pct == null) return '—'
   const rounded = Math.round(pct)
-  return `${rounded > 0 ? '+' : ''}${rounded}%`
+  // U+2212, not the hyphen: Instrument Sans draws the minus at the plus sign's
+  // width (0.531em), so +12% and −12% line up in a tabular column.
+  const sign = rounded > 0 ? '+' : rounded < 0 ? '\u2212' : ''
+  return `${sign}${Math.abs(rounded)}%`
 }

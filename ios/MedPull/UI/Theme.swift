@@ -1,3 +1,4 @@
+import CoreText
 import SwiftUI
 import UIKit
 
@@ -390,7 +391,7 @@ enum MPMotion {
 /// Why raw numbers are named instead of banned: the six `.system(design:
 /// .monospaced)` escapes hold column and chart alignment and cannot go
 /// through `.mp`, so they need the same numbers. Use these constants there
-/// (or `Font.mono…`) rather than retyping a literal.
+/// (or `Font.figures…`) rather than retyping a literal.
 enum MPSize {
     /// 11pt. CHART AXIS LABELS ONLY — the one thing allowed under 12, and the
     /// floor for the whole app. It is a real size for a real reason: an axis
@@ -518,46 +519,56 @@ extension Font {
     /// `.lineLimit(1).minimumScaleFactor(0.7)`.
     static let displayXL = Font.display(MPSize.displayXL)
 
-    // MARK: - The monospace escape
+    // MARK: - Figures
 
-    /// THE SIX ESCAPES, and the glyph escape hatch.
+    /// Numbers that have to line up: portfolio values, the recovery stats,
+    /// the pain readout, an avatar's initials.
     ///
-    /// Two jobs, both real:
-    ///  1. ALIGNMENT. A column of numbers, a chart readout and an avatar's
-    ///     initials all need equal advance widths. Instrument Sans carries
-    ///     `tnum` but SwiftUI gives no way to switch a feature on a
-    ///     `Font.custom`, so these stay on the system monospace face.
-    ///  2. GLYPHS INSTRUMENT SANS DOES NOT HAVE. Its cmap (501 glyphs) has no
-    ///     U+00B1 `±`, no U+00B5 `µ`, no U+03BC `μ`, and no `≥`/`≤`/`′`/`″`.
-    ///     iOS has no unicode-range mechanism, so those characters fall back
-    ///     to San Francisco per-glyph, silently and at a different width —
-    ///     one word in a second face mid-sentence. A string that must carry
-    ///     `±` or `µ` goes through here, where the whole string is already
-    ///     San Francisco and the mix cannot happen. (It does have `°`, `×`,
-    ///     `·`, `–`, `—`, `→`, `’` and `…`, so those are safe inline.)
+    /// These used to be San Francisco Mono. That aligned the digits, but it
+    /// also set "6h 24" and "0.9" like terminal output: a second typeface on a
+    /// page that is otherwise all Instrument Sans. The console made the same
+    /// change. The UI face carries `tnum`. `Font.custom` gives no way to switch
+    /// a feature on, but a font built from a `UIFont` descriptor does: every
+    /// Instrument Sans digit then advances exactly 0.600em, against 0.390 to
+    /// 0.664em proportionally (measured with CoreText on the shipped TTF).
     ///
-    /// The weight is clamped to the same 500 ceiling as `.mp`: `.system` is
-    /// the one path that could still draw a real semibold.
-    static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: MPFont.systemWeight(for: weight), design: .monospaced)
+    /// Fixed size, like the monospace it replaces: a tabular readout that
+    /// grows is a readout that clips.
+    static func figures(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        guard let base = UIFont(name: MPFont.name(for: weight), size: size) else {
+            return .system(size: size, weight: MPFont.systemWeight(for: weight)).monospacedDigit()
+        }
+        let tabular = base.fontDescriptor.addingAttributes([
+            .featureSettings: [[
+                UIFontDescriptor.FeatureKey.type: kNumberSpacingType,
+                UIFontDescriptor.FeatureKey.selector: kMonospacedNumbersSelector,
+            ]],
+        ])
+        return Font(UIFont(descriptor: tabular, size: size) as CTFont)
     }
 
-    /// 12pt monospace / 400.
-    static let monoLabel = Font.mono(MPSize.label)
-    /// 14pt monospace / 400.
-    static let monoCopy = Font.mono(MPSize.copy)
-    /// 16pt monospace / 500 — a metric value inside a row.
-    static let monoCopyLarge = Font.mono(MPSize.copyLarge, weight: .medium)
-    /// 18pt monospace / 500 — the headline metric.
-    static let monoLede = Font.mono(MPSize.lede, weight: .medium)
-    /// 20pt monospace / 500.
-    static let monoSubhead = Font.mono(MPSize.subhead, weight: .medium)
-    /// A display-band monospace readout. Fixed, not fluid: `.system(size:)`
-    /// has no `relativeTo`, and a tabular readout that grows is a readout
-    /// that clips. Use it for the pain-scale number instead of
-    /// `design: .rounded`, which is a third face on the screen.
-    static func monoDisplay(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .medium, design: .monospaced)
+    /// 12pt figures / 400.
+    static let figuresLabel = Font.figures(MPSize.label)
+    /// 14pt figures / 400.
+    static let figuresCopy = Font.figures(MPSize.copy)
+    /// 16pt figures / 500, a metric value inside a row.
+    static let figuresCopyLarge = Font.figures(MPSize.copyLarge, weight: .medium)
+    /// 18pt figures / 500, the headline metric.
+    static let figuresLede = Font.figures(MPSize.lede, weight: .medium)
+    /// 20pt figures / 500.
+    static let figuresSubhead = Font.figures(MPSize.subhead, weight: .medium)
+    /// A display-band readout, such as the pain-scale number.
+    static func figuresDisplay(_ size: CGFloat) -> Font { figures(size, weight: .medium) }
+
+    /// GLYPHS INSTRUMENT SANS DOES NOT HAVE. Its cmap has no U+00B1 `±`, no
+    /// U+00B5 `µ`, no U+03BC `μ`, and no `≥`/`≤`/`′`/`″`. iOS has no
+    /// unicode-range, so those fall back to San Francisco one glyph at a time,
+    /// at a different width. A string that must carry one should use this, so
+    /// the whole string is San Francisco and the faces cannot mix mid-number.
+    /// (It does have `°`, `×`, `·`, `–`, `—`, `→`, `’` and `…`.) The weight is
+    /// clamped to the same 500 ceiling as `.mp`.
+    static func systemGlyphs(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: MPFont.systemWeight(for: weight)).monospacedDigit()
     }
 }
 

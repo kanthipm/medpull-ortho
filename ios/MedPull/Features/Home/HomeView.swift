@@ -84,7 +84,7 @@ struct HomeView: View {
                     }
                     if let pct = me.recovery.trajectory.pct, me.recovery.trajectory.state != "unknown" {
                         stat(me.patient.isRecovery ? "Vs. expected" : "Vs. baseline",
-                             String(format: "%@%.0f%%", pct >= 0 ? "+" : "", pct))
+                             (pct >= 0 ? "+" : "\u{2212}") + String(format: "%.0f%%", abs(pct)))
                     }
                     if let days = me.recovery.daysWithData {
                         stat("Days of data", "\(days)")
@@ -119,7 +119,7 @@ struct HomeView: View {
                                 Text(m.label).font(.labelMedium).foregroundStyle(MP.muted)
                                     .lineLimit(1).minimumScaleFactor(0.8)
                                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                                    Text(m.latestText).font(.monoLede).foregroundStyle(MP.ink)
+                                    Text(m.latestText).font(.figuresLede).foregroundStyle(MP.ink)
                                     Text(m.unit).font(.label).foregroundStyle(MP.muted)
                                 }
                                 Text(Dates.shortDay(m.latest.date)).font(.label).foregroundStyle(MP.muted)
@@ -138,7 +138,7 @@ struct HomeView: View {
     private func stat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.labelMedium).foregroundStyle(MP.muted)
-            Text(value).font(.monoCopyLarge).foregroundStyle(MP.ink)
+            Text(value).font(.figuresCopyLarge).foregroundStyle(MP.ink)
         }
     }
 
@@ -232,14 +232,14 @@ struct TaskRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title).font(.copyLargeMedium).foregroundStyle(MP.ink)
                     .strikethrough(task.status == "done", color: MP.muted)
-                HStack(spacing: 6) {
+                HStack(spacing: 0) {
                     Text(task.kindLabel).font(.label).foregroundStyle(MP.muted)
                     if task.status == "done", let via = task.completedVia {
-                        Text("\(MP.dotLead)done by \(via)").font(.label).foregroundStyle(MP.muted)
+                        Text("\(MP.dot)done by \(via)").font(.label).foregroundStyle(MP.muted)
                     } else if task.inSmsConversation {
-                        Text("\(MP.dotLead)in progress by text").font(.label).foregroundStyle(MP.riskMed)
+                        Text("\(MP.dot)in progress by text").font(.label).foregroundStyle(MP.riskMed)
                     } else if let due = task.dueAt {
-                        Text("\(MP.dotLead)due \(Dates.relative(due))").font(.label).foregroundStyle(MP.muted)
+                        Text("\(MP.dot)due \(Dates.relative(due))").font(.label).foregroundStyle(MP.muted)
                     }
                 }
             }
