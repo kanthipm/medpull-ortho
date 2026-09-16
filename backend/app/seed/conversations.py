@@ -9,7 +9,7 @@ C = "copilot"
 P = "patient"
 
 CONVERSATIONS: dict[str, list[tuple[int, int, list[tuple[str, str]]]]] = {
-    "marcus": [
+    "reyes": [
         (3, 8, [
             (C, "Good morning, Marcus. How are you feeling today?"),
             (P, "Not bad. The knee is sore but I got my exercises in yesterday."),

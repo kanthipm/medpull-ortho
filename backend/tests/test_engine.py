@@ -467,7 +467,7 @@ def test_golden_tiers(db):
     from app.engine.pipeline import latest_assessment
 
     expected = {
-        "marcus": RiskLevel.HIGH,
+        "reyes": RiskLevel.HIGH,
         "steve": RiskLevel.MISSING_DATA,
         "guest": RiskLevel.MISSING_DATA,
         "priya": RiskLevel.MISSING_DATA,
