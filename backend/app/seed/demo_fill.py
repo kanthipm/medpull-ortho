@@ -1,6 +1,7 @@
 """Fill a LIVE database with demo data for every patient except the real ones.
 
     uv run python -m app.seed.demo_fill --db /path/to/recovery.db [--warm]
+                                        [--no-persona-phones]
 
 Unlike ``app.seed.seed`` this never drops the schema and never touches the
 protected patients (Steve's two records and the Guest slot): their
@@ -29,7 +30,7 @@ import hashlib
 import os
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time as dtime, timedelta
 from pathlib import Path
 
@@ -74,6 +75,9 @@ class Persona:
     adherence_rate: float = 0.85
     conversations: list = field(default_factory=list)  # seed.conversations shape
     messages: list[MessageSpec] = field(default_factory=list)
+    # Set by --no-persona-phones: leave this chart without a number so a
+    # message sent to it on camera stores cleanly instead of failing to send.
+    suppress_phone: bool = False
 
 
 def _build_roster(today: date) -> tuple[list[Persona], list[Persona]]:
@@ -477,13 +481,14 @@ def write_persona(db, persona: Persona, today: date, *, create: bool) -> dict[st
     patient.surgeon_id = spec.surgeon_id
     patient.assigned_provider_id = spec.surgeon_id
     patient.hospital_id = spec.hospital_id
-    # Deliberately no phone number. Sendblue only delivers to a contact
-    # verified in its dashboard, which an invented number can never be, so a
-    # number on file turns a console message or a task dispatch into a
-    # recorded delivery failure — a red badge in the thread on camera. With
-    # none, the message stores cleanly and the console stops offering to text
-    # them. Persona.phone is kept as documentation of the intended number.
-    patient.phone = None
+    # Personas carry their placeholder number so the charts read as complete;
+    # Steve asked for that explicitly and drives every real SMS through his
+    # own verified number instead. Know the trade-off: Sendblue delivers only
+    # to a contact verified in its dashboard, which an invented number can
+    # never be, so a console message or task dispatch to a persona is recorded
+    # as a failed delivery and shows a badge in the thread. Pass
+    # --no-persona-phones to clear them for a take that needs a clean thread.
+    patient.phone = None if persona.suppress_phone else persona.phone
     patient.date_of_birth = _dob(today, spec.age, spec.id)
     patient.mrn = persona.mrn
     patient.care_pathway = persona.care_pathway
@@ -597,6 +602,9 @@ def main() -> None:
                         help="skip regeneration; only fill the insight caches for the demo roster")
     parser.add_argument("--pause", type=float, default=2.0,
                         help="seconds between Groq calls while warming")
+    parser.add_argument("--no-persona-phones", action="store_true",
+                        help="leave the demo patients without a phone number, so a message "
+                             "sent to one stores cleanly instead of recording a failed SMS")
     args = parser.parse_args()
     _bind_database(args.db)
 
@@ -609,6 +617,10 @@ def main() -> None:
     ensure_schema()
     today = date.today()
     legacy, new = _build_roster(today)
+    if args.no_persona_phones:
+        legacy = [replace(p, suppress_phone=True) for p in legacy]
+        new = [replace(p, suppress_phone=True) for p in new]
+        print("demo patients will be left without a phone number")
     touched: list[str] = []
 
     db = SessionLocal()
