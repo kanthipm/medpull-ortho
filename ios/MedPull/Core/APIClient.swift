@@ -73,7 +73,10 @@ final class APIClient {
         var (data, response) = try await attempt(request)
         var status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if method == "GET" && (status == 0 || status == 429 || status >= 500) {
-            try? await Task.sleep(for: .seconds(1.5))
+            // `try`, not `try?`: a sleep cancelled while the screen is going
+            // away must abandon the retry rather than wake up and report a
+            // failure nobody is waiting for.
+            try await Task.sleep(for: .seconds(1.5))
             (data, response) = try await attempt(request)
             status = (response as? HTTPURLResponse)?.statusCode ?? 0
         }
@@ -98,9 +101,20 @@ final class APIClient {
     /// One HTTP attempt. A transport failure (no network, DNS, timeout) comes
     /// back as status 0 with empty data rather than throwing, so the caller
     /// can decide whether to retry.
+    ///
+    /// Cancellation is not a transport failure and must not be folded into
+    /// one. SwiftUI cancels the task behind a `.task` or `.refreshable` every
+    /// time the view goes away — a tab switch, leaving Messages, the poll loop
+    /// being torn down — and URLSession reports that as `URLError.cancelled`.
+    /// Treating it as "no connection" is what put "Can't reach MedPull" in
+    /// front of people whose connection was fine.
     private func attempt(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await session.data(for: request)
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             return (Data(), URLResponse())
         }

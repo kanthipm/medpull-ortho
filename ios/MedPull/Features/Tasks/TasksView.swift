@@ -135,14 +135,14 @@ struct TaskDetailView: View {
                 try? await Task.sleep(for: .seconds(1.2))
                 dismiss()
             } catch {
-                self.error = error.localizedDescription
+                self.error = AppModel.message(for: error)
             }
         }
     }
 
     private func skip() {
         Task {
-            do { try await app.skip(task); dismiss() } catch { self.error = error.localizedDescription }
+            do { try await app.skip(task); dismiss() } catch { self.error = AppModel.message(for: error) }
         }
     }
 }

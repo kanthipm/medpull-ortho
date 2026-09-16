@@ -71,39 +71,85 @@ final class AppModel {
 
     // MARK: feeds
 
-    func refreshAll() async {
-        await refreshMe()
-        await refreshTasks()
-        await refreshMessages()
-        await refreshPortfolio()
-    }
+    /// What one refresh did. Cancelled is its own answer: SwiftUI tears down
+    /// the task behind `.task` and `.refreshable` on every tab switch, and
+    /// that is the screen moving on, not a success to report or a failure to
+    /// complain about.
+    enum Outcome { case ok, failed, cancelled }
 
-    func refreshMe() async {
-        do { me = try await api.me(); clearError() } catch { note(error) }
-    }
-
-    func refreshTasks() async {
-        do { tasks = try await api.tasks(); clearError() } catch { note(error) }
-    }
-
-    func refreshMessages() async {
-        do { messages = try await api.messages(); clearError() } catch { note(error) }
-    }
-
-    func refreshProgress() async {
-        do { progress = try await api.progress(days: 14).days; clearError() } catch { note(error) }
-    }
-
-    func refreshPortfolio() async {
-        do { portfolio = try await api.portfolio(days: 14).metrics; clearError() } catch { note(error) }
-    }
-
-    func refreshWearables(force: Bool = false) async {
+    @discardableResult
+    private func refresh(surface: Bool = true, _ work: () async throws -> Void) async -> Outcome {
         do {
-            let r = force ? try await api.refreshWearables() : try await api.wearables()
-            wearables = r.summary
+            try await work()
             clearError()
-        } catch { note(error) }
+            return .ok
+        } catch is CancellationError {
+            return .cancelled
+        } catch {
+            if let e = error as? APIError, e.isUnauthorized {
+                Task { await signOut() }
+                return .failed
+            }
+            if surface { lastError = error.localizedDescription }
+            return .failed
+        }
+    }
+
+    func refreshAll() async {
+        // These four share one banner, and they used to write it in turn, so
+        // the last one to finish decided whether the app looked broken. The
+        // 14-day portfolio is the heaviest call and the first to be throttled,
+        // which is how a working app ended up claiming it could not reach the
+        // server while the three calls before it had just succeeded. The
+        // banner now means what it says: nothing got through.
+        let outcomes = [
+            await refresh(surface: false) { self.me = try await self.api.me() },
+            await refresh(surface: false) { self.tasks = try await self.api.tasks() },
+            await refresh(surface: false) { self.messages = try await self.api.messages() },
+            await refresh(surface: false) {
+                self.portfolio = try await self.api.portfolio(days: 14).metrics
+            },
+        ]
+        if outcomes.contains(.ok) {
+            clearError()
+        } else if outcomes.contains(.failed) {
+            lastError = "Can't reach MedPull right now. Check your connection."
+        }
+    }
+
+    @discardableResult
+    func refreshMe(surface: Bool = true) async -> Outcome {
+        await refresh(surface: surface) { self.me = try await self.api.me() }
+    }
+
+    @discardableResult
+    func refreshTasks(surface: Bool = true) async -> Outcome {
+        await refresh(surface: surface) { self.tasks = try await self.api.tasks() }
+    }
+
+    @discardableResult
+    func refreshMessages(surface: Bool = true) async -> Outcome {
+        await refresh(surface: surface) { self.messages = try await self.api.messages() }
+    }
+
+    @discardableResult
+    func refreshProgress(surface: Bool = true) async -> Outcome {
+        await refresh(surface: surface) { self.progress = try await self.api.progress(days: 14).days }
+    }
+
+    @discardableResult
+    func refreshPortfolio(surface: Bool = true) async -> Outcome {
+        await refresh(surface: surface) {
+            self.portfolio = try await self.api.portfolio(days: 14).metrics
+        }
+    }
+
+    @discardableResult
+    func refreshWearables(force: Bool = false, surface: Bool = true) async -> Outcome {
+        await refresh(surface: surface) {
+            let r = force ? try await self.api.refreshWearables() : try await self.api.wearables()
+            self.wearables = r.summary
+        }
     }
 
     // MARK: actions
@@ -169,7 +215,21 @@ final class AppModel {
     /// banner left over from an earlier failure (cold start, brief outage).
     private func clearError() { lastError = nil }
 
-    private func note(_ error: Error) {
+    /// What to show the person when an action fails, or nil when there is
+    /// nothing to say. A cancelled request means the screen went away while
+    /// it was in flight, which is not a failure and reads like nonsense when
+    /// it is printed ("The operation couldn't be completed").
+    static func message(for error: Error) -> String? {
+        if error is CancellationError { return nil }
+        if let e = error as? URLError, e.code == .cancelled { return nil }
+        return error.localizedDescription
+    }
+
+    /// Surface a failure from an action the person is waiting on — sending a
+    /// message, completing a task. Refreshes go through `refresh` instead,
+    /// which knows the difference between a failure and a cancelled screen.
+    func note(_ error: Error) {
+        if error is CancellationError { return }
         if let e = error as? APIError, e.isUnauthorized {
             Task { await signOut() }
             return

@@ -69,7 +69,7 @@ struct HealthView: View {
                             Task {
                                 defer { uploading = false }
                                 do { _ = try await app.health.uploadGait(api: app.api) }
-                                catch { self.error = error.localizedDescription }
+                                catch { self.error = AppModel.message(for: error) }
                             }
                         }
                     }
@@ -123,7 +123,7 @@ struct HealthView: View {
                     Task {
                         defer { linking = false }
                         do { link = URL(string: try await app.api.wearableLink().linkUrl) }
-                        catch { self.error = error.localizedDescription }
+                        catch { self.error = AppModel.message(for: error) }
                     }
                 }
                 .disabled(!(app.me?.features.appleHealth ?? false))

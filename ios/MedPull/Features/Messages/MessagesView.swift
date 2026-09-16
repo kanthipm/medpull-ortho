@@ -37,7 +37,10 @@ struct MessagesView: View {
                 await app.markMessagesRead()
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(20))
-                    await app.refreshMessages()
+                    // Nobody asked for this one, so nobody should be told it
+                    // failed: a poll that misses is invisible, and the next
+                    // one twenty seconds later fixes it.
+                    await app.refreshMessages(surface: false)
                 }
             }
         }
@@ -86,7 +89,7 @@ struct MessagesView: View {
             do {
                 try await app.send(message: text)
                 draft = ""
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = AppModel.message(for: error) }
         }
     }
 }
