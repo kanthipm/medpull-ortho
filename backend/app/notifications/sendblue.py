@@ -48,10 +48,54 @@ _CONFIG_FAULTS = (
 # Per-instance and deliberately not persisted: it is re-learned on the next
 # send, and a stale copy must never outlive the fix.
 _last_config_fault: str | None = None
+# Last failure of any kind, so an operator reading /api/health can see that
+# texting is failing even when the cause is one recipient rather than the
+# account. Silence is not evidence of health.
+_last_failure: str | None = None
+
+# Sendblue's own wording, and what an operator has to do about it. The reason
+# alone reads as a dead end ("must be verified" — by whom, how?), and it is
+# the one thing standing between a configured deployment and a delivered text.
+_HINTS: tuple[tuple[str, str], ...] = (
+    (
+        "must be verified",
+        "This number is not a verified Sendblue contact. Have them text {sender} once, "
+        "or verify it in the Sendblue dashboard.",
+    ),
+    (
+        "no contact found",
+        "This number is not a Sendblue contact yet. Have them text {sender} once, "
+        "or add it in the Sendblue dashboard.",
+    ),
+    (
+        "phone number is not defined",
+        "SENDBLUE_FROM_NUMBER ({sender}) is not a number this Sendblue account owns. "
+        "Set it to the account's sending number and redeploy.",
+    ),
+    (
+        "cannot send messages to self",
+        "This number is the account's own sending number ({sender}), so Sendblue "
+        "refuses it. Use a different number for this patient.",
+    ),
+    (
+        "from_number",
+        "Sendblue requires a sending number: set SENDBLUE_FROM_NUMBER and redeploy.",
+    ),
+)
+
+
+def _hint_for(reason: str) -> str:
+    lowered = reason.lower()
+    sender = settings.sendblue_from_number or "the account's Sendblue number"
+    for marker, hint in _HINTS:
+        if marker in lowered:
+            return hint.format(sender=sender)
+    return ""
 
 
 def _note_fault(reason: str) -> None:
-    global _last_config_fault
+    global _last_config_fault, _last_failure
+    _last_failure = reason
     lowered = reason.lower()
     if any(marker in lowered for marker in _CONFIG_FAULTS):
         _last_config_fault = reason
@@ -70,6 +114,8 @@ def status() -> dict:
         "webhook_secret_set": bool(settings.sendblue_webhook_secret),
         # None until a send has been attempted in this process.
         "config_fault": _last_config_fault,
+        "last_failure": _last_failure,
+        "hint": _hint_for(_last_failure) if _last_failure else None,
     }
 
 
@@ -199,10 +245,12 @@ def send_sms(phone_number: str, content: str) -> CheckinSendResult:
         logger.warning("Sendblue send to %s failed: %s %s", phone, exc, reason or "")
         if reason:
             _note_fault(reason)
+        hint = _hint_for(reason) if reason else ""
         return CheckinSendResult(
             sent=False,
-            detail=f"Sendblue answered {exc.response.status_code}"
-            + (f": {reason}" if reason else ""),
+            detail=(f"Sendblue answered {exc.response.status_code}"
+                    + (f": {reason}" if reason else "")
+                    + (f" {hint}" if hint else "")),
             status_code=exc.response.status_code,
             config_fault=bool(reason) and any(
                 m in reason.lower() for m in _CONFIG_FAULTS
@@ -228,12 +276,15 @@ def send_sms(phone_number: str, content: str) -> CheckinSendResult:
         reason = _error_reason(response) or "Sendblue rejected the message"
         _note_fault(reason)
         logger.warning("Sendblue rejected a send to %s: %s", phone, reason)
+        hint = _hint_for(reason)
         return CheckinSendResult(
             sent=False,
-            detail=reason,
+            detail=reason + (f" {hint}" if hint else ""),
             status_code=response.status_code,
             config_fault=any(m in reason.lower() for m in _CONFIG_FAULTS),
         )
+    global _last_failure
+    _last_failure = None  # a delivered message clears the banner
     return CheckinSendResult(sent=True, detail="sent", message_handle=handle)
 
 

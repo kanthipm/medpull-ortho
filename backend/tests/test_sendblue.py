@@ -124,7 +124,9 @@ def test_api_error_carries_sendblues_reason(configured, monkeypatch):
     )
     result = sendblue.send_sms("+15049081262", "hi")
     assert result.sent is False and result.status_code == 400
-    assert result.detail == "Sendblue answered 400: Cannot send messages to self"
+    assert result.detail.startswith("Sendblue answered 400: Cannot send messages to self")
+    # and the detail goes on to say what to do about it
+    assert "own sending number" in result.detail
 
 
 def test_a_rejection_in_a_200_body_is_not_a_send(configured, monkeypatch):
@@ -141,7 +143,7 @@ def test_a_rejection_in_a_200_body_is_not_a_send(configured, monkeypatch):
     )
     result = sendblue.send_sms("+15125550123", "hello")
     assert result.sent is False
-    assert result.detail == "This phone number is not defined."
+    assert result.detail.startswith("This phone number is not defined.")
     # and it is a fault in OUR account, not about this recipient
     assert result.config_fault is True
 
@@ -155,6 +157,7 @@ def test_a_recipient_level_failure_is_not_reported_as_a_config_fault(configured,
     result = sendblue.send_sms("+15049081262", "hello")
     assert result.sent is False and result.config_fault is False
     assert "Cannot send messages to self" in result.detail
+    assert "own sending number" in result.detail  # and what to do about it
 
 
 def test_the_missing_from_number_is_a_config_fault(configured, monkeypatch):
@@ -168,6 +171,8 @@ def test_the_missing_from_number_is_a_config_fault(configured, monkeypatch):
 
 
 def test_health_reports_whether_texting_can_work(client, configured, monkeypatch):
+    monkeypatch.setattr(sendblue, "_last_config_fault", None)
+    monkeypatch.setattr(sendblue, "_last_failure", None)
     body = client.get("/api/health").json()
     assert body["sms"]["configured"] is True
     assert body["sms"]["from_number"] == "+15049081262"
@@ -178,10 +183,9 @@ def test_health_reports_whether_texting_can_work(client, configured, monkeypatch
             "status": "ERROR", "error_message": "This phone number is not defined."}),
     )
     sendblue.send_sms("+15125550123", "hello")
-    assert client.get("/api/health").json()["sms"]["config_fault"] == (
-        "This phone number is not defined."
-    )
-    monkeypatch.setattr(sendblue, "_last_config_fault", None)
+    reported = client.get("/api/health").json()["sms"]
+    assert reported["config_fault"] == "This phone number is not defined."
+    assert "SENDBLUE_FROM_NUMBER" in reported["hint"]
 
 
 def test_a_failed_text_puts_the_reason_on_the_thread(client, db, configured, monkeypatch):
@@ -207,7 +211,8 @@ def test_a_failed_text_puts_the_reason_on_the_thread(client, db, configured, mon
     row = db.scalars(select(Message).where(Message.patient_id == "grace")
                      .order_by(Message.id.desc()).limit(1)).one()
     assert row.delivery_status == "failed"
-    assert row.delivery_detail == "Sendblue answered 400: This phone number is not defined."
+    assert row.delivery_detail.startswith(
+        "Sendblue answered 400: This phone number is not defined.")
     # the patient app sees the same line, and the same reason
     from sqlalchemy import delete
 
@@ -215,3 +220,40 @@ def test_a_failed_text_puts_the_reason_on_the_thread(client, db, configured, mon
     db.get(__import__("app.models.patient", fromlist=["Patient"]).Patient, "grace").phone = None
     db.commit()
     monkeypatch.setattr(sendblue, "_last_config_fault", None)
+
+
+def test_a_failure_carries_what_the_operator_has_to_do(configured, monkeypatch):
+    monkeypatch.setattr(sendblue, "_last_config_fault", None)
+    monkeypatch.setattr(sendblue, "_last_failure", None)
+    """Sendblue's own wording is a dead end on its own — "must be verified"
+    by whom, how? The hint is the difference between a stuck demo and a ten
+    second fix."""
+    monkeypatch.setattr(
+        sendblue.httpx, "post",
+        lambda *a, **kw: _FakeResponse(400, {
+            "status": "ERROR",
+            "error_message": "This contact must be verified before sending messages to it."}),
+    )
+    result = sendblue.send_sms("+18588666257", "hello")
+    assert result.sent is False
+    # recipient-scoped, so not an account fault...
+    assert result.config_fault is False
+    # ...but it says exactly what unblocks it, naming the sending number
+    assert "not a verified Sendblue contact" in result.detail
+    assert "+15049081262" in result.detail
+    # and health shows the failure even though the account itself is fine
+    status = sendblue.status()
+    assert status["config_fault"] is None
+    assert status["last_failure"] == (
+        "This contact must be verified before sending messages to it."
+    )
+    assert "verify it in the Sendblue dashboard" in status["hint"]
+
+
+def test_a_delivered_message_clears_the_failure_banner(configured, monkeypatch):
+    monkeypatch.setattr(sendblue, "_last_config_fault", None)
+    monkeypatch.setattr(sendblue, "_last_failure", "something older")
+    monkeypatch.setattr(sendblue.httpx, "post",
+                        lambda *a, **kw: _FakeResponse(200, {"message_handle": "mh_ok"}))
+    assert sendblue.send_sms("+15125550123", "hello").sent is True
+    assert sendblue.status()["last_failure"] is None
