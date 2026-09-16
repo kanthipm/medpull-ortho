@@ -570,6 +570,7 @@ def main() -> None:
 
     from app.database import SessionLocal, ensure_schema
     from app.models import Patient
+    from app.seed.seed import live_patient_ids
 
     ensure_schema()
     today = date.today()
@@ -591,10 +592,16 @@ def main() -> None:
 
         legacy_ids = {p.spec.id for p in legacy}
         new_ids = {p.spec.id for p in new}
-        junk = sorted(
-            pid for pid, p in roster.items()
-            if pid not in PROTECTED and pid not in legacy_ids and pid not in new_ids
-        )
+        demo_ids = legacy_ids | new_ids
+        # A patient this script did not author, carrying a phone number or an
+        # app session, is a real person who enrolled since the last run — the
+        # thing a re-run on the morning of a demo must never delete. Only
+        # history-free leftovers are swept.
+        live = {pid for pid in live_patient_ids(db) if pid not in demo_ids}
+        keep = PROTECTED | live
+        junk = sorted(pid for pid in roster if pid not in keep and pid not in demo_ids)
+        if live - PROTECTED:
+            print(f"keeping live non-demo patient(s): {', '.join(sorted(live - PROTECTED))}")
         for pid in junk:
             purge_patient(db, pid, identity=True, tables=tables)
             db.delete(roster[pid])
