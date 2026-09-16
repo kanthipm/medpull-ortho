@@ -77,8 +77,8 @@ export default function MessagesSection({
 
         {thread.isLoading && (
           <div className="space-y-2.5">
-            <SkeletonLine className="ml-auto h-8 w-2/3 rounded-[14px]" />
-            <SkeletonLine className="h-8 w-1/2 rounded-[14px]" />
+            <SkeletonLine className="ml-auto h-8 w-2/3 rounded-none" />
+            <SkeletonLine className="h-8 w-1/2 rounded-none" />
           </div>
         )}
         {thread.isError && (
@@ -144,10 +144,10 @@ function Bubble({ m, first }: { m: PatientMessage; first: string }) {
     <li className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
       <div className={`max-w-[85%] ${inbound ? 'items-start' : 'items-end'} flex flex-col`}>
         <div
-          className={`rounded-[14px] px-3.5 py-2 text-[13px] font-medium leading-[1.45] ${
+          className={`rounded-none px-3.5 py-2 text-[13px] font-medium leading-[1.45] ${
             inbound
-              ? 'rounded-bl-[4px] border border-line bg-panel text-ink'
-              : 'rounded-br-[4px] bg-brand text-white'
+              ? 'border border-line bg-panel text-ink'
+              : 'bg-brand text-white'
           }`}
         >
           {m.text}

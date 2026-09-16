@@ -41,21 +41,21 @@ export default function MetricCluster({
 
   return (
     <div
-      className={`grid overflow-hidden rounded-card border border-line bg-line ${colClass} gap-px ${className}`}
+      className={`grid overflow-hidden rounded-card border border-line bg-line shadow-card ${colClass} gap-px ${className}`}
     >
       {items.map((item) => (
-        <div key={item.key} className="bg-panel px-3.5 py-3">
-          <span className="block whitespace-nowrap text-[10.5px] font-medium uppercase tracking-[.08em] text-faint">
+        <div key={item.key} className="bg-panel px-4 py-3.5">
+          <span className="block whitespace-nowrap text-[11px] font-medium uppercase tracking-[.06em] text-muted">
             {item.label}
           </span>
           <span
-            className={`mt-1.5 flex items-baseline gap-1.5 font-mono text-[20px] font-medium leading-none tabular-nums tracking-[-.02em] ${
+            className={`mt-1.5 flex items-baseline gap-1.5 font-mono text-[24px] font-medium leading-none tabular-nums tracking-[-.02em] ${
               item.tone ? TONE[item.tone] : 'text-ink'
             }`}
           >
             {item.value}
             {item.hint && (
-              <span className="max-w-[9rem] truncate font-sans text-[10px] font-medium uppercase tracking-[.04em] text-faint">
+              <span className="max-w-[9rem] truncate font-sans text-[11px] font-medium uppercase tracking-[.04em] text-muted">
                 {item.hint}
               </span>
             )}

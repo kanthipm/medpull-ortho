@@ -26,7 +26,7 @@ Requirements: [uv](https://docs.astral.sh/uv/) and Node 20+.
 
 ```bash
 make setup     # install backend (uv) + frontend (npm) dependencies
-make seed      # create + populate the demo database (12 patients, 5,071 observations)
+make seed      # create + populate the demo database (6 patients, 1,199 observations)
 make dev       # API on :8000 + Vite dev server on :5173
 ```
 

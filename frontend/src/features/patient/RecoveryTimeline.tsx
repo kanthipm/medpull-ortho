@@ -51,18 +51,18 @@ export default function RecoveryTimeline({
     >
       <RefreshOverlay show={refreshing} />
       {events.length === 0 ? (
-        <p className="text-[11.5px] font-medium text-muted">
+        <p className="text-[14px] text-muted">
           Timeline will appear as events are recorded.
         </p>
       ) : (
         <div className="overflow-x-auto pb-1">
           <div className="relative flex min-w-max items-start gap-8 px-1 pt-1.5">
-            <span aria-hidden className="absolute left-2 right-2 top-[9px] h-px bg-line" />
+            <span aria-hidden className="absolute left-2 right-2 top-[10px] h-px bg-line" />
             {events.map((e, i) => (
               <div key={`${e.date}-${e.kind}-${i}`} className="relative flex w-24 flex-col items-start">
-                <span className={`relative z-10 h-3 w-3 rounded-full ${DOT[e.kind] ?? 'bg-line'}`} />
-                <span className="mt-2 text-[12px] font-semibold leading-tight text-ink">{e.label}</span>
-                <span className="font-mono text-[11px] font-medium tabular-nums text-faint">
+                <span className={`relative z-10 h-3.5 w-3.5 rounded-full ${DOT[e.kind] ?? 'bg-line'}`} />
+                <span className="mt-2 text-[13px] font-medium leading-tight text-ink">{e.label}</span>
+                <span className="font-mono text-[12px] font-medium tabular-nums text-muted">
                   {shortDate(e.date)}
                 </span>
               </div>

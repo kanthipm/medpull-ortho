@@ -109,15 +109,15 @@ export default function PatientDetailPage() {
       <div {...rise(0)}>
         <Link
           to="/"
-          className="inline-flex items-center gap-1 text-[13px] font-medium text-brand transition-opacity duration-150 hover:opacity-75"
+          className="inline-flex items-center gap-1 text-[14px] font-medium text-brand transition-opacity duration-150 hover:opacity-75"
         >
-          <ArrowLeft size={15} /> Worklist
+          <ArrowLeft size={16} /> Worklist
         </Link>
 
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <span
             aria-hidden
-            className={`grid h-10 w-10 place-items-center rounded-full font-mono text-[13px] font-medium text-white ${
+            className={`grid h-12 w-12 place-items-center rounded-full font-mono text-[14px] font-medium text-white ${
               p.risk.level === 'high' ? 'bg-risk-high' : 'bg-brand'
             }`}
           >
@@ -125,21 +125,21 @@ export default function PatientDetailPage() {
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="text-[26px] font-semibold tracking-[-.03em] text-ink">{p.name}</h1>
+              <h1 className="text-[28px] font-normal text-ink">{p.name}</h1>
               <PriorityBadge priority={p.risk.level} />
               <ConfidenceChip level={p.data_confidence.level} />
             </div>
-            <p className="mt-1 text-[12.5px] font-medium text-muted">
+            <p className="mt-1 text-[14px] text-muted">
               {p.age} {p.sex} · {p.procedure_display} · {p.surgeon}
               {p.device && <> · {p.device.model}</>}
             </p>
             {p.mode === 'general' && (
-              <p className="mt-0.5 text-[12px] font-medium text-faint">
+              <p className="mt-0.5 text-[13px] text-muted">
                 No surgery on file · followed on everyday signals
               </p>
             )}
             {care.data?.pathway?.name && (
-              <p className="mt-0.5 text-[12px] font-medium text-faint">
+              <p className="mt-0.5 text-[13px] text-muted">
                 Pathway · {care.data.pathway.name}
               </p>
             )}
@@ -203,7 +203,7 @@ export default function PatientDetailPage() {
         </div>
       </div>
 
-      <div className="mt-5 space-y-3.5">
+      <div className="mt-6 space-y-4">
         <SectionCard
           sum
           spine={PRIORITY[p.risk.level].spine}
@@ -217,7 +217,7 @@ export default function PatientDetailPage() {
           }
         >
           <RefreshOverlay show={refreshing} />
-          <p className="text-[13.5px] font-medium leading-[1.6] text-body">{p.summary.text}</p>
+          <p className="text-[15px] leading-[1.6] text-body">{p.summary.text}</p>
         </SectionCard>
 
         <div {...rise(3)}>

@@ -31,12 +31,12 @@ export default function TrajectoryChart({ actual, expected, changePointDay }: Pr
 
   return (
     <div>
-      <div className="mb-2 flex items-center gap-4 text-[11.5px] font-medium text-muted">
+      <div className="mb-2 flex items-center gap-4 text-[12.5px] font-medium text-muted">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-0.5 w-4 rounded bg-brand" /> Actual
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-4 rounded-sm bg-line" /> Expected range
+          <span className="h-2.5 w-4 bg-line" /> Expected range
         </span>
       </div>
       <div className="h-40">
@@ -46,7 +46,7 @@ export default function TrajectoryChart({ actual, expected, changePointDay }: Pr
               dataKey="day"
               tickLine={false}
               axisLine={false}
-              tick={{ fontSize: 11, fill: 'rgb(var(--faint))' }}
+              tick={{ fontSize: 11, fill: 'rgb(var(--muted))' }}
               tickFormatter={(d: number) => `Day ${d}`}
               interval="preserveStartEnd"
             />
@@ -96,8 +96,8 @@ export default function TrajectoryChart({ actual, expected, changePointDay }: Pr
                 if (!active || !payload?.length) return null
                 const row = payload[0].payload as { actual: number | null; mid: number | null }
                 return (
-                  <div className="rounded-btn border border-line bg-panel px-2.5 py-1.5 text-xs shadow-lift">
-                    <div className="text-[11px] font-medium text-faint">Post-op day {label}</div>
+                  <div className="rounded-field border border-line bg-panel px-2.5 py-1.5 text-xs shadow-lift">
+                    <div className="text-[11px] font-medium text-muted">Post-op day {label}</div>
                     {row.actual != null && (
                       <div className="font-mono font-medium tabular-nums text-ink">
                         Actual {Math.round(row.actual * 100)}%

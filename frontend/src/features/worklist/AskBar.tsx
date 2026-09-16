@@ -38,17 +38,17 @@ export default function AskBar({
           e.preventDefault()
           submit(question)
         }}
-        className="flex items-center gap-2 rounded-card border border-line bg-panel p-1.5 transition-[border-color,box-shadow] duration-150 focus-within:border-brand/40 focus-within:shadow-[0_0_0_3px_rgba(91,104,223,.14)]"
+        className="flex items-center gap-2 rounded-btn border border-line bg-panel py-1.5 pl-2.5 pr-1.5 shadow-card transition-[border-color,box-shadow] duration-150 focus-within:border-brand focus-within:shadow-[0_0_0_1px_rgb(var(--brand))]"
       >
-        <span className="grid h-8 w-8 shrink-0 place-items-center text-brand" aria-hidden>
-          <Sparkles size={15} />
+        <span className="grid h-10 w-10 shrink-0 place-items-center text-brand" aria-hidden>
+          <Sparkles size={18} />
         </span>
         <input
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="Ask about your patients — symptoms, progress, adherence, data gaps…"
           aria-label="Ask about your patients"
-          className="min-w-0 flex-1 bg-transparent text-[13.5px] font-medium text-ink placeholder:text-faint focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent text-[15px] text-ink placeholder:text-faint focus:outline-none"
         />
         {(question || result) && (
           <button
@@ -58,9 +58,9 @@ export default function AskBar({
               setQuestion('')
               onClear()
             }}
-            className="grid h-7 w-7 cursor-pointer place-items-center rounded-btn text-faint transition-colors duration-150 hover:bg-soft hover:text-ink"
+            className="grid h-9 w-9 cursor-pointer place-items-center rounded-btn text-muted transition-colors duration-150 hover:bg-soft hover:text-ink"
           >
-            <X size={14} />
+            <X size={16} />
           </button>
         )}
         <button
@@ -68,19 +68,19 @@ export default function AskBar({
           disabled={question.trim().length < 3 || ask.isPending}
           className="qa-btn !flex-none px-3.5"
         >
-          <Search size={13} className="text-brand" />
+          <Search size={15} className="text-brand" />
           {ask.isPending ? 'Thinking…' : 'Ask'}
         </button>
       </form>
 
       {!result && !ask.isPending && (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 px-0.5">
+        <div className="mt-2.5 flex flex-wrap items-center gap-2 px-1">
           {SUGGESTIONS.map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => submit(s)}
-              className="cursor-pointer rounded-btn border border-line bg-panel px-2.5 py-1 text-[11.5px] font-medium text-muted transition-colors duration-150 hover:border-brand/30 hover:text-ink"
+              className="cursor-pointer rounded-btn border border-line bg-panel px-3.5 py-1.5 text-[13px] font-medium text-body transition-colors duration-150 hover:border-brand/40 hover:bg-brand-tint hover:text-brand"
             >
               {s}
             </button>
@@ -89,7 +89,7 @@ export default function AskBar({
       )}
 
       {ask.isPending && (
-        <div className="mt-3 animate-fadeIn space-y-2.5 rounded-card border border-line bg-panel p-4">
+        <div className="mt-3 animate-fadeIn space-y-2.5 rounded-card border border-line bg-panel p-5 shadow-card">
           <SkeletonLine className="h-3 w-1/5" />
           <SkeletonLine className="h-3.5 w-full" />
           <SkeletonLine className="h-3.5 w-3/4" />
@@ -111,7 +111,7 @@ export default function AskBar({
             ) : undefined
           }
         >
-          <p className="text-[13.5px] font-medium leading-[1.55] text-body">{result.answer}</p>
+          <p className="text-[15px] leading-[1.6] text-body">{result.answer}</p>
         </SectionCard>
       )}
     </div>

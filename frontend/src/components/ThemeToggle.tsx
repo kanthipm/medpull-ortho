@@ -1,7 +1,7 @@
 import { Moon, Sun } from 'lucide-react'
 import { useTheme } from '../lib/theme'
 
-/** Header control — flips the calibrated instrument between paper and night. */
+/** App-bar icon button — white on the primary bar. */
 export default function ThemeToggle() {
   const { theme, toggleTheme } = useTheme()
   const dark = theme === 'dark'
@@ -12,9 +12,9 @@ export default function ThemeToggle() {
       onClick={toggleTheme}
       aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
       title={dark ? 'Light mode' : 'Dark mode'}
-      className="grid h-8 w-8 cursor-pointer place-items-center rounded-btn border border-line bg-panel text-muted transition-colors duration-150 hover:bg-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+      className="grid h-10 w-10 cursor-pointer place-items-center rounded-btn text-white transition-colors duration-150 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
     >
-      {dark ? <Sun size={14} /> : <Moon size={14} />}
+      {dark ? <Sun size={20} /> : <Moon size={20} />}
     </button>
   )
 }

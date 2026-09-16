@@ -288,7 +288,7 @@ function HeatStrip({ spec }: { spec: ChartSpec }) {
 function Empty({ thin }: { thin: boolean }) {
   return (
     <div
-      className={`grid place-items-center rounded-[10px] border border-line bg-soft ${thin ? 'h-11' : 'h-28'}`}
+      className={`grid place-items-center rounded-none border border-line bg-soft ${thin ? 'h-11' : 'h-28'}`}
     >
       {!thin && <span className="micro">No chart data</span>}
     </div>

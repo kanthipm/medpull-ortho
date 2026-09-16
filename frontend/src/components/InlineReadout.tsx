@@ -23,16 +23,16 @@ export default function InlineReadout({
       {items.map((item) => (
         <span key={item.key} role="listitem" className="inline-flex items-baseline gap-1.5">
           <span
-            className={`font-mono text-[22px] font-medium leading-none tabular-nums tracking-[-.02em] ${
+            className={`font-mono text-[24px] font-medium leading-none tabular-nums tracking-[-.02em] ${
               item.tone ? TONE[item.tone] : 'text-ink'
             }`}
           >
             {item.value}
           </span>
-          <span className="text-[12.5px] font-medium text-muted">
+          <span className="text-[13.5px] font-medium text-muted">
             {item.label}
             {item.hint ? (
-              <span className="ml-1 text-[10.5px] uppercase tracking-[.04em] text-faint">
+              <span className="ml-1 text-[11px] uppercase tracking-[.04em] text-muted">
                 {item.hint}
               </span>
             ) : null}

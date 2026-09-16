@@ -18,13 +18,13 @@ function HeadlineTile({ m, onOpen }: { m: CareMetric; onOpen: (metricId: string)
       type="button"
       onClick={() => onOpen(m.id)}
       aria-label={`${m.name}: open in Full stats`}
-      className={`group relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-card border border-line bg-panel p-4 pl-[18px] text-left transition-[border-color,background-color] duration-150 hover:border-brand/35 hover:bg-soft/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${
+      className={`group relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-card border border-line bg-panel p-5 pl-[22px] text-left shadow-card transition-[border-color,background-color] duration-150 hover:border-brand/35 hover:bg-soft/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${
         nodata ? 'opacity-70' : ''
       }`}
     >
       <span aria-hidden className={`absolute inset-y-0 left-0 w-[2px] ${s.spine}`} />
       <span className="flex items-start justify-between gap-2">
-        <span className="text-[13.5px] font-semibold tracking-[-.01em] text-ink">{m.name}</span>
+        <span className="text-[15px] font-medium text-ink">{m.name}</span>
         <span className={`chip shrink-0 uppercase tracking-[.03em] ${s.pill}`}>{statusChipText(m)}</span>
       </span>
 
@@ -39,7 +39,7 @@ function HeadlineTile({ m, onOpen }: { m: CareMetric; onOpen: (metricId: string)
         <span className="mt-1 block text-[12px] font-medium text-muted">{m.delta_text}</span>
       )}
 
-      <span className="mt-2 line-clamp-3 text-[13px] font-medium leading-[1.5] text-body">
+      <span className="mt-2 line-clamp-3 text-[14px] leading-[1.5] text-body">
         {nodata ? (m.unlock ?? m.finding) : m.finding}
       </span>
 
@@ -47,7 +47,7 @@ function HeadlineTile({ m, onOpen }: { m: CareMetric; onOpen: (metricId: string)
         <MiniChart spec={m.chart} />
       </span>
 
-      <span className="mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-line pt-2 text-[11px] font-medium leading-[1.5] text-faint">
+      <span className="mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-line pt-2 text-[12px] leading-[1.5] text-muted">
         <ConfidenceChip level={m.confidence} showHigh />
         {m.coverage_text && <span>{m.coverage_text}</span>}
         {m.guarded && <span className="text-risk-med">· {GUARDED_NOTE}</span>}
@@ -84,7 +84,7 @@ export default function HeadlineMetrics({
 
   if (isError || tiles.length === 0) {
     return (
-      <div className="rounded-card border border-line bg-panel px-4 py-3.5">
+      <div className="rounded-card border border-line bg-panel px-5 py-4 shadow-card">
         <p className="text-[12.5px] font-medium text-muted">
           {isError
             ? 'Care metrics are not available for this patient yet.'

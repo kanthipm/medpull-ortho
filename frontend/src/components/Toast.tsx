@@ -16,9 +16,9 @@ export function useToast() {
 }
 
 const ICON: Record<ToastKind, ReactNode> = {
-  success: <CircleCheck size={15} className="text-risk-low" />,
-  info: <Info size={15} className="text-brand" />,
-  warning: <TriangleAlert size={15} className="text-risk-high" />,
+  success: <CircleCheck size={18} className="text-risk-low" />,
+  info: <Info size={18} className="text-brand" />,
+  warning: <TriangleAlert size={18} className="text-risk-high" />,
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -49,7 +49,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={toast.id}
             onClick={() => dismiss(toast.id)}
-            className={`pointer-events-auto flex w-auto animate-toastIn cursor-pointer items-center gap-2.5 rounded-card border bg-panel px-4 py-3 text-[13px] font-medium leading-[1.4] shadow-glass ${
+            className={`pointer-events-auto flex w-auto animate-toastIn cursor-pointer items-center gap-2.5 rounded-row border bg-panel px-4 py-3 text-[14px] font-medium leading-[1.4] shadow-glass ${
               toast.kind === 'warning'
                 ? 'border-risk-high/30 text-risk-high'
                 : 'border-line text-ink'

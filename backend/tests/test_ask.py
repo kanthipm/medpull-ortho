@@ -69,8 +69,14 @@ def test_ask_sleep_finds_linda(db):
     assert result["provider"] == "fallback"
 
 
-def test_ask_with_no_match_says_so(db):
+def test_ask_fever_finds_marcus(db):
     result = ask(db, "Who has a fever or elevated temperature?")
+    assert "marcus" in result["patient_ids"]
+    assert "Marcus" in result["answer"]
+
+
+def test_ask_with_no_match_says_so(db):
+    result = ask(db, "Who has a rash?")
     assert result["patient_ids"] == []
     assert result["answer"]
 
@@ -167,19 +173,19 @@ def test_ask_llm_verifies_every_candidate_before_citing_it(db, groq_configured, 
     are built from the per-patient verification, never from retrieval."""
     llm = FakeLLM(
         retrieved={
-            "answer": "Robert and James both look feverish.",
-            "patient_ids": ["robert", "james"],
+            "answer": "Marcus and James both look feverish.",
+            "patient_ids": ["marcus", "james"],
         },
         verdicts={
-            "robert": {"match": True, "evidence": "skin temperature elevated vs baseline"},
+            "marcus": {"match": True, "evidence": "skin temperature elevated vs baseline"},
             "james": {"match": False, "evidence": ""},
         },
-        composed={"answer": "Robert Hale: skin temperature is elevated vs his baseline."},
+        composed={"answer": "Marcus Reyes: skin temperature is elevated vs his baseline."},
     )
     monkeypatch.setattr(ask_mod, "complete_json", llm)
-    result = ask_mod._ask_llm("Who has a fever?", _roster_context(db), {"robert", "james"})
-    assert result["patient_ids"] == ["robert"]  # james was retrieved, then rejected
-    assert result["answer"] == "Robert Hale: skin temperature is elevated vs his baseline."
+    result = ask_mod._ask_llm("Who has a fever?", _roster_context(db), {"marcus", "james"})
+    assert result["patient_ids"] == ["marcus"]  # james was retrieved, then rejected
+    assert result["answer"] == "Marcus Reyes: skin temperature is elevated vs his baseline."
     assert llm.calls == ["retrieve", "verify", "verify", "compose"]
     # each verification saw one patient and one patient only
     assert all(block.count("PATIENT id=") == 1 for block in llm.verified_blocks)
