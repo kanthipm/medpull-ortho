@@ -318,6 +318,7 @@ def _message_view(m) -> dict:
         "text": m.text,
         "created_at": m.created_at.isoformat(),
         "delivery_status": m.delivery_status,
+        "delivery_detail": m.delivery_detail,
         "read_by_care_team": m.read_by_care_team_at is not None,
     }
 
@@ -387,6 +388,7 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
     if patient.phone:
         delivery = sendblue.send_sms(patient.phone, f"From your MedPull care team: {text}")
         message.delivery_status = "sent" if delivery.sent else "failed"
+        message.delivery_detail = None if delivery.sent else delivery.detail
         message.external_handle = delivery.message_handle
     db.commit()
     if delivery is not None and delivery.sent:
@@ -668,6 +670,7 @@ def create_patient(
             patient_id=patient.id, sender="care_team", sender_id=assigned_id, channel="sms",
             text=sendblue.INVITE_TEMPLATE.format(app_url=settings.app_download_url),
             delivery_status="sent" if delivery.sent else "failed",
+            delivery_detail=None if delivery.sent else delivery.detail,
             external_handle=delivery.message_handle,
         ))
         db.commit()

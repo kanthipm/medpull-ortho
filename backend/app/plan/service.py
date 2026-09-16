@@ -220,6 +220,7 @@ def assign_plan(
             message = Message(
                 patient_id=patient.id, sender="copilot", channel="sms", text=text,
                 delivery_status="sent" if result.sent else "failed",
+                delivery_detail=None if result.sent else result.detail,
                 external_handle=result.message_handle,
             )
             db.add(message)

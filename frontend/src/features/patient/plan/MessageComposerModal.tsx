@@ -83,7 +83,12 @@ export default function MessageComposerModal({
       onSuccess: (r) => {
         if (r.status === 'sent_sms') toast(`Texted ${first} — also in the app`, 'success')
         else if (r.status === 'stored_sms_failed')
-          toast(`Saved to ${first}'s app thread — the text didn't go through`, 'warning')
+          toast(
+            // Carry the provider's reason: "the text didn't go through" sent
+            // people looking for a fault in the app instead of the account.
+            `Saved to ${first}'s app thread — text failed: ${r.detail || 'no reason given'}`,
+            'warning',
+          )
         else toast(`Saved to ${first}'s app thread — no phone on file to text`, 'info')
         if (saveAs && saveTitle.trim()) {
           createTemplate.mutate(

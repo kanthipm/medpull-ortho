@@ -492,6 +492,7 @@ def _execute_message(db: Session, patient: Patient, action: dict[str, Any],
     if patient.phone:
         delivery = sendblue.send_sms(patient.phone, f"From your MedPull care team: {text}")
         message.delivery_status = "sent" if delivery.sent else "failed"
+        message.delivery_detail = None if delivery.sent else delivery.detail
         message.external_handle = delivery.message_handle
     template_key = action.get("template_key")
     if template_key:

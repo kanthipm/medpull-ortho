@@ -121,6 +121,7 @@ def _welcome(db: Session, patient: Patient) -> None:
     if patient.phone:
         delivery = sendblue.send_welcome_message(patient.phone)
         message.delivery_status = "sent" if delivery.sent else "failed"
+        message.delivery_detail = None if delivery.sent else delivery.detail
         message.external_handle = delivery.message_handle
         if not delivery.sent:
             logger.info("Welcome text to %s not sent: %s", patient.id, delivery.detail)
@@ -245,6 +246,7 @@ def _message_view(m: Message) -> dict[str, Any]:
         "text": m.text,
         "created_at": _iso(m.created_at),
         "delivery_status": m.delivery_status,
+        "delivery_detail": m.delivery_detail,
         "read": m.read_by_patient_at is not None,
     }
 

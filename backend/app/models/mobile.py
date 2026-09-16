@@ -66,6 +66,10 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     read_by_patient_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     read_by_care_team_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # sent | failed | None (nothing was sent out-of-band for this line)
+    # sent | delivered | failed | None (nothing was sent out-of-band for this line)
     delivery_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Why a send failed, in the provider's own words ("This phone number is
+    # not defined."). Without it a clinician saw "not delivered" and had no
+    # way to tell a landline from a broken Sendblue account.
+    delivery_detail: Mapped[str | None] = mapped_column(String, nullable=True)
     external_handle: Mapped[str | None] = mapped_column(String, nullable=True)

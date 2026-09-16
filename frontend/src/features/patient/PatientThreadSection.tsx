@@ -47,7 +47,7 @@ export default function PatientThreadSection({
           r.status === 'sent_sms'
             ? `Texted ${firstName} — also in the app`
             : r.status === 'stored_sms_failed'
-              ? `Saved to ${firstName}'s app thread — the text didn't go through`
+              ? `Saved to ${firstName}'s app thread — text failed: ${r.detail || 'no reason given'}`
               : `Saved to ${firstName}'s app thread — no phone on file to text`,
           r.status === 'sent_sms' ? 'info' : 'warning',
         )
@@ -191,7 +191,7 @@ function MessageLine({ message }: { message: PatientMessage }) {
           {message.channel === 'sms' && <Smartphone size={10} />}
           {who} · {relativeTime(message.created_at)}
           {message.delivery_status === 'failed' && (
-            <span className="text-risk-med"> · text not delivered</span>
+            <span className="text-risk-med"> · {message.delivery_detail || 'text not delivered'}</span>
           )}
         </p>
       </div>

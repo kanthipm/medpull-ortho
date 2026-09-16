@@ -125,3 +125,93 @@ def test_api_error_carries_sendblues_reason(configured, monkeypatch):
     result = sendblue.send_sms("+15049081262", "hi")
     assert result.sent is False and result.status_code == 400
     assert result.detail == "Sendblue answered 400: Cannot send messages to self"
+
+
+def test_a_rejection_in_a_200_body_is_not_a_send(configured, monkeypatch):
+    """Sendblue echoes the message object with status ERROR for a rejection
+    it made before queueing, and answers 200. Treating that as sent marked
+    the thread line "texted" for a message nobody received."""
+    monkeypatch.setattr(
+        sendblue.httpx, "post",
+        lambda *a, **kw: _FakeResponse(200, {
+            "status": "ERROR",
+            "error_message": "This phone number is not defined.",
+            "number": "+15125550123", "is_outbound": True,
+        }),
+    )
+    result = sendblue.send_sms("+15125550123", "hello")
+    assert result.sent is False
+    assert result.detail == "This phone number is not defined."
+    # and it is a fault in OUR account, not about this recipient
+    assert result.config_fault is True
+
+
+def test_a_recipient_level_failure_is_not_reported_as_a_config_fault(configured, monkeypatch):
+    monkeypatch.setattr(
+        sendblue.httpx, "post",
+        lambda *a, **kw: _FakeResponse(400, {"status": "ERROR",
+                                             "message": "Cannot send messages to self"}),
+    )
+    result = sendblue.send_sms("+15049081262", "hello")
+    assert result.sent is False and result.config_fault is False
+    assert "Cannot send messages to self" in result.detail
+
+
+def test_the_missing_from_number_is_a_config_fault(configured, monkeypatch):
+    monkeypatch.setattr(
+        sendblue.httpx, "post",
+        lambda *a, **kw: _FakeResponse(400, {
+            "status": "ERROR", "error_message": 'missing required parameter: "from_number"'}),
+    )
+    result = sendblue.send_sms("+15125550123", "hello")
+    assert result.sent is False and result.config_fault is True
+
+
+def test_health_reports_whether_texting_can_work(client, configured, monkeypatch):
+    body = client.get("/api/health").json()
+    assert body["sms"]["configured"] is True
+    assert body["sms"]["from_number"] == "+15049081262"
+    # a configuration fault, once seen, is reported until the process restarts
+    monkeypatch.setattr(
+        sendblue.httpx, "post",
+        lambda *a, **kw: _FakeResponse(400, {
+            "status": "ERROR", "error_message": "This phone number is not defined."}),
+    )
+    sendblue.send_sms("+15125550123", "hello")
+    assert client.get("/api/health").json()["sms"]["config_fault"] == (
+        "This phone number is not defined."
+    )
+    monkeypatch.setattr(sendblue, "_last_config_fault", None)
+
+
+def test_a_failed_text_puts_the_reason_on_the_thread(client, db, configured, monkeypatch):
+    from app.models.mobile import Message
+    from sqlalchemy import select
+
+    monkeypatch.setattr(
+        sendblue.httpx, "post",
+        lambda *a, **kw: _FakeResponse(400, {
+            "status": "ERROR", "error_message": "This phone number is not defined."}),
+    )
+    db.expire_all()
+    patient = db.get(__import__("app.models.patient", fromlist=["Patient"]).Patient, "grace")
+    patient.phone = "+15125550777"
+    db.commit()
+    resp = client.post("/api/patients/grace/actions/message", json={"text": "How is today?"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "stored_sms_failed"
+    assert "not defined" in body["detail"]
+    assert "not defined" in body["message"]["delivery_detail"]
+    db.expire_all()
+    row = db.scalars(select(Message).where(Message.patient_id == "grace")
+                     .order_by(Message.id.desc()).limit(1)).one()
+    assert row.delivery_status == "failed"
+    assert row.delivery_detail == "Sendblue answered 400: This phone number is not defined."
+    # the patient app sees the same line, and the same reason
+    from sqlalchemy import delete
+
+    db.execute(delete(Message).where(Message.patient_id == "grace"))
+    db.get(__import__("app.models.patient", fromlist=["Patient"]).Patient, "grace").phone = None
+    db.commit()
+    monkeypatch.setattr(sendblue, "_last_config_fault", None)

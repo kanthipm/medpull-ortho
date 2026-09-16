@@ -426,6 +426,7 @@ def dispatch(
             channel="sms",
             text=sendblue.TASK_TEMPLATE.format(title=task.title[:80], task_url=url),
             delivery_status="sent" if result.sent else "failed",
+            delivery_detail=None if result.sent else result.detail,
             external_handle=result.message_handle,
         )
     )
@@ -827,6 +828,7 @@ def handle_inbound_sms(
             channel="sms",
             text=reply,
             delivery_status="sent" if delivery.sent else "failed",
+            delivery_detail=None if delivery.sent else delivery.detail,
             external_handle=delivery.message_handle,
         )
     )

@@ -27,6 +27,51 @@ logger = logging.getLogger(__name__)
 SEND_URL = "https://api.sendblue.co/api/send-message"
 TIMEOUT_S = 5.0
 
+# Sendblue rejects a send for two quite different reasons and the product has
+# to tell them apart. A DELIVERY fault is about this recipient (a landline, a
+# number that cannot receive). A CONFIGURATION fault is about us: the account
+# has no sending number, or the one configured is not one Sendblue issued, in
+# which case NOTHING will send to anybody until an operator fixes the account.
+# Silence looked identical either way, which is how a deployment ran for a day
+# believing it could text.
+_CONFIG_FAULTS = (
+    "phone number is not defined",      # from_number is not provisioned on the account
+    'missing required parameter: "from_number"',
+    "missing required parameter: from_number",
+    "not authorized",
+    "unauthorized",
+    "invalid api key",
+    "plan",
+)
+
+# Last configuration fault seen in this process, for the health endpoint.
+# Per-instance and deliberately not persisted: it is re-learned on the next
+# send, and a stale copy must never outlive the fix.
+_last_config_fault: str | None = None
+
+
+def _note_fault(reason: str) -> None:
+    global _last_config_fault
+    lowered = reason.lower()
+    if any(marker in lowered for marker in _CONFIG_FAULTS):
+        _last_config_fault = reason
+        logger.error(
+            "Sendblue cannot send at all: %s. SENDBLUE_FROM_NUMBER=%r must be a number "
+            "Sendblue issued to this account.", reason, settings.sendblue_from_number,
+        )
+
+
+def status() -> dict:
+    """What the deployment can actually do about texting, for /api/health and
+    the integrations screen."""
+    return {
+        "configured": configured(),
+        "from_number": settings.sendblue_from_number or None,
+        "webhook_secret_set": bool(settings.sendblue_webhook_secret),
+        # None until a send has been attempted in this process.
+        "config_fault": _last_config_fault,
+    }
+
 
 def _e164(phone: str) -> str | None:
     """Normalize a stored phone to E.164, or None if it can't be one.
@@ -115,6 +160,9 @@ class CheckinSendResult:
     status_code: int | None = None
     # Sendblue's id for the outbound message, when it answered with one.
     message_handle: str | None = None
+    # True when the failure is about this deployment's Sendblue account rather
+    # than about the recipient: nothing will send until it is fixed.
+    config_fault: bool = False
 
 
 def configured() -> bool:
@@ -149,23 +197,43 @@ def send_sms(phone_number: str, content: str) -> CheckinSendResult:
     except httpx.HTTPStatusError as exc:
         reason = _error_reason(exc.response)
         logger.warning("Sendblue send to %s failed: %s %s", phone, exc, reason or "")
+        if reason:
+            _note_fault(reason)
         return CheckinSendResult(
             sent=False,
             detail=f"Sendblue answered {exc.response.status_code}"
             + (f": {reason}" if reason else ""),
             status_code=exc.response.status_code,
+            config_fault=bool(reason) and any(
+                m in reason.lower() for m in _CONFIG_FAULTS
+            ),
         )
     except httpx.HTTPError as exc:
         logger.warning("Sendblue send to %s failed: %s", phone, exc)
         return CheckinSendResult(sent=False, detail=f"request failed: {exc}")
 
     handle: str | None = None
+    body: dict | None = None
     try:
-        body = response.json()
-        if isinstance(body, dict) and isinstance(body.get("message_handle"), str):
+        parsed = response.json()
+        body = parsed if isinstance(parsed, dict) else None
+        if body and isinstance(body.get("message_handle"), str):
             handle = body["message_handle"]
     except (ValueError, AttributeError, TypeError):
-        handle = None  # no body, or not JSON: the send still happened
+        body = None  # no body, or not JSON: the send still happened
+
+    # A 2xx is not proof: Sendblue echoes the message object with
+    # "status": "ERROR" for a rejection it decided before queueing.
+    if body and str(body.get("status", "")).upper() == "ERROR":
+        reason = _error_reason(response) or "Sendblue rejected the message"
+        _note_fault(reason)
+        logger.warning("Sendblue rejected a send to %s: %s", phone, reason)
+        return CheckinSendResult(
+            sent=False,
+            detail=reason,
+            status_code=response.status_code,
+            config_fault=any(m in reason.lower() for m in _CONFIG_FAULTS),
+        )
     return CheckinSendResult(sent=True, detail="sent", message_handle=handle)
 
 

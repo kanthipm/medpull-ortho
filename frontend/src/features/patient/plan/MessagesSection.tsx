@@ -159,6 +159,13 @@ function Bubble({ m, first }: { m: PatientMessage; first: string }) {
           <span className="font-mono normal-case tracking-normal">{relativeTime(m.created_at)}</span>
           <span className={`chip normal-case tracking-normal ${status.pill}`}>{status.label}</span>
         </span>
+        {m.delivery_status === 'failed' && m.delivery_detail && (
+          // The provider's own words. "Not delivered" alone left a clinician
+          // unable to tell a landline from a broken texting account.
+          <span className="mt-0.5 px-1 text-[11px] font-medium text-risk-high">
+            {m.delivery_detail}
+          </span>
+        )}
       </div>
     </li>
   )

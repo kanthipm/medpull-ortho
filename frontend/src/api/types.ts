@@ -315,6 +315,8 @@ export interface PatientMessage {
   text: string
   created_at: string
   delivery_status: 'sent' | 'delivered' | 'failed' | null
+  /** Why a text failed, in the provider's words. Null when it went out. */
+  delivery_detail: string | null
   read_by_care_team: boolean
 }
 
