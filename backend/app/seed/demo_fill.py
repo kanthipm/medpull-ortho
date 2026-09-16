@@ -388,6 +388,35 @@ PER_PATIENT_TABLES = [
 IDENTITY_TABLES = ["patient_sessions", "wearable_connections", "devices"]
 
 
+def real_enrollments(db) -> set[str]:
+    """Patients with history of their own, which this script must never delete.
+
+    Deliberately computed here rather than borrowed from ``app.seed.seed``:
+    that module's guard answers a different question ("would a reseed fail to
+    rebuild this row?"), and it counts every id outside the shipped roster —
+    which is every leftover this sweep exists to remove. What matters here is
+    narrower and more stable: did a real person ever use this record? A phone
+    number, an app session, a linked wearable or a single observation all say
+    yes. A chart created by an abandoned onboarding attempt has none of them.
+    """
+    from sqlalchemy import select
+
+    from app.models import Device, Observation, Patient
+    from app.models.connection import WearableConnection
+    from app.models.mobile import Message, PatientSession
+
+    ids = set(db.scalars(select(Patient.id).where(Patient.phone.is_not(None))).all())
+    for column in (
+        PatientSession.patient_id,
+        WearableConnection.patient_id,
+        Observation.patient_id,
+        Message.patient_id,
+        Device.patient_id,
+    ):
+        ids |= set(db.scalars(select(column).distinct()).all())
+    return ids
+
+
 def _existing_tables(db) -> set[str]:
     from sqlalchemy import text
 
@@ -576,7 +605,6 @@ def main() -> None:
 
     from app.database import SessionLocal, ensure_schema
     from app.models import Patient
-    from app.seed.seed import live_patient_ids
 
     ensure_schema()
     today = date.today()
@@ -603,7 +631,7 @@ def main() -> None:
         # app session, is a real person who enrolled since the last run — the
         # thing a re-run on the morning of a demo must never delete. Only
         # history-free leftovers are swept.
-        live = {pid for pid in live_patient_ids(db) if pid not in demo_ids}
+        live = {pid for pid in real_enrollments(db) if pid not in demo_ids}
         keep = PROTECTED | live
         junk = sorted(pid for pid in roster if pid not in keep and pid not in demo_ids)
         if live - PROTECTED:
