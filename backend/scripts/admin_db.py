@@ -49,6 +49,8 @@ def main() -> int:
     ap.add_argument("--dedupe-daily", action="store_true",
                     help="collapse duplicate daily summaries (one per patient/metric/day/device), "
                          "keeping the most recently ingested")
+    ap.add_argument("--delete-message", action="append", default=[], type=int, metavar="ID",
+                    help="remove one thread line and any files on it, bytes included")
     ap.add_argument("--delete-patient", action="append", default=[], metavar="ID",
                     help="delete a patient and every row that points at them (no merge)")
     ap.add_argument("--report", action="store_true", help="print the roster and row counts")
@@ -106,6 +108,31 @@ def main() -> int:
                     link_app_account(db, target, source, force=True))
             except IdentityError as e:
                 raise SystemExit(f"link refused: {e.detail}")
+        if args.delete_message:
+            # A line sent by mistake, or a probe left by a deploy check. The
+            # bytes go with the row: an orphaned object in storage is a
+            # patient's photograph nothing accounts for any more.
+            from app.models.attachment import Attachment
+            from app.models.mobile import Message
+            from app.storage import blobs
+
+            for message_id in args.delete_message:
+                message = db.get(Message, message_id)
+                if message is None:
+                    raise SystemExit(f"unknown message {message_id}")
+                rows = db.scalars(
+                    select(Attachment).where(Attachment.message_id == message_id)
+                ).all()
+                keys = [r.storage_key for r in rows if not r.storage_key.startswith("pending:")]
+                gone = blobs.delete_keys(keys) if keys else 0
+                for row in rows:
+                    db.delete(row)
+                db.delete(message)
+                db.commit()
+                report.setdefault("deleted_messages", []).append(
+                    {"id": message_id, "patient": message.patient_id,
+                     "attachments": len(rows), "blobs": gone}
+                )
         if args.delete_patient:
             from app.identity import delete_patient
 

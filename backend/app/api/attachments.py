@@ -486,6 +486,26 @@ def console_read_one(
     return {"attachment": _view(_own(db, attachment_id, patient.id), with_url=True)}
 
 
+@console_router.delete("/{attachment_id}")
+def console_withdraw(
+    attachment_id: int,
+    patient: Patient = Depends(console_patient),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Take back a file the clinic sent.
+
+    The wrong scan on the wrong chart has to be removable by the person who
+    put it there, and the patient's app is already showing it. The object is
+    deleted for real; the row stays so the thread says a file was withdrawn
+    rather than losing the line a reply refers to.
+    """
+    row = _own(db, attachment_id, patient.id)
+    blobs.delete(row.storage_key)
+    row.deleted_at = datetime.now()
+    db.commit()
+    return {"ok": True, "attachment": _view(row)}
+
+
 @console_router.get("/{attachment_id}/raw")
 def console_read_bytes(
     attachment_id: int,

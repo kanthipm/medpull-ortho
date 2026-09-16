@@ -480,3 +480,30 @@ def test_media_links_are_read_whatever_key_they_arrive_under(client, db, joined,
     assert r["attachments"] == 2
     db.expire_all()
     assert db.scalars(select(Attachment).where(Attachment.patient_id == pid)).all().__len__() == 2
+
+
+def test_a_clinician_can_take_back_a_file_they_sent(client, db, joined):
+    """The wrong scan on the wrong chart, already showing in the patient's
+    app. Whoever put it there has to be able to remove it."""
+    pid, headers = joined
+    a = client.post(f"/api/patients/{pid}/attachments/direct?filename=wrong.pdf",
+                    headers={"Content-Type": "application/pdf"}, content=PDF).json()["attachment"]
+    client.post(f"/api/patients/{pid}/actions/message",
+                json={"text": "Here is your sheet", "attachment_ids": [a["id"]]})
+    db.expire_all()
+    key = db.get(Attachment, a["id"]).storage_key
+
+    gone = client.delete(f"/api/patients/{pid}/attachments/{a['id']}")
+    assert gone.status_code == 200 and gone.json()["attachment"]["withdrawn"] is True
+    assert blobs.stat(key) is None  # the bytes, not just the flag
+
+    # the line stays and says so, in both threads
+    console = client.get(f"/api/patients/{pid}/messages").json()["messages"][-1]
+    assert console["attachments"][0]["withdrawn"] is True
+    assert "url" not in console["attachments"][0]
+    app_side = client.get("/api/mobile/messages", headers=headers).json()["messages"][-1]
+    assert app_side["attachments"][0]["withdrawn"] is True
+
+    # and the patient cannot read bytes that are gone
+    assert client.get(f"/api/mobile/attachments/{a['id']}/raw",
+                      headers=headers).status_code == 404

@@ -263,6 +263,19 @@ export function useMessagePatient(id: string) {
   })
 }
 
+/** Take back a file the clinic sent. The bytes go; the line stays and says
+ *  a file was withdrawn, so a reply to it still makes sense. */
+export function useWithdrawAttachment(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (attachmentId: number) =>
+      fetchJson<{ ok: boolean }>(`/api/patients/${id}/attachments/${attachmentId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['patient', id, 'messages'] }),
+  })
+}
+
 export function usePatientTasks(id: string) {
   return useQuery({
     queryKey: ['patient', id, 'tasks'],

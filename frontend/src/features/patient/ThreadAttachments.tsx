@@ -1,7 +1,9 @@
-import { FileText, ImageOff, Paperclip, X } from 'lucide-react'
+import { FileText, ImageOff, Paperclip, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { attachmentSrc, fileSize } from '../../api/attachments'
+import { useWithdrawAttachment } from '../../api/queries'
 import type { MessageAttachment } from '../../api/types'
+import { useToast } from '../../components/Toast'
 
 /**
  * Images and files under a thread line.
@@ -60,13 +62,43 @@ export default function ThreadAttachments({
           <p key={a.id} className="text-[11.5px] font-medium italic text-faint">
             {a.kind === 'image' ? 'Photo' : 'File'} taken back
           </p>
-        ) : a.kind === 'image' ? (
-          <Thumb key={a.id} patientId={patientId} a={a} />
         ) : (
-          <FileRow key={a.id} patientId={patientId} a={a} />
+          <div key={a.id} className="flex items-end gap-1.5">
+            {a.kind === 'image' ? (
+              <Thumb patientId={patientId} a={a} />
+            ) : (
+              <FileRow patientId={patientId} a={a} />
+            )}
+            {a.uploaded_by !== 'patient' && <Withdraw patientId={patientId} a={a} />}
+          </div>
         ),
       )}
     </div>
+  )
+}
+
+/** The clinic's own file, taken back. Never offered for a patient's photo:
+ *  removing what somebody sent you is not the clinic's call. */
+function Withdraw({ patientId, a }: { patientId: string; a: MessageAttachment }) {
+  const toast = useToast()
+  const withdraw = useWithdrawAttachment(patientId)
+  return (
+    <button
+      type="button"
+      title="Take this file back"
+      aria-label="Take this file back"
+      disabled={withdraw.isPending}
+      className="mb-1 cursor-pointer rounded-btn p-1 text-faint transition-colors duration-150 hover:bg-risk-high-bg hover:text-risk-high"
+      onClick={() => {
+        if (!window.confirm('Take this file back? The patient will see that it was removed.')) return
+        withdraw.mutate(a.id, {
+          onSuccess: () => toast('File taken back', 'info'),
+          onError: () => toast('That file could not be removed', 'warning'),
+        })
+      }}
+    >
+      <Trash2 size={12} />
+    </button>
   )
 }
 
