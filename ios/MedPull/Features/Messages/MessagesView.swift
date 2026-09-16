@@ -7,6 +7,9 @@ struct MessagesView: View {
     @State private var sending = false
     @State private var error: String?
     @FocusState private var focused: Bool
+    /// SwiftUI does not honour Reduce Motion for explicit animations, so the
+    /// two animated moments on this screen read it themselves.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Files picked but not sent yet. They are uploaded on pick, so a slow
     /// photo is a slow photo rather than a slow send button; the message
@@ -36,7 +39,10 @@ struct MessagesView: View {
                         .padding(.horizontal, 16).padding(.bottom, 12)
                     }
                     .onChange(of: app.messages.count, initial: true) { _, _ in
-                        if let last = app.messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
+                        guard let last = app.messages.last else { return }
+                        withAnimation(MPMotion.gated(MPMotion.enter, reduceMotion: reduceMotion)) {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
                     }
                 }
                 composer
@@ -75,10 +81,10 @@ struct MessagesView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Messages").title(28)
+            Text("Messages").title(MPSize.displayS)
             if let team = app.me?.patient.careTeam, !team.isEmpty {
                 Text("Your care team: " + team.map(\.name).joined(separator: ", "))
-                    .font(.mp(13)).foregroundStyle(MP.muted)
+                    .font(.copy).foregroundStyle(MP.muted)
             }
         }
         .padding(.top, 8).padding(.bottom, 6)
@@ -92,22 +98,46 @@ struct MessagesView: View {
                 Button {
                     picking = true
                 } label: {
-                    Image(systemName: "paperclip").font(.mp(17, weight: .medium))
-                        .foregroundStyle(MP.brand)
+                    Image(systemName: "paperclip").font(.copyLargeMedium)
+                        // `brandInk`, not `brand`: a glyph set with
+                        // `foregroundStyle` is a foreground, and #1976D2 as a
+                        // foreground is 3.74:1 on dark panel. `brandInk` is
+                        // 5.75:1 light / 6.78:1 dark.
+                        .foregroundStyle(MP.brandInk)
                         .frame(width: 40, height: 44)
                 }
                 .disabled(uploading || pending.count >= 4)
                 .accessibilityLabel("Attach a photo or file")
-                TextField("Message your care team", text: $draft, axis: .vertical)
+                // The prompt is set explicitly because SwiftUI's own
+                // placeholder colour is not a token and does not pass: it
+                // renders #C5C5C7 on white (1.72:1) and #545A62 on dark panel
+                // (2.47:1), both WCAG 1.4.3 failures on text a patient reads.
+                // `muted` is the placeholder tier (5.39:1 light / 4.91:1
+                // dark); `faint` is not. FieldStyle cannot reach this —
+                // SwiftUI gives no hook — so it belongs at the call site.
+                TextField("Message your care team", text: $draft,
+                          prompt: Text("Message your care team").foregroundStyle(MP.muted),
+                          axis: .vertical)
                     .lineLimit(1...5)
                     .textFieldStyle(FieldStyle())
                     .focused($focused)
                 Button {
                     send()
                 } label: {
-                    Image(systemName: "arrow.up").font(.mp(16, weight: .bold)).foregroundStyle(.white)
+                    // Disabled is the token pair, not a `faint` disc: a white
+                    // arrow on `faint` was 2.60:1 and read as an enabled button
+                    // drawn badly. `disabledInk` on `disabledFill` is 4.75:1
+                    // light / 4.58:1 dark, and because that fill is only 1.06:1
+                    // against the panel behind it the disabled disc takes the
+                    // `lineStrong` edge to keep its shape — the same treatment
+                    // PrimaryButton uses.
+                    Image(systemName: "arrow.up").font(.copyLargeMedium)
+                        .foregroundStyle(canSend ? MP.onBrand : MP.disabledInk)
                         .frame(width: 44, height: 44)
-                        .background(Circle().fill(canSend ? MP.brand : MP.faint))
+                        .background(Circle().fill(canSend ? MP.brand : MP.disabledFill))
+                        .overlay {
+                            if !canSend { Circle().strokeBorder(MP.lineStrong, lineWidth: 1) }
+                        }
                 }
                 .disabled(!canSend || sending)
             }
@@ -128,26 +158,36 @@ struct MessagesView: View {
                 ForEach(pending) { a in
                     HStack(spacing: 5) {
                         Image(systemName: a.isImage ? "photo" : "doc")
-                            .font(.mp(11, weight: .semibold)).foregroundStyle(MP.brand)
-                        Text(a.displayName).font(.mp(12, weight: .medium))
+                            .font(.labelMedium).foregroundStyle(MP.brandInk)
+                        Text(a.displayName).font(.labelMedium)
                             .foregroundStyle(MP.ink).lineLimit(1)
-                        Text(a.sizeLabel).font(.mp(11)).foregroundStyle(MP.faint)
+                        // `muted` (4.75:1 on `soft` light / 4.58:1 dark), not
+                        // `faint` (2.28:1 there): a file size is text.
+                        Text(a.sizeLabel).font(.label).foregroundStyle(MP.muted)
                         Button {
                             remove(a)
                         } label: {
-                            Image(systemName: "xmark").font(.mp(9, weight: .bold))
-                                .foregroundStyle(MP.faint)
+                            // Was 9pt — four points under the floor, and on
+                            // `faint`, which is the inactive tier. This is a
+                            // live control, so it is 12pt on `muted`.
+                            Image(systemName: "xmark").font(.labelMedium)
+                                .foregroundStyle(MP.muted)
                         }
                         .accessibilityLabel("Remove \(a.displayName)")
                     }
                     .padding(.horizontal, 9).padding(.vertical, 6)
-                    .background(Capsule().fill(MP.soft))
-                    .overlay(Capsule().strokeBorder(MP.line))
+                    .background(MP.pillShape.fill(MP.soft))
+                    // `MP.pillShape`, not a bare `Capsule()`, and `lineStrong`
+                    // rather than `line`: `soft` is 1.13:1 against the panel
+                    // this strip sits on (1.07:1 dark), so the fill separates
+                    // nothing and the border is the only cue the row exists —
+                    // 1.4.11's 3:1 applies to it (3.83:1 light / 5.67:1 dark).
+                    .overlay(MP.pillShape.strokeBorder(MP.lineStrong, lineWidth: 1))
                 }
                 if uploading {
                     HStack(spacing: 5) {
                         ProgressView().controlSize(.mini)
-                        Text("Adding…").font(.mp(12, weight: .medium))
+                        Text("Adding…").font(.labelMedium)
                             .foregroundStyle(MP.muted)
                     }
                     .padding(.horizontal, 9).padding(.vertical, 6)
@@ -256,14 +296,22 @@ struct Bubble: View {
     var body: some View {
         VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
             if !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // 16pt / 400: a message is the patient's own copy, and 15
+                // is not a rung. Opaque on purpose — a bubble is a repeating
+                // list cell, which is barred from glass outright, and it
+                // carries the words a post-operative patient is reading.
                 Text(message.text)
-                    .font(.mp(15))
-                    .foregroundStyle(mine ? .white : MP.ink)
+                    .font(.copyLarge)
+                    .foregroundStyle(mine ? MP.onBrand : MP.ink)
                     .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .background(MP.surfaceShape
                         .fill(mine ? MP.brand : (message.sender == "care_team" ? MP.brandTint : MP.panel)))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(mine ? .clear : MP.line))
+                    // ONE edge, and only where the fill does not separate:
+                    // `brand` and `brandTint` are their own boundary, `panel`
+                    // is 1.13:1 on canvas light and 1.07:1 dark and needs the
+                    // hairline. No shadow — this is not a floating overlay.
+                    .overlay(MP.surfaceShape
+                        .strokeBorder(mine || message.sender == "care_team" ? .clear : MP.line, lineWidth: 1))
             }
             AttachmentStrip(attachments: message.files, mine: mine)
             if let taskId = message.action?.opensTask, let label = message.action?.label {
@@ -272,11 +320,14 @@ struct Bubble: View {
             HStack(spacing: 4) {
                 Text(who)
                 if message.fromClinician {
+                    // Was 10pt — under the floor — with `brand` as its ink,
+                    // which is 3.10:1 on its own tint in dark. 12pt / 500 on
+                    // `brandInk`: 4.96:1 light / 5.62:1 dark on `brandTint`.
                     Text("Care team approved")
-                        .font(.mp(10, weight: .semibold))
+                        .font(.labelMedium)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(MP.brandTint))
-                        .foregroundStyle(MP.brand)
+                        .background(MP.pillShape.fill(MP.brandTint))
+                        .foregroundStyle(MP.brandInk)
                 }
                 Text("·")
                 Text(Dates.relative(message.createdAt))
@@ -284,7 +335,9 @@ struct Bubble: View {
                     Text("· not delivered by text").foregroundStyle(MP.riskMed)
                 }
             }
-            .font(.mp(11.5)).foregroundStyle(MP.faint)
+            // 11.5 was a half-point size below the floor, on the non-text
+            // tier. 12pt on `muted` — a signature and a timestamp are text.
+            .font(.label).foregroundStyle(MP.muted)
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .padding(mine ? .leading : .trailing, 48)
@@ -304,12 +357,13 @@ struct Bubble: View {
             Task { await app.refreshTasks() }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "arrow.right.circle.fill").font(.mp(14, weight: .semibold))
-                Text(label).font(.mp(14.5, weight: .semibold))
+                Image(systemName: "arrow.right.circle.fill").font(.copyMedium)
+                Text(label).font(.copyMedium)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(MP.onBrand)
             .padding(.horizontal, 16).frame(minHeight: 40)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(MP.brand))
+            // A control, so `controlShape` (10pt) rather than a 12pt literal.
+            .background(MP.controlShape.fill(MP.brand))
         }
         .buttonStyle(.plain)
         .padding(.top, 2)

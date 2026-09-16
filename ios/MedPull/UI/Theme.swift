@@ -185,11 +185,6 @@ enum MP {
     static let tealGraphic = pair((0, 151, 167), (0, 172, 193))
     /// #DFF6F9 / #103640. `tealInk` on it: 5.17:1 light, 8.14:1 dark.
     static let tealTint = pair((223, 246, 249), (16, 54, 64))
-    /// RETIRED NAME, kept so nothing breaks: the old #3EC6B7 mint is gone and
-    /// this resolves to the teal anchor. Its 2 call sites move to `teal`
-    /// (fill) or `tealInk` (text) in the migration phase.
-    static let cyan = teal
-
     // MARK: - Risk grid (re-derived; all four Material pairs were failing)
 
     /// 5.62:1 on panel, 4.83:1 on its own tint (was #E53935 on #FFEBEE, 3.70:1).
@@ -197,6 +192,12 @@ enum MP {
     /// Light solid / the 0.16 wash frozen over dark panel. 5.70:1 against
     /// `riskHigh` on dark, 4.83:1 on light.
     static let riskHighBg = pair((251, 234, 234), (58, 46, 52))
+    /// Ink for a SOLID `riskHigh` disc or bar — the one place the two modes
+    /// need different inks rather than one token. White on #C62828 is 5.62:1,
+    /// but white on the dark half #FF8A87 is only 2.27:1, so dark flips to
+    /// n-950 (8.08:1). `onBrand` cannot cover this case, which is why the
+    /// avatar disc used to put white on a light-red fill in dark mode.
+    static let onRiskHigh = pair((255, 255, 255), (14, 21, 28))
     /// 5.82:1 on panel, 5.17:1 on tint (was #EF6C00 on #FFF3E0, 2.81:1).
     static let riskMed = pair((154, 83, 0), (255, 178, 92))
     static let riskMedBg = pair((251, 240, 225), (58, 52, 45))
@@ -261,11 +262,12 @@ enum MP {
     static let radiusSurface: CGFloat = 12
     /// Buttons, fields, chips, segments — anything you touch. 10pt.
     static let radiusControl: CGFloat = 10
-    /// RETIRED NAMES, pointed at the two tokens so the 15 existing call sites
-    /// keep compiling and pick up the new values; the migration phase repoints
-    /// them and retires the seven scattered literals (14, 16, 14, 12, 10, 8, 3).
-    static let cardRadius: CGFloat = radiusSurface
-    static let buttonRadius: CGFloat = radiusControl
+    // `cardRadius` and `buttonRadius` are DELETED. The doc comment here used
+    // to name six surviving call sites in CheckinView and OnboardingFlow; all
+    // six now use `surfaceShape`/`controlShape`, so a live-code scan of ios/
+    // finds ZERO references to either name (any hit a grep still returns is
+    // prose describing the migration). They had already gone before this deletion, so no
+    // deprecation warning was firing — the names were simply unreachable.
 
     /// Always `.continuous`. `.circular` is the iOS 6 corner and reads as a
     /// different product next to a system sheet; the app has exactly one
@@ -311,38 +313,240 @@ enum MP {
     }
 }
 
+// MARK: - Motion
+
+/// THE APP'S ONE MOTION VOCABULARY. Every duration in the app lives here.
+///
+/// Rules: 150-300ms, `easeOut` entering, `easeIn` leaving, no springs on
+/// clinical content. SwiftUI does NOT honour `accessibilityReduceMotion` for
+/// explicit animations — `.animation(_:value:)` and `withAnimation` run
+/// regardless — so a call site reads the environment value and goes through
+/// `MPMotion.gated(_:reduceMotion:)` (nil: no animation) or
+/// `MPMotion.transition(reduceMotion:)` (a 150ms cross-fade instead).
+///
+/// `MPGlass` in Glass.swift still carries its own copies of `enter`, `exit`,
+/// `morph` and `crossFade` with identical values; it should alias these.
+enum MPMotion {
+    /// 150ms ease-out. The reduce-motion substitute: a cross-fade at the
+    /// bottom of the band.
+    static let crossFade = Animation.easeOut(duration: 0.15)
+    /// 180ms ease-out. A step within a screen (the check-in questions).
+    static let step = Animation.easeOut(duration: 0.18)
+    /// 180ms ease-in. Leaving.
+    static let exit = Animation.easeIn(duration: 0.18)
+    /// 200ms ease-out. A small state change (step dots, a toggle's knock-on).
+    static let state = Animation.easeOut(duration: 0.2)
+    /// 240ms ease-out. Entering — a step advancing, a surface appearing.
+    static let enter = Animation.easeOut(duration: 0.24)
+    /// 250ms ease-out. A completion state settling in (check-in sent).
+    static let settle = Animation.easeOut(duration: 0.25)
+    /// 280ms ease-out. A morph between two shapes. Top of the band, because
+    /// a morph that is too quick reads as a glitch rather than a move.
+    static let morph = Animation.easeOut(duration: 0.28)
+
+    /// `animation`, or nil when the patient has asked for less motion.
+    static func gated(_ animation: Animation, reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : animation
+    }
+
+    /// A morph, or the cross-fade under Reduce Motion.
+    static func transition(reduceMotion: Bool) -> Animation {
+        reduceMotion ? crossFade : morph
+    }
+}
+
+/// THE FROZEN LADDER. Five UI rungs — 12 / 14 / 16 / 18 / 20 — plus 11
+/// reserved for chart axis labels alone, and a four-rung display band above.
+/// Nothing between 20 and 28 is a size: 26 is not a rung, and the two
+/// `.title(26)` sites are the last of it.
+///
+/// "FROZEN" MEANS THE AUTHORED NUMBER, NOT THE RENDERED ONE. Every rung still
+/// honours Dynamic Type — a patient app cannot opt out of it, and
+/// `Font.custom(_:size:)` has scaled from `.body` since iOS 14 (the opt-out
+/// is `custom(_:size:fixedSize:)`, which this file deliberately never calls).
+/// The two bands scale on DIFFERENT curves, measured on device at AX5 against
+/// the same screen at the default size:
+///   * UI band, `.body`-relative: 16pt of body copy went from 14.7pt of ink
+///     to 41.3pt. 2.81x.
+///   * Display band, `.largeTitle`-relative: a 34pt title went from 31.7pt of
+///     ink to 53.7pt. 1.69x.
+/// That inversion is Apple's, not ours — in the system table AX5 body (53pt)
+/// overtakes AX5 largeTitle (44pt) — and it is the reason the display band is
+/// pinned to `.largeTitle`: on the old `.body` curve a 54pt readout reached
+/// 150pt and took the screen with it. At AX sizes the hierarchy is carried by
+/// weight, space and order, because the sizes converge no matter what we do.
+///
+/// Why raw numbers are named instead of banned: the six `.system(design:
+/// .monospaced)` escapes hold column and chart alignment and cannot go
+/// through `.mp`, so they need the same numbers. Use these constants there
+/// (or `Font.mono…`) rather than retyping a literal.
+enum MPSize {
+    /// 11pt. CHART AXIS LABELS ONLY — the one thing allowed under 12, and the
+    /// floor for the whole app. It is a real size for a real reason: an axis
+    /// label sits inside a plot it must not crowd, and it is never the only
+    /// copy of the number (the series label and the readout carry that).
+    /// Anything a patient reads as a sentence, a control label or a caption is
+    /// 12 at the smallest. Nothing is 9 or 10.
+    static let axis: CGFloat = 11
+    /// 12pt. Captions, meta lines, pill and eyebrow labels, timestamps.
+    static let label: CGFloat = 12
+    /// 14pt. The default. Body copy, list rows, field help, most labels.
+    static let copy: CGFloat = 14
+    /// 16pt. Primary copy and every full-width control label: buttons, chips,
+    /// field input. Also the iOS floor for text a patient types into.
+    static let copyLarge: CGFloat = 16
+    /// 18pt. A lede paragraph, a card headline, a metric value in a row.
+    static let lede: CGFloat = 18
+    /// 20pt. Section and card subheads — the top of the UI band.
+    static let subhead: CGFloat = 20
+
+    // The display band: 28pt and up, scaling from `.largeTitle` (1.69x at
+    // AX5, measured) rather than the UI band's `.body` curve (2.81x). A
+    // display line must be free to WRAP — `title()` sets `lineLimit(nil)` and
+    // vertical `fixedSize` for exactly that — and a one-line readout that
+    // cannot wrap takes `.lineLimit(1).minimumScaleFactor(0.7)`. Neither is
+    // optional: at AX5 the onboarding hero already pushes its own wordmark
+    // off the top of a screen with no ScrollView.
+    /// 28pt. Screen titles. The bottom of the display band.
+    static let displayS: CGFloat = 28
+    /// 34pt. A hero line, an onboarding promise.
+    static let displayM: CGFloat = 34
+    /// 44pt. A single large figure.
+    static let displayL: CGFloat = 44
+    /// 54pt. The one-per-screen readout — the pain-scale number.
+    static let displayXL: CGFloat = 54
+}
+
 extension Font {
     /// The app's typeface, in one place so the face is one edit.
     ///
     /// Instrument Sans (SIL OFL 1.1), bundled at weights 400 and 500 only.
     /// It is the measured-closest open substitute for the console's reference
     /// face, and it is the shared UI face on both surfaces: the console loads
-    /// the same two cuts as woff2 from frontend/public/fonts. EB Garamond is
-    /// not a UI face anywhere any more — its four files are still in
-    /// Resources/Fonts but are no longer registered in project.yml and
-    /// nothing references them.
+    /// the same two cuts as woff2 from frontend/public/fonts.
     ///
-    /// Why this fixes legibility without touching a single size: the Garamond
-    /// swap was mechanical and preserved every point size while dropping
+    /// Why this fixes legibility without touching a single size: the earlier
+    /// serif swap was mechanical and preserved every point size while dropping
     /// x-height 21.2% (sxHeight 400/1000 against San Francisco's 0.5078em),
-    /// so `.mp(11)` rendered an apparent 8.7px and `.mp(9)` an apparent 7.1px.
+    /// so an 11pt rung rendered an apparent 8.7px and a 9pt one 7.1px.
+    /// (Written out rather than as call syntax: the sub-floor-size gate reads
+    /// source text and counted this sentence as a live 9pt site.)
     /// Instrument Sans measures sxHeight 510/1000 = 0.5100em, within +0.4% of
     /// San Francisco, so the same numbers now render the size they claim.
-    /// The size ladder itself (12/14/16/18/20) lands in the migration phase.
     ///
     /// A missing file falls back to the system face, so a build that lost its
     /// resources is plain rather than broken — but silently, which is why the
     /// PostScript names below are verified against the bundled files rather
     /// than typed from the family name.
+    ///
+    /// PREFER A NAMED RUNG. `.mp(_:weight:)` stays because it is the primitive
+    /// the rungs are built from and because 133 call sites still use it, but a
+    /// new site should name a rung: the ladder is only frozen if nobody has to
+    /// remember the numbers.
+    ///
+    /// This scales with Dynamic Type from `.body`, as `Font.custom(_:size:)`
+    /// has since iOS 14 — measured 2.81x at AX5. The size you type is the
+    /// size at the default content category, not the size on every device.
     static func mp(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .custom(MPFont.name(for: weight), size: size)
     }
 
+    // MARK: - The UI band (frozen)
+    //
+    // Two cuts ship, so each rung has exactly two forms: the bare name is 400
+    // and the `Medium` suffix is 500. There is no third form, and no call
+    // site anywhere in the app names a weight above 500 any more — the count
+    // was 53 when the `…Medium` rungs were added and it is 0 now. The
+    // `…Medium` name IS the emphasis vocabulary.
+
+    /// 11pt regular. CHART AXIS LABELS ONLY. Pair with `MP.chartAxisLabel`,
+    /// never with `MP.faint`.
+    static let axis = Font.mp(MPSize.axis)
+    /// 12pt / 400.
+    static let label = Font.mp(MPSize.label)
+    /// 12pt / 500. Pills, eyebrows, any 12pt that has to hold its own.
+    static let labelMedium = Font.mp(MPSize.label, weight: .medium)
+    /// 14pt / 400 — the default text style of the app.
+    static let copy = Font.mp(MPSize.copy)
+    /// 14pt / 500.
+    static let copyMedium = Font.mp(MPSize.copy, weight: .medium)
+    /// 16pt / 400. Field input and primary copy.
+    static let copyLarge = Font.mp(MPSize.copyLarge)
+    /// 16pt / 500. Every full-width control label.
+    static let copyLargeMedium = Font.mp(MPSize.copyLarge, weight: .medium)
+    /// 18pt / 400.
+    static let lede = Font.mp(MPSize.lede)
+    /// 18pt / 500.
+    static let ledeMedium = Font.mp(MPSize.lede, weight: .medium)
+    /// 20pt / 400.
+    static let subhead = Font.mp(MPSize.subhead)
+    /// 20pt / 500.
+    static let subheadMedium = Font.mp(MPSize.subhead, weight: .medium)
+
+    // MARK: - The display band (fluid)
+
     /// Same face — there is one typeface on both surfaces now, and a display
     /// moment is made with size and space, not a second family. The default
-    /// is `.medium` because 500 is the weight ceiling.
+    /// weight is `.medium` because 500 is the ceiling, and the size scales
+    /// with Dynamic Type from `.largeTitle`, which is what makes this band
+    /// fluid where the UI band is frozen.
+    ///
+    /// It does not clamp: `display(20)` would be a 20pt fluid font, which is
+    /// a bug, not a size. Name a rung instead.
     static func display(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
-        .mp(size, weight: weight)
+        .custom(MPFont.name(for: weight), size: size, relativeTo: .largeTitle)
+    }
+
+    /// 28pt / 500, fluid. Screen titles.
+    static let displayS = Font.display(MPSize.displayS)
+    /// 34pt / 500, fluid.
+    static let displayM = Font.display(MPSize.displayM)
+    /// 44pt / 500, fluid.
+    static let displayL = Font.display(MPSize.displayL)
+    /// 54pt / 500, fluid. Guard it with
+    /// `.lineLimit(1).minimumScaleFactor(0.7)`.
+    static let displayXL = Font.display(MPSize.displayXL)
+
+    // MARK: - The monospace escape
+
+    /// THE SIX ESCAPES, and the glyph escape hatch.
+    ///
+    /// Two jobs, both real:
+    ///  1. ALIGNMENT. A column of numbers, a chart readout and an avatar's
+    ///     initials all need equal advance widths. Instrument Sans carries
+    ///     `tnum` but SwiftUI gives no way to switch a feature on a
+    ///     `Font.custom`, so these stay on the system monospace face.
+    ///  2. GLYPHS INSTRUMENT SANS DOES NOT HAVE. Its cmap (501 glyphs) has no
+    ///     U+00B1 `±`, no U+00B5 `µ`, no U+03BC `μ`, and no `≥`/`≤`/`′`/`″`.
+    ///     iOS has no unicode-range mechanism, so those characters fall back
+    ///     to San Francisco per-glyph, silently and at a different width —
+    ///     one word in a second face mid-sentence. A string that must carry
+    ///     `±` or `µ` goes through here, where the whole string is already
+    ///     San Francisco and the mix cannot happen. (It does have `°`, `×`,
+    ///     `·`, `–`, `—`, `→`, `’` and `…`, so those are safe inline.)
+    ///
+    /// The weight is clamped to the same 500 ceiling as `.mp`: `.system` is
+    /// the one path that could still draw a real semibold.
+    static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: MPFont.systemWeight(for: weight), design: .monospaced)
+    }
+
+    /// 12pt monospace / 400.
+    static let monoLabel = Font.mono(MPSize.label)
+    /// 14pt monospace / 400.
+    static let monoCopy = Font.mono(MPSize.copy)
+    /// 16pt monospace / 500 — a metric value inside a row.
+    static let monoCopyLarge = Font.mono(MPSize.copyLarge, weight: .medium)
+    /// 18pt monospace / 500 — the headline metric.
+    static let monoLede = Font.mono(MPSize.lede, weight: .medium)
+    /// 20pt monospace / 500.
+    static let monoSubhead = Font.mono(MPSize.subhead, weight: .medium)
+    /// A display-band monospace readout. Fixed, not fluid: `.system(size:)`
+    /// has no `relativeTo`, and a tabular readout that grows is a readout
+    /// that clips. Use it for the pain-scale number instead of
+    /// `design: .rounded`, which is a third face on the screen.
+    static func monoDisplay(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .medium, design: .monospaced)
     }
 }
 
@@ -360,19 +564,44 @@ enum MPFont {
     static let regular = "InstrumentSans-Regular"
     static let medium = "InstrumentSans-Medium"
 
-    /// Two cuts ship: 400 and 500. 500 is the ceiling, so `.semibold`,
-    /// `.bold`, `.heavy` and `.black` all MAP DOWN to the 500 cut rather than
-    /// naming a file that does not exist — `Font.custom` with an unbundled
-    /// PostScript name falls back to San Francisco silently, which would put
-    /// a third face mid-screen at the 47 call sites that still ask for
-    /// `.semibold` or `.bold`. Those call sites are cleaned up in the
-    /// migration phase; until then they compile and render at the ceiling.
-    /// Nothing ever asks for a heavier file, so there is no synthetic bold.
+    /// Two cuts ship: 400 and 500, and 500 is the ceiling. Two files means two
+    /// buckets, so this maps the light half of `Font.Weight` to the Regular
+    /// file and EVERYTHING ELSE to the Medium file.
+    ///
+    /// The migration crutch is gone: the case list used to spell out all four
+    /// over-ceiling weight identifiers explicitly, for 53 call sites that
+    /// asked for them. A live-code scan now finds ZERO of those call sites —
+    /// the only occurrences left anywhere in ios/ are prose in four doc
+    /// comments in other files. Spelling them out here was the last thing
+    /// making the source lie about its own weights (and the last thing making
+    /// the weight gate report 16 hits against this file), so the identifiers
+    /// are out and the two buckets stay.
+    ///
+    /// The buckets CANNOT go, and that is not the same question as the clamp.
+    /// `Font.Weight` is a struct, not an enum, so this switch needs a default
+    /// no matter what, and `Font.mp(_:weight:)` takes a full `Font.Weight`
+    /// across 133 call sites — narrowing that parameter to a two-case type is
+    /// an API change, not a cleanup. Mapping down is also the only safe
+    /// default: `Font.custom` with an unbundled PostScript name falls back to
+    /// San Francisco SILENTLY, so a name that does not resolve here would put
+    /// a third face mid-screen rather than fail to build. Nothing ever asks
+    /// for a heavier FILE, so nothing is ever synthesised.
     static func name(for weight: Font.Weight) -> String {
         switch weight {
         case .ultraLight, .thin, .light, .regular: return regular
-        case .medium, .semibold, .bold, .heavy, .black: return medium
-        default: return regular
+        default: return medium
+        }
+    }
+
+    /// The same ceiling for the `.system` path, and this is the one that
+    /// matters. `name(for:)` protects `.mp` by having no bolder file to name,
+    /// but `.system(weight:)` asked for a weight above 500 draws a REAL San
+    /// Francisco semibold — the single way a weight over the ceiling can still
+    /// reach the screen. Every monospace escape goes through here.
+    static func systemWeight(for weight: Font.Weight) -> Font.Weight {
+        switch weight {
+        case .ultraLight, .thin, .light, .regular: return .regular
+        default: return .medium
         }
     }
 
@@ -400,11 +629,16 @@ enum MPFont {
                 ?? .systemFont(ofSize: size, weight: weight == .regular ? .regular : .medium)
         }
 
-        UINavigationBar.appearance().titleTextAttributes = [.font: font(17, .medium)]
-        UISegmentedControl.appearance().setTitleTextAttributes([.font: font(14, .regular)], for: .normal)
-        UISegmentedControl.appearance().setTitleTextAttributes([.font: font(14, .medium)], for: .selected)
-        UITabBarItem.appearance().setTitleTextAttributes([.font: font(10, .medium)], for: .normal)
-        UIBarButtonItem.appearance().setTitleTextAttributes([.font: font(17, .regular)], for: .normal)
+        // On the ladder, including here. These were 17 / 14 / 14 / 10 / 17:
+        // 17 is not a rung and 10 is under the floor. The tab title moves to
+        // 12 rather than to 11, because 11 belongs to chart axis labels —
+        // "Messages", the longest of the five, measures ~52pt of the ~75pt
+        // each tab gets at the narrowest supported width.
+        UINavigationBar.appearance().titleTextAttributes = [.font: font(MPSize.lede, .medium)]
+        UISegmentedControl.appearance().setTitleTextAttributes([.font: font(MPSize.copy, .regular)], for: .normal)
+        UISegmentedControl.appearance().setTitleTextAttributes([.font: font(MPSize.copy, .medium)], for: .selected)
+        UITabBarItem.appearance().setTitleTextAttributes([.font: font(MPSize.label, .medium)], for: .normal)
+        UIBarButtonItem.appearance().setTitleTextAttributes([.font: font(MPSize.copyLarge, .regular)], for: .normal)
     }
 }
 
@@ -414,21 +648,37 @@ extension View {
     /// Real capitals, not small caps — Instrument Sans has no `smcp` in its
     /// GSUB (it carries `case`, `tnum` and ss01-ss12), so
     /// `.textCase(.uppercase)` is the whole mechanism. Tracking is the
-    /// console's `--track-eyebrow` +0.06em, which at 11pt is 0.66pt; the
+    /// console's `--track-eyebrow` +0.06em, which at 12pt is 0.72pt; the
     /// 1.0pt it used to carry was tuned to open up a serif's tight uppercase
     /// fitting and reads gappy on a neo-grotesque.
+    ///
+    /// Now 12pt, not 11: uppercase at 11pt was borrowing the axis-label
+    /// exception for something a patient reads, and 11 is reserved. `muted`
+    /// (5.39:1 light / 4.91:1 dark on panel) is the floor for it, never
+    /// `faint`.
+    ///
+    /// ONE PER SCREEN. This is the uppercase budget, and it is spent the
+    /// moment a second eyebrow appears on the same screen — HomeView has
+    /// five today. Everything else that used to be an eyebrow is
+    /// `.labelMedium` + `MP.muted`, sentence case.
     func eyebrow() -> some View {
-        self.font(.mp(11, weight: .medium))
+        self.font(.labelMedium)
             .textCase(.uppercase)
-            .kerning(0.66)
+            .kerning(0.72)
             .foregroundStyle(MP.muted)
     }
 
-    /// Tracking sits at zero here for now. The console's title and display
-    /// tracking tokens are -0.02em and -0.03em; applying them is a per-site
-    /// change that belongs with the size ladder in the migration phase, so
-    /// nothing shifts in this one.
-    func title(_ size: CGFloat = 26) -> some View {
+    /// A screen title: display band, fluid, `ink`, wraps freely.
+    ///
+    /// Tracking sits at zero here. The console's title and display tracking
+    /// tokens are -0.02em and -0.03em; SwiftUI's `.kerning` is absolute
+    /// points, so applying them means a per-rung number (-0.56pt at 28,
+    /// -0.68 at 34) and that is a per-site judgement the screen agents make
+    /// with the copy in front of them.
+    ///
+    /// The default moved 26 -> 28 because 26 is not a rung. Pass `MPSize`
+    /// values, not literals: `.title(MPSize.displayM)`.
+    func title(_ size: CGFloat = MPSize.displayS) -> some View {
         self.font(.display(size)).foregroundStyle(MP.ink)
             .fixedSize(horizontal: false, vertical: true)
             .lineLimit(nil)

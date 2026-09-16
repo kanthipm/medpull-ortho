@@ -63,7 +63,7 @@ function MetricsTab({ data, refreshing }: { data: CareMetricsResponse; refreshin
             f.templates.length > 0 ? (
               <span className="flex flex-wrap justify-end gap-1">
                 {f.templates.map((t) => (
-                  <span key={t} className="chip bg-soft font-mono text-faint">
+                  <span key={t} className="chip bg-soft font-mono text-muted">
                     {t}
                   </span>
                 ))}
@@ -93,9 +93,9 @@ function MetricsTab({ data, refreshing }: { data: CareMetricsResponse; refreshin
                   id={`metric-${m.id}`}
                   className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 first:pt-0 last:pb-0"
                 >
-                  <span className="chip bg-soft font-mono tabular-nums text-faint">{m.id}</span>
-                  <span className="text-[13px] font-medium text-body">{m.name}</span>
-                  <span className="text-[11px] font-medium text-faint">
+                  <span className="chip bg-soft font-mono tabular-nums text-muted">{m.id}</span>
+                  <span className="text-copy font-medium text-body">{m.name}</span>
+                  <span className="text-label font-medium text-muted">
                     {m.status_text || 'Not used on this pathway'}
                     {m.domains.length > 0 && <> · {m.domains.join(', ')}</>}
                   </span>
@@ -167,14 +167,14 @@ export default function FullStats({
         type="button"
         onClick={() => onOpenChange(!open)}
         aria-expanded={open}
-        className="zone-label group w-full cursor-pointer rounded-btn px-1 py-2 text-left transition-colors duration-150 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+        className="zone-label group w-full cursor-pointer rounded-control px-1 py-2 text-left transition-colors duration-150 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
       >
         <ChevronRight
           size={15}
-          className={`shrink-0 text-faint transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+          className={`shrink-0 text-muted transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
         />
         Full stats
-        <span className="text-[10.5px] font-medium normal-case tracking-normal text-faint">{hint}</span>
+        <span className="text-label font-medium text-muted">{hint}</span>
       </button>
 
       {open && (
@@ -191,7 +191,7 @@ export default function FullStats({
             <>
               {care.isLoading && <SkeletonCard lines={4} />}
               {care.isError && (
-                <p className="text-[12.5px] font-medium text-muted">
+                <p className="text-label font-medium text-muted">
                   Care metrics are not available for this patient yet.
                 </p>
               )}
@@ -205,7 +205,7 @@ export default function FullStats({
             <>
               {signals.isLoading && <SkeletonCard lines={4} />}
               {signals.isError && (
-                <p className="text-[12.5px] font-medium text-muted">Signals could not be loaded.</p>
+                <p className="text-label font-medium text-muted">Signals could not be loaded.</p>
               )}
               {signals.data && <SignalsBody data={signals.data} refreshing={refreshing} />}
             </>

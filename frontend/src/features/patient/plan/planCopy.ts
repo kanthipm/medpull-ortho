@@ -34,18 +34,23 @@ export function scheduleLabel(schedule: string | null | undefined): string {
 /** Their lifecycle status, as a chip. */
 export const TASK_STATUS = {
   pending: { label: 'Pending', pill: 'bg-soft text-muted' },
-  sent: { label: 'Sent', pill: 'bg-brand-tint text-brand' },
-  done: { label: 'Done', pill: 'bg-risk-low-bg text-risk-low' },
-  skipped: { label: 'Skipped', pill: 'bg-risk-missing-bg text-risk-missing' },
+  sent: { label: 'Sent', pill: 'bg-brand-tint text-on-brand-tint' },
+  done: { label: 'Done', pill: 'bg-risk-low-tint text-risk-low-ink' },
+  skipped: { label: 'Skipped', pill: 'bg-risk-missing-tint text-risk-missing-ink' },
 } as const satisfies Record<TaskStatus, unknown>
 
-/** One day of the 14-day strip. Verified is brand, self-attested the faded
- *  brand, missed a hollow ring, pending a flat line, none invisible. */
+/** One day of the 14-day strip. Verified is the brand fill, self-attested a
+ *  solid --line-strong, missed a hollow ring in the same step, pending a flat
+ *  line, none invisible. Self-attested used to be `bg-brand/35`, which is
+ *  1.617:1 on light --panel and 1.508:1 on dark --panel — half the 3:1 that
+ *  1.4.11 asks of a mark carrying clinical state, and an alpha wash over a
+ *  ground that flips. --line-strong is 3.834:1 light / 5.671:1 dark, solid.
+ *  The legend in TasksSection names the colours, so it moved with this. */
 export const RECORD_DOT: Record<RecordStatus, { cls: string; label: string }> = {
-  verified: { cls: 'h-2 w-2 rounded-full bg-brand', label: 'Verified by data' },
-  self_attested: { cls: 'h-2 w-2 rounded-full bg-brand/35', label: 'Self-reported' },
-  missed: { cls: 'h-2 w-2 rounded-full border border-faint/70 bg-transparent', label: 'Missed' },
-  pending: { cls: 'h-[2px] w-2 rounded-full bg-line', label: 'Pending' },
+  verified: { cls: 'h-2 w-2 rounded-pill bg-brand', label: 'Verified by data' },
+  self_attested: { cls: 'h-2 w-2 rounded-pill bg-line-strong', label: 'Self-reported' },
+  missed: { cls: 'h-2 w-2 rounded-pill border border-line-strong bg-transparent', label: 'Missed' },
+  pending: { cls: 'h-[2px] w-2 rounded-pill bg-line', label: 'Pending' },
   none: { cls: 'h-2 w-2 opacity-0', label: 'Not scheduled' },
 }
 

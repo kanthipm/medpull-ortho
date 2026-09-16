@@ -25,6 +25,7 @@ struct CheckinView: View {
     @State private var error: String?
     @State private var done = false
     @FocusState private var typing: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var questions: [Question] { task.questions }
     private var isReview: Bool { step >= questions.count }
@@ -57,9 +58,21 @@ struct CheckinView: View {
         }
         .screen()
         .navigationBarTitleDisplayMode(.inline)
-        .animation(.easeInOut(duration: 0.18), value: step)
-        .animation(.easeInOut(duration: 0.25), value: done)
+        .animation(stepMotion, value: step)
+        .animation(doneMotion, value: done)
     }
+
+    // MARK: motion
+    //
+    /// Both durations sit in the 150-300ms band and both are `easeOut`, which
+    /// is the entering curve; `easeInOut` was decelerating into a step that
+    /// only ever arrives. They return nil under Reduce Motion, because
+    /// SwiftUI does NOT honour that setting for explicit animations — an
+    /// `.animation(_:value:)` or a `withAnimation` block runs regardless, so
+    /// the check has to be here. Every animation on this screen goes through
+    /// these two properties; nothing calls `withAnimation` bare.
+    private var stepMotion: Animation? { MPMotion.gated(MPMotion.step, reduceMotion: reduceMotion) }
+    private var doneMotion: Animation? { MPMotion.gated(MPMotion.settle, reduceMotion: reduceMotion) }
 
     // MARK: progress
 
@@ -69,16 +82,26 @@ struct CheckinView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Daily check-in")
-                    .font(.mp(20, weight: .semibold)).foregroundStyle(MP.ink)
+                    .font(.subheadMedium).foregroundStyle(MP.ink)
                 Spacer()
                 Text(isReview ? "Review" : "\(step + 1) of \(questions.count)")
-                    .font(.mp(13, weight: .medium)).foregroundStyle(MP.muted)
+                    .font(.copyMedium).foregroundStyle(MP.muted)
                     .monospacedDigit()
             }
+            // TWO states, both solid tokens. It was three, and the middle
+            // one was `brand.opacity(0.45)` — an alpha wash whose real
+            // contrast depends on which ground shows through (it composites
+            // to #92BDE8 on the light canvas and #13436E on the dark one),
+            // which is the same defect the tinted Card's gradient was. There
+            // is no solid token between `brand` and `track` to put there:
+            // `brandTintStrong` is 1.19:1 against `track` in light, i.e.
+            // invisible. So the current step now counts as reached, which
+            // also makes the dots agree with the "N of M" label beside them
+            // instead of showing N-1 filled and one half-filled.
             HStack(spacing: 6) {
                 ForEach(questions.indices, id: \.self) { i in
-                    Capsule()
-                        .fill(i < step || isReview ? MP.brand : (i == step ? MP.brand.opacity(0.45) : MP.track))
+                    MP.pillShape
+                        .fill(i <= step || isReview ? MP.brand : MP.track)
                         .frame(height: 4)
                 }
             }
@@ -91,10 +114,15 @@ struct CheckinView: View {
     @ViewBuilder
     private func question(_ q: Question) -> some View {
         VStack(alignment: .leading, spacing: 18) {
+            // 24 is not a rung and nothing exists between 20 and 28, so the
+            // one question on the screen goes UP, into the display band, via
+            // `title()` — which is `ink`, wraps freely and is the same
+            // treatment every other screen title gets. It also scales from
+            // `.largeTitle` rather than `.body`, so at AX5 a long prompt
+            // grows 1.69x instead of 2.81x: the sore patient this screen was
+            // designed for is exactly the one who has Larger Text on.
             Text(q.prompt)
-                .font(.mp(24, weight: .semibold))
-                .foregroundStyle(MP.ink)
-                .fixedSize(horizontal: false, vertical: true)
+                .title(MPSize.displayS)
 
             switch q.kind {
             case "scale":
@@ -104,7 +132,8 @@ struct CheckinView: View {
             case "number":
                 TextField(q.id == "minutes" ? "Minutes" : "Number",
                           text: Binding(get: { answers[q.id]?.intValue.map(String.init) ?? "" },
-                                        set: { answers[q.id] = Int($0).map(AnswerValue.int) }))
+                                        set: { answers[q.id] = Int($0).map(AnswerValue.int) }),
+                          prompt: Text(q.id == "minutes" ? "Minutes" : "Number").foregroundColor(MP.muted))
                     .textFieldStyle(FieldStyle()).keyboardType(.numberPad).focused($typing)
             default:
                 TextField("Optional — anything at all",
@@ -114,6 +143,7 @@ struct CheckinView: View {
                                             if t.isEmpty { answers.removeValue(forKey: q.id) }
                                             else { answers[q.id] = .string(v) }
                                         }),
+                          prompt: Text("Optional — anything at all").foregroundColor(MP.muted),
                           axis: .vertical)
                     .lineLimit(4...8).textFieldStyle(FieldStyle()).focused($typing)
             }
@@ -129,28 +159,33 @@ struct CheckinView: View {
     private var review: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(answered == 0 ? "Nothing answered yet" : "Here's what goes to your care team")
-                .font(.mp(22, weight: .semibold)).foregroundStyle(MP.ink)
+                .font(.subheadMedium).foregroundStyle(MP.ink)
             if answered == 0 {
                 Text("Tap any question to answer it, or send nothing and do it later.")
-                    .font(.mp(14.5)).foregroundStyle(MP.muted)
+                    .font(.copy).foregroundStyle(MP.muted)
             }
             Card(padding: 0) {
                 VStack(spacing: 0) {
                     ForEach(questions) { q in
-                        Button { withAnimation { step = index(of: q) } } label: {
+                        Button { withAnimation(stepMotion) { step = index(of: q) } } label: {
                             HStack(alignment: .top, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(q.prompt)
-                                        .font(.mp(13)).foregroundStyle(MP.muted)
+                                        .font(.copy).foregroundStyle(MP.muted)
                                         .multilineTextAlignment(.leading)
+                                    // "Not answered" is TEXT, so the
+                                    // unanswered state is `muted` (5.39:1 on
+                                    // panel), not `faint` (2.59:1). An
+                                    // unanswered row is the one a patient most
+                                    // needs to be able to read.
                                     Text(spoken(q))
-                                        .font(.mp(15, weight: .medium))
-                                        .foregroundStyle(answers[q.id] == nil ? MP.faint : MP.ink)
+                                        .font(.copyLargeMedium)
+                                        .foregroundStyle(answers[q.id] == nil ? MP.muted : MP.ink)
                                         .multilineTextAlignment(.leading)
                                 }
                                 Spacer(minLength: 8)
-                                Image(systemName: "pencil").font(.mp(12, weight: .semibold))
-                                    .foregroundStyle(MP.brand)
+                                Image(systemName: "pencil").font(.labelMedium)
+                                    .foregroundStyle(MP.brandInk)
                             }
                             .padding(.horizontal, 16).padding(.vertical, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -187,12 +222,12 @@ struct CheckinView: View {
         VStack(spacing: 8) {
             if let error { ErrorBanner(text: error) }
             PrimaryButton(title: isReview ? sendTitle : "Next", loading: sending) {
-                if isReview { submit() } else { withAnimation { typing = false; step += 1 } }
+                if isReview { submit() } else { withAnimation(stepMotion) { typing = false; step += 1 } }
             }
             HStack {
                 if step > 0 {
-                    Button("Back") { withAnimation { typing = false; step -= 1 } }
-                        .font(.mp(14, weight: .medium)).foregroundStyle(MP.muted)
+                    Button("Back") { withAnimation(stepMotion) { typing = false; step -= 1 } }
+                        .font(.copyMedium).foregroundStyle(MP.muted)
                 }
                 Spacer()
                 if !isReview {
@@ -201,9 +236,9 @@ struct CheckinView: View {
                     // patient abandons instead.
                     Button(answers[current?.id ?? ""] == nil ? "Skip this one" : "Clear") {
                         if let id = current?.id { answers.removeValue(forKey: id) }
-                        withAnimation { typing = false; step += 1 }
+                        withAnimation(stepMotion) { typing = false; step += 1 }
                     }
-                    .font(.mp(14, weight: .medium)).foregroundStyle(MP.muted)
+                    .font(.copyMedium).foregroundStyle(MP.muted)
                 }
             }
             .frame(minHeight: 22)
@@ -259,16 +294,33 @@ private struct ScaleAnswer: View {
             ZStack {
                 if value == nil {
                     Text("Drag to answer")
-                        .font(.mp(15, weight: .medium)).foregroundStyle(MP.faint)
+                        .font(.copyLargeMedium).foregroundStyle(MP.muted)
                 } else {
                     VStack(spacing: 0) {
+                        // A DELIBERATE SYSTEM-FACE ESCAPE, now named as
+                        // one: `monoDisplay(MPSize.displayXL)` is the
+                        // display-band monospace rung, so the readout reads as
+                        // intentional rather than as a leak. Three things
+                        // changed and none of them is the escape itself. 58 ->
+                        // 54, which is the `displayXL` rung. `.rounded` ->
+                        // `.monospaced`, because SF Rounded was a third
+                        // typeface mid-screen and because a readout that
+                        // changes on every drag needs equal digit advances or
+                        // it shifts under the thumb. `.semibold` -> the 500
+                        // ceiling, which `Font.mono` clamps: `.system(weight:)`
+                        // is the one path that can still draw a real San
+                        // Francisco Semibold, since MPFont.name(for:) only
+                        // protects `.mp`. It stays fixed-size rather than
+                        // fluid: `.system(size:)` has no `relativeTo`, and a
+                        // tabular readout that grows is a readout that clips.
                         Text("\(number)")
-                            .font(.system(size: 58, weight: .semibold, design: .rounded))
+                            .font(.monoDisplay(MPSize.displayXL))
                             .monospacedDigit()
-                            .foregroundStyle(tone)
+                            .foregroundStyle(readoutInk)
                             .contentTransition(.numericText())
+                            .lineLimit(1)
                         Text(painting ? Pain.word(number) : "out of 10")
-                            .font(.mp(14, weight: .medium)).foregroundStyle(MP.muted)
+                            .font(.copyMedium).foregroundStyle(MP.muted)
                     }
                 }
             }
@@ -279,28 +331,44 @@ private struct ScaleAnswer: View {
                                set: { value = .int(Int($0.rounded())) }),
                 in: 0...10, step: 1
             )
-            .tint(tone)
+            .tint(sliderTint)
 
             HStack {
-                Text(painting ? "No pain" : "0").font(.mp(12)).foregroundStyle(MP.faint)
+                Text(painting ? "No pain" : "0").font(.label).foregroundStyle(MP.muted)
                 Spacer()
-                Text(painting ? "Worst imaginable" : "10").font(.mp(12)).foregroundStyle(MP.faint)
+                Text(painting ? "Worst imaginable" : "10").font(.label).foregroundStyle(MP.muted)
             }
         }
     }
 
     /// Green through amber to red as the number climbs — the same risk tones
     /// the rest of the app uses, so a patient who has seen their own chart
-    /// reads the colour the same way their care team does.
-    private var tone: Color {
-        guard value != nil else { return MP.track }
-        guard painting else { return MP.brand }
+    /// reads the colour the same way their care team does. The three risk
+    /// tokens are already the ink cuts (`riskHighBg` and friends are the
+    /// fills), so the same value serves both jobs below.
+    ///
+    /// Colour is never the only carrier here: the word under the number
+    /// ("Mild", "Moderate", "Bad", "Severe") says the same thing in text.
+    private var riskInk: Color? {
+        guard painting else { return nil }
         switch number {
         case 0...3: return MP.riskLow
         case 4...6: return MP.riskMed
         default: return MP.riskHigh
         }
     }
+
+    /// The slider's fill. A FILL is exactly what Medical Blue is for, so the
+    /// non-pain case keeps `brand`; an untouched slider stays on `track`.
+    private var sliderTint: Color {
+        guard value != nil else { return MP.track }
+        return riskInk ?? MP.brand
+    }
+
+    /// The readout is TEXT, so the non-pain case is `brandInk`, not `brand`:
+    /// #1976D2 as text is 3.74:1 on the dark panel and `brandInk` is 6.78:1.
+    /// This is the one place the two jobs of the brand split apart.
+    private var readoutInk: Color { riskInk ?? MP.brandInk }
 }
 
 /// Yes/no and the named choices, as full-width rows.
@@ -326,19 +394,30 @@ private struct ChoiceAnswer: View {
                     value = selected ? nil : .string(opt)
                 } label: {
                     HStack(spacing: 12) {
+                        // The unselected ring was `line` — 1.55:1 on the
+                        // light panel, i.e. the state of a control conveyed at
+                        // a ratio 1.4.11 asks 3:1 for. `lineStrong` is 3.83:1
+                        // light / 5.67:1 dark. Selected goes to `brandInk`,
+                        // because a glyph is a foreground.
                         Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                            .font(.mp(20))
-                            .foregroundStyle(selected ? MP.brand : MP.line)
+                            .font(.subhead)
+                            .foregroundStyle(selected ? MP.brandInk : MP.lineStrong)
                         Text(Self.labels[opt] ?? opt.capitalized)
-                            .font(.mp(17, weight: .medium))
+                            .font(.copyLargeMedium)
                             .foregroundStyle(MP.ink)
                         Spacer()
                     }
                     .padding(.horizontal, 16).frame(minHeight: 56)
-                    .background(RoundedRectangle(cornerRadius: MP.buttonRadius, style: .continuous)
-                        .fill(selected ? MP.brandTint : MP.panel))
-                    .overlay(RoundedRectangle(cornerRadius: MP.buttonRadius, style: .continuous)
-                        .strokeBorder(selected ? MP.brand : MP.line, lineWidth: 1))
+                    // `MP.controlShape` — the deprecated `buttonRadius`
+                    // literal resolved to the same 10pt, but the shape is the
+                    // vocabulary and it carries `.continuous` with it. One
+                    // fill and one hairline, which is the sanctioned pairing
+                    // (a row's fill is 1.13:1 on canvas, so the edge is the
+                    // only thing that says the control is there); never a
+                    // second edge and never a shadow.
+                    .background(MP.controlShape.fill(selected ? MP.brandTint : MP.panel))
+                    .overlay(MP.controlShape
+                        .strokeBorder(selected ? MP.brand : MP.lineStrong, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -365,12 +444,15 @@ private struct CheckinDoneView: View {
     var body: some View {
         VStack(spacing: 14) {
             Spacer()
+            // 54pt on the DISPLAY curve, not the UI curve: the old 54 literal scaled
+            // from `.body` (2.81x at AX5 = 152pt, which takes the screen with
+            // it); `displayXL` scales from `.largeTitle` (1.69x = 91pt).
             Image(systemName: "checkmark.seal.fill")
-                .font(.mp(54)).foregroundStyle(MP.riskLow)
+                .font(.displayXL).foregroundStyle(MP.riskLow)
             Text("Sent to your care team")
-                .font(.mp(21, weight: .semibold)).foregroundStyle(MP.ink)
+                .font(.subheadMedium).foregroundStyle(MP.ink)
             Text("That's today done. They'll see it with their next review.")
-                .font(.mp(14.5)).foregroundStyle(MP.muted)
+                .font(.copy).foregroundStyle(MP.muted)
                 .multilineTextAlignment(.center)
             Spacer()
         }

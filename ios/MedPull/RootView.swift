@@ -39,5 +39,16 @@ struct MainTabs: View {
                 .tabItem { Label("Health", systemImage: "heart.fill") }
                 .tag(AppModel.Tab.health)
         }
+        // The system's own Liquid Glass, and the only glass in this file: the
+        // tab bar collapses to a pill on scroll down and comes back on scroll
+        // up, handing a whole bar's height back to the content. iOS 26 only;
+        // below that the helper is a passthrough and the bar stays put — see
+        // UI/Glass.swift for why the app does not fake it by hiding the bar.
+        //
+        // NO floating glass action bar belongs here. This view owns the tab
+        // bar, which is already one blurred surface; a bar stacked on it would
+        // be glass-on-glass. A screen's action bar goes in that screen, with
+        // `.mpGlassActionBar { }`.
+        .mpTabBarMinimizeOnScroll()
     }
 }

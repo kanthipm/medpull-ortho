@@ -18,8 +18,8 @@ struct ProfileView: View {
                         HStack(spacing: 14) {
                             Initials(text: me.patient.initials, size: 48)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(me.patient.name).font(.mp(17, weight: .semibold))
-                                Text(me.patient.procedureDisplay).font(.mp(13)).foregroundStyle(MP.muted)
+                                Text(me.patient.name).font(.copyLargeMedium).foregroundStyle(MP.ink)
+                                Text(me.patient.procedureDisplay).font(.copy).foregroundStyle(MP.muted)
                             }
                         }
                         .padding(.vertical, 4)
@@ -78,7 +78,11 @@ struct ProfileView: View {
                     Text(voice.advice)
                 }
                 Section {
-                    TextField("Server URL", text: $serverURL)
+                    // The placeholder goes through `prompt:` so it lands on
+                    // `MP.muted` (5.39:1) instead of the system tertiary
+                    // label, which measures 1.72:1 — a placeholder is text.
+                    TextField("Server URL", text: $serverURL,
+                              prompt: Text("Server URL").foregroundColor(MP.muted))
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .onSubmit { saveServer() }
                     Button("Save server") { saveServer() }
@@ -108,7 +112,7 @@ struct ProfileView: View {
             Spacer()
             Text(value).foregroundStyle(MP.ink).multilineTextAlignment(.trailing)
         }
-        .font(.mp(15))
+        .font(.copyLarge)
     }
 
     private func saveServer() {

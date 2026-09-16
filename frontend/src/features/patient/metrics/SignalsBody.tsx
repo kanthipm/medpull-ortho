@@ -25,26 +25,26 @@ function SignalCard({
   return (
     <div
       style={{ '--rise-delay': `${index * 40}ms` } as CSSProperties}
-      className="rise relative overflow-hidden rounded-card border border-line bg-panel p-5 pl-[22px] shadow-card"
+      className="panel rise relative overflow-hidden p-5 pl-[22px]"
     >
       <RefreshOverlay show={refreshing} />
       <span aria-hidden className={`absolute inset-y-0 left-0 w-[4px] ${s.spine}`} />
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[15px] font-medium text-ink">{m.name}</span>
-        <span className={`chip shrink-0 uppercase tracking-[.03em] ${s.pill}`}>
+        <span className="text-copy-lg font-medium text-ink">{m.name}</span>
+        <span className={`chip shrink-0 ${s.pill}`}>
           {m.status === 'flag' || m.status === 'watch' ? m.status_text : s.label}
         </span>
       </div>
       <div className="mt-2">
         <Sparkline series={m.series} baseline={m.baseline_mean} unit={m.unit} />
       </div>
-      <p className="mt-2.5 text-[14px] leading-[1.5] text-body">{m.finding}</p>
+      <p className="mt-2.5 text-copy text-body">{m.finding}</p>
       {m.next_step && (
-        <p className="mt-2 flex items-start gap-1.5 text-[13.5px] font-medium text-brand">
+        <p className="mt-2 flex items-start gap-1.5 text-copy font-medium text-brand-ink">
           <span aria-hidden>→</span> {m.next_step}
         </p>
       )}
-      <p className="mt-3 border-t border-line pt-2 text-[12px] leading-[1.5] text-muted">
+      <p className="mt-3 border-t border-line pt-2 text-label text-muted">
         {m.coverage_text}
         {m.guarded && ' · guarded phrasing'}
       </p>
@@ -77,10 +77,10 @@ export default function SignalsBody({
             <span
               className={`chip ${
                 data.composite.level === 'high'
-                  ? 'bg-risk-high-bg text-risk-high'
+                  ? 'bg-risk-high-tint text-risk-high-ink'
                   : data.composite.level === 'elevated'
-                    ? 'bg-risk-med-bg text-risk-med'
-                    : 'bg-risk-low-bg text-risk-low'
+                    ? 'bg-risk-med-tint text-risk-med-ink'
+                    : 'bg-risk-low-tint text-risk-low-ink'
               }`}
             >
               {data.composite.level === 'high'
@@ -95,20 +95,20 @@ export default function SignalsBody({
           <div className="space-y-2.5">
             {data.composite.drivers.map((d) => (
               <div key={d.metric_type} className="flex items-center gap-3">
-                <span className="w-36 shrink-0 text-[13px] font-medium text-muted">{d.label}</span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-line">
+                <span className="w-36 shrink-0 text-copy font-medium text-muted">{d.label}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded-pill bg-line">
                   <div
-                    className="h-full rounded-full bg-brand transition-[width] duration-500 ease-out"
+                    className="h-full rounded-pill bg-brand transition-[width] duration-300 ease-out"
                     style={{ width: `${Math.round(d.contribution * 100)}%` }}
                   />
                 </div>
-                <span className="w-9 shrink-0 text-right font-mono text-[12px] font-medium tabular-nums text-muted">
+                <span className="w-9 shrink-0 text-right font-mono text-label font-medium tabular-nums text-muted">
                   {Math.round(d.contribution * 100)}%
                 </span>
               </div>
             ))}
           </div>
-          <p className="mt-3 border-t border-line pt-2 text-[12px] leading-[1.5] text-muted">
+          <p className="mt-3 border-t border-line pt-2 text-label text-muted">
             Contribution of each signal to the deviation index — for review, not a diagnosis.
           </p>
         </SectionCard>
@@ -124,11 +124,9 @@ export default function SignalsBody({
         <RefreshOverlay show={refreshing} />
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="micro mb-1.5">
-              Task adherence · last 14 days{' '}
-              <span className="normal-case tracking-normal">
-                ({data.adherence.verified} verified, {data.adherence.self_attested} self-attested)
-              </span>
+            <p className="mb-1.5 text-label font-medium text-muted">
+              Task adherence · last 14 days ({data.adherence.verified} verified,{' '}
+              {data.adherence.self_attested} self-attested)
             </p>
             <AdherenceDots days={data.adherence.days} rate={data.adherence.rate} />
           </div>

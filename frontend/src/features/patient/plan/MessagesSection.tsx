@@ -57,7 +57,7 @@ export default function MessagesSection({
             {unread > 0 && (
               <button
                 type="button"
-                className="chip cursor-pointer bg-brand-tint text-brand transition-opacity hover:opacity-80 disabled:opacity-50"
+                className="chip cursor-pointer bg-brand-tint text-on-brand-tint transition-colors duration-150 hover:bg-brand-tint-strong disabled:bg-disabled-fill disabled:text-disabled-ink"
                 disabled={markRead.isPending}
                 onClick={() =>
                   markRead.mutate(undefined, {
@@ -69,7 +69,7 @@ export default function MessagesSection({
               </button>
             )}
             <button type="button" className="qa-btn" onClick={() => setComposer(true)}>
-              <MessageSquarePlus size={13} className="text-brand" /> New message
+              <MessageSquarePlus size={13} /> New message
             </button>
           </span>
         }
@@ -78,15 +78,15 @@ export default function MessagesSection({
 
         {thread.isLoading && (
           <div className="space-y-2.5">
-            <SkeletonLine className="ml-auto h-8 w-2/3 rounded-none" />
-            <SkeletonLine className="h-8 w-1/2 rounded-none" />
+            <SkeletonLine className="ml-auto h-8 w-2/3 rounded-surface" />
+            <SkeletonLine className="h-8 w-1/2 rounded-surface" />
           </div>
         )}
         {thread.isError && (
-          <p className="text-[12.5px] font-medium text-muted">The thread could not be loaded.</p>
+          <p className="text-label font-medium text-muted">The thread could not be loaded.</p>
         )}
         {thread.data && messages.length === 0 && (
-          <p className="text-[12.5px] font-medium text-muted">
+          <p className="text-label font-medium text-muted">
             No messages yet. Anything {first} writes in the app or texts back lands here.
           </p>
         )}
@@ -102,7 +102,7 @@ export default function MessagesSection({
               <button
                 type="button"
                 onClick={() => setShowAll((s) => !s)}
-                className="mt-2 cursor-pointer rounded-btn px-1 py-1 text-[12px] font-medium text-brand transition-colors duration-150 hover:bg-brand-tint"
+                className="mt-2 cursor-pointer rounded-control px-1 py-1 text-label font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint"
               >
                 {showAll ? 'Show recent only' : `Show all ${messages.length} messages`}
               </button>
@@ -135,22 +135,20 @@ function Bubble({ m, first, patientId }: { m: PatientMessage; first: string; pat
   const status = inbound
     ? { label: 'received', pill: 'bg-soft text-muted' }
     : m.delivery_status === 'delivered'
-      ? { label: 'delivered', pill: 'bg-risk-low-bg text-risk-low' }
+      ? { label: 'delivered', pill: 'bg-risk-low-tint text-risk-low-ink' }
       : m.delivery_status === 'sent'
-        ? { label: 'texted', pill: 'bg-risk-low-bg text-risk-low' }
+        ? { label: 'texted', pill: 'bg-risk-low-tint text-risk-low-ink' }
         : m.delivery_status === 'failed'
-        ? { label: 'failed', pill: 'bg-risk-high-bg text-risk-high' }
-        : { label: 'in app', pill: 'bg-soft text-muted' }
+          ? { label: 'failed', pill: 'bg-risk-high-tint text-risk-high-ink' }
+          : { label: 'in app', pill: 'bg-soft text-muted' }
   return (
     <li className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
       <div className={`max-w-[85%] ${inbound ? 'items-start' : 'items-end'} flex flex-col`}>
         {/* A photo can be the whole message, so an empty bubble is not drawn. */}
         {m.text.trim() !== '' && (
           <div
-            className={`rounded-none px-3.5 py-2 text-[13px] font-medium leading-[1.45] ${
-              inbound
-                ? 'border border-line bg-panel text-ink'
-                : 'bg-brand text-white'
+            className={`rounded-surface px-3.5 py-2 text-copy font-medium ${
+              inbound ? 'border border-line bg-panel text-ink' : 'bg-brand text-on-brand'
             }`}
           >
             {m.text}
@@ -161,26 +159,26 @@ function Bubble({ m, first, patientId }: { m: PatientMessage; first: string; pat
           items={m.attachments ?? []}
           align={inbound ? 'start' : 'end'}
         />
-        <span className="mt-1 flex flex-wrap items-center gap-1.5 px-1 text-[10.5px] font-medium uppercase tracking-[.05em] text-faint">
+        <span className="mt-1 flex flex-wrap items-center px-1 gap-1.5 text-label font-medium text-muted">
           {inbound && !m.read_by_care_team && (
-            <span aria-label="Unread" className="h-1.5 w-1.5 rounded-full bg-brand" />
+            <span aria-label="Unread" className="h-1.5 w-1.5 rounded-pill bg-brand" />
           )}
           <span>{who}</span>
           {clinician && (
-            <span className="chip bg-brand-tint normal-case tracking-normal text-brand">
+            <span className="chip bg-brand-tint text-on-brand-tint">
               Care team approved
             </span>
           )}
           <span className="inline-flex items-center gap-1">
             <Icon size={10} /> {m.channel}
           </span>
-          <span className="font-mono normal-case tracking-normal">{relativeTime(m.created_at)}</span>
-          <span className={`chip normal-case tracking-normal ${status.pill}`}>{status.label}</span>
+          <span className="font-mono">{relativeTime(m.created_at)}</span>
+          <span className={`chip ${status.pill}`}>{status.label}</span>
         </span>
         {m.delivery_status === 'failed' && m.delivery_detail && (
           // The provider's own words. "Not delivered" alone left a clinician
           // unable to tell a landline from a broken texting account.
-          <span className="mt-0.5 px-1 text-[11px] font-medium text-risk-high">
+          <span className="px-1 mt-0.5 text-label font-medium text-risk-high-ink">
             {m.delivery_detail}
           </span>
         )}

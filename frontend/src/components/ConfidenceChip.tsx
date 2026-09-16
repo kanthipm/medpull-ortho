@@ -20,7 +20,7 @@ export default function ConfidenceChip({
   if (level === 'high' && !showHigh) return null
   return (
     <span
-      className={`inline-flex max-w-full items-center gap-1 overflow-hidden whitespace-nowrap rounded-btn px-2.5 py-[4px] text-[11.5px] font-medium leading-none ${STYLES[level]} ${className}`}
+      className={`chip max-w-full overflow-hidden ${STYLES[level]} ${className}`}
     >
       <span className="truncate">{CONFIDENCE_LABEL[level]}</span>
     </span>

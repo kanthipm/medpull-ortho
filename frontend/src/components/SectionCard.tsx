@@ -1,7 +1,21 @@
 import type { CSSProperties, ReactNode } from 'react'
 
-/** Material elevated card — large corner radius, level-1 elevation, theme-aware.
- *  `sum` keeps a quiet blue wash for AI narrative panels. */
+/** THE card surface for the console. Everything that is a card is this
+ *  component, or `.panel` if it cannot be.
+ *
+ *  Separation is ONE mechanism: `.panel` is `rounded-surface border
+ *  border-line bg-panel` — a 1px hairline and a fill, and nothing else. Never
+ *  add a second edge alongside it (a ring or another border): that pair drew
+ *  two 1px edges at 13 sites and read as a heavy rule. A card that is also a
+ *  button adds `border-line-strong`, since its edge is then part of how it
+ *  reads as pressable. No shadow on a card either; the ambient
+ *  `shadow-overlay` belongs to floating surfaces only (Modal, Toast,
+ *  NotificationsPopover), which use `.overlay`.
+ *
+ *  `sum` is the AI-narrative variant. It is a SOLID `bg-brand-tint`, not the
+ *  old panel→--sum-end gradient: a wash's real contrast depends on which
+ *  ground shows through it, so every tint in this system is a solid. Text on
+ *  it measures --body 6.237:1 light / 5.514:1 dark and --ink 15.9 / 14.3. */
 export default function SectionCard({
   spine,
   title,
@@ -21,21 +35,18 @@ export default function SectionCard({
   className?: string
   style?: CSSProperties
 }) {
-  const surface = sum
-    ? 'bg-gradient-to-b from-panel to-[rgb(var(--sum-end))]'
-    : 'bg-panel'
   return (
     <section
       style={style}
-      className={`relative overflow-hidden rounded-card border border-line shadow-card ${surface} ${className}`}
+      className={`panel relative overflow-hidden ${sum ? 'bg-brand-tint' : ''} ${className}`}
     >
-      {spine && <span aria-hidden className={`absolute inset-y-0 left-0 w-[4px] ${spine}`} />}
-      <div className={`p-5 ${spine ? 'pl-[22px]' : ''}`}>
+      {spine && <span aria-hidden className={`absolute inset-y-0 left-0 w-el ${spine}`} />}
+      <div className={`p-block ${spine ? 'pl-region' : ''}`}>
         {(title || eyebrow || aside) && (
-          <div className="mb-3.5 flex items-baseline justify-between gap-3">
+          <div className="mb-tight flex items-baseline justify-between gap-tight">
             <div>
               {eyebrow}
-              {title && <h2 className="text-[16px] font-medium text-ink">{title}</h2>}
+              {title && <h2 className="text-copy-lg font-medium text-ink">{title}</h2>}
             </div>
             {aside}
           </div>

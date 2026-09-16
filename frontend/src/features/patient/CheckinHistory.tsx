@@ -7,9 +7,9 @@ import { relativeTime } from '../../lib/format'
 import type { Checkin } from '../../api/types'
 
 const TONE: Record<string, { label: string; cls: string }> = {
-  worse: { label: 'Reported worse', cls: 'bg-risk-high-bg text-risk-high' },
-  better: { label: 'Reported better', cls: 'bg-risk-low-bg text-risk-low' },
-  steady: { label: 'About the same', cls: 'bg-risk-missing-bg text-risk-missing' },
+  worse: { label: 'Reported worse', cls: 'bg-risk-high-tint text-risk-high-ink' },
+  better: { label: 'Reported better', cls: 'bg-risk-low-tint text-risk-low-ink' },
+  steady: { label: 'About the same', cls: 'bg-risk-missing-tint text-risk-missing-ink' },
 }
 
 function Transcript({ checkin }: { checkin: Checkin }) {
@@ -18,9 +18,9 @@ function Transcript({ checkin }: { checkin: Checkin }) {
       {checkin.messages.map((m, i) => (
         <div key={i} className={`flex ${m.who === 'patient' ? 'justify-end' : 'justify-start'}`}>
           <div
-            className={`max-w-[85%] px-4 py-2.5 text-[14px] leading-[1.45] ${
+            className={`max-w-[85%] px-4 py-2.5 text-copy ${
               m.who === 'patient'
-                ? 'bg-brand text-white'
+                ? 'bg-brand text-on-brand'
                 : 'border border-line bg-panel text-ink'
             }`}
           >
@@ -42,18 +42,18 @@ function CheckinRow({ checkin }: { checkin: Checkin }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="group -mx-2 flex w-[calc(100%+16px)] cursor-pointer items-start gap-2.5 rounded-row px-2 py-1 text-left transition-colors duration-150 hover:bg-soft/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+        className="group -mx-2 flex w-[calc(100%+16px)] cursor-pointer items-start gap-2.5 rounded-surface px-2 py-1 text-left transition-colors duration-150 hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
       >
         <ChevronRight
           size={15}
-          className={`mt-1 shrink-0 text-faint transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+          className={`mt-1 shrink-0 text-muted transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
         />
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-[13px] font-medium tabular-nums text-ink">
+            <span className="font-mono text-copy font-medium tabular-nums text-ink">
               {relativeTime(checkin.occurred_at)}
             </span>
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[.05em] text-muted">
+            <span className="inline-flex items-center gap-1 text-label font-medium text-muted">
               {checkin.channel === 'sms' ? (
                 <MessageSquareText size={11} />
               ) : (
@@ -69,7 +69,7 @@ function CheckinRow({ checkin }: { checkin: Checkin }) {
             ))}
           </span>
           {checkin.digest.highlight && (
-            <span className="mt-1 block border-l-2 border-brand/35 pl-2.5 text-[14px] italic leading-relaxed text-body">
+            <span className="mt-1 block border-l-2 border-brand pl-2.5 text-copy text-body">
               “{checkin.digest.highlight}”
             </span>
           )}
@@ -106,7 +106,7 @@ export default function CheckinHistory({
       title="Check-ins"
       aside={
         checkins.length > 0 && (
-          <span className="font-mono text-[12.5px] font-medium tabular-nums text-muted">
+          <span className="font-mono text-label font-medium tabular-nums text-muted">
             {checkins.length} total · last {relativeTime(checkins[0].occurred_at).toLowerCase()}
           </span>
         )
@@ -114,7 +114,7 @@ export default function CheckinHistory({
     >
       <RefreshOverlay show={refreshing} />
       {checkins.length === 0 ? (
-        <p className="text-[14px] text-muted">No recovery conversations yet.</p>
+        <p className="text-copy text-muted">No recovery conversations yet.</p>
       ) : (
         <>
           <ul className="divide-y divide-line">
@@ -126,12 +126,12 @@ export default function CheckinHistory({
             <button
               type="button"
               onClick={() => setShowAll((s) => !s)}
-              className="mt-2 cursor-pointer rounded-btn px-3 py-1.5 text-[13.5px] font-medium text-brand transition-colors duration-150 hover:bg-brand-tint"
+              className="mt-2 cursor-pointer rounded-control px-3 py-1.5 text-copy font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint"
             >
               {showAll ? 'Show recent only' : `Show all ${checkins.length} check-ins`}
             </button>
           )}
-          <p className="mt-3 border-t border-line pt-2 text-[12px] leading-[1.5] text-muted">
+          <p className="mt-3 border-t border-line pt-2 text-label text-muted">
             Quotes are the patient's own words, selected from each conversation. Expand a
             check-in for the full transcript.
           </p>

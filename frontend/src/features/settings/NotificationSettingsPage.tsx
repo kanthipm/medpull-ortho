@@ -31,8 +31,8 @@ export default function NotificationSettingsPage() {
   const header = (
     <div className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
       <SettingsNav className="mb-4" />
-      <h1 className="text-[28px] font-normal text-ink">Notifications</h1>
-      <p className="mt-1.5 text-[15px] text-muted">
+      <h1 className="text-title font-normal text-ink">Notifications</h1>
+      <p className="mt-1.5 text-copy-lg text-muted">
         How the care team is alerted when a patient reaches high recovery priority.
       </p>
     </div>
@@ -70,20 +70,20 @@ export default function NotificationSettingsPage() {
             return (
               <li key={pref.channel} className="flex items-center gap-4 py-5 first:pt-0 last:pb-0">
                 <span
-                  className={`grid h-10 w-10 shrink-0 place-items-center rounded-btn ${
-                    on ? 'bg-brand-tint text-brand' : 'bg-soft text-faint'
+                  className={`grid h-10 w-10 shrink-0 place-items-center rounded-control ${
+                    on ? 'bg-brand-tint text-on-brand-tint' : 'bg-soft text-muted'
                   }`}
                 >
                   <Icon size={18} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2 text-[16px] font-medium text-ink">
+                  <span className="flex items-center gap-seam text-copy-lg font-medium text-ink">
                     {meta.label}
                     {!pref.available && (
-                      <span className="chip bg-risk-missing-bg text-risk-missing">Coming soon</span>
+                      <span className="chip bg-risk-missing-tint text-risk-missing-ink">Coming soon</span>
                     )}
                   </span>
-                  <span className="mt-0.5 block text-[14px] text-muted">
+                  <span className="mt-0.5 block text-copy text-muted">
                     {meta.description}
                   </span>
                 </span>
@@ -101,14 +101,22 @@ export default function NotificationSettingsPage() {
                       },
                     ])
                   }
-                  className={`relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${
-                    on ? 'bg-brand' : 'bg-line'
-                  } ${!pref.available ? 'cursor-not-allowed opacity-50' : ''}`}
+                  className={`relative h-7 w-12 shrink-0 cursor-pointer rounded-pill transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+                    !pref.available
+                      ? 'cursor-not-allowed bg-disabled-fill'
+                      : on
+                        ? 'bg-brand'
+                        : 'bg-line-strong'
+                  }`}
                 >
+                  {/* `shadow-knob` is NOT elevation — it is the knob's
+                      contact shadow, lifting it off its track. It has its own
+                      token so dark mode gets its own value and an elevation
+                      sweep cannot flatten the switch. */}
                   <span
-                    className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-segment transition-all duration-150 ${
-                      on ? 'left-[22px]' : 'left-0.5'
-                    }`}
+                    className={`absolute top-0.5 h-6 w-6 rounded-pill shadow-knob transition-all duration-150 ${
+                      !pref.available ? 'bg-disabled-ink' : 'bg-n-0'
+                    } ${on ? 'left-[22px]' : 'left-0.5'}`}
                   />
                 </button>
               </li>
@@ -117,7 +125,7 @@ export default function NotificationSettingsPage() {
         </ul>
       </SectionCard>
 
-      <p className="mt-4 border-t border-line pt-3 text-[12.5px] leading-[1.5] text-muted">
+      <p className="mt-snug border-t border-line pt-tight text-label text-muted">
         Alerts include the patient, the new priority, and the most important reason — with a
         link straight to their record.
       </p>

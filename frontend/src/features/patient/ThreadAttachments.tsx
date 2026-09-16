@@ -59,7 +59,7 @@ export default function ThreadAttachments({
     <div className={`mt-1.5 flex flex-col gap-1.5 ${align === 'end' ? 'items-end' : 'items-start'}`}>
       {items.map((a) =>
         a.withdrawn ? (
-          <p key={a.id} className="text-[11.5px] font-medium italic text-faint">
+          <p key={a.id} className="text-label font-medium text-muted">
             {a.kind === 'image' ? 'Photo' : 'File'} taken back
           </p>
         ) : (
@@ -88,7 +88,7 @@ function Withdraw({ patientId, a }: { patientId: string; a: MessageAttachment })
       title="Take this file back"
       aria-label="Take this file back"
       disabled={withdraw.isPending}
-      className="mb-1 cursor-pointer rounded-btn p-1 text-faint transition-colors duration-150 hover:bg-risk-high-bg hover:text-risk-high"
+      className="mb-1 cursor-pointer rounded-control p-1 text-muted transition-colors duration-150 hover:bg-risk-high-tint hover:text-risk-high-ink"
       onClick={() => {
         if (!window.confirm('Take this file back? The patient will see that it was removed.')) return
         withdraw.mutate(a.id, {
@@ -112,7 +112,7 @@ function Thumb({ patientId, a }: { patientId: string; a: MessageAttachment }) {
     // network fault instead.
     const heic = a.content_type === 'image/heic' || a.content_type === 'image/heif'
     return (
-      <span className="flex items-center gap-1.5 rounded-row border border-line bg-soft px-2 py-1.5 text-[11.5px] font-medium text-muted">
+      <span className="flex items-center gap-1.5 rounded-surface border border-line bg-soft px-2 py-1.5 text-label font-medium text-muted">
         <ImageOff size={12} />
         {heic
           ? 'This photo is in Apple’s HEIC format, which this browser cannot show'
@@ -126,7 +126,7 @@ function Thumb({ patientId, a }: { patientId: string; a: MessageAttachment }) {
         type="button"
         onClick={() => src && setOpen(true)}
         title="Open full size"
-        className="block cursor-pointer overflow-hidden rounded-row border border-line bg-soft transition-opacity duration-150 hover:opacity-90"
+        className="block cursor-pointer overflow-hidden rounded-surface border border-line bg-soft transition-opacity duration-150 hover:opacity-90"
       >
         {src ? (
           <img
@@ -143,7 +143,7 @@ function Thumb({ patientId, a }: { patientId: string; a: MessageAttachment }) {
           role="dialog"
           aria-modal="true"
           aria-label="Photo"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
+          className="scrim fixed inset-0 z-50 flex items-center justify-center p-6"
         >
           {/* The backdrop is a real button, so clicking away and tabbing to
               it both close — a div with an onClick does neither. */}
@@ -156,12 +156,12 @@ function Thumb({ patientId, a }: { patientId: string; a: MessageAttachment }) {
           <img
             src={src}
             alt={a.filename ?? 'Photo from the thread'}
-            className="pointer-events-none relative max-h-full max-w-full rounded-card"
+            className="pointer-events-none relative max-h-full max-w-full rounded-surface"
           />
           <button
             type="button"
             aria-label="Close"
-            className="absolute right-4 top-4 cursor-pointer rounded-btn bg-white/90 p-1.5 text-ink"
+            className="absolute right-4 top-4 cursor-pointer rounded-control bg-panel p-1.5 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
             onClick={() => setOpen(false)}
           >
             <X size={16} />
@@ -200,13 +200,13 @@ function FileRow({ patientId, a }: { patientId: string; a: MessageAttachment }) 
         : fileSize(a.byte_size)
 
   const shell =
-    'flex max-w-[260px] items-center gap-2 rounded-row border border-line bg-panel px-2.5 py-1.5 text-left transition-colors duration-150 hover:border-brand/35 hover:bg-brand-tint'
+    'flex max-w-[260px] items-center gap-2 rounded-surface border border-line bg-panel px-2.5 py-1.5 text-left transition-colors duration-150 hover:border-brand hover:bg-brand-tint'
   const inner = (
     <>
-      <FileText size={14} className="shrink-0 text-brand" />
+      <FileText size={14} className="shrink-0 text-brand-ink" />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12.5px] font-semibold text-ink">{name}</span>
-        <span className="block text-[11px] font-medium text-muted">
+        <span className="block truncate text-copy font-medium text-ink">{name}</span>
+        <span className="block text-label font-medium text-muted">
           {state === 'blocked' ? 'Click to open' : label}
         </span>
       </span>
@@ -243,24 +243,24 @@ export function PendingAttachments({
       {items.map((a) => (
         <span
           key={a.id}
-          className="flex items-center gap-1.5 rounded-btn border border-line bg-soft px-2 py-1 text-[11.5px] font-medium text-body"
+          className="flex items-center gap-1.5 rounded-control border border-line bg-soft px-2 py-1 text-label font-medium text-body"
         >
-          <Paperclip size={11} className="text-brand" />
+          <Paperclip size={11} className="text-brand-ink" />
           <span className="max-w-[140px] truncate">
             {a.filename ?? (a.kind === 'image' ? 'Photo' : 'File')}
           </span>
-          <span className="text-faint">{fileSize(a.byte_size)}</span>
+          <span className="text-muted">{fileSize(a.byte_size)}</span>
           <button
             type="button"
             aria-label="Remove"
-            className="cursor-pointer text-faint transition-colors hover:text-risk-high"
+            className="cursor-pointer text-muted transition-colors duration-150 hover:text-risk-high-ink"
             onClick={() => onRemove(a.id)}
           >
             <X size={11} />
           </button>
         </span>
       ))}
-      {busy && <span className="text-[11.5px] font-medium text-muted">Uploading…</span>}
+      {busy && <span className="text-label font-medium text-muted">Uploading…</span>}
     </div>
   )
 }

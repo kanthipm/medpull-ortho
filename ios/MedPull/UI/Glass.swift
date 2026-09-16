@@ -1,0 +1,299 @@
+import SwiftUI
+
+// MARK: - The glass layer
+//
+// THIS IS THE ONLY FILE THAT IS ALLOWED TO BE EXPRESSIVE, AND IT IS THE ONLY
+// FILE THAT MAY NAME A GLASS OR MATERIAL API. Everything else in the app is
+// flat: a token fill, one hairline, no shadow. If you find yourself typing
+// `.glassEffect`, `.ultraThinMaterial`, `GlassEffectContainer` or
+// `.buttonStyle(.glass)` in a Features file, you are writing the wrong thing —
+// use one of the three helpers below instead, because each of them carries the
+// pre-iOS-26 fallback and the accessibility gate that a bare call does not.
+//
+// THREE HELPERS, EACH WITH A CALL SITE. This file used to publish seven and
+// one was used. Dead API in a design system is an invitation to a call site
+// nobody reviewed, so what is here is exactly what the app renders:
+//   * `mpTabBarMinimizeOnScroll()` — RootView's TabView.
+//   * `mpHardScrollEdge(_:)`       — screens whose clinical content scrolls
+//     under the tab bar: HealthView, TasksView, TaskDetailView. (HomeView
+//     needs it too; it is owned elsewhere — see the 2026-09-16 handoff.)
+//   * `mpGlassActionBar(isPresented:content:)` — TaskDetailView, the one
+//     custom glass surface in the app.
+// DELETED, deliberately, 2026-09-16:
+//   * `mpGlass(in:)` — a free-standing glass surface. Mutually exclusive with
+//     the action bar by its own contract, and no screen has a floating thing
+//     that is not a bar. If one ever does, it is a design review, not a
+//     one-line call.
+//   * `mpGlassButton()` — `.buttonStyle(.glass)`. Its only sanctioned home was
+//     inside the glass bar, and a glass button on a glass bar is glass-on-glass
+//     (banned below). The bar's buttons are plain monochrome ink instead.
+//   * `mpGlassMorph(_:in:)` and `MPGlassGroup` — morphs between two touching
+//     glass shapes. The app has one glass shape per screen; there is nothing
+//     for it to morph into. The reduce-motion gate they carried is recorded in
+//     the bans below so it is not lost if a morph is ever proposed again.
+//   * `MPGlass.enter/exit/morph/crossFade/transition(reduceMotion:)` and
+//     `MPGlass.isLiquidGlass` — nothing called them. Motion belongs in
+//     Theme.swift's vocabulary, not a private copy here.
+//
+// WHY EVERY CALL SITE IS `if #available(iOS 26, *)` GATED. The SDK is 26.5 and
+// the deployment target is 17.0 (ios/project.yml). An ungated call to a 26-only
+// symbol still COMPILES — Swift only requires the guard when the symbol is
+// referenced in a context whose availability is lower, and a `some View`
+// modifier chain inside a 17.0 target is exactly that context, so the compiler
+// does flag it — but the failure mode that matters is the one where somebody
+// silences the diagnostic with `@available(iOS 26, *)` on a whole view and the
+// view then never renders on iOS 17-25. Gate at the modifier, not at the view.
+//
+// THE BUDGET, and it is small on purpose:
+//   * system chrome  — the tab bar and any navigation bar. Free, on 26, and
+//     the reason `mpTabBarMinimizeOnScroll()` exists.
+//   * ONE custom glass surface per screen — a floating action bar, and that is
+//     the only shape this file has a helper for.
+//   * at most two blurred surfaces in a viewport, which the system tab bar
+//     already spends one of. So: the tab bar plus one bar. That is the screen.
+//
+// THE BANS. These are not style preferences; each one is a measured failure.
+//   * NO `Glass.clear`. Its precondition is content underneath that is dark
+//     and busy enough to carry legible ink on its own; a white clinical panel
+//     is neither. Apple's clear variant leans on a ~35% dimming layer, which
+//     takes #FFFFFF ink on a #FFFFFF panel to 2.44:1 — still an AA failure.
+//     `.regular` is the only variant this app uses.
+//   * NO glass on repeating content: list cells, message bubbles, task rows,
+//     cards. Glass is for a surface that FLOATS OVER content, and a row does
+//     not float over anything. Repeating it also blows the two-surface budget
+//     on the first scroll.
+//   * NO glass carrying a clinical number. A pain score, a heart rate, a dose
+//     is read once and acted on; it does not get a background that changes
+//     with whatever scrolls behind it.
+//   * NO tinted glass with light ink. `Glass.tint(_:)` exists and this file
+//     never calls it: Medical Blue #1976D2 on a glass surface that has taken
+//     on Medical Blue's own luminance is 1.00:1, and white on Teal #00ACC1 is
+//     2.74:1. Monochrome `.primary` / `.secondary` ink on untinted `.regular`
+//     is the only combination that holds in both appearances.
+//   * NO ungated morph. Any future `glassEffectID` / `.matchedGeometry` must
+//     read `accessibilityReduceMotion`, pin `glassEffectTransition(.identity)`
+//     and cross-fade instead (SwiftUI does not apply reduce-motion to explicit
+//     animations). A gel-like morph is a plausible dizziness trigger, and this
+//     app's user is a medicated post-operative patient.
+//   * NO glass-on-glass. `mpGlassActionBar` sits inside the safe area above
+//     the tab bar, never on top of it, and nothing inside it is glass — which
+//     is why `.buttonStyle(.glass)` has no helper.
+//
+// ONE THING THIS FILE DELIBERATELY DOES NOT READ. On iOS 26 the material
+// handles `accessibilityReduceTransparency` itself, and it does it better than
+// we can — Apple ships a tuned frosted variant for that setting. Reading the
+// environment value in the 26 branch and swapping in our own opaque fill would
+// throw that away. So the 26 branch never reads it, and the only type in this
+// file that declares it is `MPLegacyGlassSurface`, which is the pre-26 path
+// where `.ultraThinMaterial` is NOT self-adjusting and a real opaque fallback
+// has to be written by hand.
+
+// MARK: - Diagnostics
+
+enum MPGlass {
+    #if DEBUG
+    /// Forces every helper in this file down its pre-iOS-26 branch so the
+    /// fallback can be looked at on a 26 simulator — there is no iOS 17-25
+    /// runtime installed on this machine, and a fallback nobody has ever seen
+    /// is a fallback that does not work.
+    ///
+    /// DEBUG ONLY and off unless the process is launched with
+    /// `MP_GLASS_LEGACY=1` in its environment:
+    ///   xcrun simctl launch --console-pty <dev> com.medpull.recovery \
+    ///     --setenv MP_GLASS_LEGACY=1
+    /// In a release build this is a `false` literal the optimiser deletes, so
+    /// shipping behaviour is identical with or without it.
+    static let legacyOverride = ProcessInfo.processInfo.environment["MP_GLASS_LEGACY"] == "1"
+    #else
+    static let legacyOverride = false
+    #endif
+}
+
+// MARK: - 1. The system tab bar (RootView only)
+
+/// Lets the tab bar shrink to a pill as the patient scrolls down, and grow
+/// back when they scroll up. One line, the best return-on-risk in the whole
+/// redesign: it is the system's own glass, so it costs nothing to maintain,
+/// tracks whatever Apple does next, and hands a whole tab bar's worth of
+/// height back to the content.
+///
+/// There is NO pre-26 equivalent and this file does not fake one. The obvious
+/// fake — hiding the tab bar on scroll — loses tap-to-restore: the real
+/// behaviour keeps a tappable pill on screen the entire time, and a hidden bar
+/// leaves a patient with no way back to the tabs except scrolling up. On
+/// iOS 17-25 this is a passthrough and the tab bar simply stays put, which is
+/// the correct flat behaviour, not a degraded one.
+private struct MPTabBarMinimize: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26, *), !MPGlass.legacyOverride {
+            content.tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            content
+        }
+    }
+}
+
+// MARK: - 2. The scroll edge effect
+
+/// The hard-edged scroll effect under content that scrolls beneath system
+/// chrome. `.hard` draws a definite boundary line rather than `.soft`'s long
+/// gradient: a clinical list needs a place where the bar stops and the data
+/// starts, and a soft fade over a table of numbers makes the top row look
+/// washed out at exactly the moment it is being read.
+///
+/// AT MOST ONE PER VIEW, on the scrolling container. Two of these on nested
+/// scroll views fight, and the inner one wins somewhere unpredictable.
+///
+/// Pre-26 this is a passthrough. iOS 17-25 has no scroll edge effect at all —
+/// content scrolls under the opaque-on-scroll UIKit tab bar the way it always
+/// has, which already stops at a definite edge, so nothing is lost.
+private struct MPHardScrollEdge: ViewModifier {
+    let edges: Edge.Set
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26, *), !MPGlass.legacyOverride {
+            content.scrollEdgeEffectStyle(.hard, for: edges)
+        } else {
+            content
+        }
+    }
+}
+
+// MARK: - 3. The glass material (private; the action bar is its only user)
+
+/// Real Liquid Glass on iOS 26, untinted `.regular`, in the shape you name.
+/// Never `.interactive()`: the only surface is a bar holding several buttons,
+/// and a press response on the container makes the wrong thing feel pressed.
+private struct MPGlassSurface<S: Shape>: ViewModifier {
+    let shape: S
+    let fallback: Material
+
+    // No @Environment properties here, on purpose: this type is the iOS 26
+    // path and it must not read accessibilityReduceTransparency. See the file
+    // header. The legacy modifier below is where that value is read.
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26, *), !MPGlass.legacyOverride {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content.modifier(MPLegacyGlassSurface(shape: shape, fallback: fallback))
+        }
+    }
+}
+
+/// The pre-iOS-26 surface: a UIKit-era material, and a real opaque fill when
+/// the patient has asked for less transparency.
+///
+/// `.ultraThinMaterial` and `.regularMaterial` do NOT become opaque under
+/// Reduce Transparency the way iOS 26's glass does — they lighten a little and
+/// stay see-through. So this path reads the setting and substitutes the panel
+/// token outright.
+///
+/// Separation: the material is a FILL, so it gets no stroke — one edge, never
+/// two. The opaque substitute DOES get a hairline, because `MP.panel` is
+/// 1.13:1 against `MP.canvas` and without an edge a floating bar over a pale
+/// screen loses its shape entirely. `MP.lineStrong` is 3.83:1 light / 5.67:1
+/// dark on panel, so the edge clears the 3:1 non-text floor of WCAG 1.4.11.
+private struct MPLegacyGlassSurface<S: Shape>: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let shape: S
+    let fallback: Material
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(MP.panel, in: shape)
+                .overlay { shape.stroke(MP.lineStrong, lineWidth: 1) }
+        } else {
+            content.background(fallback, in: shape)
+        }
+    }
+}
+
+// MARK: - 4. The floating glass action bar
+
+/// The one floating glass surface a screen is allowed: a bar pinned to the
+/// bottom safe area, above the tab bar, carrying the screen's primary actions.
+///
+/// `safeAreaBar(edge: .bottom)` (iOS 26) is the right primitive rather than
+/// `safeAreaInset`, because it tells the system this is BAR chrome: the scroll
+/// edge effect, the tab bar's minimize behaviour and the keyboard all account
+/// for it, and the content underneath gets the correct inset for free.
+/// Pre-26 there is no such signal, so the fallback is `safeAreaInset` plus
+/// `.ultraThinMaterial`, which insets the content correctly and looks like a
+/// competent iOS 17 toolbar. It is not trying to look like glass.
+///
+/// INK IS MONOCHROME AND THAT IS LOAD-BEARING. The bar sets
+/// `foregroundStyle(.primary)` and `tint(.primary)`, which override the
+/// app-wide `.tint(MP.brand)` from MedPullApp for the bar's subtree only.
+/// Without the tint override, `.buttonStyle(.glass)` would draw its label in
+/// Medical Blue on a surface that has picked up whatever is scrolling behind
+/// it — and #1976D2 against a ground at its own luminance is 1.00:1. Use
+/// `.secondary` ONLY on a glyph that should recede, never on words: system
+/// secondaryLabel is 3.44:1 on the light panel (clears the 3:1 graphic floor,
+/// fails 4.5:1 text). Do not reach for a token colour in here.
+private struct MPGlassActionBar<Bar: View>: ViewModifier {
+    let isPresented: Bool
+    let alignment: HorizontalAlignment
+    @ViewBuilder let bar: () -> Bar
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26, *), !MPGlass.legacyOverride {
+            content.safeAreaBar(edge: .bottom, alignment: alignment) {
+                if isPresented {
+                    bar()
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .modifier(MPGlassSurface(shape: MP.pillShape, fallback: .regular))
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                        .foregroundStyle(.primary)
+                        .tint(Color.primary)
+                }
+            }
+        } else {
+            content.safeAreaInset(edge: .bottom, alignment: alignment) {
+                if isPresented {
+                    bar()
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .modifier(MPLegacyGlassSurface(shape: MP.pillShape, fallback: .ultraThin))
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                        .foregroundStyle(.primary)
+                        .tint(Color.primary)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - The three call sites this file publishes
+
+extension View {
+    /// RootView's TabView, and nowhere else. See `MPTabBarMinimize`.
+    func mpTabBarMinimizeOnScroll() -> some View {
+        modifier(MPTabBarMinimize())
+    }
+
+    /// Exactly once per view, on the scrolling container. See `MPHardScrollEdge`.
+    /// Tab roots pass `.vertical`: the top edge meets the status bar (their
+    /// navigation bar is hidden) and the bottom edge meets the tab bar.
+    func mpHardScrollEdge(_ edges: Edge.Set = .vertical) -> some View {
+        modifier(MPHardScrollEdge(edges: edges))
+    }
+
+    /// The floating glass action bar — the screen's one custom glass surface.
+    /// One per screen; lay the content out horizontally yourself and use
+    /// `.plain` buttons with `.primary` / `.secondary` ink only. When
+    /// `isPresented` is false the bar and its inset collapse to nothing, and
+    /// the content view keeps its identity (the condition is inside the bar,
+    /// not around the modifier).
+    func mpGlassActionBar<Bar: View>(
+        isPresented: Bool = true,
+        alignment: HorizontalAlignment = .center,
+        @ViewBuilder content: @escaping () -> Bar
+    ) -> some View {
+        modifier(MPGlassActionBar(isPresented: isPresented, alignment: alignment, bar: content))
+    }
+}

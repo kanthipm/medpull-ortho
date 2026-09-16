@@ -25,6 +25,19 @@ targets:
       - path: MedPull
         excludes:
           - "Info.plist"
+          # The four EB Garamond TTFs are 1.53 MB of typeface the app stopped
+          # using when it moved to Instrument Sans, and `sources: - path:
+          # MedPull` was still sweeping them into the bundle as resources —
+          # unregistered from UIAppFonts, so they loaded nothing and shipped
+          # anyway (confirmed in the built MedPull.app). Excluding them here
+          # stops the COPY; the files stay on disk, along with their OFL.txt,
+          # so a future decision to bring the face back is one line.
+          - "Resources/Fonts/EBGaramond-*.ttf"
+          # OFL.txt is EB Garamond's licence and goes with those files. The
+          # licence that must still ship is OFL-InstrumentSans.txt, which the
+          # blanket sources rule above continues to pick up — SIL OFL 1.1
+          # requires it to accompany the two cuts that DO ship.
+          - "Resources/Fonts/OFL.txt"
     # XcodeGen (re)writes both files from these properties on every
     # `generate`, so this spec — not the files — is the source of truth.
     info:
@@ -46,8 +59,8 @@ targets:
         # The names here are filenames; UI/Theme.swift asks for the PostScript
         # names InstrumentSans-Regular and InstrumentSans-Medium, which the
         # two files carry. The four EBGaramond-*.ttf files are still on disk
-        # and are still copied into the bundle by the sources rule, but they
-        # are no longer registered and nothing references them.
+        # but no longer ship: they are excluded from `sources` above, so
+        # nothing registers them and nothing copies them either.
         UIAppFonts:
           - InstrumentSans-Regular.ttf
           - InstrumentSans-Medium.ttf

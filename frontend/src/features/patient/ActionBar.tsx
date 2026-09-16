@@ -41,16 +41,16 @@ export default function ActionBar({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2.5 rounded-card border border-line bg-panel p-3 shadow-card">
+      <div className="panel flex flex-wrap items-center gap-2.5 p-3">
         <button type="button" className="qa-btn flex-1" onClick={() => setModal('assign')}>
-          <ClipboardList size={16} className="text-brand" /> Assign tasks
+          <ClipboardList size={16} /> Assign tasks
         </button>
         <button type="button" className="qa-btn flex-1" onClick={() => setModal('message')}>
-          <MessageSquare size={16} className="text-brand" /> Message
+          <MessageSquare size={16} /> Message
         </button>
         <button
           type="button"
-          className="qa-btn flex-1 text-risk-high"
+          className="qa-btn flex-1 text-risk-high-ink"
           onClick={fireEscalate}
           disabled={escalate.isPending}
         >
@@ -63,7 +63,7 @@ export default function ActionBar({
           disabled={refreshing}
           title="Re-run the analysis and regenerate the AI summary"
         >
-          <RefreshCw size={16} className={`text-brand ${refreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw size={16} className={refreshing ? 'animate-spin' : undefined} />
           {refreshing ? 'Refreshing…' : 'Refresh analysis'}
         </button>
       </div>

@@ -148,19 +148,21 @@ struct AttachmentImageView: View {
             } else if cache.didFail(attachment) {
                 HStack(spacing: 6) {
                     Image(systemName: "photo.badge.exclamationmark")
-                    Text("This photo could not be loaded").font(.mp(12.5, weight: .medium))
+                    Text("This photo could not be loaded").font(.labelMedium)
                 }
                 .foregroundStyle(MP.muted)
                 .padding(.horizontal, 12).padding(.vertical, 10)
             } else {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                MP.surfaceShape
                     .fill(MP.soft)
                     .frame(width: 180, height: 130)
                     .overlay(ProgressView())
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(MP.line))
+        // 14 was not a radius, it was drift: a photo is content, so it takes
+        // the 12pt surface radius. One shape for the clip and the edge.
+        .clipShape(MP.surfaceShape)
+        .overlay(MP.surfaceShape.strokeBorder(MP.line, lineWidth: 1))
         .task(id: attachment.id) { await cache.load(attachment, using: app.api) }
     }
 }
@@ -172,22 +174,27 @@ struct AttachmentFileView: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // `brandInk`, not `brand`: a glyph set with `foregroundStyle` is
+            // a foreground, and #1976D2 as a foreground is 3.74:1 on dark
+            // panel. `brandInk` is 5.75:1 light / 6.78:1 dark.
             Image(systemName: attachment.contentType == "application/pdf" ? "doc.richtext" : "doc")
-                .font(.mp(15))
-                .foregroundStyle(MP.brand)
+                .font(.copyLarge)
+                .foregroundStyle(MP.brandInk)
             VStack(alignment: .leading, spacing: 1) {
                 Text(attachment.displayName)
-                    .font(.mp(13.5, weight: .semibold))
+                    .font(.copyMedium)
                     .foregroundStyle(MP.ink)
                     .lineLimit(1)
                 Text(attachment.sizeLabel)
-                    .font(.mp(11.5, weight: .medium))
+                    .font(.labelMedium)
                     .foregroundStyle(MP.muted)
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(MP.panel))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(MP.line))
+        .background(MP.surfaceShape.fill(MP.panel))
+        // ONE edge, no shadow: `panel` is 1.13:1 against canvas light and
+        // 1.07:1 dark, so the hairline is what says "a file is attached here".
+        .overlay(MP.surfaceShape.strokeBorder(MP.line, lineWidth: 1))
     }
 }
 
@@ -201,9 +208,17 @@ struct AttachmentStrip: View {
             VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
                 ForEach(attachments) { a in
                     if a.isWithdrawn {
+                        // NO `.italic()`. Instrument Sans ships no italic file,
+                        // so SwiftUI shears the roman — synthetic obliquing,
+                        // the same defect class as synthetic bold. The
+                        // distinction is carried by weight and colour instead:
+                        // 12pt / 400 on `muted`, against the live filename's
+                        // 14pt / 500 on `ink` two lines above, and the copy
+                        // ("taken back") already names the state. `faint` is
+                        // 2.59:1 on panel and carries no text.
                         Text(a.isImage ? "Photo taken back" : "File taken back")
-                            .font(.mp(12, weight: .medium)).italic()
-                            .foregroundStyle(MP.faint)
+                            .font(.label)
+                            .foregroundStyle(MP.muted)
                     } else if a.isImage {
                         AttachmentImageView(attachment: a)
                     } else {

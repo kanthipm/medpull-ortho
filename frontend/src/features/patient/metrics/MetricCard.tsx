@@ -12,27 +12,25 @@ export default function MetricCard({ m }: { m: CareMetric }) {
   return (
     <article
       id={`metric-${m.id}`}
-      className={`relative flex scroll-mt-24 flex-col overflow-hidden rounded-card border border-line bg-panel p-5 pl-[22px] shadow-card transition-shadow duration-500 ${
-        nodata ? 'opacity-70' : ''
-      }`}
+      className="panel relative flex scroll-mt-24 flex-col overflow-hidden p-5 pl-[22px] transition-shadow duration-300"
     >
       <span aria-hidden className={`absolute inset-y-0 left-0 w-[4px] ${s.spine}`} />
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="chip bg-soft font-mono tabular-nums text-muted">{m.id}</span>
-          <span className="text-[15px] font-medium text-ink">{m.name}</span>
+          <span className="text-copy-lg font-medium text-ink">{m.name}</span>
         </div>
-        <span className={`chip shrink-0 uppercase tracking-[.03em] ${s.pill}`}>{statusChipText(m)}</span>
+        <span className={`chip shrink-0 ${s.pill}`}>{statusChipText(m)}</span>
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="font-mono text-[24px] font-medium leading-none tabular-nums tracking-[-.02em] text-ink">
+        <span className="font-mono text-title font-medium tabular-nums text-ink">
           {m.value ?? '—'}
         </span>
-        {m.unit && <span className="text-[12px] font-medium text-muted">{m.unit}</span>}
-        {m.value_label && <span className="micro">{m.value_label}</span>}
+        {m.unit && <span className="text-label font-medium text-muted">{m.unit}</span>}
+        {m.value_label && <span className="text-label font-medium text-muted">{m.value_label}</span>}
       </div>
-      {m.delta_text && <p className="mt-1 text-[12px] font-medium text-muted">{m.delta_text}</p>}
+      {m.delta_text && <p className="mt-1 text-label font-medium text-muted">{m.delta_text}</p>}
 
       <div className="mt-3">
         <CareChart spec={m.chart} />
@@ -40,13 +38,13 @@ export default function MetricCard({ m }: { m: CareMetric }) {
 
       {nodata ? (
         <div className="mt-3">
-          <p className="text-[14px] leading-[1.5] text-body">{m.unlock ?? m.finding}</p>
+          <p className="text-copy text-body">{m.unlock ?? m.finding}</p>
           {m.feeds_from_tasks.length > 0 && (
             <div className="mt-2">
-              <p className="micro mb-1.5">What unlocks it</p>
+              <p className="mb-1.5 text-label font-medium text-muted">What unlocks it</p>
               <div className="flex flex-wrap gap-1.5">
                 {m.feeds_from_tasks.map((k) => (
-                  <span key={k} className="chip bg-brand-tint text-brand">
+                  <span key={k} className="chip bg-brand-tint text-on-brand-tint">
                     {taskKindLabel(k)}
                   </span>
                 ))}
@@ -55,17 +53,17 @@ export default function MetricCard({ m }: { m: CareMetric }) {
           )}
         </div>
       ) : (
-        <p className="mt-3 text-[14px] leading-[1.5] text-body">{m.finding}</p>
+        <p className="mt-3 text-copy text-body">{m.finding}</p>
       )}
 
       {m.next_step && !nodata && (
-        <p className="mt-2 flex items-start gap-1.5 text-[13.5px] font-medium text-brand">
+        <p className="mt-2 flex items-start gap-1.5 text-copy font-medium text-brand-ink">
           <span aria-hidden>→</span> {m.next_step}
         </p>
       )}
 
       <div className="mt-auto pt-3">
-        <div className="border-t border-line pt-2 text-[12px] leading-[1.5] text-muted">
+        <div className="border-t border-line pt-2 text-label text-muted">
           {m.method && <p>{m.method}</p>}
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
             {m.inputs.length > 0 && <span>{m.inputs.join(', ')}</span>}
@@ -73,7 +71,7 @@ export default function MetricCard({ m }: { m: CareMetric }) {
             {m.coverage_text && <span>{m.coverage_text}</span>}
             <ConfidenceChip level={m.confidence} showHigh />
             {m.guarded && (
-              <span className="text-risk-med" title="Guarded metric: the engine phrases it as a signal to review, never a verdict.">
+              <span className="text-risk-med-ink" title="Guarded metric: the engine phrases it as a signal to review, never a verdict.">
                 · {GUARDED_NOTE}
               </span>
             )}

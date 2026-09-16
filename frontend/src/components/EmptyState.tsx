@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 
+/** Empty card. One edge only — `.panel`'s hairline ring; the old
+ *  `border border-line shadow-card` pair drew two. */
 export default function EmptyState({
   title,
   children,
@@ -8,9 +10,9 @@ export default function EmptyState({
   children?: ReactNode
 }) {
   return (
-    <div className="rounded-card border border-line bg-panel px-6 py-12 text-center shadow-card">
-      <p className="text-[16px] font-medium text-ink">{title}</p>
-      {children && <div className="mt-2 text-[14px] text-muted">{children}</div>}
+    <div className="panel px-region py-12 text-center">
+      <p className="text-copy-lg font-medium text-ink">{title}</p>
+      {children && <div className="mt-seam text-copy text-muted">{children}</div>}
     </div>
   )
 }

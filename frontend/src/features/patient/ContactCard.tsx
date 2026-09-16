@@ -96,16 +96,16 @@ export default function ContactCard({
   }
 
   const reach = !phone
-    ? { label: 'No phone on file', tone: 'text-risk-med' }
+    ? { label: 'No phone on file', tone: 'text-risk-med-ink' }
     : !smsConfigured
       ? { label: 'Texting is not configured on this server', tone: 'text-muted' }
-      : { label: 'Texts reach this number', tone: 'text-risk-low' }
+      : { label: 'Texts reach this number', tone: 'text-risk-low-ink' }
 
   return (
-    <div className="rounded-card border border-line bg-panel px-3.5 py-3">
+    <div className="panel px-3.5 py-3">
       <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
         <div className="min-w-[220px] flex-1">
-          <p className="micro flex items-center gap-1.5">
+          <p className="flex items-center gap-1.5 text-label font-medium text-muted">
             <Smartphone size={11} /> Phone
           </p>
           {editing ? (
@@ -143,11 +143,11 @@ export default function ContactCard({
             </div>
           ) : (
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[14px] font-medium text-ink">{phone ?? '—'}</span>
-              <span className={`text-[12px] font-medium ${reach.tone}`}>{reach.label}</span>
+              <span className="font-mono text-copy font-medium text-ink">{phone ?? '—'}</span>
+              <span className={`text-label font-medium ${reach.tone}`}>{reach.label}</span>
               <button
                 type="button"
-                className="inline-flex cursor-pointer items-center gap-1 rounded-btn px-1.5 py-0.5 text-[12px] font-medium text-brand transition-colors hover:bg-brand-tint"
+                className="inline-flex cursor-pointer items-center gap-1 rounded-control px-1.5 py-0.5 text-label font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint"
                 onClick={() => {
                   setDraft(phone ?? '')
                   setEditing(true)
@@ -160,14 +160,14 @@ export default function ContactCard({
         </div>
 
         <div className="min-w-[220px] flex-1">
-          <p className="micro flex items-center gap-1.5">
+          <p className="flex items-center gap-1.5 text-label font-medium text-muted">
             <SmartphoneNfc size={11} /> Patient app
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             {app.enrolled ? (
               <>
-                <span className="chip bg-risk-low-bg text-risk-low">Signed in</span>
-                <span className="text-[12px] font-medium text-muted">
+                <span className="chip bg-risk-low-tint text-risk-low-ink">Signed in</span>
+                <span className="text-label font-medium text-muted">
                   {app.device_name ?? 'iPhone'}
                   {app.last_seen_at && <> · seen {relativeTime(app.last_seen_at)}</>}
                 </span>
@@ -177,12 +177,12 @@ export default function ContactCard({
                 <span className="chip bg-soft text-muted">
                   {app.ever_enrolled ? 'Signed out' : 'Not enrolled'}
                 </span>
-                <span className="text-[12px] font-medium text-muted">
+                <span className="text-label font-medium text-muted">
                   Messages and tasks reach {first} by text only
                 </span>
                 <button
                   type="button"
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-btn px-1.5 py-0.5 text-[12px] font-medium text-brand transition-colors hover:bg-brand-tint"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-control px-1.5 py-0.5 text-label font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint"
                   onClick={() => setLinking((v) => !v)}
                 >
                   <Link2 size={11} /> {linking ? 'Close' : 'Link an app sign-up'}
@@ -195,13 +195,13 @@ export default function ContactCard({
 
       {linking && !app.enrolled && (
         <div className="mt-3 border-t border-line pt-3">
-          <p className="text-[12.5px] font-medium text-muted">
+          <p className="text-label font-medium text-muted">
             If {first} signed up in the app as a separate record, pick it here to fold it into this
             chart. Their phone, messages, tasks and health data move; the other record is removed.
           </p>
-          {candidates.isLoading && <p className="mt-2 text-[12.5px] text-muted">Looking…</p>}
+          {candidates.isLoading && <p className="mt-2 text-label text-muted">Looking…</p>}
           {candidates.data && candidates.data.candidates.length === 0 && (
-            <p className="mt-2 text-[12.5px] font-medium text-muted">
+            <p className="mt-2 text-label font-medium text-muted">
               No other record has signed in on the app or has a phone yet.
             </p>
           )}
@@ -210,11 +210,11 @@ export default function ContactCard({
               {candidates.data.candidates.slice(0, 8).map((c) => (
                 <li key={c.patient_id} className="flex items-center gap-3 py-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-ink">
+                    <p className="text-copy font-medium text-ink">
                       {c.name}{' '}
-                      <span className="font-mono text-[11px] font-medium text-faint">{c.patient_id}</span>
+                      <span className="font-mono text-label font-medium text-muted">{c.patient_id}</span>
                     </p>
-                    <p className="text-[12px] font-medium text-muted">
+                    <p className="text-label font-medium text-muted">
                       {c.mode === 'general' ? 'General patient' : c.procedure_display}
                       {c.phone_masked && <> · {c.phone_masked}</>}
                       {c.app.enrolled ? (
@@ -225,13 +225,13 @@ export default function ContactCard({
                       ) : (
                         <> · app not signed in</>
                       )}
-                      {c.phone_match && <span className="text-risk-low"> · same number</span>}
-                      {c.name_match && !c.phone_match && <span className="text-brand"> · name matches</span>}
+                      {c.phone_match && <span className="text-risk-low-ink"> · same number</span>}
+                      {c.name_match && !c.phone_match && <span className="text-brand-ink"> · name matches</span>}
                       {c.observations > 0 && <> · {c.observations} readings</>}
                       {c.checkins > 0 && <> · {c.checkins} check-ins</>}
                     </p>
                     {c.refusal && (
-                      <p className="mt-0.5 text-[11.5px] font-medium text-risk-high">
+                      <p className="mt-0.5 text-label font-medium text-risk-high-ink">
                         Cannot link: {c.refusal}
                       </p>
                     )}
@@ -243,7 +243,7 @@ export default function ContactCard({
                     title={c.refusal ?? `Fold ${c.name} into this chart`}
                     onClick={() => doLink(c)}
                   >
-                    <Link2 size={13} className="text-brand" /> Link
+                    <Link2 size={13} /> Link
                   </button>
                 </li>
               ))}

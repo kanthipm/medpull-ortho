@@ -20,9 +20,9 @@ export default function AIAttribution({
 }) {
   const rulesBased = provider === 'fallback'
   const Icon = rulesBased ? Sigma : Sparkles
-  const accent = rulesBased ? 'text-muted' : 'text-brand'
+  const accent = rulesBased ? 'text-muted' : 'text-brand-ink'
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[.06em] text-muted">
+    <span className="micro inline-flex items-center gap-1.5">
       <Icon size={12} className={accent} aria-hidden />
       <span className={accent}>
         {rulesBased ? 'Rules-based' : 'AI'} {kind}

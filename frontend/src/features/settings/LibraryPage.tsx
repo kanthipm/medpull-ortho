@@ -54,14 +54,14 @@ export default function LibraryPage() {
     <div>
       <div className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
         <SettingsNav className="mb-4" />
-        <h1 className="text-[26px] font-semibold tracking-[-.03em] text-ink">Library</h1>
-        <p className="mt-1 text-[13px] font-medium text-muted">
+        <h1 className="text-title font-normal text-ink">Library</h1>
+        <p className="mt-el text-copy text-muted">
           Care-plan tasks and patient messages the team reuses. Pinned ones show first as quick picks.
         </p>
       </div>
 
       <div
-        className="rise mt-6 flex flex-wrap items-center gap-3"
+        className="rise mt-6 flex flex-wrap items-center gap-tight"
         style={{ '--rise-delay': '60ms' } as CSSProperties}
       >
         <SegmentedControl<Tab>
@@ -73,7 +73,7 @@ export default function LibraryPage() {
           }}
           aria-label="Library section"
         />
-        <label className="inline-flex cursor-pointer items-center gap-2 text-[12.5px] font-medium text-muted">
+        <label className="inline-flex cursor-pointer items-center gap-seam text-label font-medium text-muted">
           <input
             type="checkbox"
             className="h-3.5 w-3.5 accent-[rgb(var(--brand))]"
@@ -83,11 +83,11 @@ export default function LibraryPage() {
           Show archived
         </label>
         <button type="button" className="qa-btn ml-auto" onClick={() => setCreating((c) => !c)}>
-          <Plus size={13} className="text-brand" /> New template
+          <Plus size={13} /> New template
         </button>
       </div>
 
-      <div className="rise mt-4" style={{ '--rise-delay': '100ms' } as CSSProperties}>
+      <div className="rise mt-snug" style={{ '--rise-delay': '100ms' } as CSSProperties}>
         {tab === 'tasks' ? (
           <TaskLibrary showArchived={showArchived} creating={creating} onDone={() => setCreating(false)} />
         ) : (
@@ -95,7 +95,7 @@ export default function LibraryPage() {
         )}
       </div>
 
-      <p className="mt-4 border-t border-line pt-2 text-[11px] font-medium leading-[1.5] text-faint">
+      <p className="mt-snug border-t border-line pt-seam text-label font-medium text-muted">
         Titles, reasons and message bodies are what patients see — keep them plain and number-free.
         Clinical targets stay with the care team.
       </p>
@@ -166,14 +166,16 @@ function TaskLibrary({
   if (library.isError) return <EmptyState title="The task library couldn't be loaded." />
 
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-tight">
       {creating && (
         <SectionCard title="New task template">
           <div className="space-y-3">
             <DraftRowEditor value={draft} kinds={kinds} onChange={setDraft} libraryToggles={false} />
             <div>
-              <p className="micro mb-1.5">Pathways <span className="normal-case tracking-normal">(none = every pathway)</span></p>
-              <div className="flex flex-wrap gap-1.5">
+              <p className="mb-el text-label font-medium text-muted">
+                Pathways (none = every pathway)
+              </p>
+              <div className="flex flex-wrap gap-el">
                 {PATHWAY_KEYS.map((key) => {
                   const on = pathways.includes(key)
                   return (
@@ -184,9 +186,9 @@ function TaskLibrary({
                       onClick={() =>
                         setPathways((p) => (on ? p.filter((k) => k !== key) : [...p, key]))
                       }
-                      className={`chip cursor-pointer border transition-colors duration-150 ${
+                      className={`chip cursor-pointer border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
                         on
-                          ? 'border-brand/35 bg-brand-tint text-brand'
+                          ? 'border-brand bg-brand-tint-strong text-on-brand-tint'
                           : 'border-line bg-panel text-body hover:bg-soft'
                       }`}
                     >
@@ -196,8 +198,8 @@ function TaskLibrary({
                 })}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-[12.5px] font-medium text-body">
+            <div className="flex flex-wrap items-center gap-tight">
+              <label className="inline-flex cursor-pointer items-center gap-seam text-label font-medium text-body">
                 <input
                   type="checkbox"
                   className="h-3.5 w-3.5 accent-[rgb(var(--brand))]"
@@ -225,16 +227,16 @@ function TaskLibrary({
       <SectionCard
         title="Task templates"
         aside={
-          <span className="font-mono text-[11.5px] font-medium tabular-nums text-faint">{rows.length}</span>
+          <span className="font-mono text-label font-medium tabular-nums text-muted">{rows.length}</span>
         }
       >
         {rows.length === 0 ? (
-          <p className="text-[12.5px] font-medium text-muted">No task templates yet.</p>
+          <p className="text-label font-medium text-muted">No task templates yet.</p>
         ) : (
           <div className="-mx-4 overflow-x-auto px-4">
-            <table className="w-full min-w-[720px] text-left text-[12.5px]">
+            <table className="w-full min-w-[720px] text-left text-label">
               <thead>
-                <tr className="micro border-b border-line">
+                <tr className="border-b border-line text-label font-medium tracking-ui text-muted">
                   <Th>Title</Th>
                   <Th>Verified by</Th>
                   <Th>Phase</Th>
@@ -246,25 +248,25 @@ function TaskLibrary({
               </thead>
               <tbody className="divide-y divide-line">
                 {rows.map((t) => (
-                  <tr key={t.id} className={t.archived ? 'opacity-50' : ''}>
-                    <td className="max-w-[320px] py-2.5 pr-3 align-top">
-                      <span className="block font-semibold text-ink">{t.title}</span>
-                      <span className="mt-0.5 block text-[11.5px] font-medium leading-snug text-muted">{t.why}</span>
-                      <span className="mt-0.5 block text-[10.5px] font-medium text-faint">
+                  <tr key={t.id} className={t.archived ? 'bg-soft' : ''}>
+                    <td className="max-w-[320px] py-seam pr-tight align-top">
+                      <span className="block font-medium text-ink">{t.title}</span>
+                      <span className="mt-0.5 block text-label font-medium text-muted">{t.why}</span>
+                      <span className="mt-0.5 block text-label font-medium text-muted">
                         {ucLabel(t.use_case)}
                         {t.clinical_target && <> · {t.clinical_target}</>}
                         {t.source !== 'library' && <> · {titleCase(t.source)}</>}
                       </span>
                     </td>
-                    <td className="py-2.5 pr-3 align-top">
+                    <td className="py-seam pr-tight align-top">
                       <span className="block font-medium text-body">{kindLabel(kinds, t.verify_kind)}</span>
-                      <span className="block text-[10.5px] font-medium text-faint">
+                      <span className="block text-label font-medium text-muted">
                         {t.verified_by ?? kindInfo(kinds, t.verify_kind)?.verified_by ?? 'self-report'}
                       </span>
                     </td>
-                    <td className="py-2.5 pr-3 align-top font-medium text-body">{phaseLabel(t.phase)}</td>
-                    <td className="py-2.5 pr-3 align-top">
-                      <span className="flex flex-wrap gap-1">
+                    <td className="py-seam pr-tight align-top font-medium text-body">{phaseLabel(t.phase)}</td>
+                    <td className="py-seam pr-tight align-top">
+                      <span className="flex flex-wrap gap-el">
                         {t.pathways.length === 0 ? (
                           <span className="chip bg-soft text-muted">All</span>
                         ) : (
@@ -274,11 +276,11 @@ function TaskLibrary({
                         )}
                       </span>
                     </td>
-                    <td className="py-2.5 pr-3 text-right align-top font-mono tabular-nums text-muted">{t.usage_count}</td>
-                    <td className="py-2.5 text-center align-top">
+                    <td className="py-seam pr-tight text-right align-top font-mono tabular-nums text-muted">{t.usage_count}</td>
+                    <td className="py-seam text-center align-top">
                       <PinButton pinned={t.pinned} onClick={() => toggle(t, { pinned: !t.pinned })} />
                     </td>
-                    <td className="py-2.5 text-right align-top">
+                    <td className="py-seam text-right align-top">
                       <ArchiveButton archived={t.archived} onClick={() => toggle(t, { archived: !t.archived })} />
                     </td>
                   </tr>
@@ -345,17 +347,19 @@ function MessageLibrary({
   if (library.isError) return <EmptyState title="The message library couldn't be loaded." />
 
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-tight">
       {creating && (
         <SectionCard title="New message template">
           <div className="space-y-3">
             <div>
-              <label htmlFor="mt-title" className="micro mb-1 block">Title</label>
+              <label htmlFor="mt-title" className="mb-el block text-label font-medium text-muted">
+                Title
+              </label>
               <input id="mt-title" className="field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Check on swelling" />
             </div>
             <div>
-              <label htmlFor="mt-body" className="micro mb-1 block">
-                Body <span className="normal-case tracking-normal">— use {'{first}'} and {'{surgeon}'}</span>
+              <label htmlFor="mt-body" className="mb-el block text-label font-medium text-muted">
+                Body — use {'{first}'} and {'{surgeon}'}
               </label>
               <textarea
                 id="mt-body"
@@ -365,11 +369,11 @@ function MessageLibrary({
                 onChange={(e) => setBody(e.target.value)}
                 placeholder="Hi {first} — {surgeon}'s team here. How is the swelling today? Reply here or in the app."
               />
-              {warn && <p className="mt-1 text-[11px] font-medium leading-snug text-risk-med">{warn}</p>}
+              {warn && <p className="mt-el text-label font-medium text-risk-med-ink">{warn}</p>}
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-tight">
               <SegmentedControl<MessageTone> options={TONES} value={tone} onChange={setTone} aria-label="Tone" />
-              <label className="inline-flex cursor-pointer items-center gap-2 text-[12.5px] font-medium text-body">
+              <label className="inline-flex cursor-pointer items-center gap-seam text-label font-medium text-body">
                 <input
                   type="checkbox"
                   className="h-3.5 w-3.5 accent-[rgb(var(--brand))]"
@@ -395,16 +399,16 @@ function MessageLibrary({
       <SectionCard
         title="Message templates"
         aside={
-          <span className="font-mono text-[11.5px] font-medium tabular-nums text-faint">{rows.length}</span>
+          <span className="font-mono text-label font-medium tabular-nums text-muted">{rows.length}</span>
         }
       >
         {rows.length === 0 ? (
-          <p className="text-[12.5px] font-medium text-muted">No message templates yet.</p>
+          <p className="text-label font-medium text-muted">No message templates yet.</p>
         ) : (
           <div className="-mx-4 overflow-x-auto px-4">
-            <table className="w-full min-w-[640px] text-left text-[12.5px]">
+            <table className="w-full min-w-[640px] text-left text-label">
               <thead>
-                <tr className="micro border-b border-line">
+                <tr className="border-b border-line text-label font-medium tracking-ui text-muted">
                   <Th>Title</Th>
                   <Th>Tone</Th>
                   <Th>Tags</Th>
@@ -415,24 +419,24 @@ function MessageLibrary({
               </thead>
               <tbody className="divide-y divide-line">
                 {rows.map((t) => (
-                  <tr key={t.id} className={t.archived ? 'opacity-50' : ''}>
-                    <td className="max-w-[420px] py-2.5 pr-3 align-top">
-                      <span className="block font-semibold text-ink">{t.title}</span>
-                      <span className="mt-0.5 block text-[11.5px] font-medium leading-snug text-muted">{t.body}</span>
+                  <tr key={t.id} className={t.archived ? 'bg-soft' : ''}>
+                    <td className="max-w-[420px] py-seam pr-tight align-top">
+                      <span className="block font-medium text-ink">{t.title}</span>
+                      <span className="mt-0.5 block text-label font-medium text-muted">{t.body}</span>
                     </td>
-                    <td className="py-2.5 pr-3 align-top font-medium text-body">{titleCase(t.tone)}</td>
-                    <td className="py-2.5 pr-3 align-top">
-                      <span className="flex flex-wrap gap-1">
+                    <td className="py-seam pr-tight align-top font-medium text-body">{titleCase(t.tone)}</td>
+                    <td className="py-seam pr-tight align-top">
+                      <span className="flex flex-wrap gap-el">
                         {(t.tags ?? []).map((tag) => (
                           <span key={tag} className="chip bg-soft text-muted">{tag}</span>
                         ))}
                       </span>
                     </td>
-                    <td className="py-2.5 pr-3 text-right align-top font-mono tabular-nums text-muted">{t.usage_count}</td>
-                    <td className="py-2.5 text-center align-top">
+                    <td className="py-seam pr-tight text-right align-top font-mono tabular-nums text-muted">{t.usage_count}</td>
+                    <td className="py-seam text-center align-top">
                       <PinButton pinned={t.pinned} onClick={() => toggle(t, { pinned: !t.pinned })} />
                     </td>
-                    <td className="py-2.5 text-right align-top">
+                    <td className="py-seam text-right align-top">
                       <ArchiveButton archived={t.archived} onClick={() => toggle(t, { archived: !t.archived })} />
                     </td>
                   </tr>
@@ -449,7 +453,7 @@ function MessageLibrary({
 // --- bits ----------------------------------------------------------------------
 
 function Th({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <th className={`py-2 pr-3 font-medium ${className}`}>{children}</th>
+  return <th className={`py-seam pr-tight font-medium ${className}`}>{children}</th>
 }
 
 function PinButton({ pinned, onClick }: { pinned: boolean; onClick: () => void }) {
@@ -460,8 +464,8 @@ function PinButton({ pinned, onClick }: { pinned: boolean; onClick: () => void }
       aria-pressed={pinned}
       aria-label={pinned ? 'Unpin' : 'Pin'}
       title={pinned ? 'Unpin' : 'Pin as a quick pick'}
-      className={`grid h-7 w-7 cursor-pointer place-items-center rounded-btn transition-colors duration-150 hover:bg-soft ${
-        pinned ? 'text-brand' : 'text-faint hover:text-ink'
+      className={`grid h-7 w-7 cursor-pointer place-items-center rounded-control transition-colors duration-150 hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+        pinned ? 'text-brand-ink' : 'text-muted hover:text-ink'
       }`}
     >
       <Star size={14} fill={pinned ? 'currentColor' : 'none'} />
@@ -477,7 +481,7 @@ function ArchiveButton({ archived, onClick }: { archived: boolean; onClick: () =
       onClick={onClick}
       aria-label={archived ? 'Restore' : 'Archive'}
       title={archived ? 'Restore to the library' : 'Archive'}
-      className="grid h-7 w-7 cursor-pointer place-items-center rounded-btn text-faint transition-colors duration-150 hover:bg-soft hover:text-ink"
+      className="grid h-7 w-7 cursor-pointer place-items-center rounded-control text-muted transition-colors duration-150 hover:bg-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
     >
       <Icon size={14} />
     </button>

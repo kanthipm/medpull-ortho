@@ -39,15 +39,15 @@ export default function DraftRowEditor({
   const id = `draft-${index ?? 'row'}`
 
   return (
-    <div className="rounded-row border border-line bg-soft/40 p-3">
+    <div className="rounded-surface bg-soft p-3">
       <div className="mb-2.5 flex items-center gap-2">
         {index != null && (
-          <span className="chip bg-panel font-mono tabular-nums text-faint">{index + 1}</span>
+          <span className="chip bg-panel font-mono tabular-nums text-muted">{index + 1}</span>
         )}
-        <span className="text-[11px] font-medium text-muted">
+        <span className="text-label font-medium text-muted">
           {info?.label ?? titleCase(value.verify_kind)}
           {value.source_template_key && (
-            <span className="ml-1.5 font-mono text-[10.5px] text-faint">· {value.source_template_key}</span>
+            <span className="ml-1.5 font-mono text-label text-muted">· {value.source_template_key}</span>
           )}
         </span>
         {onRemove && (
@@ -55,7 +55,7 @@ export default function DraftRowEditor({
             type="button"
             onClick={onRemove}
             aria-label="Remove task"
-            className="ml-auto grid h-6 w-6 cursor-pointer place-items-center rounded-btn text-faint transition-colors duration-150 hover:bg-panel hover:text-ink"
+            className="ml-auto grid h-6 w-6 cursor-pointer place-items-center rounded-control text-muted transition-colors duration-150 hover:bg-panel hover:text-ink"
           >
             <X size={13} />
           </button>
@@ -64,8 +64,8 @@ export default function DraftRowEditor({
 
       <div className="grid gap-2.5 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <label htmlFor={`${id}-title`} className="micro mb-1 block">
-            Title <span className="normal-case tracking-normal">(patient sees this)</span>
+          <label htmlFor={`${id}-title`} className="mb-1 block text-label font-medium text-muted">
+            Title (patient sees this)
           </label>
           <input
             id={`${id}-title`}
@@ -77,8 +77,8 @@ export default function DraftRowEditor({
           {titleWarn && <Hint>{titleWarn}</Hint>}
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor={`${id}-why`} className="micro mb-1 block">
-            Why <span className="normal-case tracking-normal">(patient sees this)</span>
+          <label htmlFor={`${id}-why`} className="mb-1 block text-label font-medium text-muted">
+            Why (patient sees this)
           </label>
           <input
             id={`${id}-why`}
@@ -90,8 +90,8 @@ export default function DraftRowEditor({
           {whyWarn && <Hint>{whyWarn}</Hint>}
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor={`${id}-target`} className="micro mb-1 block">
-            Clinical target <span className="normal-case tracking-normal">(care team only)</span>
+          <label htmlFor={`${id}-target`} className="mb-1 block text-label font-medium text-muted">
+            Clinical target (care team only)
           </label>
           <input
             id={`${id}-target`}
@@ -147,7 +147,7 @@ export default function DraftRowEditor({
       </div>
 
       {value.rationale && (
-        <p className="mt-2.5 text-[12px] font-medium leading-snug text-muted">{value.rationale}</p>
+        <p className="mt-2.5 text-label font-medium text-muted">{value.rationale}</p>
       )}
 
       {libraryToggles && (
@@ -172,7 +172,7 @@ export default function DraftRowEditor({
 }
 
 function Hint({ children }: { children: string }) {
-  return <p className="mt-1 text-[11px] font-medium leading-snug text-risk-med">{children}</p>
+  return <p className="mt-1 text-label font-medium text-risk-med-ink">{children}</p>
 }
 
 function Select({
@@ -190,7 +190,7 @@ function Select({
 }) {
   return (
     <div>
-      <label htmlFor={id} className="micro mb-1 block">
+      <label htmlFor={id} className="mb-1 block text-label font-medium text-muted">
         {label}
       </label>
       <select id={id} className="field cursor-pointer" value={value} onChange={(e) => onChange(e.target.value)}>
@@ -238,8 +238,8 @@ function ParamInput({
     const items = Array.isArray(value) ? value.map(String) : []
     return (
       <div>
-        <label htmlFor={id} className="micro mb-1 block">
-          {label} <span className="normal-case tracking-normal">(comma-separated)</span>
+        <label htmlFor={id} className="mb-1 block text-label font-medium text-muted">
+          {label} (comma-separated)
         </label>
         <input
           id={id}
@@ -261,7 +261,7 @@ function ParamInput({
   const numeric = field.type === 'int' || field.type === 'float'
   return (
     <div>
-      <label htmlFor={id} className="micro mb-1 block">
+      <label htmlFor={id} className="mb-1 block text-label font-medium text-muted">
         {label}
       </label>
       <input
@@ -301,14 +301,14 @@ function Check({
   return (
     <label
       htmlFor={id}
-      className={`inline-flex items-center gap-2 text-[12.5px] font-medium ${
-        disabled ? 'cursor-not-allowed text-faint' : 'cursor-pointer text-body'
+      className={`inline-flex items-center gap-2 text-label font-medium ${
+        disabled ? 'cursor-not-allowed text-disabled-ink' : 'cursor-pointer text-body'
       }`}
     >
       <input
         id={id}
         type="checkbox"
-        className="h-3.5 w-3.5 cursor-pointer accent-[rgb(var(--brand))] disabled:cursor-not-allowed"
+        className="h-3.5 w-3.5 cursor-pointer accent-brand disabled:cursor-not-allowed"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}

@@ -108,16 +108,16 @@ export default function RawDataTable({
       <RefreshOverlay show={refreshing} />
       {isLoading && <SkeletonCard lines={4} />}
       {isError && (
-        <p className="text-[12.5px] font-medium text-muted">Raw data could not be loaded.</p>
+        <p className="text-label font-medium text-muted">Raw data could not be loaded.</p>
       )}
       {data && types.length === 0 && (
-        <p className="text-[12.5px] font-medium text-muted">
+        <p className="text-label font-medium text-muted">
           No observations in the last {days} days.
         </p>
       )}
       {data && types.length > 0 && (
         <div>
-          <p className="micro">
+          <p className="text-label font-medium text-muted">
             {types.length} metric types · {totalRows.toLocaleString()} observations ·{' '}
             {data.checkins_count} check-ins · {data.tasks_count} tasks
           </p>
@@ -133,11 +133,11 @@ export default function RawDataTable({
                   aria-selected={active}
                   onClick={() => setSelected(t.metric_type)}
                   className={`chip cursor-pointer transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${
-                    active ? 'bg-brand-tint text-brand' : 'bg-soft text-muted hover:text-ink'
+                    active ? 'bg-brand-tint text-on-brand-tint' : 'bg-soft text-muted hover:text-ink'
                   }`}
                 >
                   {metricTypeLabel(t.metric_type)}
-                  <span className="font-mono tabular-nums opacity-70">{t.count}</span>
+                  <span className="font-mono tabular-nums">{t.count}</span>
                 </button>
               )
             })}
@@ -145,7 +145,7 @@ export default function RawDataTable({
 
           {currentType && (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[11.5px] font-medium text-faint">
+              <p className="text-label font-medium text-muted">
                 <span className="text-body">{metricTypeLabel(currentType.metric_type)}</span>
                 {currentType.unit && <> · {currentType.unit}</>}
                 {currentType.source_providers.length > 0 && (
@@ -164,10 +164,10 @@ export default function RawDataTable({
             </div>
           )}
 
-          <div className="mt-2 max-h-80 overflow-auto rounded-none border border-line">
-            <table className="w-full min-w-[640px] border-collapse text-left text-[12px]">
+          <div className="mt-2 max-h-80 overflow-auto rounded-surface border border-line">
+            <table className="w-full min-w-[640px] border-collapse text-left text-label">
               <thead className="sticky top-0 bg-soft">
-                <tr className="text-[10.5px] font-medium uppercase tracking-[.06em] text-faint">
+                <tr className="font-medium text-muted">
                   <th className="px-2.5 py-1.5 font-medium">Date</th>
                   <th className="px-2.5 py-1.5 font-medium">Time</th>
                   <th className="px-2.5 py-1.5 text-right font-medium">Value</th>
@@ -195,12 +195,12 @@ export default function RawDataTable({
                     <td className="whitespace-nowrap px-2.5 py-1.5 text-muted">{r.granularity}</td>
                     <td className="whitespace-nowrap px-2.5 py-1.5">
                       {r.patient_reported ? (
-                        <span className="chip bg-brand-tint text-brand">patient</span>
+                        <span className="chip bg-brand-tint text-on-brand-tint">patient</span>
                       ) : (
-                        <span className="text-faint">device</span>
+                        <span className="text-muted">device</span>
                       )}
                     </td>
-                    <td className="max-w-[16rem] truncate px-2.5 py-1.5 text-faint" title={r.json ? JSON.stringify(r.json) : undefined}>
+                    <td className="max-w-[16rem] truncate px-2.5 py-1.5 text-muted" title={r.json ? JSON.stringify(r.json) : undefined}>
                       {jsonSummary(r.json)}
                     </td>
                   </tr>
@@ -210,7 +210,7 @@ export default function RawDataTable({
           </div>
 
           {truncated && currentType && (
-            <p className="mt-2 text-[11px] font-medium leading-[1.5] text-faint">
+            <p className="mt-2 text-label font-medium text-muted">
               Showing the newest {rows.length.toLocaleString()} of {currentType.count.toLocaleString()}{' '}
               rows — narrow the window to see the rest.
             </p>

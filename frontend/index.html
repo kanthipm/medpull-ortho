@@ -3,9 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Medical Blue #1976D2 light / Deep #0D47A1 dark. The inline script below
-         rewrites this before paint; keep the two in step. -->
-    <meta name="theme-color" content="#1976d2" />
+    <!-- theme-color is --panel, because the app bar is --panel in both modes:
+         #FFFFFF (n-0) light / #141C24 (n-900) dark. The inline script below
+         rewrites this before paint and src/lib/theme.tsx rewrites it from
+         --panel on mount, so the pre-paint and runtime values are the same
+         pair. (It was the retired app-bar blue, #1976D2 / #0D47A1, which
+         flashed #0D47A1 above a #141C24 bar for a frame on every dark load.) -->
+    <meta name="theme-color" content="#ffffff" />
     <link rel="icon" type="image/svg+xml" href="/medpull-logo.svg" />
 
     <!-- Self-hosted UI face. Both files are ~16KB, so preloading the pair costs
@@ -49,7 +53,7 @@
           if (t === 'dark') document.documentElement.classList.add('dark')
           document.documentElement.style.colorScheme = t
           var meta = document.querySelector('meta[name="theme-color"]')
-          if (meta) meta.setAttribute('content', t === 'dark' ? '#0d47a1' : '#1976d2')
+          if (meta) meta.setAttribute('content', t === 'dark' ? '#141c24' : '#ffffff')
           document.documentElement.style.background = t === 'dark' ? '#0e151c' : '#f5f7fa'
         } catch (e) {}
       })()

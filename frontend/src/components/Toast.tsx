@@ -15,10 +15,12 @@ export function useToast() {
   return useContext(ToastContext)
 }
 
+/** Icons take the `-ink` half of each pair — the bare `risk-*` / `brand` names
+ *  are fills, and #1976D2 as a foreground is the one thing --brand may not be. */
 const ICON: Record<ToastKind, ReactNode> = {
-  success: <CircleCheck size={18} className="text-risk-low" />,
-  info: <Info size={18} className="text-brand" />,
-  warning: <TriangleAlert size={18} className="text-risk-high" />,
+  success: <CircleCheck size={18} className="text-risk-low-ink" />,
+  info: <Info size={18} className="text-brand-ink" />,
+  warning: <TriangleAlert size={18} className="text-risk-high-ink" />,
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -43,16 +45,24 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         aria-live="polite"
-        className="pointer-events-none fixed right-[18px] top-[18px] z-[100] flex w-full max-w-[340px] flex-col items-end gap-2.5"
+        className="pointer-events-none fixed right-block top-block z-[100] flex w-full max-w-[340px] flex-col items-end gap-tight"
       >
+        {/* A toast is genuinely floating, so it keeps the ambient shadow via
+            `.overlay`. Its EDGE is one mechanism per mode: light separates with
+            the white panel fill under the ambient wash, dark with `.dark
+            .overlay`'s 1px --overlay-border, which earns its keep — the dark
+            overlay panel is only 1.435:1 on --canvas. The risk tint on a
+            warning is state colour, not an edge, and it replaces the panel fill
+            rather than adding a second border (the old `border-risk-high/30`
+            was a 1.5:1 stroke on top of both). */}
         {toasts.map((toast) => (
           <div
             key={toast.id}
             onClick={() => dismiss(toast.id)}
-            className={`pointer-events-auto flex w-auto animate-toastIn cursor-pointer items-center gap-2.5 rounded-row border bg-panel px-4 py-3 text-[14px] font-medium leading-[1.4] shadow-glass ${
+            className={`overlay pointer-events-auto flex w-auto animate-toastIn cursor-pointer items-center gap-tight px-4 py-3 text-copy font-medium ${
               toast.kind === 'warning'
-                ? 'border-risk-high/30 text-risk-high'
-                : 'border-line text-ink'
+                ? 'bg-risk-high-tint text-risk-high-ink'
+                : 'text-ink'
             }`}
           >
             {ICON[toast.kind]}

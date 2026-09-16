@@ -21,6 +21,7 @@ import { RefreshOverlay, SkeletonLine } from '../../../components/Skeleton'
 import { useToast } from '../../../components/Toast'
 import { relativeTime } from '../../../lib/format'
 import { URGENCY } from '../../../lib/risk'
+import { sourceLabel } from '../../../lib/sourceLabels'
 import MessageComposerModal from './MessageComposerModal'
 import { titlesOverlap } from './planCopy'
 
@@ -83,7 +84,7 @@ export default function NextSteps({
         title="Recommended next steps"
         aside={
           steps.data?.generated_at ? (
-            <span className="font-mono text-[11px] font-medium tabular-nums text-faint">
+            <span className="font-mono text-label font-medium tabular-nums text-muted">
               {relativeTime(steps.data.generated_at)}
             </span>
           ) : undefined
@@ -104,19 +105,19 @@ export default function NextSteps({
           <ul className="divide-y divide-line">
             {aiActions.map((a, i) => (
               <li key={i} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
-                <span className={`chip mt-0.5 shrink-0 uppercase tracking-[.03em] ${URGENCY[a.urgency]?.pill ?? URGENCY.routine.pill}`}>
+                <span className={`chip mt-0.5 shrink-0 ${URGENCY[a.urgency]?.pill ?? URGENCY.routine.pill}`}>
                   {URGENCY[a.urgency]?.label ?? 'Routine'}
                 </span>
                 <span>
-                  <span className="block text-[13.5px] font-semibold text-ink">{a.title}</span>
+                  <span className="block text-copy font-medium text-ink">{a.title}</span>
                   {a.detail && (
-                    <span className="mt-0.5 block text-[12.5px] font-medium leading-snug text-muted">{a.detail}</span>
+                    <span className="mt-0.5 block text-label font-medium text-muted">{a.detail}</span>
                   )}
                 </span>
               </li>
             ))}
             {aiActions.length === 0 && (
-              <li className="text-[12.5px] font-medium text-muted">No next steps are available yet.</li>
+              <li className="text-label font-medium text-muted">No next steps are available yet.</li>
             )}
           </ul>
         )}
@@ -127,30 +128,32 @@ export default function NextSteps({
               const done = s.state.status !== 'open'
               const wording = aiActions.find((a) => titlesOverlap(a.title, s.title))
               return (
-                <li key={s.key} className={`py-3 first:pt-0 last:pb-0 ${done ? 'opacity-60' : ''}`}>
+                <li key={s.key} className="py-3 first:pt-0 last:pb-0">
                   <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-                    <span className={`chip mt-0.5 shrink-0 uppercase tracking-[.03em] ${URGENCY[s.urgency]?.pill ?? URGENCY.routine.pill}`}>
+                    <span className={`chip mt-0.5 shrink-0 ${URGENCY[s.urgency]?.pill ?? URGENCY.routine.pill}`}>
                       {URGENCY[s.urgency]?.label ?? 'Routine'}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13.5px] font-semibold tracking-[-.01em] text-ink">{s.title}</p>
+                      <p className="text-copy font-medium text-ink">{s.title}</p>
                       {s.detail && (
-                        <p className="mt-0.5 text-[12.5px] font-medium leading-snug text-muted">{s.detail}</p>
+                        <p className="mt-0.5 text-label font-medium text-muted">{s.detail}</p>
                       )}
                       {(s.source?.length > 0 || s.clicks) && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1">
                           {s.source?.map((src) => (
-                            <span key={src} className="chip bg-soft font-mono text-faint">{src}</span>
+                            <span key={src} className="chip bg-soft text-muted" title={src}>
+                              {sourceLabel(src)}
+                            </span>
                           ))}
                           {s.clicks && (
-                            <span className="text-[10.5px] font-medium text-faint">
+                            <span className="text-label font-medium text-muted">
                               · {s.clicks === 1 ? 'one click' : 'two clicks'}
                             </span>
                           )}
                         </div>
                       )}
                       {wording && (
-                        <p className="mt-1 text-[11.5px] font-medium italic leading-snug text-faint">
+                        <p className="mt-1 text-label font-medium text-muted">
                           AI wording · {wording.title}
                           {wording.detail ? ` — ${wording.detail}` : ''}
                         </p>
@@ -158,7 +161,7 @@ export default function NextSteps({
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                       {done ? (
-                        <span className="text-[11.5px] font-medium text-muted">
+                        <span className="text-label font-medium text-muted">
                           {s.state.status === 'done' ? 'Done' : 'Dismissed'}
                           {s.state.executed_at && <> · {relativeTime(s.state.executed_at)}</>}
                         </span>
@@ -174,7 +177,7 @@ export default function NextSteps({
                           />
                           <button
                             type="button"
-                            className="cursor-pointer rounded-btn px-2 py-1 text-[11.5px] font-medium text-muted transition-colors duration-150 hover:bg-soft hover:text-ink disabled:opacity-50"
+                            className="cursor-pointer rounded-control px-2 py-1 text-label font-medium text-muted transition-colors duration-150 hover:bg-soft hover:text-ink disabled:text-disabled-ink"
                             disabled={dismiss.isPending}
                             onClick={() =>
                               dismiss.mutate(s.key, {
@@ -196,7 +199,7 @@ export default function NextSteps({
         )}
 
         {planner && list.length > 0 && (
-          <p className="mt-2.5 border-t border-line pt-2 text-[11px] font-medium leading-[1.5] text-faint">
+          <p className="mt-2.5 border-t border-line pt-2 text-label font-medium text-muted">
             Steps are rules-based — every button does exactly what it says. Executed steps stay
             listed as done and are not re-suggested for a few days.
           </p>
@@ -290,7 +293,7 @@ export function NextStepButton({
   }
 
   const cls = compact
-    ? 'qa-btn !px-2 !py-1 text-[11.5px]'
+    ? 'qa-btn !px-2 !py-1 text-label'
     : 'qa-btn'
   const tel = type === 'call' ? step.action.tel ?? phone : null
 
@@ -300,14 +303,14 @@ export function NextStepButton({
         <a
           href={`tel:${tel}`}
           onClick={(e) => e.stopPropagation()}
-          className={`${cls} text-brand`}
+          className={cls}
           title={`Call ${tel}`}
         >
           <Phone size={compact ? 11 : 13} /> Call
         </a>
       )}
       <button type="button" className={cls} disabled={busy} onClick={run} title={step.detail}>
-        <Icon size={compact ? 11 : 13} className={type === 'escalate' ? 'text-risk-high' : 'text-brand'} />
+        <Icon size={compact ? 11 : 13} className={type === 'escalate' ? 'text-risk-high-ink' : undefined} />
         {busy ? 'Working…' : label}
       </button>
       {compact && type === 'message' && step.action.prefill && (

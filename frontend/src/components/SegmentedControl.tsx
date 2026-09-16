@@ -17,8 +17,10 @@ export type SegmentOption<T extends string = string> = {
   match?: (pathname: string) => boolean
 }
 
-/** Visual tone: `default` sits on a light surface with a blue underline;
- *  `primary` sits on the blue app bar with a white underline. */
+/** Visual tone. Both tones draw a 2px Medical Blue (#1976D2) rule under the
+ *  active tab and label it in --brand-ink; idle labels are --muted, hovering
+ *  to --ink. The only difference is the track: `default` draws its own bottom
+ *  hairline, `primary` draws none because the app bar carries one. */
 export type SegmentTone = 'default' | 'primary'
 
 type Indicator = { left: number; width: number; ready: boolean }
@@ -66,8 +68,8 @@ function useSlidingIndicator(activeKey: string, optionCount: number) {
 const TONE = {
   default: {
     track: 'border-b border-line',
-    bar: 'bg-brand',
-    active: 'text-brand',
+    bar: 'bg-brand', // graphic: 3:1 is the floor, #1976D2 clears it
+    active: 'text-brand-ink', // text: #1976D2 is 3.736:1 on dark panel, so never text-brand
     idle: 'text-muted hover:text-ink',
     focus: 'focus-visible:outline-brand',
   },
@@ -76,8 +78,8 @@ const TONE = {
   // Medical Blue slab. These were white-on-white until the redesign.
   primary: {
     track: '',
-    bar: 'bg-brand',
-    active: 'text-brand',
+    bar: 'bg-brand', // graphic: 3:1 is the floor, #1976D2 clears it
+    active: 'text-brand-ink', // text: #1976D2 is 3.736:1 on dark panel, so never text-brand
     idle: 'text-muted hover:text-ink',
     focus: 'focus-visible:outline-brand',
   },

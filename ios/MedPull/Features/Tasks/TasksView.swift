@@ -8,7 +8,7 @@ struct TasksView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Tasks").title(28).padding(.top, 8)
+                    Text("Tasks").title(MPSize.displayS).padding(.top, 8)
                     section("To do", app.tasks.open, empty: "Nothing waiting. New tasks arrive by text and land here.")
                     if !app.tasks.recent.isEmpty {
                         section("Recently done", app.tasks.recent, empty: "")
@@ -16,6 +16,10 @@ struct TasksView: View {
                 }
                 .padding(.horizontal, 18).padding(.bottom, 24)
             }
+            // The one scroll edge effect in this view: hard, so task rows stop
+            // at a definite line under the tab bar rather than fading under
+            // it. Passthrough below iOS 26.
+            .mpHardScrollEdge()
             .refreshable { await app.refreshTasks() }
             .screen()
             .toolbar(.hidden, for: .navigationBar)
@@ -43,7 +47,11 @@ struct TasksView: View {
     private func section(_ title: String, _ tasks: [RecoveryTask], empty: String) -> some View {
         Card(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(title).eyebrow().padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 6)
+                // This helper draws twice on the screen, so an eyebrow here
+                // would spend the one-uppercase budget twice. The screen
+                // title carries the orientation instead.
+                Text(title).font(.labelMedium).foregroundStyle(MP.muted)
+                    .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 6)
                 if tasks.isEmpty {
                     EmptyRow(icon: "checkmark.circle", title: "All caught up", detail: empty)
                 } else {
@@ -81,15 +89,17 @@ struct TaskDetailView: View {
                         Text(task.kindLabel).eyebrow()
                         if let schedule = task.scheduleLabel {
                             Text(schedule)
-                                .font(.mp(10.5, weight: .semibold))
-                                .foregroundStyle(MP.brand)
+                                .font(.labelMedium)
+                                // brandInk on brandTint is 4.96:1 light /
+                                // 5.62:1 dark; `brand` was 3.10:1 on the dark tint.
+                                .foregroundStyle(MP.brandInk)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Capsule().fill(MP.brandTint))
+                                .background(MP.pillShape.fill(MP.brandTint))
                         }
                     }
-                    Text(task.title).title(26)
+                    Text(task.title).title(MPSize.displayS)
                     if !task.why.isEmpty {
-                        Text(task.why).font(.mp(14.5)).foregroundStyle(MP.muted)
+                        Text(task.why).font(.copy).foregroundStyle(MP.muted)
                     }
                     if task.inSmsConversation {
                         ErrorBanner(text: "You started this one by text. Finishing it here is fine — the text thread will close.")
@@ -98,10 +108,10 @@ struct TaskDetailView: View {
                 if done {
                     Card(tint: true) {
                         HStack(spacing: 10) {
-                            Image(systemName: "checkmark.seal.fill").foregroundStyle(MP.riskLow).font(.mp(22))
+                            Image(systemName: "checkmark.seal.fill").foregroundStyle(MP.riskLow).font(.subhead)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Sent to your care team").font(.mp(15, weight: .semibold)).foregroundStyle(MP.ink)
-                                Text("They'll see it with their next review.").font(.mp(13)).foregroundStyle(MP.muted)
+                                Text("Sent to your care team").font(.copyLargeMedium).foregroundStyle(MP.ink)
+                                Text("They'll see it with their next review.").font(.copy).foregroundStyle(MP.muted)
                             }
                         }
                     }
@@ -110,20 +120,59 @@ struct TaskDetailView: View {
                         QuestionView(question: q, value: binding(for: q.id))
                     }
                     if let error { ErrorBanner(text: error) }
-                    PrimaryButton(title: task.kind == "checkin" ? "Send to my care team" : "Mark done",
-                                  loading: sending, disabled: task.kind == "checkin" && !answered) {
-                        submit()
-                    }
-                    Button("Skip this one") { skip() }
-                        .font(.mp(14, weight: .medium)).foregroundStyle(MP.muted)
-                        .frame(maxWidth: .infinity)
                 }
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 28)
         }
         .scrollDismissesKeyboard(.interactively)
+        .mpHardScrollEdge()
+        // THE ONE CUSTOM GLASS SURFACE IN THE APP, and why it is here: the
+        // `number` question opens a number pad, which has no return key, and
+        // the submit button used to sit at the end of the scroll — under the
+        // keyboard. A bottom bar rides above the keyboard and above the tab
+        // bar, so "Mark done" is always reachable. It is a safe-area bar, so
+        // the form is inset by its height and nothing is under it at rest.
+        // Hidden once the task is sent: the confirmation card is the screen.
+        .mpGlassActionBar(isPresented: !done) { actionBarContent }
         .screen()
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Plain buttons, monochrome ink — the bar forbids a token colour, a
+    /// filled brand button and a glass button inside it. BOTH LABELS ARE
+    /// `.primary`: system secondaryLabel measures 3.44:1 on the light panel
+    /// (the reduce-transparency ground), under the 4.5:1 text floor, so it is
+    /// not used for words here. Hierarchy is size, weight and the leading
+    /// glyph instead: 16/500 with a checkmark for the action, 14/400 for the
+    /// way out. 44pt rows for the touch target.
+    private var actionBarContent: some View {
+        HStack(spacing: 12) {
+            Button("Skip this one") { skip() }
+                .font(.copy)
+                .foregroundStyle(.primary)
+                .frame(minHeight: 44)
+                .padding(.horizontal, 6)
+                .contentShape(Rectangle())
+                .disabled(sending)
+            Spacer(minLength: 8)
+            Button { submit() } label: {
+                HStack(spacing: 6) {
+                    if sending {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "checkmark")
+                    }
+                    Text(task.kind == "checkin" ? "Send to my care team" : "Mark done")
+                }
+                .font(.copyLargeMedium)
+                .foregroundStyle(.primary)
+                .frame(minHeight: 44)
+                .padding(.horizontal, 6)
+                .contentShape(Rectangle())
+            }
+            .disabled(sending || (task.kind == "checkin" && !answered))
+        }
+        .buttonStyle(.plain)
     }
 
     private func binding(for id: String) -> Binding<AnswerValue?> {
@@ -167,7 +216,7 @@ struct QuestionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(question.prompt).font(.mp(15.5, weight: .semibold)).foregroundStyle(MP.ink)
+            Text(question.prompt).font(.copyLargeMedium).foregroundStyle(MP.ink)
             switch question.kind {
             case "scale":
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
@@ -178,13 +227,21 @@ struct QuestionView: View {
             case "yes_no", "choice":
                 FlowChips(options: question.options ?? ["yes", "no"], labels: Self.labels, value: $value)
             case "number":
-                TextField(question.id == "minutes" ? "Minutes" : "Number",
+                // `prompt:` rather than the title-as-placeholder form: the
+                // default placeholder is the system tertiary label, measured
+                // at 1.72:1 on the field, and a placeholder is text under
+                // WCAG 1.4.3. `muted` is the placeholder tier (5.39:1 on
+                // panel) — never `faint`. The title is kept for VoiceOver.
+                let label = question.id == "minutes" ? "Minutes" : "Number"
+                TextField(label,
                           text: Binding(get: { value?.intValue.map(String.init) ?? "" },
-                                        set: { value = Int($0).map(AnswerValue.int) }))
+                                        set: { value = Int($0).map(AnswerValue.int) }),
+                          prompt: Text(label).foregroundColor(MP.muted))
                     .textFieldStyle(FieldStyle()).keyboardType(.numberPad)
             default:
                 TextField("Optional", text: Binding(get: { value?.stringValue ?? "" },
                                                     set: { value = $0.isEmpty ? nil : .string($0) }),
+                          prompt: Text("Optional").foregroundColor(MP.muted),
                           axis: .vertical)
                     .lineLimit(3...6)
                     .textFieldStyle(FieldStyle())

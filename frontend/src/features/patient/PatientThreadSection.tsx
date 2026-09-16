@@ -66,15 +66,15 @@ export default function PatientThreadSection({
       <SectionCard
         title="Tasks"
         aside={
-          <span className="text-[11.5px] font-medium text-faint">
+          <span className="text-label font-medium text-muted">
             {open.length} open · {closed.length} done
           </span>
         }
       >
         {tasks.isLoading ? (
-          <p className="text-[13px] text-muted">Loading…</p>
+          <p className="text-copy text-muted">Loading…</p>
         ) : open.length + closed.length === 0 ? (
-          <p className="text-[13px] font-medium text-muted">
+          <p className="text-copy font-medium text-muted">
             Nothing assigned yet. Assign a task above and {firstName} gets a text with a link to do it
             in the app, on the web, or by replying.
           </p>
@@ -94,7 +94,7 @@ export default function PatientThreadSection({
             <button
               type="button"
               onClick={() => markRead.mutate()}
-              className="chip cursor-pointer bg-brand-tint text-brand"
+              className="chip cursor-pointer bg-brand-tint text-on-brand-tint"
             >
               {unread} new · mark read
             </button>
@@ -103,7 +103,7 @@ export default function PatientThreadSection({
       >
         <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
           {(messages.data?.messages ?? []).length === 0 && (
-            <p className="text-[13px] font-medium text-muted">
+            <p className="text-copy font-medium text-muted">
               No messages yet. Anything {firstName} writes in the app or texts back lands here.
             </p>
           )}
@@ -130,7 +130,7 @@ export default function PatientThreadSection({
               disabled={files.busy}
               onClick={files.open}
             >
-              <Paperclip size={14} className="text-brand" /> Attach
+              <Paperclip size={14} /> Attach
             </button>
             <button
               type="button"
@@ -138,7 +138,7 @@ export default function PatientThreadSection({
               disabled={(!draft.trim() && files.ids.length === 0) || send.isPending || files.busy}
               onClick={submit}
             >
-              <Send size={14} className="text-brand" /> Send
+              <Send size={14} /> Send
             </button>
           </div>
           <PendingAttachments items={files.pending} onRemove={files.remove} busy={files.busy} />
@@ -151,13 +151,13 @@ export default function PatientThreadSection({
 function TaskLine({ task }: { task: PatientTask }) {
   const Icon = task.status === 'done' ? CheckCircle2 : task.status === 'skipped' ? MinusCircle : Circle
   const tone =
-    task.status === 'done' ? 'text-risk-low' : task.status === 'skipped' ? 'text-faint' : 'text-brand'
+    task.status === 'done' ? 'text-risk-low-ink' : task.status === 'skipped' ? 'text-muted' : 'text-brand-ink'
   return (
     <li className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
       <Icon size={16} className={`mt-0.5 shrink-0 ${tone}`} />
       <div className="min-w-0 flex-1">
-        <p className="text-[13.5px] font-semibold text-ink">{task.title}</p>
-        <p className="text-[12px] font-medium text-muted">
+        <p className="text-copy font-medium text-ink">{task.title}</p>
+        <p className="text-label font-medium text-muted">
           {task.kind_label}
           {task.status === 'sent' && task.sent_at && <> · texted {relativeTime(task.sent_at)}</>}
           {task.status === 'pending' && <> · in the app only</>}
@@ -170,7 +170,7 @@ function TaskLine({ task }: { task: PatientTask }) {
           {task.status === 'skipped' && <> · skipped</>}
         </p>
         {task.answers && Object.keys(task.answers).length > 0 && (
-          <p className="mt-0.5 text-[12px] text-body">
+          <p className="mt-0.5 text-label text-body">
             {Object.entries(task.answers)
               .map(([k, v]) => `${k}: ${String(v)}`)
               .join(' · ')}
@@ -196,7 +196,7 @@ function MessageLine({ message, patientId }: { message: PatientMessage; patientI
   return (
     <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[85%] rounded-row px-3 py-2 text-[13px] ${
+        className={`max-w-[85%] rounded-surface px-3 py-2 text-copy ${
           message.sender === 'patient'
             ? 'border border-line bg-panel text-ink'
             : message.sender === 'copilot'
@@ -208,11 +208,11 @@ function MessageLine({ message, patientId }: { message: PatientMessage; patientI
           <p className="whitespace-pre-wrap">{message.text}</p>
         )}
         <ThreadAttachments patientId={patientId} items={message.attachments ?? []} />
-        <p className="mt-1 flex items-center gap-1 text-[10.5px] font-medium text-faint">
+        <p className="mt-1 flex items-center gap-1 text-label font-medium text-muted">
           {message.channel === 'sms' && <Smartphone size={10} />}
           {who} · {relativeTime(message.created_at)}
           {message.delivery_status === 'failed' && (
-            <span className="text-risk-med"> · {message.delivery_detail || 'text not delivered'}</span>
+            <span className="text-risk-med-ink"> · {message.delivery_detail || 'text not delivered'}</span>
           )}
         </p>
       </div>

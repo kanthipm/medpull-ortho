@@ -183,19 +183,19 @@ export default function TaskBuilderModal({
     <div className="flex flex-wrap items-center gap-3">
       <label
         title={textHint}
-        className={`inline-flex items-center gap-2 text-[12.5px] font-medium ${
-          canText ? 'cursor-pointer text-body' : 'cursor-not-allowed text-faint'
+        className={`inline-flex items-center gap-2 text-label font-medium ${
+          canText ? 'cursor-pointer text-body' : 'cursor-not-allowed text-disabled-ink'
         }`}
       >
         <input
           type="checkbox"
-          className="h-3.5 w-3.5 accent-[rgb(var(--brand))]"
+          className="h-3.5 w-3.5 accent-brand"
           checked={notify && canText}
           disabled={!canText}
           onChange={(e) => setNotify(e.target.checked)}
         />
         Text {first} the plan
-        {!canText && <span className="text-[11px] text-faint">· {textHint}</span>}
+        {!canText && <span className="text-label text-disabled-ink">· {textHint}</span>}
       </label>
       <button
         type="button"
@@ -216,7 +216,7 @@ export default function TaskBuilderModal({
       title={`Build ${first}'s care plan`}
       eyebrow={
         pathway?.name ? (
-          <span className="micro mb-0.5 block">Pathway · {pathway.name}</span>
+          <span className="mb-0.5 block text-label font-medium text-muted">Pathway · {pathway.name}</span>
         ) : undefined
       }
       onClose={onClose}
@@ -231,14 +231,14 @@ export default function TaskBuilderModal({
             onClick={sendCheckin}
             disabled={checkin.isPending}
             title={`Sends ${first} today's check-in now — in the app, and by text if they have a number`}
-            className="mb-2 flex w-full cursor-pointer items-center gap-2 rounded-row border border-brand/30 bg-brand-tint px-3 py-2.5 text-left transition-colors duration-150 hover:border-brand/50 disabled:opacity-60"
+            className="mb-2 flex w-full cursor-pointer items-center gap-2 rounded-surface bg-brand-tint px-3 py-2.5 text-left transition-colors duration-150 hover:bg-brand-tint-strong disabled:bg-disabled-fill"
           >
-            <Zap size={15} className={`shrink-0 text-brand ${checkin.isPending ? 'animate-pulse' : ''}`} />
+            <Zap size={15} className={`shrink-0 text-on-brand-tint ${checkin.isPending ? 'animate-pulse' : ''}`} />
             <span className="min-w-0 flex-1">
-              <span className="block text-[13.5px] font-semibold tracking-[-.01em] text-brand">
+              <span className="block text-copy font-medium text-on-brand-tint">
                 {checkin.isPending ? 'Sending…' : 'Send daily check-in'}
               </span>
-              <span className="block text-[11.5px] font-medium text-muted">
+              <span className="block text-label text-on-brand-tint">
                 Goes straight to {first} — no draft list, nothing else to confirm
               </span>
             </span>
@@ -250,17 +250,17 @@ export default function TaskBuilderModal({
                 type="button"
                 onClick={() => addTemplate(t)}
                 title={t.clinical_target || t.why}
-                className="chip cursor-pointer border border-line bg-panel text-body transition-colors duration-150 hover:border-brand/35 hover:bg-brand-tint hover:text-brand"
+                className="chip cursor-pointer border border-line-strong bg-panel text-body transition-colors duration-150 hover:border-brand hover:bg-brand-tint hover:text-on-brand-tint"
               >
                 <Plus size={10} /> {t.title}
               </button>
             ))}
-            {library.isLoading && <span className="text-[11.5px] text-faint">Loading the library…</span>}
+            {library.isLoading && <span className="text-label text-muted">Loading the library…</span>}
             {library.isError && (
-              <span className="text-[11.5px] text-faint">The library is not available yet.</span>
+              <span className="text-label text-muted">The library is not available yet.</span>
             )}
             {!library.isLoading && !library.isError && pinned.length === 0 && (
-              <span className="text-[11.5px] text-faint">Pin templates in the library to see them here.</span>
+              <span className="text-label text-muted">Pin templates in the library to see them here.</span>
             )}
             <button
               type="button"
@@ -268,7 +268,7 @@ export default function TaskBuilderModal({
               disabled={suggest.isPending}
               className="qa-btn ml-auto"
             >
-              <Sparkles size={13} className={`text-brand ${suggest.isPending ? 'animate-spin' : ''}`} />
+              <Sparkles size={13} className={suggest.isPending ? 'animate-spin' : undefined} />
               {suggest.isPending ? 'Thinking…' : `Suggest for ${first}`}
             </button>
           </div>
@@ -292,7 +292,7 @@ export default function TaskBuilderModal({
             }}
           />
           <div className="mt-2 flex items-center justify-between gap-3">
-            <p className="text-[11px] font-medium text-faint">
+            <p className="text-label font-medium text-muted">
               Drafts are editable — nothing is assigned until you confirm.
             </p>
             <button
@@ -301,7 +301,7 @@ export default function TaskBuilderModal({
               disabled={!describe.trim() || build.isPending}
               onClick={runBuild}
             >
-              <Wand2 size={13} className="text-brand" />
+              <Wand2 size={13} />
               {build.isPending ? 'Building…' : 'Build with AI'}
             </button>
           </div>
@@ -312,7 +312,7 @@ export default function TaskBuilderModal({
           <p className="zone-label mb-2">Library</p>
           <div className="flex flex-wrap items-center gap-2">
             <label className="relative min-w-[180px] flex-1">
-              <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+              <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 className="field pl-8"
                 placeholder="Search tasks"
@@ -330,9 +330,9 @@ export default function TaskBuilderModal({
             />
           </div>
 
-          <div className="mt-2.5 max-h-72 space-y-3 overflow-y-auto rounded-row border border-line p-2.5">
+          <div className="mt-2.5 max-h-72 space-y-3 overflow-y-auto rounded-surface border border-line p-2.5">
             {groups.length === 0 && elsewhere.length === 0 && (
-              <p className="px-1 py-2 text-[12px] font-medium text-faint">
+              <p className="px-1 py-2 text-label font-medium text-muted">
                 {library.isLoading
                   ? 'Loading…'
                   : library.isError
@@ -342,7 +342,7 @@ export default function TaskBuilderModal({
             )}
             {groups.map((g) => (
               <div key={g.key}>
-                <p className="micro mb-1 px-1">{g.label}</p>
+                <p className="mb-1 px-1 text-label font-medium text-muted">{g.label}</p>
                 <ul className="divide-y divide-line">
                   {g.items.map((t) => (
                     <LibraryRow
@@ -378,18 +378,18 @@ export default function TaskBuilderModal({
           <div className="mb-2 flex items-baseline justify-between gap-3">
             <p className="zone-label flex-1">
               Draft list
-              <span className="font-mono normal-case tracking-normal">{drafts.length}</span>
+              <span className="font-mono">{drafts.length}</span>
             </p>
             <button
               type="button"
-              className="cursor-pointer rounded-btn px-2 py-1 text-[12px] font-medium text-brand transition-colors duration-150 hover:bg-brand-tint"
+              className="cursor-pointer rounded-control px-2 py-1 text-label font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint"
               onClick={() => append([blankDraft(kinds)])}
             >
               + Custom task
             </button>
           </div>
           {drafts.length === 0 ? (
-            <p className="rounded-row border border-dashed border-line px-3 py-4 text-center text-[12.5px] font-medium text-faint">
+            <p className="rounded-surface border border-dashed border-line px-3 py-4 text-center text-label font-medium text-muted">
               Nothing drafted yet — pick a quick pick, describe the plan, or add from the library.
             </p>
           ) : (
@@ -447,13 +447,13 @@ function LibraryRow({
         type="button"
         onClick={onAdd}
         title={t.clinical_target || t.why}
-        className="group min-w-0 flex-1 cursor-pointer rounded-btn px-1.5 py-1 text-left transition-colors duration-150 hover:bg-soft"
+        className="group min-w-0 flex-1 cursor-pointer rounded-control px-1.5 py-1 text-left transition-colors duration-150 hover:bg-soft"
       >
         <span className="flex items-center gap-1.5">
-          <Plus size={12} className="shrink-0 text-faint transition-colors group-hover:text-brand" />
-          <span className="truncate text-[13px] font-medium text-ink">{t.title}</span>
+          <Plus size={12} className="shrink-0 text-muted transition-colors duration-150 group-hover:text-brand-ink" />
+          <span className="truncate text-copy font-medium text-ink">{t.title}</span>
         </span>
-        <span className="mt-0.5 block truncate pl-[18px] text-[11px] font-medium text-faint">
+        <span className="mt-0.5 block truncate pl-[18px] text-label font-medium text-muted">
           {showUseCase && <>{ucLabel(t.use_case)} · </>}
           {phaseLabel(t.phase)} · {t.verified_by || 'self-report'}
           {t.clinical_target && <> · {t.clinical_target}</>}
@@ -465,8 +465,8 @@ function LibraryRow({
         aria-pressed={t.pinned}
         aria-label={t.pinned ? 'Unpin' : 'Pin as quick pick'}
         title={t.pinned ? 'Unpin from quick picks' : 'Pin as a quick pick'}
-        className={`grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-btn transition-colors duration-150 hover:bg-soft ${
-          t.pinned ? 'text-brand' : 'text-faint hover:text-ink'
+        className={`grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-control transition-colors duration-150 hover:bg-soft ${
+          t.pinned ? 'text-brand-ink' : 'text-muted hover:text-ink'
         }`}
       >
         <Star size={13} fill={t.pinned ? 'currentColor' : 'none'} />

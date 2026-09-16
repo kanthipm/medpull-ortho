@@ -16,16 +16,40 @@ import type { ChartPoint, ChartSpec, GaugeExtra } from '../../../api/care'
 import { fmtNum } from './labels'
 
 /** Every `ChartSpec.kind` the care engine emits, drawn in the app's chart
- *  idiom: one brand series, quiet gray bands and references, a warm marker
- *  for change-points, status carried by the card's chip rather than the line.
- *  `CareChart` is the h-28 card variant; `MiniChart` the 44px tile variant
- *  (no axes, no tooltip — the tile is a button). */
+ *  idiom: quiet grid and references, a warm marker for change-points, status
+ *  carried by the card's chip rather than the line. `CareChart` is the h-28
+ *  card variant; `MiniChart` the 44px tile variant (no axes, no tooltip — the
+ *  tile is a button).
+ *
+ *  COLOUR, all of it on the chart tokens now. The five strings this file used
+ *  to hold were the brand FILL token (never a chart stroke), the old cyan
+ *  chart stroke, the border token, the faint non-text tier and the bare risk
+ *  alias — three of them aliases that die in the Cleanup phase. Recomputed on
+ *  --panel, light / dark:
+ *
+ *    S1     --chart-s1          #1976D2 / #63A4FF   4.602 / 6.783
+ *    S2     --chart-s2          #00707D / #5DDEF4   5.811 / 10.825
+ *    AXIS   --chart-axis-label  #626B78 / #7F8A98   5.393 / 4.906
+ *    REF    --chart-ref-line    #626B78 / #6B7480   5.393 / 3.631
+ *    GRID   --chart-grid        #E0E5EC / #2A333D   1.266 / 1.342
+ *    MARKER --risk-med-ink      #9A5300 / #FFB25C   5.815 / 9.641
+ *
+ *  CATEGORICAL IS CAPPED AT TWO, and S1/S2 are 1.263:1 apart in light and
+ *  1.596:1 in dark — so on the `dual` kind the second series carries a 4-2 dash
+ *  and a direct end-of-line label, and those are the accessibility mechanism
+ *  rather than the hue. Anything with three or more levels (the `heat` grid)
+ *  uses the single-hue sequential ramp instead of inventing a third category.
+ *
+ *  Every mark is a solid token: the `fillOpacity` washes this file used to put
+ *  on bars, scatter points and the band are gone, because a wash's real ratio
+ *  depends on whatever ground happens to show through it. */
 
-const BRAND = 'rgb(var(--brand))'
-const CYAN = 'rgb(var(--brand-cyan))'
-const LINE = 'rgb(var(--line))'
-const FAINT = 'rgb(var(--faint))'
-const MED = 'rgb(var(--risk-med))'
+const S1 = 'rgb(var(--chart-s1))'
+const S2 = 'rgb(var(--chart-s2))'
+const GRID = 'rgb(var(--chart-grid))'
+const AXIS = 'rgb(var(--chart-axis-label))'
+const REF = 'rgb(var(--chart-ref-line))'
+const MARKER = 'rgb(var(--risk-med-ink))'
 const PANEL = 'rgb(var(--panel))'
 
 type Row = {
@@ -98,20 +122,35 @@ function ChartTip({
   const y2 = row.y2 ?? null
   const fit = 'fit' in row ? row.fit : null
   return (
-    <div className="rounded-btn border border-line bg-panel px-2.5 py-1.5 text-xs shadow-lift">
-      <div className="text-[11px] font-medium text-faint">{xText(spec, row.x, row.label)}</div>
+    // A tooltip IS a floating overlay, so it is one of the three surfaces the
+    // ambient shadow is allowed on and `.overlay` carries it — along with
+    // dark's own hairline and the forced-colors border. The retired
+    // lift-shadow alias and the hairline border that double-drew the
+    // edge beside it are both gone. 11px is axis labels only, so every line
+    // here is on the 12px rung, and the x label moves off --faint (2.585:1,
+    // non-text only) onto --muted (5.393:1).
+    // The `border-overlay-border` is the ONE separation: light
+    // --overlay-panel is #FFFFFF, the same as light --panel, so the fill
+    // gives 1.000:1 and --shadow-overlay is a soft wash offset downward,
+    // not an edge. See Sparkline.tsx for the full note and the exit
+    // condition. In dark, `.dark .overlay` already sets this, so it is
+    // a no-op there.
+    <div className="overlay border border-overlay-border px-2.5 py-1.5">
+      <div className="text-label font-medium text-muted">{xText(spec, row.x, row.label)}</div>
       {y != null && (
-        <div className="font-mono font-medium tabular-nums text-ink">
+        <div className="font-mono text-label font-medium tabular-nums text-ink">
           {fmtNum(y)} {spec.y_label}
         </div>
       )}
       {y2 != null && (
-        <div className="font-mono font-medium tabular-nums text-muted">
+        <div className="font-mono text-label font-medium tabular-nums text-muted">
           {fmtNum(y2)} {spec.y2_label}
         </div>
       )}
       {y == null && fit != null && (
-        <div className="font-mono font-medium tabular-nums text-muted">fit {fmtNum(fit)}</div>
+        <div className="font-mono text-label font-medium tabular-nums text-muted">
+          fit {fmtNum(fit)}
+        </div>
       )}
     </div>
   )
@@ -127,7 +166,7 @@ function lastDot(count: number) {
         cy={props.cy}
         r={3}
         fill={PANEL}
-        stroke={BRAND}
+        stroke={S1}
         strokeWidth={2}
       />
     ) : (
@@ -136,10 +175,53 @@ function lastDot(count: number) {
   }
 }
 
+/** Direct end-of-line label for the SECOND series of a `dual` chart. S1 and S2
+ *  are 1.263:1 apart in light, so the reader cannot be asked to tell them apart
+ *  by hue — the 4-2 dash and this label are what do it.
+ *
+ *  Drawn through the `dot` renderer rather than as a right-hand axis label, so
+ *  it costs the h-28 plot no horizontal room and cannot be clipped by the SVG
+ *  viewport: it sits 6px above the last point, anchored back along the line,
+ *  with a 3px --panel outline under it (paint-order) so it stays legible where
+ *  it crosses the primary line's tail. */
+function endLabel(text: string, fill: string, atIndex: number) {
+  return function EndLabel(props: { index?: number; cx?: number; cy?: number }) {
+    if (props.index !== atIndex || props.cx == null || props.cy == null || !text) {
+      return <g key={props.index} />
+    }
+    return (
+      <text
+        key="end-label"
+        x={props.cx - 4}
+        y={props.cy - 6}
+        textAnchor="end"
+        fontSize={12}
+        fontWeight={500}
+        fill={fill}
+        stroke={PANEL}
+        strokeWidth={3}
+        paintOrder="stroke"
+      >
+        {text}
+      </text>
+    )
+  }
+}
+
+/** Gauge bands. These were 45% alpha washes over the track, which put the real
+ *  ratio at the mercy of whatever showed through; they are solid risk `-ink`
+ *  tokens now (5.369 / 5.815 / 5.622:1 on light panel, 9.035 / 9.641 / 7.563
+ *  dark). The `-tint` pair cannot be used here: the three light tints are
+ *  within 1.03:1 of each other and three adjacent bands would be one bar.
+ *
+ *  Even at full strength low and med are only 1.084:1 apart in luminance, so a
+ *  band boundary is NOT left to colour — each segment after the first draws a
+ *  1px --panel divider (5.4-9.6:1 against every band), and the numeric scale
+ *  under the bar names each edge. */
 const GAUGE_TONE = {
-  low: 'bg-risk-low/45',
-  med: 'bg-risk-med/45',
-  high: 'bg-risk-high/45',
+  low: 'bg-risk-low-ink',
+  med: 'bg-risk-med-ink',
+  high: 'bg-risk-high-ink',
 } as const
 
 function readGauge(spec: ChartSpec): GaugeExtra | null {
@@ -169,17 +251,27 @@ function Gauge({ spec, thin }: { spec: ChartSpec; thin: boolean }) {
         role="img"
         aria-label={`${fmtNum(g.value)} of ${fmtNum(g.max)}`}
       >
-        {segments.map((s) => (
-          <span key={s.key} className={`h-full ${s.tone}`} style={{ width: `${s.w}%` }} />
+        {segments.map((s, i) => (
+          <span
+            key={s.key}
+            className={`h-full box-border ${i === 0 ? '' : 'border-l border-panel'} ${s.tone}`}
+            style={{ width: `${s.w}%` }}
+          />
         ))}
+        {/* The value marker has to read on a green, an amber, a red band AND on
+            the bare track, so it is a --panel core (5.4-9.6:1 on every band)
+            inside an --ink hairline (18.377:1 light / 17.194:1 dark on that
+            core) rather than a flat --ink bar, which was 1.5:1 on the red. */}
         <span
           aria-hidden
-          className="absolute inset-y-0 w-[2px] -translate-x-1/2 rounded-full bg-ink"
+          className="absolute inset-y-0 w-[3px] -translate-x-1/2 rounded-full bg-panel outline outline-1 outline-ink"
           style={{ left: `${pct}%` }}
         />
       </div>
+      {/* The gauge's own axis: the 11px chart-axis rung (was 10px, under the
+          floor) on --chart-axis-label (5.393:1, was --faint at 2.585:1). */}
       {!thin && (
-        <div className="mt-1.5 flex justify-between font-mono text-[10px] font-medium tabular-nums text-faint">
+        <div className="mt-1.5 flex justify-between font-mono text-micro font-medium tabular-nums text-chart-axis-label">
           <span>{fmtNum(g.min)}</span>
           {g.bands.slice(0, -1).map((b, i) => (
             <span key={i}>{fmtNum(b.to)}</span>
@@ -191,11 +283,26 @@ function Gauge({ spec, thin }: { spec: ChartSpec; thin: boolean }) {
   )
 }
 
+/** Adherence has THREE levels plus "not scheduled", which is more than the
+ *  two-series categorical cap, so it takes the single-hue sequential ramp
+ *  rather than a third hue. `bg-brand/35` was a 35% wash of a FILL token — an
+ *  invented step whose ratio depended on the ground; --chart-seq-3 is the
+ *  declared step. On --panel, light / dark: seq-5 8.631 / 14.087, seq-3
+ *  3.343 / 5.144, and 2.582 / 2.739 between the two. The "missed" ring moves
+ *  from --line (1.553:1, a border token) to --line-strong (3.834 / 5.671),
+ *  which is the 1.4.11 boundary tier. Every cell also carries the state as a
+ *  word in its `title`, so none of this is colour alone.
+ *
+ *  The ring is `border-2`, not `border`. Measured off a screenshot: a 1px ring
+ *  on an 8px circle antialiases so hard that its strongest pixel came back
+ *  #8F97A2 = 2.951:1 on light panel, i.e. the declared 3.834 never reaches the
+ *  screen and the ring lands under the 1.4.11 floor anyway. At 2px the token
+ *  value survives the rasteriser. */
 function heatDot(v: number | null | undefined, size: string): string {
   if (v == null) return `${size} rounded-full bg-transparent`
-  if (v >= 1) return `${size} rounded-full bg-brand`
-  if (v >= 0.5) return `${size} rounded-full bg-brand/35`
-  return `${size} rounded-full border border-line bg-transparent`
+  if (v >= 1) return `${size} rounded-full bg-chart-seq-5`
+  if (v >= 0.5) return `${size} rounded-full bg-chart-seq-3`
+  return `${size} rounded-full border-2 border-line-strong bg-transparent`
 }
 
 function heatGrid(spec: ChartSpec) {
@@ -221,14 +328,14 @@ function Heat({ spec }: { spec: ChartSpec }) {
     <div className="space-y-1.5">
       <div className="grid grid-cols-[minmax(0,7rem)_1fr] items-center gap-x-2">
         <span />
-        <div className="flex justify-between font-mono text-[10px] font-medium tabular-nums text-faint">
+        <div className="flex justify-between font-mono text-micro font-medium tabular-nums text-chart-axis-label">
           <span>{xTick(spec, days[0])}</span>
           <span>{xTick(spec, days[days.length - 1])}</span>
         </div>
       </div>
       {rows.map((r) => (
         <div key={r} className="grid grid-cols-[minmax(0,7rem)_1fr] items-center gap-x-2">
-          <span className="truncate text-[11px] font-medium text-muted" title={r}>
+          <span className="truncate text-label font-medium text-muted" title={r}>
             {r}
           </span>
           <div className="grid" style={colStyle}>
@@ -246,15 +353,18 @@ function Heat({ spec }: { spec: ChartSpec }) {
           </div>
         </div>
       ))}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5 text-[10.5px] font-medium text-faint">
+      {/* Legend swatches track heatDot exactly. 10.5px on --faint (2.279:1) was
+          a half-pixel size below the floor on the non-text tier; this is the
+          12px rung on --muted (5.393:1). */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5 text-label font-medium text-muted">
         <span className="inline-flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-brand" /> verified
+          <span className="h-1.5 w-1.5 rounded-full bg-chart-seq-5" /> verified
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-brand/35" /> self-attested
+          <span className="h-1.5 w-1.5 rounded-full bg-chart-seq-3" /> self-attested
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full border border-line" /> missed
+          <span className="h-1.5 w-1.5 rounded-full border-2 border-line-strong" /> missed
         </span>
       </div>
     </div>
@@ -288,7 +398,8 @@ function HeatStrip({ spec }: { spec: ChartSpec }) {
 function Empty({ thin }: { thin: boolean }) {
   return (
     <div
-      className={`grid place-items-center rounded-none border border-line bg-soft ${thin ? 'h-11' : 'h-28'}`}
+      // A fill OR a hairline, never both: an empty slot is a quiet fill.
+      className={`grid place-items-center rounded-surface bg-soft ${thin ? 'h-11' : 'h-28'}`}
     >
       {!thin && <span className="micro">No chart data</span>}
     </div>
@@ -313,18 +424,18 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
     spec.marker_x != null ? (
       <ReferenceLine
         x={spec.marker_x}
-        stroke={MED}
+        stroke={MARKER}
         strokeDasharray="4 3"
-        label={{ value: 'Change', position: 'top', fontSize: 10, fontWeight: 500, fill: MED }}
+        label={{ value: 'Change', position: 'top', fontSize: 11, fontWeight: 500, fill: MARKER }}
       />
     ) : null
   const reference =
     spec.reference != null ? (
-      <ReferenceLine y={spec.reference} stroke={FAINT} strokeDasharray="3 3" />
+      <ReferenceLine y={spec.reference} stroke={REF} strokeDasharray="3 3" />
     ) : null
   const tooltip = (
     <Tooltip
-      cursor={{ stroke: LINE, strokeWidth: 1 }}
+      cursor={{ stroke: GRID, strokeWidth: 1 }}
       content={(props) => <ChartTip spec={spec} {...(props as object)} />}
     />
   )
@@ -341,13 +452,19 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
               type="category"
               tickLine={false}
               axisLine={false}
-              tick={{ fontSize: 10.5, fill: FAINT }}
+              tick={{ fontSize: 11, fill: AXIS }}
               tickFormatter={(v: string | number) => (hasLabel ? String(v) : xTick(spec, v))}
               interval={hasLabel ? 0 : 'preserveStartEnd'}
             />
             <YAxis hide />
             {reference}
-            <Bar dataKey="y" fill={BRAND} fillOpacity={0.85} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+            <Bar
+              dataKey="y"
+              fill={S1}
+              radius={[3, 3, 0, 0]}
+              maxBarSize={28}
+              isAnimationActive={false}
+            />
             {!hasLabel && marker}
             {tooltip}
           </ComposedChart>
@@ -367,7 +484,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
               domain={['dataMin', 'dataMax']}
               tickLine={false}
               axisLine={false}
-              tick={{ fontSize: 10.5, fill: FAINT }}
+              tick={{ fontSize: 11, fill: AXIS }}
               tickFormatter={(v: number) => xTick(spec, v)}
               interval="preserveStartEnd"
             />
@@ -378,7 +495,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
               <Line
                 data={spec.fit}
                 dataKey="y"
-                stroke={FAINT}
+                stroke={REF}
                 strokeWidth={1.2}
                 strokeDasharray="4 3"
                 dot={false}
@@ -386,16 +503,10 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
                 tooltipType="none"
               />
             )}
-            <Scatter
-              data={spec.series}
-              dataKey="y"
-              fill={BRAND}
-              fillOpacity={0.7}
-              isAnimationActive={false}
-            />
+            <Scatter data={spec.series} dataKey="y" fill={S1} isAnimationActive={false} />
             {marker}
             <Tooltip
-              cursor={{ stroke: LINE, strokeWidth: 1, strokeDasharray: '3 3' }}
+              cursor={{ stroke: GRID, strokeWidth: 1, strokeDasharray: '3 3' }}
               content={(props) => <ChartTip spec={spec} {...(props as object)} />}
             />
           </ComposedChart>
@@ -408,16 +519,31 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
   const numericX = rows.every((r) => typeof r.x === 'number')
   const dual = spec.kind === 'dual'
   const count = rows.length
+  // The end label goes on the last row that HAS a y2: `connectNulls` draws
+  // across gaps but the dot renderer is not called for a null point.
+  const lastY2 = rows.reduce((last, r, i) => (r.y2 != null ? i : last), -1)
+  const y2Label = spec.y2_label || 'Secondary'
 
   return (
     <div>
       {dual && (
-        <div className="mb-1.5 flex items-center gap-4 text-[11px] font-medium text-muted">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-0.5 w-4 rounded bg-brand" /> {spec.y_label || 'Primary'}
+        // Two series is the cap. The swatches say what is actually drawn — a
+        // solid rule for S1, a 4-2 dashed one for S2 — because the two colours
+        // are 1.263:1 apart in light and a pair of identical bars in two
+        // near-identical blues would be the legend lying about the plot.
+        <div className="mb-1.5 flex items-center gap-4 text-label font-medium text-muted">
+          <span className="inline-flex items-center gap-el">
+            <span aria-hidden className="h-0.5 w-4 bg-chart-s1" /> {spec.y_label || 'Primary'}
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-0.5 w-4 rounded bg-brand-cyan" /> {spec.y2_label || 'Secondary'}
+          <span className="inline-flex items-center gap-el">
+            <span
+              aria-hidden
+              className="h-0.5 w-4"
+              style={{
+                backgroundImage: `repeating-linear-gradient(to right, ${S2} 0 4px, transparent 4px 6px)`,
+              }}
+            />{' '}
+            {y2Label}
           </span>
         </div>
       )}
@@ -426,8 +552,8 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
           <ComposedChart data={rows} margin={margin}>
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor={BRAND} stopOpacity=".18" />
-                <stop offset="1" stopColor={BRAND} stopOpacity="0" />
+                <stop offset="0" stopColor={S1} stopOpacity=".18" />
+                <stop offset="1" stopColor={S1} stopOpacity="0" />
               </linearGradient>
             </defs>
             <XAxis
@@ -436,7 +562,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
               domain={numericX ? ['dataMin', 'dataMax'] : undefined}
               tickLine={false}
               axisLine={false}
-              tick={{ fontSize: 10.5, fill: FAINT }}
+              tick={{ fontSize: 11, fill: AXIS }}
               tickFormatter={(v: number | string) => xTick(spec, v)}
               interval="preserveStartEnd"
             />
@@ -447,8 +573,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
                 yAxisId="left"
                 dataKey="band"
                 stroke="none"
-                fill={LINE}
-                fillOpacity={0.85}
+                fill={GRID}
                 isAnimationActive={false}
                 connectNulls
                 tooltipType="none"
@@ -466,13 +591,13 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
               />
             )}
             {spec.reference != null && (
-              <ReferenceLine yAxisId="left" y={spec.reference} stroke={FAINT} strokeDasharray="3 3" />
+              <ReferenceLine yAxisId="left" y={spec.reference} stroke={REF} strokeDasharray="3 3" />
             )}
             {spec.fit && spec.fit.length > 0 && (
               <Line
                 yAxisId="left"
                 dataKey="fit"
-                stroke={FAINT}
+                stroke={REF}
                 strokeWidth={1.2}
                 strokeDasharray="4 3"
                 dot={false}
@@ -484,7 +609,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
             <Line
               yAxisId="left"
               dataKey="y"
-              stroke={BRAND}
+              stroke={S1}
               strokeWidth={2}
               dot={lastDot(count)}
               isAnimationActive={false}
@@ -494,9 +619,10 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
               <Line
                 yAxisId="right"
                 dataKey="y2"
-                stroke={CYAN}
+                stroke={S2}
                 strokeWidth={1.6}
-                dot={false}
+                strokeDasharray="4 2"
+                dot={endLabel(y2Label, S2, lastY2)}
                 isAnimationActive={false}
                 connectNulls
               />
@@ -505,9 +631,15 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
               <ReferenceLine
                 yAxisId="left"
                 x={spec.marker_x}
-                stroke={MED}
+                stroke={MARKER}
                 strokeDasharray="4 3"
-                label={{ value: 'Change', position: 'top', fontSize: 10, fontWeight: 500, fill: MED }}
+                label={{
+                  value: 'Change',
+                  position: 'top',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  fill: MARKER,
+                }}
               />
             )}
             {tooltip}
@@ -540,9 +672,15 @@ export function MiniChart({ spec }: { spec: ChartSpec | null }) {
             <XAxis dataKey={hasLabel ? 'label' : 'x'} type="category" hide />
             <YAxis hide />
             {spec.reference != null && (
-              <ReferenceLine y={spec.reference} stroke={LINE} strokeDasharray="3 3" />
+              <ReferenceLine y={spec.reference} stroke={REF} strokeDasharray="3 3" />
             )}
-            <Bar dataKey="y" fill={BRAND} fillOpacity={0.8} radius={[2, 2, 0, 0]} maxBarSize={12} isAnimationActive={false} />
+            <Bar
+              dataKey="y"
+              fill={S1}
+              radius={[2, 2, 0, 0]}
+              maxBarSize={12}
+              isAnimationActive={false}
+            />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -558,9 +696,16 @@ export function MiniChart({ spec }: { spec: ChartSpec | null }) {
             <YAxis dataKey="y" hide />
             <ZAxis range={[14, 14]} />
             {spec.fit && spec.fit.length > 0 && (
-              <Line data={spec.fit} dataKey="y" stroke={BRAND} strokeWidth={1.8} dot={false} isAnimationActive={false} />
+              <Line
+                data={spec.fit}
+                dataKey="y"
+                stroke={S1}
+                strokeWidth={1.8}
+                dot={false}
+                isAnimationActive={false}
+              />
             )}
-            <Scatter data={spec.series} dataKey="y" fill={BRAND} fillOpacity={0.45} isAnimationActive={false} />
+            <Scatter data={spec.series} dataKey="y" fill={S1} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -575,8 +720,8 @@ export function MiniChart({ spec }: { spec: ChartSpec | null }) {
         <ComposedChart data={rows} margin={margin}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor={BRAND} stopOpacity=".22" />
-              <stop offset="1" stopColor={BRAND} stopOpacity="0" />
+              <stop offset="0" stopColor={S1} stopOpacity=".22" />
+              <stop offset="1" stopColor={S1} stopOpacity="0" />
             </linearGradient>
           </defs>
           <XAxis
@@ -587,20 +732,20 @@ export function MiniChart({ spec }: { spec: ChartSpec | null }) {
           />
           <YAxis hide domain={['auto', 'auto']} />
           {spec.kind === 'band' && (
-            <Area dataKey="band" stroke="none" fill={LINE} fillOpacity={0.7} isAnimationActive={false} connectNulls />
+            <Area dataKey="band" stroke="none" fill={GRID} isAnimationActive={false} connectNulls />
           )}
           {spec.kind !== 'band' && (
             <Area dataKey="y" stroke="none" fill={`url(#${gradientId})`} isAnimationActive={false} connectNulls />
           )}
           {spec.reference != null && (
-            <ReferenceLine y={spec.reference} stroke={LINE} strokeDasharray="3 3" />
+            <ReferenceLine y={spec.reference} stroke={REF} strokeDasharray="3 3" />
           )}
           {spec.marker_x != null && (
-            <ReferenceLine x={spec.marker_x} stroke={MED} strokeDasharray="3 3" />
+            <ReferenceLine x={spec.marker_x} stroke={MARKER} strokeDasharray="3 3" />
           )}
           <Line
             dataKey="y"
-            stroke={BRAND}
+            stroke={S1}
             strokeWidth={2}
             dot={lastDot(rows.length)}
             isAnimationActive={false}

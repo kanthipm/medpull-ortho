@@ -115,7 +115,7 @@ export default function TasksSection({
 
   const assignButton = (
     <button type="button" className="qa-btn" onClick={() => setBuilder({})}>
-      <ClipboardList size={13} className="text-brand" /> Assign tasks
+      <ClipboardList size={13} /> Assign tasks
     </button>
   )
 
@@ -134,7 +134,7 @@ export default function TasksSection({
           <label className="relative min-w-[220px] flex-1">
             <Wand2
               size={13}
-              className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-brand ${build.isPending ? 'animate-pulse' : ''}`}
+              className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-brand-ink ${build.isPending ? 'animate-pulse' : ''}`}
             />
             <input
               className={`field pl-8 ${build.isPending ? 'shimmer text-transparent' : ''}`}
@@ -151,7 +151,7 @@ export default function TasksSection({
             disabled={!prompt.trim() || build.isPending}
             title="Turn this sentence into tasks you can review and assign"
           >
-            <Wand2 size={13} className="text-brand" />
+            <Wand2 size={13} />
             {build.isPending ? 'Building…' : 'Build with AI'}
           </button>
         </form>
@@ -165,15 +165,15 @@ export default function TasksSection({
         )}
 
         {plan.isError && (
-          <p className="text-[12.5px] font-medium text-muted">
+          <p className="text-label font-medium text-muted">
             The care plan is not available for this patient yet.
           </p>
         )}
 
         {plan.data && tasks.length === 0 && (
-          <div className="rounded-row border border-dashed border-line px-4 py-6 text-center">
-            <p className="text-[13.5px] font-semibold tracking-[-.01em] text-ink">No care plan yet.</p>
-            <p className="mt-1 text-[12.5px] font-medium text-faint">
+          <div className="rounded-surface border border-dashed border-line px-4 py-6 text-center">
+            <p className="text-copy font-medium text-ink">No care plan yet.</p>
+            <p className="mt-1 text-label font-medium text-muted">
               Let the builder pick a starting set for {first}'s pathway, or assign tasks by hand.
             </p>
             <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
@@ -183,7 +183,7 @@ export default function TasksSection({
                 disabled={suggest.isPending}
                 onClick={runSuggest}
               >
-                <Sparkles size={13} className={`text-brand ${suggest.isPending ? 'animate-spin' : ''}`} />
+                <Sparkles size={13} className={suggest.isPending ? 'animate-spin' : undefined} />
                 {suggest.isPending ? 'Thinking…' : 'Suggest a plan'}
               </button>
             </div>
@@ -230,7 +230,7 @@ export default function TasksSection({
             {ended.length > 0 && (
               <div className="mt-2 border-t border-line">
                 <Disclosure label="Ended tasks" hint={`${ended.length}`}>
-                  <ul className="divide-y divide-line opacity-70">
+                  <ul className="divide-y divide-line">
                     {ended.map((t) => (
                       <TaskRow key={t.id} t={t} verifiedBy={verifiedByLabel(kinds, t)} />
                     ))}
@@ -239,8 +239,8 @@ export default function TasksSection({
               </div>
             )}
 
-            <p className="mt-2.5 border-t border-line pt-2 text-[11px] font-medium leading-[1.5] text-faint">
-              Solid dots are days confirmed by device data; faded dots are the patient's own report;
+            <p className="mt-2.5 border-t border-line pt-2 text-label font-medium text-muted">
+              Blue dots are days confirmed by device data; grey dots are the patient's own report;
               rings are missed days. The patient sees task titles and reasons only — never these
               numbers.
             </p>
@@ -284,8 +284,8 @@ function TaskRow({
     <li className="py-3 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[13.5px] font-semibold tracking-[-.01em] text-ink">{t.title}</p>
-          {t.why && <p className="mt-0.5 text-[12.5px] font-medium leading-snug text-muted">{t.why}</p>}
+          <p className="text-copy font-medium text-ink">{t.title}</p>
+          {t.why && <p className="mt-0.5 text-label font-medium text-muted">{t.why}</p>}
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <span className="chip bg-soft text-muted">{verifiedBy}</span>
             <span className="chip bg-soft text-muted">{scheduleLabel(taskSchedule(t))}</span>
@@ -307,7 +307,7 @@ function TaskRow({
               />
             ))}
           </div>
-          <span className="w-10 text-right font-mono text-[15px] font-medium tabular-nums tracking-tight text-ink">
+          <span className="w-10 text-right font-mono text-copy-lg font-medium tabular-nums text-ink">
             {rate == null ? '—' : `${Math.round(rate * 100)}%`}
           </span>
         </div>
@@ -317,7 +317,7 @@ function TaskRow({
           {onDone && (
             <button
               type="button"
-              className="cursor-pointer rounded-btn px-2 py-1 text-[11.5px] font-medium text-brand transition-colors duration-150 hover:bg-brand-tint disabled:opacity-50"
+              className="cursor-pointer rounded-control px-2 py-1 text-label font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint disabled:text-disabled-ink"
               disabled={busy}
               onClick={onDone}
               title="Records that the patient did this today (counts as self-reported, not device-verified)"
@@ -328,7 +328,7 @@ function TaskRow({
           {onEnd && (
             <button
               type="button"
-              className="cursor-pointer rounded-btn px-2 py-1 text-[11.5px] font-medium text-muted transition-colors duration-150 hover:bg-soft hover:text-ink disabled:opacity-50"
+              className="cursor-pointer rounded-control px-2 py-1 text-label font-medium text-muted transition-colors duration-150 hover:bg-soft hover:text-ink disabled:text-disabled-ink"
               disabled={busy}
               onClick={onEnd}
             >

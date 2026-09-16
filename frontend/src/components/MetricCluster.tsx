@@ -2,11 +2,14 @@ import type { ReactNode } from 'react'
 
 export type ReadoutTone = 'high' | 'med' | 'low' | 'missing'
 
+/** Risk as TEXT takes the `-ink` half of each pair (4.7–6.4:1 on panel in both
+ *  modes). The bare `text-risk-*` aliases still resolve, but they are the fill
+ *  names and this is a foreground. */
 const TONE: Record<ReadoutTone, string> = {
-  high: 'text-risk-high',
-  med: 'text-risk-med',
-  low: 'text-risk-low',
-  missing: 'text-risk-missing',
+  high: 'text-risk-high-ink',
+  med: 'text-risk-med-ink',
+  low: 'text-risk-low-ink',
+  missing: 'text-risk-missing-ink',
 }
 
 export type ReadoutItem = {
@@ -19,7 +22,10 @@ export type ReadoutItem = {
 
 /**
  * Compact instrument cluster — label stacked over mono value.
- * Hairlines come from a 1px gap grid so wrapping never leaves empty midspans.
+ * Hairlines come from a 1px gap grid so wrapping never leaves empty midspans:
+ * the container's `bg-line` shows through the `gap-px`. That fill IS the
+ * internal separation, and `.panel`'s hairline ring is the single outer edge —
+ * the old `border border-line shadow-card` drew that edge twice.
  */
 export default function MetricCluster({
   items,
@@ -41,21 +47,21 @@ export default function MetricCluster({
 
   return (
     <div
-      className={`grid overflow-hidden rounded-card border border-line bg-line shadow-card ${colClass} gap-px ${className}`}
+      className={`panel grid overflow-hidden bg-line ${colClass} gap-px ${className}`}
     >
       {items.map((item) => (
-        <div key={item.key} className="bg-panel px-4 py-3.5">
-          <span className="block whitespace-nowrap text-[11px] font-medium uppercase tracking-[.06em] text-muted">
+        <div key={item.key} className="bg-panel px-snug py-tight">
+          <span className="block whitespace-nowrap text-label font-medium text-muted">
             {item.label}
           </span>
           <span
-            className={`mt-1.5 flex items-baseline gap-1.5 font-mono text-[24px] font-medium leading-none tabular-nums tracking-[-.02em] ${
+            className={`mt-el flex items-baseline gap-el font-mono text-title font-medium tabular-nums ${
               item.tone ? TONE[item.tone] : 'text-ink'
             }`}
           >
             {item.value}
             {item.hint && (
-              <span className="max-w-[9rem] truncate font-sans text-[11px] font-medium uppercase tracking-[.04em] text-muted">
+              <span className="max-w-[9rem] truncate font-sans text-label font-medium text-muted">
                 {item.hint}
               </span>
             )}

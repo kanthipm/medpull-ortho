@@ -2,6 +2,7 @@ import { Search, Sparkles, X } from 'lucide-react'
 import { useState } from 'react'
 import { useAsk, type AskResult } from '../../api/queries'
 import AIAttribution from '../../components/AIAttribution'
+import SentenceCase from './SentenceCase'
 import SectionCard from '../../components/SectionCard'
 import { SkeletonLine } from '../../components/Skeleton'
 
@@ -38,9 +39,9 @@ export default function AskBar({
           e.preventDefault()
           submit(question)
         }}
-        className="flex items-center gap-2 rounded-btn border border-line bg-panel py-1.5 pl-2.5 pr-1.5 shadow-card transition-[border-color,box-shadow] duration-150 focus-within:border-brand focus-within:shadow-[0_0_0_1px_rgb(var(--brand))]"
+        className="flex items-center gap-seam rounded-control border border-line-strong bg-panel py-el pl-seam pr-el outline-2 outline-offset-0 outline-brand transition-[border-color,outline-color] duration-150 focus-within:border-brand focus-within:outline"
       >
-        <span className="grid h-10 w-10 shrink-0 place-items-center text-brand" aria-hidden>
+        <span className="grid h-10 w-10 shrink-0 place-items-center text-brand-ink" aria-hidden>
           <Sparkles size={18} />
         </span>
         <input
@@ -48,7 +49,7 @@ export default function AskBar({
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="Ask about your patients — symptoms, progress, adherence, data gaps…"
           aria-label="Ask about your patients"
-          className="min-w-0 flex-1 bg-transparent text-[15px] text-ink placeholder:text-faint focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent text-copy-lg text-ink placeholder:text-muted focus:outline-none"
         />
         {(question || result) && (
           <button
@@ -58,7 +59,7 @@ export default function AskBar({
               setQuestion('')
               onClear()
             }}
-            className="grid h-9 w-9 cursor-pointer place-items-center rounded-btn text-muted transition-colors duration-150 hover:bg-soft hover:text-ink"
+            className="grid h-9 w-9 cursor-pointer place-items-center rounded-control text-muted transition-colors duration-150 hover:bg-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           >
             <X size={16} />
           </button>
@@ -66,21 +67,21 @@ export default function AskBar({
         <button
           type="submit"
           disabled={question.trim().length < 3 || ask.isPending}
-          className="qa-btn !flex-none px-3.5"
+          className="qa-btn !flex-none"
         >
-          <Search size={15} className="text-brand" />
+          <Search size={15} />
           {ask.isPending ? 'Thinking…' : 'Ask'}
         </button>
       </form>
 
       {!result && !ask.isPending && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-2 px-1">
+        <div className="mt-seam flex flex-wrap items-center gap-seam px-1">
           {SUGGESTIONS.map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => submit(s)}
-              className="cursor-pointer rounded-btn border border-line bg-panel px-3.5 py-1.5 text-[13px] font-medium text-body transition-colors duration-150 hover:border-brand/40 hover:bg-brand-tint hover:text-brand"
+              className="qa-btn"
             >
               {s}
             </button>
@@ -89,7 +90,7 @@ export default function AskBar({
       )}
 
       {ask.isPending && (
-        <div className="mt-3 animate-fadeIn space-y-2.5 rounded-card border border-line bg-panel p-5 shadow-card">
+        <div className="mt-tight animate-fadeIn space-y-seam rounded-surface border border-line bg-panel p-block">
           <SkeletonLine className="h-3 w-1/5" />
           <SkeletonLine className="h-3.5 w-full" />
           <SkeletonLine className="h-3.5 w-3/4" />
@@ -101,17 +102,21 @@ export default function AskBar({
           sum
           spine="bg-brand"
           className="rise mt-3"
-          eyebrow={<AIAttribution kind="answer" generatedAt={result.generated_at} provider={result.provider} />}
+          eyebrow={(
+            <SentenceCase>
+              <AIAttribution kind="answer" generatedAt={result.generated_at} provider={result.provider} />
+            </SentenceCase>
+          )}
           aside={
             result.patient_ids.length > 0 ? (
-              <span className="chip bg-brand-tint text-brand">
+              <span className="chip bg-brand-tint text-on-brand-tint">
                 Showing {result.patient_ids.length} match
                 {result.patient_ids.length === 1 ? '' : 'es'}
               </span>
             ) : undefined
           }
         >
-          <p className="text-[15px] leading-[1.6] text-body">{result.answer}</p>
+          <p className="text-copy-lg text-body">{result.answer}</p>
         </SectionCard>
       )}
     </div>

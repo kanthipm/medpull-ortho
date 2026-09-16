@@ -9,6 +9,7 @@ import MessageComposerModal from '../patient/plan/MessageComposerModal'
 import { NextStepButton } from '../patient/plan/NextSteps'
 import AskBar from './AskBar'
 import AIAttribution from '../../components/AIAttribution'
+import SentenceCase from './SentenceCase'
 import ConfidenceChip from '../../components/ConfidenceChip'
 import PriorityBadge from '../../components/PriorityBadge'
 import GuardrailFootnote from '../../components/GuardrailFootnote'
@@ -78,8 +79,8 @@ export default function WorklistPage() {
   return (
     <div>
       <header className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
-        <p className="text-[12px] font-medium uppercase tracking-[.08em] text-muted">{longDate()}</p>
-        <h1 className="mt-2 text-[clamp(28px,3.6vw,36px)] font-normal leading-[1.2] text-ink">
+        <p className="text-label font-medium text-muted">{longDate()}</p>
+        <h1 className="mt-seam text-section font-normal text-ink">
           {headline(data.stats)}
         </h1>
       </header>
@@ -88,14 +89,16 @@ export default function WorklistPage() {
         <SectionCard
           spine="bg-brand"
           eyebrow={
-            <AIAttribution
-              kind="daily briefing"
-              generatedAt={data.briefing.generated_at}
-              provider={data.briefing.provider}
-            />
+            <SentenceCase>
+              <AIAttribution
+                kind="daily briefing"
+                generatedAt={data.briefing.generated_at}
+                provider={data.briefing.provider}
+              />
+            </SentenceCase>
           }
         >
-          <p className="text-[15px] leading-[1.6] text-body">{data.briefing.text}</p>
+          <p className="text-copy-lg text-body">{data.briefing.text}</p>
         </SectionCard>
       </div>
 
@@ -104,12 +107,10 @@ export default function WorklistPage() {
       </div>
 
       <div
-        className="rise mt-7 flex items-center justify-between gap-3"
+        className="rise mt-region flex items-center justify-between gap-tight"
         style={{ '--rise-delay': '140ms' } as CSSProperties}
       >
-        <h2 className="text-[12px] font-medium uppercase tracking-[.08em] text-muted">
-          {askIds ? 'Matching patients' : 'Patient panel'}
-        </h2>
+        <h2 className="micro">{askIds ? 'Matching patients' : 'Patient panel'}</h2>
         {!askIds && (
           <SegmentedControl
             options={FILTERS}
@@ -122,7 +123,7 @@ export default function WorklistPage() {
       </div>
 
       {groups.length === 0 ? (
-        <div className="mt-3">
+        <div className="mt-tight">
           <EmptyState
             title={askIds ? 'No patients matched that question.' : 'No patients match this filter.'}
           >
@@ -133,17 +134,17 @@ export default function WorklistPage() {
         </div>
       ) : (
         <div
-          className="rise mt-3 overflow-hidden rounded-card border border-line bg-panel shadow-card"
+          className="rise mt-tight overflow-hidden rounded-surface border border-line bg-panel"
           style={{ '--rise-delay': '160ms' } as CSSProperties}
         >
           {groups.map(({ tier, patients }) => (
             <div key={tier} className="border-b border-line last:border-0">
-              <div className="flex items-center gap-2 bg-soft/70 px-4 py-2">
-                <span className={`h-1.5 w-1.5 rounded-full ${PRIORITY[tier].dot}`} aria-hidden />
-                <span className="text-[11px] font-medium uppercase tracking-[.06em] text-muted">
+              <div className="flex items-center gap-seam bg-soft px-snug py-seam">
+                <span className={`h-1.5 w-1.5 rounded-pill ${PRIORITY[tier].dot}`} aria-hidden />
+                <span className="text-label font-medium text-muted">
                   {PRIORITY[tier].label}
                 </span>
-                <span className="font-mono text-[12px] font-medium tabular-nums text-muted">
+                <span className="font-mono text-label font-medium tabular-nums text-muted">
                   {patients.length}
                 </span>
               </div>
@@ -162,7 +163,7 @@ export default function WorklistPage() {
         </div>
       )}
 
-      <GuardrailFootnote className="mt-7" />
+      <GuardrailFootnote className="mt-region" />
 
       {composer && (
         <WorklistComposer
@@ -217,28 +218,37 @@ function WorklistRow({
   const high = p.priority === 'high'
   const navigate = useNavigate()
   const step = p.next_step ?? null
+  // A high row carries a SOLID risk tint: the old bg-risk-high-bg/40 wash
+  // composited differently over panel and over the zebra header, so its real
+  // ratio was not the published one. On the solid tint --muted is 4.638:1
+  // light but only 3.698:1 dark, so the row's secondary lines step up to
+  // --body (6.211 light / 5.013 dark). Hover is --soft for EVERY row, where
+  // muted is 4.755 / 4.582 and body 6.367 / 6.211.
+  const meta = high ? 'text-body' : 'text-muted'
   return (
     <Link
       to={`/patients/${p.id}`}
       style={{ '--rise-delay': `${180 + index * 40}ms` } as CSSProperties}
-      className={`rise group relative flex cursor-pointer items-center gap-3.5 px-4 py-3.5 transition-colors duration-150 focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-brand ${
-        high ? 'bg-risk-high-bg/40 hover:bg-risk-high-bg/70' : 'hover:bg-soft/80'
+      className={`rise group relative flex cursor-pointer items-center gap-tight px-snug py-tight transition-colors duration-150 hover:bg-soft focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-brand ${
+        high ? 'bg-risk-high-tint' : ''
       }`}
     >
-      {high && <span aria-hidden className="absolute inset-y-0 left-0 w-[4px] bg-risk-high" />}
+      {high && <span aria-hidden className="absolute inset-y-0 left-0 w-el bg-risk-high-ink" />}
+      {/* Identity, not risk: white on --risk-high-ink is 2.273:1 on the dark
+          half and there is no --on-risk-high on the web surface, so the disc is
+          the mode-invariant brand fill (--on-brand on --brand = 4.602:1 in both
+          modes). Risk stays on the group header, the spine and PriorityBadge. */}
       <span
         aria-hidden
-        className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-mono text-[12px] font-medium text-white ${
-          high ? 'bg-risk-high' : 'bg-brand'
-        }`}
+        className="grid h-10 w-10 shrink-0 place-items-center rounded-pill bg-brand font-mono text-label font-medium text-on-brand"
       >
         {p.initials}
       </span>
       <span className="w-36 shrink-0 sm:w-52">
-        <span className="block truncate text-[15px] font-medium text-ink">
+        <span className="block truncate text-copy-lg font-medium text-ink">
           {p.name}
         </span>
-        <span className="mt-0.5 block truncate text-[12.5px] text-muted">
+        <span className={`mt-0.5 block truncate text-label ${meta}`}>
           {p.procedure_display.replace(/\s*\(.*\)$/, '')}
           {p.postop_day != null && (
             <>
@@ -255,10 +265,10 @@ function WorklistRow({
       </span>
       <PriorityBadge priority={p.priority} className="hidden shrink-0 lg:inline-flex" />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] leading-snug text-body">{p.reason}</span>
+        <span className="block truncate text-copy text-body">{p.reason}</span>
         {step && step.state.status === 'open' ? (
           <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="min-w-0 truncate text-[13px] font-medium text-brand" title={step.detail}>
+            <span className="min-w-0 truncate text-copy font-medium text-brand-ink" title={step.detail}>
               → {step.title}
             </span>
             <NextStepButton
@@ -277,17 +287,17 @@ function WorklistRow({
         )}
       </span>
       <span className="hidden w-32 shrink-0 text-right sm:block">
-        <span className="block font-mono text-[12px] font-medium tabular-nums text-muted">
+        <span className={`block font-mono text-label font-medium tabular-nums ${meta}`}>
           {relativeTime(p.last_checkin_at)}
         </span>
-        <span className="mt-0.5 block truncate text-[12px] text-muted">
+        <span className={`mt-0.5 block truncate text-label ${meta}`}>
           {p.assigned_provider.name}
         </span>
       </span>
       <ChevronRight
         size={18}
         aria-hidden
-        className="hidden shrink-0 text-faint/60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted sm:block"
+        className="hidden shrink-0 text-muted transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-ink sm:block"
       />
     </Link>
   )

@@ -2,7 +2,49 @@
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   darkMode: 'class',
+
+  // Tailwind removes any rule in @layer components whose class never appears in
+  // the scanned content, and several of these recipes have no call site YET —
+  // the migration agents are about to add them. Without this list `.scrim` and
+  // `.overlay` are simply absent from the built CSS and a modal renders with no
+  // backdrop at all. These are the shared recipe names, not utilities; nothing
+  // is generated for them, they are only protected from the removal pass.
+  safelist: [
+    'scrim',
+    'overlay',
+    'panel',
+    'field',
+    'chip',
+    'micro',
+    'zone-label',
+    'qa-btn',
+    'btn-primary',
+    'segment',
+    'on',
+    'shimmer',
+    'rise',
+  ],
   theme: {
+    // WEIGHT — NOT in `extend`, deliberately: this REPLACES Tailwind's weight
+    // scale instead of merging with it, so `font-semibold`, `font-bold`,
+    // `font-thin` and the rest do not exist as utilities at all.
+    //
+    // The clamp that used to map semibold/bold down to 500 is GONE, because
+    // nothing names them any more. A live-code scan of src/ (comments and
+    // prose excluded) finds font-medium x218, font-normal x10 and ZERO above
+    // 500; the count was 79 when the clamp went in. The two strings `grep
+    // font-semibold` still returns are prose in index.css's own font header.
+    //
+    // Replacing rather than clamping is the point: a future `font-semibold`
+    // now emits NOTHING and the element keeps its inherited 400/500 — a
+    // visible no-op in review — instead of emitting `font-weight: 600` and
+    // making the browser synthesise a bold face out of the 500 file, which is
+    // exactly what the clamp existed to prevent. No `<b>`/`<strong>` is used
+    // anywhere in src/, so preflight's `font-weight: bolder` never fires.
+    fontWeight: {
+      normal: 'var(--weight-body)',
+      medium: 'var(--weight-emphasis)',
+    },
     extend: {
       fontFamily: {
         // One face on both surfaces: Instrument Sans (SIL OFL 1.1), self-hosted
@@ -63,16 +105,6 @@ export default {
         label: 'var(--lead-label)',
       },
 
-      // Ceiling is 500 and only 400/500 files are shipped. `semibold` and
-      // `bold` are clamped to 500 so the 79 surviving font-semibold/font-bold
-      // sites cannot make the browser synthesise a bold face.
-      fontWeight: {
-        normal: 'var(--weight-body)',
-        medium: 'var(--weight-emphasis)',
-        semibold: 'var(--weight-emphasis)', // TEMPORARY ALIAS — retire the class, then this
-        bold: 'var(--weight-emphasis)', // TEMPORARY ALIAS — retire the class, then this
-      },
-
       // SPACING — one primitive, one 1920 anchor. Named rather than numeric so
       // these cannot collide with Tailwind's own 0.25rem scale.
       spacing: {
@@ -95,29 +127,41 @@ export default {
         surface: 'var(--r-surface)', // 0px
         control: 'var(--r-control)', // 3px — control <= surface, so the role reads
         pill: 'var(--r-pill)', // 999px
-        // TEMPORARY ALIASES — 39 rounded-btn, 19 rounded-card, 15 rounded-row and
-        // 6 rounded-field are live right now. A later phase migrates them.
-        card: 'var(--r-surface)',
-        row: 'var(--r-surface)',
-        btn: 'var(--r-control)',
-        field: 'var(--r-control)',
       },
 
-      // ELEVATION — exactly two real shadows. `hairline` is a 0-blur 1px ring,
-      // which IS the hairline: it layers with nothing and costs no layout box.
-      // `overlay` is the single ambient wash, for floating overlays only.
+      // GLASS — the console gets exactly ONE blurred surface, the modal scrim,
+      // and `backdrop-blur-scrim` is the only blur utility anyone should reach
+      // for. Prefer the `.scrim` recipe, which also carries the three
+      // degradation blocks. Never on a clinical number, never on /checkin or
+      // /t, never glass-on-glass, max two blurred surfaces per viewport.
+      backdropBlur: {
+        scrim: 'var(--blur-scrim)', // 2px
+      },
+
+      // ELEVATION — one ambient wash (`overlay`, floating overlays only) and
+      // one contact shadow (`knob`, the toggle knob on its track). A card gets
+      // a border or a fill, never a shadow: `.panel` is `border border-line`.
+      // `hairline` (a 6%/8% alpha ring, 1.216:1 light / 1.138:1 dark) is
+      // deleted along with --shadow-hairline; `.panel` was its only consumer.
+      // All five aliases (`card`, `lift`, `glass`, `row`, `high-row`) are
+      // deleted: zero live class uses between them. The `shadow-card` strings
+      // a grep still finds are prose inside three doc comments
+      // (MetricCluster.tsx:28, NotificationsPopover.tsx:13, EmptyState.tsx:4)
+      // describing the double edge that was removed — Tailwind's content
+      // scanner cannot tell a comment from a className, which is why the count
+      // has to come from a live-code scan and not from `grep -c`.
+      // Note for whoever wrote `lift: // 3 uses, all chart cards — not
+      // floating`: that was wrong. All three were chart TOOLTIP containers,
+      // which ARE floating overlays, and they are on `.overlay` now.
       boxShadow: {
-        hairline: 'var(--shadow-hairline)',
+        // The one ambient wash, floating overlays only — modal, popover,
+        // toast, chart tooltip. `.overlay` is the recipe.
         overlay: 'var(--shadow-overlay)',
-        // TEMPORARY ALIASES for the 23 live shadow-* uses.
-        card: 'var(--shadow-hairline)', // 15 uses, all cards
-        lift: 'var(--shadow-hairline)', // 3 uses, all chart cards — not floating
-        glass: 'var(--shadow-overlay)', // 4 uses: Toast, popover, Modal, PlanModal
-        row: 'none',
-        'high-row': 'none',
-        // NOT elevation: the NotificationSettingsPage toggle knob. Keeps its own
-        // contact shadow so a blanket elevation sweep cannot flatten the switch.
-        segment: '0 1px 2px rgb(var(--shadow) / 0.18)',
+        // NOT elevation: the toggle knob's contact shadow, so the knob lifts
+        // off its track. Routed through --shadow-knob so dark has its own
+        // value (the old literal was byte-identical in both modes and dead on
+        // dark). One live use, features/settings/NotificationSettingsPage.tsx.
+        knob: 'var(--shadow-knob)',
       },
 
       colors: {
@@ -165,10 +209,8 @@ export default {
           deep: 'rgb(var(--brand-deep) / <alpha-value>)',
           tint: 'rgb(var(--brand-tint) / <alpha-value>)',
           'tint-strong': 'rgb(var(--brand-tint-strong) / <alpha-value>)',
-          // TEMPORARY ALIASES — brand-cyan is a chart stroke (now teal-graphic,
-          // 3.509:1 rather than 2.738:1); brand-light was the old dark brand.
-          cyan: 'rgb(var(--brand-cyan) / <alpha-value>)',
-          light: 'rgb(var(--brand-light) / <alpha-value>)',
+          // `cyan` and `light` deleted: the charts read --chart-s1/--chart-s2
+          // and --teal-graphic now, and nothing reads either name.
         },
         'on-brand': 'rgb(var(--on-brand) / <alpha-value>)',
         'on-brand-tint': 'rgb(var(--on-brand-tint) / <alpha-value>)',
@@ -190,10 +232,15 @@ export default {
           'low-tint': 'rgb(var(--risk-low-tint) / <alpha-value>)',
           'missing-ink': 'rgb(var(--risk-missing-ink) / <alpha-value>)',
           'missing-tint': 'rgb(var(--risk-missing-tint) / <alpha-value>)',
-          // TEMPORARY ALIASES — 104 live risk-* class references (39 risk-high,
-          // 33 risk-med, 32 risk-low, 18 risk-missing plus 55 -bg).
-          high: 'rgb(var(--risk-high) / <alpha-value>)',
-          'high-bg': 'rgb(var(--risk-high-bg) / <alpha-value>)',
+          // THE LAST SIX ALIASES IN THE TOKEN SET, and they exist for ONE
+          // component: components/ConfidenceChip.tsx:4-6, whose STYLES map is
+          // still `bg-risk-low-bg text-risk-low`, `bg-risk-med-bg
+          // text-risk-med` and `bg-risk-missing-bg text-risk-missing`. Rewrite
+          // those three strings to the `-tint`/`-ink` pairs and these six keys
+          // plus the six matching custom properties in index.css all go.
+          // `high` and `high-bg` are ALREADY deleted — nothing consumed them.
+          // (The two strings a grep finds are prose in WorklistPage.tsx:218
+          // and Toast.tsx:56, describing alpha washes that were removed.)
           med: 'rgb(var(--risk-med) / <alpha-value>)',
           'med-bg': 'rgb(var(--risk-med-bg) / <alpha-value>)',
           missing: 'rgb(var(--risk-missing) / <alpha-value>)',
@@ -229,9 +276,6 @@ export default {
           'cell-stroke': 'rgb(var(--chart-cell-stroke) / <alpha-value>)',
         },
 
-        // TEMPORARY ALIASES — declared in index.css so the arbitrary-value
-        // reads in src/ keep resolving.
-        track: 'rgb(var(--track) / <alpha-value>)',
       },
 
       keyframes: {
@@ -255,17 +299,41 @@ export default {
           from: { opacity: '0' },
           to: { opacity: '1' },
         },
+        toastOut: {
+          from: { opacity: '1', transform: 'none' },
+          to: { opacity: '0', transform: 'translateX(16px)' },
+        },
+        modalOut: {
+          from: { opacity: '1', transform: 'translateY(0) scale(1)' },
+          to: { opacity: '0', transform: 'translateY(4px) scale(.98)' },
+        },
+        fadeOut: {
+          from: { opacity: '1' },
+          to: { opacity: '0' },
+        },
       },
+      // MOTION — 150-300ms, ease-out entering, no overshoot on clinical
+      // content. `spring` (cubic-bezier(.34,1.56,.64,1), a 56% overshoot) is
+      // deleted: zero live `ease-spring` uses, and its two keyframe users
+      // (toastIn, modalIn) now enter on `smooth`. Exits run ~65% of the enter
+      // duration on ease-in, so a dismissal never lingers.
       transitionTimingFunction: {
-        spring: 'cubic-bezier(.34,1.56,.64,1)',
-        smooth: 'cubic-bezier(.22,.61,.36,1)',
+        smooth: 'cubic-bezier(.22,.61,.36,1)', // ease-out, entering
+        exit: 'cubic-bezier(.4,0,1,1)', // ease-in, leaving
       },
       animation: {
-        rise: 'rise .5s cubic-bezier(.22,.61,.36,1) backwards',
+        // Enter.
+        rise: 'rise 240ms cubic-bezier(.22,.61,.36,1) backwards', // was 500ms
+        toastIn: 'toastIn 240ms cubic-bezier(.22,.61,.36,1) both', // was 420ms + spring
+        modalIn: 'modalIn 220ms cubic-bezier(.22,.61,.36,1) both', // was spring
+        fadeIn: 'fadeIn 200ms cubic-bezier(.22,.61,.36,1) both',
+        // Exit — ~65% of the matching enter.
+        toastOut: 'toastOut 160ms cubic-bezier(.4,0,1,1) both',
+        modalOut: 'modalOut 150ms cubic-bezier(.4,0,1,1) both',
+        fadeOut: 'fadeOut 130ms cubic-bezier(.4,0,1,1) both',
+        // Not an entrance: a skeleton's loading loop. Linear and continuous by
+        // nature; prefers-reduced-motion stops it.
         shimmer: 'shimmer 1.6s linear infinite',
-        toastIn: 'toastIn .42s cubic-bezier(.34,1.56,.64,1) both',
-        modalIn: 'modalIn .22s cubic-bezier(.34,1.56,.64,1) both',
-        fadeIn: 'fadeIn .2s ease-out both',
       },
     },
   },

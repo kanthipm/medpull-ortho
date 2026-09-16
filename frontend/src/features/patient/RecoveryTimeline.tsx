@@ -9,9 +9,9 @@ const DOT: Record<string, string> = {
   surgery: 'bg-ink',
   // A general patient's rail starts when monitoring did, not at an operation.
   enrolled: 'bg-ink',
-  discharge: 'bg-faint',
-  flag: 'bg-risk-high',
-  change_point: 'bg-risk-med',
+  discharge: 'bg-line-strong',
+  flag: 'bg-risk-high-ink',
+  change_point: 'bg-risk-med-ink',
   today: 'border-2 border-brand bg-panel',
   checkin: 'bg-line',
 }
@@ -36,10 +36,10 @@ export default function RecoveryTimeline({
         <span
           className={`chip ${
             trajectory.state === 'behind'
-              ? 'bg-risk-high-bg text-risk-high'
+              ? 'bg-risk-high-tint text-risk-high-ink'
               : trajectory.state === 'unknown'
-                ? 'bg-risk-missing-bg text-risk-missing'
-                : 'bg-risk-low-bg text-risk-low'
+                ? 'bg-risk-missing-tint text-risk-missing-ink'
+                : 'bg-risk-low-tint text-risk-low-ink'
           }`}
         >
           {TRAJECTORY_LABEL[trajectory.state]}
@@ -51,7 +51,7 @@ export default function RecoveryTimeline({
     >
       <RefreshOverlay show={refreshing} />
       {events.length === 0 ? (
-        <p className="text-[14px] text-muted">
+        <p className="text-copy text-muted">
           Timeline will appear as events are recorded.
         </p>
       ) : (
@@ -60,9 +60,9 @@ export default function RecoveryTimeline({
             <span aria-hidden className="absolute left-2 right-2 top-[10px] h-px bg-line" />
             {events.map((e, i) => (
               <div key={`${e.date}-${e.kind}-${i}`} className="relative flex w-24 flex-col items-start">
-                <span className={`relative z-10 h-3.5 w-3.5 rounded-full ${DOT[e.kind] ?? 'bg-line'}`} />
-                <span className="mt-2 text-[13px] font-medium leading-tight text-ink">{e.label}</span>
-                <span className="font-mono text-[12px] font-medium tabular-nums text-muted">
+                <span className={`relative z-10 h-3.5 w-3.5 rounded-pill ${DOT[e.kind] ?? 'bg-line'}`} />
+                <span className="mt-2 text-copy font-medium text-ink">{e.label}</span>
+                <span className="font-mono text-label font-medium tabular-nums text-muted">
                   {shortDate(e.date)}
                 </span>
               </div>

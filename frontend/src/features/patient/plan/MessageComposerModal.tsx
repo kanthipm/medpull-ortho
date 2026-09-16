@@ -119,7 +119,7 @@ export default function MessageComposerModal({
 
   const footer = (
     <div className="flex flex-wrap items-center gap-3">
-      <p className="text-[11px] font-medium text-faint">
+      <p className="text-label font-medium text-muted">
         {phone ? `Texts ${phone} and shows in the app.` : `No phone on file — ${first} sees it in the app.`}
         {files.ids.length > 0 && ` Files open in the app, never in the text.`}
       </p>
@@ -131,7 +131,7 @@ export default function MessageComposerModal({
         disabled={files.busy}
         onClick={files.open}
       >
-        <Paperclip size={13} className="text-brand" />
+        <Paperclip size={13} />
         {files.busy ? 'Uploading…' : 'Attach'}
       </button>
       <button
@@ -151,7 +151,7 @@ export default function MessageComposerModal({
       <div className="space-y-4">
         {pinned.length > 0 && (
           <section>
-            <p className="micro mb-1.5">Templates</p>
+            <p className="mb-1.5 text-label font-medium text-muted">Templates</p>
             <div className="flex flex-wrap gap-1.5">
               {pinned.map((t) => (
                 <button
@@ -165,8 +165,8 @@ export default function MessageComposerModal({
                   title={t.body}
                   className={`chip cursor-pointer border transition-colors duration-150 ${
                     templateId === t.id
-                      ? 'border-brand/35 bg-brand-tint text-brand'
-                      : 'border-line bg-panel text-body hover:border-brand/35 hover:bg-brand-tint hover:text-brand'
+                      ? 'border-brand bg-brand-tint text-on-brand-tint'
+                      : 'border-line bg-panel text-body hover:border-brand hover:bg-brand-tint hover:text-on-brand-tint'
                   }`}
                 >
                   {t.title}
@@ -176,7 +176,7 @@ export default function MessageComposerModal({
           </section>
         )}
 
-        <section className="rounded-row border border-line bg-soft/40 p-2.5">
+        <section className="rounded-surface bg-soft p-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <input
               className="field min-w-[160px] flex-1"
@@ -193,7 +193,7 @@ export default function MessageComposerModal({
               className="flex-none"
             />
             <button type="button" className="qa-btn" disabled={draft.isPending} onClick={runDraft}>
-              <Sparkles size={13} className={`text-brand ${draft.isPending ? 'animate-spin' : ''}`} />
+              <Sparkles size={13} className={draft.isPending ? 'animate-spin' : undefined} />
               {draft.isPending ? 'Drafting…' : 'Draft with AI'}
             </button>
           </div>
@@ -206,11 +206,11 @@ export default function MessageComposerModal({
 
         <section>
           <div className="mb-1 flex items-baseline justify-between">
-            <label htmlFor="composer-text" className="micro block">
+            <label htmlFor="composer-text" className="block text-label font-medium text-muted">
               Message
             </label>
             <span
-              className={`font-mono text-[11px] tabular-nums ${over ? 'text-risk-med' : 'text-faint'}`}
+              className={`font-mono text-label tabular-nums ${over ? 'text-risk-med-ink' : 'text-muted'}`}
             >
               {text.length}/{SOFT_LIMIT}
             </span>
@@ -227,19 +227,19 @@ export default function MessageComposerModal({
             onDragOver={(e) => e.preventDefault()}
           />
           <PendingAttachments items={files.pending} onRemove={files.remove} busy={files.busy} />
-          {warn && <p className="mt-1 text-[11px] font-medium leading-snug text-risk-med">{warn}</p>}
+          {warn && <p className="mt-1 text-label font-medium text-risk-med-ink">{warn}</p>}
           {over && !warn && (
-            <p className="mt-1 text-[11px] font-medium text-faint">
+            <p className="mt-1 text-label font-medium text-muted">
               Long texts split into several messages — shorter reads better on a phone.
             </p>
           )}
         </section>
 
         <section className="flex flex-wrap items-center gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-[12.5px] font-medium text-body">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-label font-medium text-body">
             <input
               type="checkbox"
-              className="h-3.5 w-3.5 accent-[rgb(var(--brand))]"
+              className="h-3.5 w-3.5 accent-brand"
               checked={saveAs}
               onChange={(e) => setSaveAs(e.target.checked)}
             />
@@ -256,7 +256,7 @@ export default function MessageComposerModal({
           )}
         </section>
 
-        <p className="text-[11px] font-medium leading-[1.5] text-faint">
+        <p className="text-label font-medium text-muted">
           AI drafts are editable — nothing sends without your review. Keep it number-free: the
           patient never sees scores or percentages.
         </p>
