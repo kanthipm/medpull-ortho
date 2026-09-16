@@ -5,19 +5,18 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        // Garamond itself ships with Office and macOS but not reliably
-        // anywhere else, so the web face is EB Garamond, the open-licensed
-        // revival, with the locally installed cuts named first for anyone
-        // who has them. Monospace stays Roboto Mono: it carries the numbers
-        // in tables and charts, where a serif's old-style figures and
-        // proportional widths would stop columns lining up.
+        // Arial, which every desktop and phone already has, so the console
+        // loads no webfont for its body text and cannot flash a fallback.
+        // Helvetica stands in on the platforms that ship it instead.
+        // Monospace stays Roboto Mono: it carries the numbers in tables and
+        // charts, where proportional widths would stop columns lining up.
         sans: [
-          '"EB Garamond"',
-          'Garamond',
-          '"Adobe Garamond Pro"',
-          '"Apple Garamond"',
-          'Georgia',
-          'serif',
+          'Arial',
+          '"Helvetica Neue"',
+          'Helvetica',
+          'system-ui',
+          '-apple-system',
+          'sans-serif',
         ],
         mono: ['"Roboto Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
