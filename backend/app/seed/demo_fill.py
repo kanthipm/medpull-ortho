@@ -448,7 +448,13 @@ def write_persona(db, persona: Persona, today: date, *, create: bool) -> dict[st
     patient.surgeon_id = spec.surgeon_id
     patient.assigned_provider_id = spec.surgeon_id
     patient.hospital_id = spec.hospital_id
-    patient.phone = persona.phone
+    # Deliberately no phone number. Sendblue only delivers to a contact
+    # verified in its dashboard, which an invented number can never be, so a
+    # number on file turns a console message or a task dispatch into a
+    # recorded delivery failure — a red badge in the thread on camera. With
+    # none, the message stores cleanly and the console stops offering to text
+    # them. Persona.phone is kept as documentation of the intended number.
+    patient.phone = None
     patient.date_of_birth = _dob(today, spec.age, spec.id)
     patient.mrn = persona.mrn
     patient.care_pathway = persona.care_pathway
