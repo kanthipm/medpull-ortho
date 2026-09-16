@@ -2,73 +2,396 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Theme tokens (MedPull Kiosk palette: Medical Blue + Teal, Material 3) ── */
-:root {
-  --ink: 33 33 33;
-  --body: 66 66 66;
-  --muted: 117 117 117;
-  --faint: 158 158 158;
-  --line: 224 224 224;
-  --hairline: 238 238 238;
-  --canvas: 250 250 250;
-  --canvas-top: 250 250 250;
-  --soft: 241 244 248;
-  --panel: 255 255 255;
-  --track: 232 236 242;
-  --brand: 25 118 210;
-  --brand-deep: 0 75 160;
-  --brand-light: 99 164 255;
-  --brand-cyan: 0 172 193;
-  --brand-tint: 227 242 253;
-  --sum-end: 240 247 255;
-  --risk-high: 229 57 53;
-  --risk-high-bg: 255 235 238;
-  --risk-med: 239 108 0;
-  --risk-med-bg: 255 243 224;
-  --risk-missing: 117 117 117;
-  --risk-missing-bg: 238 238 238;
-  --risk-low: 56 142 60;
-  --risk-low-bg: 232 245 233;
-  --shadow: 0 0 0;
-  --glass-bg: 25 118 210;
-  --glass-alpha: 1;
-  --shimmer-a: 236 239 243;
-  --shimmer-b: 247 248 250;
-  --scroll-thumb: 158 158 158;
+/* ══════════════════════════════════════════════════════════════════════════
+   TYPEFACE — Instrument Sans (SIL OFL 1.1), self-hosted, weights 400/500 only.
+   No 600 and no 700 file is shipped, so no 600/700 face is declared: declaring
+   one would make the browser synthesise bold. tailwind.config.js clamps the
+   `font-semibold`/`font-bold` utilities to 500 for the same reason.
+   Files come from frontend/public/fonts/ and therefore serve from the site root.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@font-face {
+  font-family: 'Instrument Sans';
+  src: url('/fonts/InstrumentSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
 
+@font-face {
+  font-family: 'Instrument Sans';
+  src: url('/fonts/InstrumentSans-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Metric-matched fallback so `font-display: swap` reflows nothing.
+   Arial measured from /System/Library/Fonts/Supplemental/Arial.ttf:
+   avg lowercase advance 0.48954em, ascent/descent/lineGap (hhea, because Arial
+   clears USE_TYPO_METRICS) 0.90527 / 0.21191 / 0.03271em.
+   Instrument Sans: avg lowercase advance 0.52488em, typo 0.97 / 0.25 / 0.
+   size-adjust = 0.52488 / 0.48954 = 107.2201%  -> identical lowercase run length.
+   Chromium and WebKit scale the metric overrides BY size-adjust, so the
+   overrides are pre-divided: 0.97 / 1.072201 = 90.4681%,
+   0.25 / 1.072201 = 23.3165%, line gap is genuinely 0.
+   Without this block every line box jumps 1.14990em -> 1.22000em (+6.10%) the
+   moment the webfont lands. */
+@font-face {
+  font-family: 'Instrument Sans Fallback';
+  src: local('Arial');
+  size-adjust: 107.22%;
+  ascent-override: 90.47%;
+  descent-override: 23.32%;
+  line-gap-override: 0%;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   NEUTRAL RAMP — declared ONCE, re-indexed by the light and dark role maps
+   below. A hue change therefore propagates to both modes in one edit.
+   Every step holds R < G < B with B-R between +5 and +25, so no step is a
+   grey. The two poles (#FFFFFF paper, #FFFFFF dark ink) are the documented
+   exception: paper white cannot carry a cast.
+   Values are space-separated sRGB triplets because every colour reaches
+   Tailwind as `rgb(var(--token) / <alpha-value>)`.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --n-0: 255 255 255; /* #FFFFFF  B-R  +0 (paper) */
+  --n-50: 245 247 250; /* #F5F7FA  B-R  +5 */
+  --n-100: 237 241 246; /* #EDF1F6  B-R  +9 */
+  --n-200: 224 229 236; /* #E0E5EC  B-R +12 */
+  --n-300: 201 208 218; /* #C9D0DA  B-R +17 */
+  --n-400: 152 162 175; /* #98A2AF  B-R +23 */
+  --n-425: 139 149 163; /* #8B95A3  B-R +24 — inserted: dark --line-strong needs a
+                           step above dark --muted (n-450), which the spec had it
+                           sharing a hex with. 5.671:1 on dark panel. */
+  --n-450: 127 138 152; /* #7F8A98  B-R +25 */
+  --n-460: 122 131 144; /* #7A8390  B-R +22 — inserted: light --line-strong. The spec
+                           gave --line-strong and --muted the same #626B78 and then
+                           published two different ratios for it. 3.834:1 on panel:
+                           clears WCAG 1.4.11 without reading at text weight. */
+  --n-475: 107 116 128; /* #6B7480  B-R +21 — inserted: dark --faint / dark --line.
+                           n-500 is only 2.978:1 on dark --soft, i.e. under the 3:1
+                           non-text floor. This step is 3.392:1 there. */
+  --n-500: 98 107 120; /* #626B78  B-R +22 */
+  --n-600: 78 88 101; /* #4E5865  B-R +23 */
+  --n-700: 42 51 61; /* #2A333D  B-R +19 */
+  --n-800: 26 34 43; /* #1A222B  B-R +17 */
+  --n-900: 20 28 36; /* #141C24  B-R +16 */
+  --n-950: 14 21 28; /* #0E151C  B-R +14 */
+
+  /* ── TYPE ─────────────────────────────────────────────────────────────────
+     Two regimes. The UI band is frozen px on a linear +2 ladder: no x.5 size
+     exists and no per-breakpoint override is ever needed. The display band is
+     fluid on one 1920 anchor (coefficient = N / 1920 * 100), so the px half
+     wins at every viewport <= 1920 and the vw half takes over above it. */
+  --step-micro: 11px; /* chart axis labels ONLY — the documented floor */
+  --step-label: 12px;
+  /* `copy` rather than `body`: `body` is already a COLOUR token, and Tailwind
+     emits both fontSize and textColor under the `text-` prefix, so `text-body`
+     can only mean one of the two. The colour keeps the name (38 live uses). */
+  --step-copy: 14px;
+  --step-copy-lg: 16px;
+  --step-lede: 18px;
+  --step-subhead: 20px;
+  --step-title: max(26px, 1.35417vw);
+  --step-section: max(32px, 1.66667vw);
+  --step-display: max(44px, 2.29167vw);
+  --step-hero: max(56px, 2.91667vw);
+
+  /* Tracking is a per-face correction, retuned for Instrument Sans (measured
+     avg lowercase advance 0.5249em) rather than copied from a wider face. */
+  --track-ui: -0.02em;
+  --track-title: -0.02em;
+  --track-display: -0.03em;
+  --track-eyebrow: 0.06em;
+
+  --lead-body: 1.45; /* reading leading, 11-18px */
+  --lead-title: 1.2; /* 20-32px */
+  --lead-display: 0.95; /* 44-56px */
+  --lead-label: 0.9; /* single-line controls ONLY, always with a min-height */
+
+  --weight-body: 400;
+  --weight-emphasis: 500; /* ceiling — no file exists above this */
+
+  /* ── SPACING / LAYOUT — one primitive, one 1920 anchor ─────────────────── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: max(12px, 0.625vw);
+  --space-4: max(16px, 0.83333vw);
+  --space-5: max(20px, 1.04167vw);
+  --space-6: max(28px, 1.45833vw);
+  --container-max: max(1440px, 75vw);
+  --page-gutter: max(12px, 0.625vw);
+
+  /* ── RADII — role is readable from shape alone (control <= surface) ────── */
+  --r-surface: 0px;
+  --r-control: 3px;
+  --r-pill: 999px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LIGHT ROLE MAP
+   Computed ratios (WCAG relative luminance, sRGB linearised at 0.04045),
+   against panel #FFFFFF / canvas #F5F7FA / soft #EDF1F6:
+     hairline #E0E5EC   1.266 / 1.180 / 1.116   decorative seams only
+     line     #C9D0DA   1.553 / 1.447 / 1.370   structural, paired with the 8px seam
+     faint    #98A2AF   2.585 / 2.409 / 2.279   1.4.11-EXEMPT USES ONLY
+     line-str #7A8390   3.834 / 3.573 / 3.380   1.4.11 boundaries
+     muted    #626B78   5.393 / 5.025 / 4.755   secondary text + placeholders
+     body     #4E5865   7.222 / 6.729 / 6.367
+     ink      #0E151C  18.377 / 17.124 / 16.202
+   ══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --panel: var(--n-0);
+  --canvas: var(--n-50);
+  --soft: var(--n-100);
+  --hairline: var(--n-200);
+  --line: var(--n-300);
+  --line-strong: var(--n-460);
+  /* NON-TEXT and only where WCAG 1.4.11 does not apply: disabled controls and
+     pure decoration. 2.585:1 on panel. Placeholders are NOT this tier — they
+     are text, and they take --muted (4.755:1 on --soft). */
+  --faint: var(--n-400);
+  --muted: var(--n-500);
+  --body: var(--n-600);
+  --ink: var(--n-950);
+
+  /* BRAND — #1976D2 is a FILL, never a foreground. */
+  --brand: 25 118 210; /* #1976D2 fill. White on it 4.602:1; it is 4.602:1 on
+                          panel, so it must never be lightened. */
+  --on-brand: var(--n-0); /* 4.602:1 on --brand */
+  --brand-ink: 21 101 192; /* #1565C0 links / active labels / brand text:
+                              5.746 panel / 5.354 canvas / 4.963 on --brand-tint */
+  --brand-deep: 13 71 161; /* #0D47A1 pressed fill; white on it 8.631:1 */
+  --brand-tint: 227 240 252; /* #E3F0FC  1.158:1 on panel */
+  --brand-tint-strong: 200 224 249; /* #C8E0F9  1.356:1 on panel */
+  /* --brand-ink on --brand-tint-strong is only 4.238:1, so text on a brand tint
+     uses --brand-deep: 7.454:1 on --brand-tint, 6.365:1 on --brand-tint-strong. */
+  --on-brand-tint: var(--brand-deep);
+
+  /* TEAL — one semantic slot (verified / adherent / live). */
+  --teal: 0 172 193; /* #00ACC1 FILL ONLY. --on-teal on it 6.713:1;
+                        white on it 2.738:1, which is BANNED. */
+  --on-teal: var(--n-950);
+  --teal-ink: 0 112 125; /* #00707D the only teal allowed as text:
+                            5.811 panel / 5.415 canvas / 5.123 soft */
+  --teal-graphic: 0 151 167; /* #0097A7 strokes, 1px rules AND the 4px accent bar:
+                                3.509 panel / 3.270 canvas / 3.094 soft — clears
+                                3:1 on all three, which raw #00ACC1 (2.738 / 2.551
+                                / 2.413) does not at any width. */
+  --teal-tint: 223 246 249; /* #DFF6F9; --teal-ink on it 5.171:1 */
+
+  /* RISK GRID — all four ink/tint pairs clear 4.5:1, and so does every ink
+     against panel / canvas / soft:
+       high    #C62828 on #FBEAEA 4.835 | 5.622 / 5.238 / 4.956
+       med     #9A5300 on #FBF0E1 5.165 | 5.815 / 5.418 / 5.127
+       low     #1B7A43 on #E6F4EB 4.731 | 5.369 / 5.003 / 4.733
+       missing #4E5865 on #EDF1F6 6.367 | 7.222 / 6.729 / 6.367
+     The Material defaults this replaces all failed (#EF6C00 on #FFF3E0 = 2.81). */
+  --risk-high-ink: 198 40 40;
+  --risk-high-tint: 251 234 234;
+  --risk-med-ink: 154 83 0;
+  --risk-med-tint: 251 240 225;
+  --risk-low-ink: 27 122 67;
+  --risk-low-tint: 230 244 235;
+  --risk-missing-ink: var(--n-600);
+  --risk-missing-tint: var(--n-100);
+
+  /* OVERLAY — --scrim is a non-flipping black. It is NEVER --ink, which
+     inverts to #FFFFFF in dark and brightens the page behind the modal.
+     #000 @ .62 over canvas composites to #5D5E5F; --panel on it is 6.498:1. */
+  --scrim: 0 0 0;
+  --scrim-alpha: 0.62;
+  --overlay-panel: var(--n-0);
+  --overlay-border: var(--n-460);
+
+  /* ELEVATION — exactly two real shadows. The 0-blur 1px ring IS the hairline;
+     the ambient wash is for floating overlays only, never cards or rows. */
+  --shadow-hairline: 0 0 0 1px rgb(var(--n-950) / 0.06);
+  --shadow-overlay: 0 4rem 7.5rem -1.25rem rgb(0 0 0 / 0.08);
+
+  /* STATE */
+  --disabled-fill: var(--n-100);
+  --disabled-ink: var(--n-500); /* 4.755:1 on --disabled-fill */
+  --select-bg: var(--brand-tint-strong);
+  --select-ink: var(--ink); /* 13.552:1 */
+
+  /* CHART */
+  --chart-s1: var(--brand); /* #1976D2 solid stroke */
+  --chart-s2: var(--teal-ink); /* #00707D 4-2 dash. s1/s2 separation is only
+                                  1.263:1, so the dash pattern and the
+                                  end-of-line label are MANDATORY, and the
+                                  categorical cap is 2 series. */
+  --chart-seq-1: 227 240 252; /* #E3F0FC */
+  --chart-seq-2: 156 197 238; /* #9CC5EE */
+  --chart-seq-3: 74 144 217; /* #4A90D9 */
+  --chart-seq-4: 21 101 192; /* #1565C0 */
+  --chart-seq-5: 13 71 161; /* #0D47A1 — adjacent steps 1.559/1.852/1.719/1.502 */
+  --chart-grid: var(--n-200); /* 1.266:1 on panel */
+  --chart-axis-label: var(--n-500); /* 5.393:1 — replaces --faint at 2.585:1 */
+  --chart-ref-line: var(--n-400); /* dashed, non-text */
+  /* seq-1 is 1.158:1 on panel, so a heatmap's lowest cell and an empty cell are
+     the same pixel without a stroke. Every sequential cell takes this border. */
+  --chart-cell-stroke: var(--line);
+
+  /* ── TEMPORARY ALIASES ───────────────────────────────────────────────────
+     Every name the redesign retires stays declared here, pointing at its new
+     value, so the 104 live risk-* / 79 rounded-* / 23 shadow-* references and
+     the arbitrary-value var() reads in src/ keep resolving. A later phase
+     migrates the consumers and then deletes this block. Do not add to it. */
+  --risk-high: var(--risk-high-ink); /* TEMPORARY ALIAS */
+  --risk-high-bg: var(--risk-high-tint); /* TEMPORARY ALIAS */
+  --risk-med: var(--risk-med-ink); /* TEMPORARY ALIAS */
+  --risk-med-bg: var(--risk-med-tint); /* TEMPORARY ALIAS */
+  --risk-low: var(--risk-low-ink); /* TEMPORARY ALIAS */
+  --risk-low-bg: var(--risk-low-tint); /* TEMPORARY ALIAS */
+  --risk-missing: var(--risk-missing-ink); /* TEMPORARY ALIAS */
+  --risk-missing-bg: var(--risk-missing-tint); /* TEMPORARY ALIAS */
+  /* CareChart/Sparkline/TrajectoryChart read --brand-cyan as a chart STROKE.
+     Pointing it at --teal-graphic takes those strokes from 2.738:1 to 3.509:1
+     without touching the components. */
+  --brand-cyan: var(--teal-graphic); /* TEMPORARY ALIAS */
+  --brand-light: var(--brand-ink); /* TEMPORARY ALIAS */
+  --sum-end: var(--brand-tint); /* TEMPORARY ALIAS (SectionCard gradient end) */
+  --shimmer-a: var(--n-100); /* TEMPORARY ALIAS */
+  --shimmer-b: var(--n-50); /* TEMPORARY ALIAS */
+  --track: var(--n-200); /* TEMPORARY ALIAS */
+  /* NotificationsPopover punches its unread badge out of the app bar with
+     ring-[rgb(var(--glass-bg))]. The bar becomes an opaque panel, so this has
+     to follow the bar rather than stay Medical Blue. */
+  --glass-bg: var(--panel); /* TEMPORARY ALIAS */
+  --glass-alpha: 1; /* TEMPORARY ALIAS */
+  --canvas-top: var(--canvas); /* TEMPORARY ALIAS */
+  --shadow: 0 0 0; /* TEMPORARY ALIAS (read by the toggle-knob shadow) */
+  --scroll-thumb: var(--faint); /* TEMPORARY ALIAS */
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DARK ROLE MAP — the same ramp, re-indexed. Seven steps do double duty
+   across the two modes, which is what makes them read as one product.
+   Against panel #141C24 / canvas #0E151C / soft #1A222B:
+     hairline #1A222B   1.071 / 1.144 / 1.000   decorative seams only
+     line     #6B7480   3.631 / 3.881 / 3.392   THE structural card edge
+     faint    #6B7480   3.631 / 3.881 / 3.392   same step: on dark this is the
+                                                3:1 non-text floor, so one hex
+                                                and ONE published ratio set
+     line-str #8B95A3   5.671 / 6.061 / 5.296   1.4.11 boundaries, overlay edge
+     muted    #7F8A98   4.906 / 5.243 / 4.582   mirrors light muted's 5.393
+     body     #98A2AF   6.650 / 7.108 / 6.211   mirrors light body's 7.222
+     ink      #FFFFFF  17.194 / 18.377 / 16.060
+   The spec's dark --line (#2A333D) was 1.342:1 on panel — less than half the
+   3:1 that 1.4.11 requires of the one element it designates as the sole
+   dark-mode separator. n-500 #626B78 is the first step that clears 3:1 on
+   panel (3.188) but it is 2.978 on --soft, so it still fails on a zebra row;
+   n-475 is the first step that clears 3:1 on ALL THREE dark grounds.
+   ══════════════════════════════════════════════════════════════════════════ */
 .dark {
-  --ink: 255 255 255;
-  --body: 222 222 222;
-  --muted: 170 170 170;
-  --faint: 130 130 130;
-  --line: 52 52 52;
-  --hairline: 44 44 44;
-  --canvas: 18 18 18;
-  --canvas-top: 18 18 18;
-  --soft: 38 38 38;
-  --panel: 30 30 30;
-  --track: 44 44 44;
-  --brand: 99 164 255;
-  --brand-deep: 25 118 210;
-  --brand-light: 144 202 249;
-  --brand-cyan: 93 222 244;
-  --brand-tint: 21 46 74;
-  --sum-end: 24 32 44;
-  --risk-high: 239 83 80;
-  --risk-high-bg: 62 30 30;
-  --risk-med: 255 167 38;
-  --risk-med-bg: 58 42 20;
-  --risk-missing: 170 170 170;
-  --risk-missing-bg: 44 44 44;
-  --risk-low: 102 187 106;
-  --risk-low-bg: 24 50 30;
-  --shadow: 0 0 0;
-  --glass-bg: 0 75 160;
-  --glass-alpha: 1;
-  --shimmer-a: 40 40 40;
-  --shimmer-b: 52 52 52;
-  --scroll-thumb: 120 120 120;
+  --canvas: var(--n-950);
+  --panel: var(--n-900);
+  --soft: var(--n-800);
+  --hairline: var(--n-800);
+  --line: var(--n-475);
+  --line-strong: var(--n-425);
+  --faint: var(--n-475);
+  --muted: var(--n-450);
+  --body: var(--n-400);
+  --ink: var(--n-0);
+
+  /* BRAND — the fill hex does not move between modes; only the ink does. */
+  --brand: 25 118 210; /* #1976D2 FILL ONLY. White on it is still 4.602:1, but it
+                          is 3.736:1 on dark panel, so it is never text here. */
+  --on-brand: var(--n-0);
+  --brand-ink: 99 164 255; /* #63A4FF  6.783 panel / 7.250 canvas / 6.336 soft */
+  --brand-deep: 25 118 210; /* #1976D2 */
+  /* Tints are SOLID on dark, not alpha washes: a wash's ratio depends on which
+     of the three grounds is behind it, and these carry clinical state. Each hex
+     is the 0.18/0.28 wash frozen over --panel. */
+  --brand-tint: 21 44 67; /* #152C43; --brand-ink on it 5.624:1 */
+  --brand-tint-strong: 21 53 85; /* #153555; --brand-ink on it 4.954:1 */
+  --on-brand-tint: var(--brand-ink);
+
+  /* TEAL — on dark the anchor inverts into the strong end of the pair. */
+  --teal: 0 172 193; /* #00ACC1  6.281 panel / 6.713 canvas / 5.866 soft */
+  --on-teal: var(--n-950);
+  --teal-ink: 93 222 244; /* #5DDEF4  10.825 / 11.569 / 10.110 */
+  --teal-graphic: 0 172 193; /* #00ACC1 works as a stroke on dark: 5.866 on soft */
+  --teal-tint: 16 54 64; /* #103640; --teal-ink on it 8.142:1 */
+
+  /* RISK GRID — solid tints, so the published figure IS the shipped figure
+     on canvas, panel and a zebra soft row alike:
+       high    #FF8A87 on #3A2E34 5.701 | on grounds 7.563 / 8.084 / 7.064
+       med     #FFB25C on #3A342D 6.890 | 9.641 / 10.304 / 9.005
+       low     #5CD199 on #203937 6.484 | 9.035 / 9.657 / 8.439
+       missing #98A2AF on #29313A 5.093 | 6.650 / 7.108 / 6.211 */
+  --risk-high-ink: 255 138 135;
+  --risk-high-tint: 58 46 52;
+  --risk-med-ink: 255 178 92;
+  --risk-med-tint: 58 52 45;
+  --risk-low-ink: 92 209 153;
+  --risk-low-tint: 32 57 55;
+  --risk-missing-ink: var(--n-400);
+  --risk-missing-tint: 41 49 58;
+
+  /* OVERLAY — the light/dark inversion: a fill separates on light, a hairline
+     separates on dark. #000 @ .70 over canvas composites to #040608; the
+     overlay panel on it is only 1.584:1, so the 1px border carries the edge
+     (4.225:1 on --overlay-panel, 6.693:1 on the scrim). */
+  --scrim: 0 0 0;
+  --scrim-alpha: 0.7;
+  --overlay-panel: var(--n-700);
+  --overlay-border: var(--n-425);
+
+  /* A black ring is invisible on dark, so the hairline ring goes white-at-low-alpha. */
+  --shadow-hairline: 0 0 0 1px rgb(var(--n-0) / 0.08);
+  --shadow-overlay: 0 4rem 7.5rem -1.25rem rgb(0 0 0 / 0.45);
+
+  --disabled-fill: var(--n-800);
+  --disabled-ink: var(--n-450); /* 4.582:1 on --disabled-fill */
+  --select-bg: var(--brand-tint-strong);
+  --select-ink: var(--ink); /* 12.558:1 */
+
+  /* CHART */
+  --chart-s1: var(--brand-ink); /* #63A4FF 6.783:1 on panel */
+  --chart-s2: var(--teal-ink); /* #5DDEF4 10.825:1; pair separation 1.596:1, so the
+                                  dash and the end label are again mandatory */
+  --chart-seq-1: 13 44 74; /* #0D2C4A */
+  --chart-seq-2: 21 101 192; /* #1565C0 */
+  --chart-seq-3: 74 144 217; /* #4A90D9 */
+  --chart-seq-4: 156 197 238; /* #9CC5EE */
+  --chart-seq-5: 220 234 251; /* #DCEAFB — adjacent 2.476/1.719/1.852/1.479 */
+  --chart-grid: var(--n-700); /* 1.342:1 on panel */
+  --chart-axis-label: var(--n-450); /* 4.906:1 on panel */
+  --chart-ref-line: var(--n-475); /* dashed, non-text, 3.631:1 */
+  --chart-cell-stroke: var(--line);
+
+  /* ── TEMPORARY ALIASES (see the light block) ─────────────────────────── */
+  --risk-high: var(--risk-high-ink); /* TEMPORARY ALIAS */
+  --risk-high-bg: var(--risk-high-tint); /* TEMPORARY ALIAS */
+  --risk-med: var(--risk-med-ink); /* TEMPORARY ALIAS */
+  --risk-med-bg: var(--risk-med-tint); /* TEMPORARY ALIAS */
+  --risk-low: var(--risk-low-ink); /* TEMPORARY ALIAS */
+  --risk-low-bg: var(--risk-low-tint); /* TEMPORARY ALIAS */
+  --risk-missing: var(--risk-missing-ink); /* TEMPORARY ALIAS */
+  --risk-missing-bg: var(--risk-missing-tint); /* TEMPORARY ALIAS */
+  --brand-cyan: var(--teal-graphic); /* TEMPORARY ALIAS */
+  --brand-light: var(--brand-ink); /* TEMPORARY ALIAS */
+  --sum-end: var(--brand-tint); /* TEMPORARY ALIAS */
+  --shimmer-a: var(--n-800); /* TEMPORARY ALIAS */
+  --shimmer-b: var(--n-700); /* TEMPORARY ALIAS */
+  --track: var(--n-700); /* TEMPORARY ALIAS */
+  --glass-bg: var(--panel); /* TEMPORARY ALIAS */
+  --glass-alpha: 1; /* TEMPORARY ALIAS */
+  --canvas-top: var(--canvas); /* TEMPORARY ALIAS */
+  --shadow: 0 0 0; /* TEMPORARY ALIAS */
+  --scroll-thumb: var(--faint); /* TEMPORARY ALIAS */
+}
+
+/* Text selection is a system-drawn surface that otherwise ignores the tokens,
+   and selected clinical figures on a dark panel can land unreadable. */
+::selection {
+  background: rgb(var(--select-bg));
+  color: rgb(var(--select-ink));
 }
 
 ::-webkit-scrollbar {
@@ -90,17 +413,25 @@
 }
 
 body {
-  @apply min-h-screen font-sans text-ink antialiased;
+  @apply min-h-screen font-sans text-copy-lg text-ink antialiased;
+  font-weight: var(--weight-body);
+  letter-spacing: var(--track-ui);
+  line-height: var(--lead-body);
   background: rgb(var(--canvas));
   transition: background-color 0.2s ease, color 0.15s ease;
 }
 
+/* Clinical figures: tabular widths so columns line up. 'zero' is declared for
+   Roboto Mono, which has the feature; Instrument Sans does not ship one, so
+   never expect a slashed zero from --font-ui. */
 .font-mono {
   font-feature-settings: 'zero', 'tnum';
 }
 
 @layer components {
-  /* Solid primary app bar, as on the kiosk's status bar. */
+  /* Retired: the app bar is an opaque panel with a hairline, not a blue slab.
+     Kept as a no-op background so the class cannot fall through to
+     transparent while the component still carries it. */
   .glass {
     background: rgb(var(--glass-bg) / var(--glass-alpha));
   }
@@ -125,33 +456,39 @@ body {
     animation-delay: var(--rise-delay, 0ms);
   }
 
-  /* Material outlined button — 1px outline, primary label, square. */
+  /* Outlined button — 1px line, brand-ink label (5.746:1 on panel; #1976D2
+     itself is 4.602:1 and is a fill only). */
   .qa-btn {
-    @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-btn border border-line bg-panel px-4 py-2 text-[14px] font-medium text-brand transition-[border-color,color,background-color] duration-150 hover:border-brand/40 hover:bg-brand-tint active:bg-brand-tint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-40;
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-control border border-line bg-panel px-4 py-2 text-copy font-medium text-brand-ink transition-[border-color,color,background-color] duration-150 hover:border-brand/40 hover:bg-brand-tint active:bg-brand-tint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-40;
   }
 
-  /* Material filled button — primary container, square, 48px tall. */
+  /* Filled button — white on --brand is 4.602:1 with zero headroom, so the
+     hover/pressed fill steps DOWN to --brand-deep (white on it 8.631:1). */
   .btn-primary {
-    @apply inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-btn bg-brand px-6 py-2.5 text-[15px] font-medium text-white transition-[background-color,opacity] duration-150 hover:bg-brand-deep active:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-40;
+    @apply inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-control bg-brand px-6 py-2.5 text-copy font-medium text-on-brand transition-[background-color,opacity] duration-150 hover:bg-brand-deep active:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-40;
   }
 
-  /* Material outlined text field. */
+  /* Outlined text field. The focus indicator is an `outline`, not a box-shadow:
+     a `box-shadow: none` reset elsewhere would silently kill a shadow ring, and
+     this is the WCAG 2.4.7 indicator for 44 controls.
+     Placeholders are --muted (4.755:1 on --soft, 5.393:1 on panel). --faint
+     would be 2.279:1 on --soft, which is worse than the Material baseline. */
   .field {
-    @apply w-full rounded-field border border-line bg-panel px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint transition-[border-color,box-shadow] duration-150 focus:border-brand focus:outline-none focus:shadow-[0_0_0_1px_rgb(var(--brand))];
+    @apply w-full rounded-control border border-line bg-panel px-3.5 py-2.5 text-copy text-ink outline-2 outline-offset-0 outline-brand transition-[border-color,outline-color] duration-150 placeholder:text-muted focus:border-brand focus:outline;
   }
 
-  /* Assist chip — square, label-large. */
+  /* Assist chip — control radius, 12px label. */
   .chip {
-    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-btn px-2.5 py-[4px] text-[11.5px] font-medium leading-none;
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-control px-2.5 py-[4px] text-label font-medium leading-none;
   }
 
-  /* Material label-small: 11sp / medium / +0.5 tracking. */
+  /* The single rationed eyebrow per screen. */
   .micro {
-    @apply text-[11px] font-medium uppercase tracking-[.06em] text-muted;
+    @apply text-label font-medium uppercase tracking-eyebrow text-muted;
   }
 
   .zone-label {
-    @apply flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-[.08em] text-muted;
+    @apply flex items-center gap-2.5 text-label font-medium uppercase tracking-eyebrow text-muted;
   }
   .zone-label::after {
     content: '';
@@ -162,15 +499,36 @@ body {
     @apply relative inline-flex border-b border-line;
   }
   .segment button {
-    @apply relative z-10 flex-1 cursor-pointer whitespace-nowrap px-4 py-3 text-[14px] font-medium text-muted transition-colors duration-200;
+    @apply relative z-10 flex-1 cursor-pointer whitespace-nowrap px-4 py-3 text-copy font-medium text-muted transition-colors duration-200;
   }
+  /* A 2px brand rule under the active tab, not a fill. */
   .segment button.on {
-    @apply text-brand shadow-[inset_0_-3px_0_rgb(var(--brand))];
+    @apply text-ink shadow-[inset_0_-2px_0_rgb(var(--brand))];
   }
 
-  /* Material elevated card — shared surface for cards / lists. */
+  /* Shared card surface: the hairline ring IS the elevation. Never a border
+     AND a shadow on the same element. */
   .panel {
-    @apply rounded-card border border-line bg-panel shadow-card;
+    @apply rounded-surface bg-panel shadow-hairline;
+  }
+}
+
+/* Increase Contrast / forced high contrast. The card edge, the table rules and
+   the chart grid are the surfaces that are never glass, so they are the ones
+   that need this: --line steps up to --line-strong (light 1.553 -> 3.834:1 on
+   panel; dark 3.631 -> 5.671:1). */
+@media (prefers-contrast: more) {
+  :root {
+    --hairline: var(--n-300); /* 1.266 -> 1.553:1 on panel */
+    --line: var(--n-460); /* 1.553 -> 3.834:1 */
+    --chart-grid: var(--n-460); /* 1.266 -> 3.834:1 */
+    --faint: var(--n-500); /* 2.585 -> 5.393:1 */
+  }
+  .dark {
+    --hairline: var(--n-475); /* 1.071 -> 3.631:1 on panel */
+    --line: var(--n-425); /* 3.631 -> 5.671:1 */
+    --chart-grid: var(--n-425); /* 1.342 -> 5.671:1 */
+    --faint: var(--n-425); /* 3.631 -> 5.671:1 */
   }
 }
 
@@ -188,6 +546,12 @@ body {
   .rise {
     opacity: 1;
     transform: none;
+  }
+  /* The FullStats arrival pulse is an imperative box-shadow paired with
+     `transition-shadow duration-500` on MetricCard; kill the transition so the
+     pulse lands instantly instead of animating. */
+  .transition-shadow {
+    transition: none;
   }
   body {
     transition: none;

@@ -37,11 +37,20 @@ targets:
         # plist directly it would vanish on the next `make ios`. The files
         # sit in MedPull/Resources/Fonts and are picked up as resources by
         # the `sources: - path: MedPull` rule above.
+        #
+        # Instrument Sans (SIL OFL 1.1) at 400 and 500 only — the same two
+        # cuts the console loads as woff2, so the app and the provider console
+        # are one face. 500 is the weight ceiling; MPFont maps .semibold and
+        # .bold down to it rather than naming a file that does not exist,
+        # because Font.custom falls back to San Francisco silently.
+        # The names here are filenames; UI/Theme.swift asks for the PostScript
+        # names InstrumentSans-Regular and InstrumentSans-Medium, which the
+        # two files carry. The four EBGaramond-*.ttf files are still on disk
+        # and are still copied into the bundle by the sources rule, but they
+        # are no longer registered and nothing references them.
         UIAppFonts:
-          - EBGaramond-Regular.ttf
-          - EBGaramond-Medium.ttf
-          - EBGaramond-SemiBold.ttf
-          - EBGaramond-Bold.ttf
+          - InstrumentSans-Regular.ttf
+          - InstrumentSans-Medium.ttf
         CFBundleURLTypes:
           - CFBundleURLName: com.medpull.recovery
             CFBundleURLSchemes: [medpull]

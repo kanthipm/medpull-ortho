@@ -3,15 +3,42 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Medical Blue #1976D2 light / Deep #0D47A1 dark. The inline script below
+         rewrites this before paint; keep the two in step. -->
     <meta name="theme-color" content="#1976d2" />
     <link rel="icon" type="image/svg+xml" href="/medpull-logo.svg" />
+
+    <!-- Self-hosted UI face. Both files are ~16KB, so preloading the pair costs
+         ~32KB and lets index.css use `font-display: swap` without ever showing
+         Arial: the metric-matched fallback face makes the swap reflow nothing,
+         and the preload makes it happen in the first frame on a warm cache. -->
+    <link
+      rel="preload"
+      href="/fonts/InstrumentSans-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/InstrumentSans-Medium.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
+    <!-- Roboto Mono still comes from Google Fonts, so BOTH preconnects stay:
+         dropping them while the stylesheet request remains adds a DNS + TLS
+         round trip to the face that renders every clinical figure. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <!-- Apply stored/system theme before paint to avoid a light flash. -->
+    <!-- Apply stored/system theme before paint to avoid a light flash.
+         The two background hexes shadow --canvas: #F5F7FA (n-50) light and
+         #0E151C (n-950) dark. src/lib/theme.tsx carries the same pair. -->
     <script>
       (function () {
         try {
@@ -22,8 +49,8 @@
           if (t === 'dark') document.documentElement.classList.add('dark')
           document.documentElement.style.colorScheme = t
           var meta = document.querySelector('meta[name="theme-color"]')
-          if (meta) meta.setAttribute('content', t === 'dark' ? '#004ba0' : '#1976d2')
-          document.documentElement.style.background = t === 'dark' ? '#121212' : '#fafafa'
+          if (meta) meta.setAttribute('content', t === 'dark' ? '#0d47a1' : '#1976d2')
+          document.documentElement.style.background = t === 'dark' ? '#0e151c' : '#f5f7fa'
         } catch (e) {}
       })()
     </script>

@@ -9,6 +9,13 @@
     "lint": "eslint .",
     "preview": "vite preview"
   },
+  "browserslist": [
+    "safari >= 15",
+    "ios_saf >= 15",
+    "chrome >= 100",
+    "firefox >= 103",
+    "edge >= 100"
+  ],
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
     "lucide-react": "^0.468.0",
