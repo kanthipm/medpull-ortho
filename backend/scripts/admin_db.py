@@ -22,7 +22,7 @@ import json
 import os
 import sys
 import tempfile
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parent.parent
@@ -43,6 +43,9 @@ def main() -> int:
                     help="keep only the newest risk_assessments row per patient")
     ap.add_argument("--purge-phone-verifications", action="store_true",
                     help="delete every one-time code row (they expire in 10 minutes anyway)")
+    ap.add_argument("--restore-demo-phones", action="store_true",
+                    help="put each demo persona's intended number back on its chart "
+                         "(app/seed/demo_fill.py is the source of the numbers)")
     ap.add_argument("--dedupe-daily", action="store_true",
                     help="collapse duplicate daily summaries (one per patient/metric/day/device), "
                          "keeping the most recently ingested")
@@ -119,6 +122,36 @@ def main() -> int:
             gone = db.execute(delete(RiskAssessment).where(RiskAssessment.id.not_in(keep))).rowcount
             db.commit()
             report["pruned_assessments"] = gone
+        if args.restore_demo_phones:
+            # The demo personas carry invented 555 numbers, which Sendblue can
+            # never accept as verified contacts — so a send to one is always a
+            # recorded failure. They are on the charts because a chart with no
+            # number on file reads as incomplete; the operator drives SMS
+            # through their own verified number instead.
+            from app.seed.demo_fill import _build_roster
+
+            legacy, new_personas = _build_roster(date.today())
+            intended = {p.spec.id: p.phone for p in (*legacy, *new_personas)}
+            applied, skipped = [], []
+            for patient_id, phone in sorted(intended.items()):
+                patient = db.get(Patient, patient_id)
+                if patient is None:
+                    skipped.append({"patient": patient_id, "why": "no such record"})
+                    continue
+                if patient.phone == phone:
+                    continue
+                holder = db.scalar(select(Patient).where(
+                    Patient.phone == phone, Patient.id != patient_id))
+                if holder is not None:
+                    # One number, one chart: never point two records at one
+                    # phone, or an inbound text lands on the wrong one.
+                    skipped.append({"patient": patient_id, "why": f"held by {holder.id}"})
+                    continue
+                previous, patient.phone = patient.phone, phone
+                applied.append({"patient": patient_id, "phone": phone, "was": previous})
+            db.commit()
+            report["restored_demo_phones"] = {"applied": applied, "skipped": skipped}
+
         if args.dedupe_daily:
             # A provider that re-issued its record id for a day it had already
             # sent left one row per delivery. connectors/ingest.py now treats
