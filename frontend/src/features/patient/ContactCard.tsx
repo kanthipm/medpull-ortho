@@ -64,10 +64,22 @@ export default function ContactCard({
   }
 
   const doLink = (c: AppLinkCandidate) => {
+    if (c.refusal) {
+      // The server would refuse, and the reason is worth reading rather than
+      // discovering after a click that cannot be undone.
+      toast(c.refusal, 'warning')
+      return
+    }
+    const moving = [
+      c.observations > 0 && `${c.observations} health readings`,
+      c.checkins > 0 && `${c.checkins} check-ins`,
+      c.app.ever_enrolled && 'an app session',
+    ].filter(Boolean)
     if (
       !window.confirm(
         `Link "${c.name}" (${c.patient_id}) into ${patientName}'s chart?\n\n` +
-          `Their app session, messages, tasks and health data move here and the "${c.name}" record is removed. This cannot be undone.`,
+          (moving.length ? `That record holds ${moving.join(', ')}. ` : '') +
+          `Its session, messages, tasks and health data move here and the "${c.name}" record is removed. This cannot be undone.`,
       )
     )
       return
@@ -215,12 +227,20 @@ export default function ContactCard({
                       )}
                       {c.phone_match && <span className="text-risk-low"> · same number</span>}
                       {c.name_match && !c.phone_match && <span className="text-brand"> · name matches</span>}
+                      {c.observations > 0 && <> · {c.observations} readings</>}
+                      {c.checkins > 0 && <> · {c.checkins} check-ins</>}
                     </p>
+                    {c.refusal && (
+                      <p className="mt-0.5 text-[11.5px] font-medium text-risk-high">
+                        Cannot link: {c.refusal}
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"
                     className="qa-btn shrink-0"
-                    disabled={link.isPending}
+                    disabled={link.isPending || Boolean(c.refusal)}
+                    title={c.refusal ?? `Fold ${c.name} into this chart`}
                     onClick={() => doLink(c)}
                   >
                     <Link2 size={13} className="text-brand" /> Link

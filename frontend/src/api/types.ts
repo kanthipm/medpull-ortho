@@ -340,6 +340,12 @@ export interface AppLinkCandidate {
   phone_match: boolean
   name_match: boolean
   app: AppEnrollment
+  /** How much history a link would move. A record with readings and
+   *  check-ins of its own is somebody's chart, not a stray sign-up. */
+  observations: number
+  checkins: number
+  /** Why the server would refuse this link, or null when it would allow it. */
+  refusal: string | null
 }
 
 export interface AppLinkCandidates {

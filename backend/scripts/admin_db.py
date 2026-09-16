@@ -99,7 +99,11 @@ def main() -> int:
             if target is None or source is None:
                 raise SystemExit(f"unknown patient in --link {target_id} {source_id}")
             try:
-                report.setdefault("linked", []).append(link_app_account(db, target, source))
+                # An operator running this named both records explicitly, so
+                # the cross-patient guard is theirs to override; the console's
+                # one-click path is not.
+                report.setdefault("linked", []).append(
+                    link_app_account(db, target, source, force=True))
             except IdentityError as e:
                 raise SystemExit(f"link refused: {e.detail}")
         if args.delete_patient:

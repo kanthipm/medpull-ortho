@@ -9,7 +9,7 @@ loop for a crowd of patients with hostile input.
 from __future__ import annotations
 
 import threading
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import delete, select
 
@@ -576,12 +576,15 @@ def test_link_dedupes_overlapping_readings_and_keeps_the_phones_junction_user(cl
             patient_id=pid, source_provider=SourceProvider.JUNCTION, metric_type=MetricType.STEPS,
             unit="count", value_num=steps,
             start_time=datetime.combine(day, dtime.min), end_time=datetime.combine(day, dtime(23, 59)),
-            granularity=Granularity.DAILY_SUMMARY, source_device_id=f"junction:{user}:apple_health_kit",
+            # As production writes it: the bare provider slug. The Junction
+            # user lives on the connection row, not on every reading, which
+            # is what lets one phone's two accounts dedupe by day.
+            granularity=Granularity.DAILY_SUMMARY, source_device_id="apple_health_kit",
             # Junction ids a daily summary per user, so the same day under two
             # users never shares a record id: the merge must collide by day.
             timezone="America/Chicago", external_id=f"activity:{user}:{day.isoformat()}",
         )
-    d1, d2, d3 = (date.today() - __import__("datetime").timedelta(days=n) for n in (3, 2, 1))
+    d1, d2, d3 = (date.today() - timedelta(days=n) for n in (3, 2, 1))
     # the chart's Junction user delivered d1 and d2; the sign-up's user d2 and d3
     ingest_observations(db, [reading("steve", d1, 1000, "u-chart"), reading("steve", d2, 2000, "u-chart")])
     ingest_observations(db, [reading(src, d2, 2100, "u-app"), reading(src, d3, 3000, "u-app")])
@@ -898,4 +901,97 @@ def test_the_app_sees_the_newest_messages_when_the_thread_is_long(client, db, mo
     db.commit()
     later = client.get(f"/api/mobile/messages?since_id={newest}", headers=_auth(token)).json()
     assert [m["text"] for m in later["messages"]] == ["after"]
+    _forget_patient(db, pid)
+
+
+def test_linking_refuses_two_records_fed_by_different_devices(client, db, monkeypatch):
+    """The accident this guard exists for: a chart with its own phone, app
+    sessions, aggregator account and hundreds of Apple Health readings was
+    folded into a demo patient whose data came from a Fitbit, and undoing it
+    needed a backup and a provenance-by-provenance split."""
+    from datetime import datetime, time as dtime
+
+    from app.connectors.base import CanonicalObservation
+    from app.connectors.ingest import ingest_observations
+    from app.identity import link_app_account, link_refusal
+    from app.models.enums import Granularity, MetricType, SourceProvider
+    from app.models.observation import Observation
+
+    Sendblue(monkeypatch)
+    db.expire_all()
+    db.execute(delete(Observation).where(Observation.patient_id == "steve"))
+    db.get(Patient, "steve").phone = None
+    db.commit()
+
+    def reading(pid, day, steps, provider, device):
+        return CanonicalObservation(
+            patient_id=pid, source_provider=provider, metric_type=MetricType.STEPS,
+            unit="count", value_num=steps,
+            start_time=datetime.combine(day, dtime.min),
+            end_time=datetime.combine(day, dtime(23, 59)),
+            granularity=Granularity.DAILY_SUMMARY, source_device_id=device,
+            timezone="America/Chicago", external_id=f"{device}:{day.isoformat()}",
+        )
+
+    today = date.today()
+    # the chart: a Fitbit patient of somebody else's
+    ingest_observations(db, [reading("steve", today, 4000, SourceProvider.FITBIT, "fitbit")])
+    # the sign-up: a phone delivering Apple Health through Junction
+    signup = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Other Person", "phone": "+15125550810",
+        "had_surgery": False}).json()
+    src = signup["me"]["patient"]["id"]
+    ingest_observations(db, [reading(src, today, 9000, SourceProvider.JUNCTION, "apple_health_kit")])
+    db.commit()
+
+    # the console refuses, and says why in terms a clinician can check
+    why = link_refusal(db, db.get(Patient, "steve"), db.get(Patient, src))
+    assert why and "different devices" in why
+    refused = client.post("/api/patients/steve/app-link", json={"from_patient_id": src})
+    assert refused.status_code == 409
+    assert "different devices" in refused.json()["detail"]
+    # nothing moved, and neither record was deleted
+    db.expire_all()
+    assert db.get(Patient, src) is not None
+    assert db.scalar(select(Observation.value_num).where(
+        Observation.patient_id == "steve")) == 4000.0
+
+    # the same phone under two aggregator users is still the case it exists
+    # for: shared hardware, so no refusal
+    ingest_observations(db, [reading("steve", today - timedelta(days=1), 3000,
+                                     SourceProvider.JUNCTION, "apple_health_kit")])
+    db.commit()
+    assert link_refusal(db, db.get(Patient, "steve"), db.get(Patient, src)) is None
+
+    # and an operator can still force it deliberately
+    result = link_app_account(db, db.get(Patient, "steve"), db.get(Patient, src), force=True)
+    assert result["linked_from"] == src
+    db.expire_all()
+    # BOTH days survive: one device's reading no longer deletes the other's
+    rows = db.scalars(select(Observation).where(
+        Observation.patient_id == "steve", Observation.local_date == today)).all()
+    assert sorted(r.value_num for r in rows) == [4000.0, 9000.0]
+
+    from app.models.insight import EstablishedBaseline
+
+    db.execute(delete(Observation).where(Observation.patient_id == "steve"))
+    db.execute(delete(Message).where(Message.patient_id == "steve"))
+    db.execute(delete(PatientSession).where(PatientSession.patient_id == "steve"))
+    db.execute(delete(EstablishedBaseline).where(EstablishedBaseline.patient_id == "steve"))
+    db.get(Patient, "steve").phone = None
+    db.commit()
+
+
+def test_link_candidates_say_what_is_at_stake(client, db, monkeypatch):
+    Sendblue(monkeypatch)
+    signup = client.post("/api/mobile/join", json={
+        "hospital_id": "hosp_demo", "name": "Stakes Person", "phone": "+15125550820",
+        "had_surgery": False}).json()
+    pid = signup["me"]["patient"]["id"]
+    body = client.get("/api/patients/steve/app-link/candidates").json()
+    row = next(c for c in body["candidates"] if c["patient_id"] == pid)
+    # the console can show the size of what a click would move, and whether
+    # the server would allow it at all
+    assert row["observations"] == 0 and row["checkins"] == 0
+    assert "refusal" in row
     _forget_patient(db, pid)

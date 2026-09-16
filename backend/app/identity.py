@@ -80,6 +80,8 @@ def link_candidates(db: Session, patient: Patient) -> list[dict[str, Any]]:
     """Other records that could be this person's app sign-up: anything with
     an app session or a phone, the ones sharing a name word first, then the
     most recently seen. Never the chart itself."""
+    from sqlalchemy import func
+
     tokens = {t for t in patient.name.lower().replace(",", " ").split() if len(t) > 1}
     rows = db.scalars(select(Patient).where(Patient.id != patient.id)).all()
     out: list[dict[str, Any]] = []
@@ -88,7 +90,18 @@ def link_candidates(db: Session, patient: Patient) -> list[dict[str, Any]]:
         if not status["ever_enrolled"] and not p.phone:
             continue
         shared = bool(tokens & {t for t in p.name.lower().replace(",", " ").split()})
+        # What linking would move, and whether it is allowed at all. A
+        # candidate with its own readings and check-ins is somebody's chart,
+        # not a stray sign-up, and the console needs to say so before a
+        # click that cannot be undone.
+        readings = db.scalar(select(func.count(Observation.id)).where(
+            Observation.patient_id == p.id, Observation.deleted_at.is_(None))) or 0
+        checkins = db.scalar(select(func.count(Checkin.id)).where(
+            Checkin.patient_id == p.id)) or 0
         out.append({
+            "observations": readings,
+            "checkins": checkins,
+            "refusal": link_refusal(db, patient, p),
             "patient_id": p.id,
             "name": p.name,
             "hospital_id": p.hospital_id,
@@ -184,9 +197,18 @@ def _merge_observations(
         # the same day from two users never shares a dedupe key. The day is
         # the identity of a daily summary (connectors/base.py says as much
         # for rows without a record id), so daily rows also collide by day.
+        #
+        # The SOURCE DEVICE is part of that identity. Without it, merging two
+        # records fed by different hardware deleted one side's day as a
+        # duplicate of the other's — a Fitbit day and an Apple day for the
+        # same date are two measurements, not one, and roughly fifty of each
+        # were destroyed that way before this was fixed. The case the merge
+        # exists for is unaffected: one phone delivering under two Junction
+        # users carries the same device id on both sides.
         if str(row.granularity) != str(Granularity.DAILY_SUMMARY):
             return None
-        return (str(row.metric_type), row.local_date, row.side or "na", row.body_site or "na")
+        return (str(row.metric_type), row.local_date, row.source_device_id or "na",
+                row.side or "na", row.body_site or "na")
 
     by_key: dict[str, Observation] = {}
     by_day: dict[tuple, Observation] = {}
@@ -281,7 +303,56 @@ def _merge_connections(db: Session, target: Patient, source: Patient) -> dict[st
     return out
 
 
-def link_app_account(db: Session, target: Patient, source: Patient) -> dict[str, Any]:
+def _device_sources(db: Session, patient_id: str) -> set[str]:
+    """The distinct hardware feeding a record's readings.
+
+    Only the device itself, never the aggregator account it arrived under: a
+    Junction device id is "junction:<user>:<slug>", and one phone delivering
+    under two users would otherwise look like two different devices — which
+    is precisely the case a merge is for.
+    """
+    return {
+        (device or "na").rsplit(":", 1)[-1]
+        for (device,) in db.execute(
+            select(Observation.source_device_id)
+            .where(Observation.patient_id == patient_id, Observation.deleted_at.is_(None))
+            .distinct()
+        ).all()
+    }
+
+
+def link_refusal(db: Session, target: Patient, source: Patient) -> str | None:
+    """Why these two records must not be merged, or None when it is safe.
+
+    The merge answers one question — "this person has two records, make them
+    one" — and the evidence for that is a shared device: the same phone
+    delivering under two aggregator users. Two records fed by entirely
+    different hardware are two people, and folding them together deletes one
+    of them. That happened: a chart with its own phone, two app sessions, a
+    Junction account and three hundred Apple Health readings was folded into
+    a demo patient whose data came from a Fitbit, and undoing it took a
+    backup and a provenance-by-provenance split.
+    """
+    if target.id == source.id:
+        return "A record cannot be linked to itself"
+    target_sources = _device_sources(db, target.id)
+    source_sources = _device_sources(db, source.id)
+    if not target_sources or not source_sources:
+        return None  # one side has no readings: nothing to disagree about
+    if target_sources & source_sources:
+        return None  # same hardware on both sides: one person, two records
+    return (
+        "These records are fed by different devices "
+        f"({', '.join(sorted(source_sources))} vs {', '.join(sorted(target_sources))}), "
+        "so they look like two different patients rather than one person's two "
+        "records. Linking would delete one of them. Check the phone number and "
+        "the device on each chart first."
+    )
+
+
+def link_app_account(
+    db: Session, target: Patient, source: Patient, *, force: bool = False
+) -> dict[str, Any]:
     """Merge ``source`` (the record the app enrolled against) into ``target``
     (the chart the clinician works on) and delete ``source``.
 
@@ -293,6 +364,9 @@ def link_app_account(db: Session, target: Patient, source: Patient) -> dict[str,
     """
     if target.id == source.id:
         raise IdentityError("A record cannot be linked to itself", 422)
+    refusal = link_refusal(db, target, source)
+    if refusal is not None and not force:
+        raise IdentityError(refusal, 409, source=source.id, target=target.id)
     counts: dict[str, int] = {}
     # The connection decision reads sessions, so it runs before they move.
     connections = _merge_connections(db, target, source)
