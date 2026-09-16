@@ -220,6 +220,43 @@ struct MessageAction: Codable, Hashable {
     var opensTask: Int? { kind == "open_task" ? taskId : nil }
 }
 
+/// A photo or file on a thread line.
+///
+/// No URL here. A link to the bytes is minted per request and lives
+/// minutes, because a link that outlives its request outlives the check
+/// that authorised it — so one is asked for when the file is about to be
+/// shown, not when the thread is decoded.
+struct ChatAttachment: Codable, Identifiable, Hashable {
+    let id: Int
+    let contentType: String
+    let byteSize: Int
+    /// What the sender called it. Nil for a photo, which needs no name.
+    let filename: String?
+    let kind: String            // image | file
+    /// Content hash: the bytes are the same wherever the link points, so
+    /// this is what an image cache keys on.
+    let sha256: String?
+    let uploadedBy: String      // patient | care_team | copilot
+    let source: String          // app | console | sms
+    let createdAt: String?
+    /// Taken back by whoever sent it. The bytes are gone; the line stays,
+    /// so a reply to it does not end up referring to nothing.
+    let withdrawn: Bool?
+
+    var isImage: Bool { kind == "image" }
+    var isWithdrawn: Bool { withdrawn == true }
+
+    var sizeLabel: String {
+        if byteSize >= 1_048_576 {
+            return String(format: "%.1f MB", Double(byteSize) / 1_048_576)
+        }
+        if byteSize >= 1024 { return "\(byteSize / 1024) KB" }
+        return "\(byteSize) B"
+    }
+
+    var displayName: String { filename ?? (isImage ? "Photo" : "File") }
+}
+
 struct ChatMessage: Codable, Identifiable, Hashable {
     let id: Int
     let sender: String   // patient | care_team | copilot
@@ -236,9 +273,13 @@ struct ChatMessage: Codable, Identifiable, Hashable {
     /// The button this line offers, when it offers one. Absent from an older
     /// server's response, which decodes to nil and simply draws no button.
     let action: MessageAction?
+    /// Photos and files on this line. Absent from an older server's
+    /// response, and empty on most lines.
+    let attachments: [ChatAttachment]?
     let read: Bool
 
     var fromClinician: Bool { authoredBy == "care_team" }
+    var files: [ChatAttachment] { attachments ?? [] }
 }
 
 struct MessagesResponse: Codable { let messages: [ChatMessage] }

@@ -165,8 +165,10 @@ final class AppModel {
         await refreshTasks()
     }
 
-    func send(message text: String) async throws {
-        let m = try await api.sendMessage(text)
+    /// Write to the care team. A photo can be the whole message, so the
+    /// text may be empty when something is attached.
+    func send(message text: String, attachmentIds: [Int] = []) async throws {
+        let m = try await api.sendMessage(text, attachmentIds: attachmentIds)
         messages.append(m)
     }
 

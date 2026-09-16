@@ -98,6 +98,36 @@ final class APIClient {
         }
     }
 
+    /// The status check the JSON path applies, for the requests that build
+    /// their own URLRequest (an upload body, a file download).
+    fileprivate func check(_ response: URLResponse, _ data: Data) throws {
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 0 {
+            throw APIError(status: 0, detail: "Can't reach MedPull right now. Check your connection.")
+        }
+        guard (200..<300).contains(status) else {
+            var detail = HTTPURLResponse.localizedString(forStatusCode: status)
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let d = obj["detail"] as? String {
+                detail = d
+            }
+            throw APIError(status: status, detail: detail)
+        }
+    }
+
+    fileprivate func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        do {
+            return try decoder.decode(type, from: data)
+        } catch {
+            throw APIError(status: 200,
+                           detail: "Unexpected answer from the server (\(error.localizedDescription)).")
+        }
+    }
+
+    fileprivate func delete<T: Decodable>(_ path: String) async throws -> T {
+        try await send("DELETE", path, query: [:], body: Optional<Empty>.none)
+    }
+
     /// One HTTP attempt. A transport failure (no network, DNS, timeout) comes
     /// back as status 0 with empty data rather than throwing, so the caller
     /// can decide whether to retry.
@@ -212,11 +242,15 @@ extension APIClient {
         return r.messages
     }
 
-    struct TextBody: Encodable { let text: String }
+    struct TextBody: Encodable { let text: String; let attachmentIds: [Int] }
     struct AgentBody: Encodable { let text: String; let channel: String }
 
-    func sendMessage(_ text: String) async throws -> ChatMessage {
-        let r: SentMessageResponse = try await post("/api/mobile/messages", body: TextBody(text: text))
+    /// A photo can be the whole message, so the text may be empty as long as
+    /// something is attached — the server refuses only when both are.
+    func sendMessage(_ text: String, attachmentIds: [Int] = []) async throws -> ChatMessage {
+        let r: SentMessageResponse = try await post(
+            "/api/mobile/messages", body: TextBody(text: text, attachmentIds: attachmentIds)
+        )
         return r.message
     }
 
@@ -240,6 +274,146 @@ extension APIClient {
         try await post("/api/mobile/observations/gait", body: upload)
     }
     func signOut() async throws { let _: OKResponse = try await post("/api/mobile/signout") }
+}
+
+// MARK: - Attachments
+
+extension APIClient {
+    /// Where to put a file. The server decides: a deployment with object
+    /// storage presigns an upload, one without takes the bytes itself.
+    struct UploadTicket: Decodable {
+        struct Upload: Decodable {
+            let url: String
+            let fields: [String: String]
+            let expiresIn: Int
+        }
+        let storageKey: String
+        let direct: Bool
+        let maxBytes: Int
+        let upload: Upload?
+    }
+
+    private struct AttachmentResponse: Decodable { let attachment: ChatAttachment }
+    private struct ConfirmBody: Encodable {
+        let storageKey: String
+        let contentType: String
+        let byteSize: Int
+        let filename: String?
+    }
+
+    /// Store one file on this patient's chart and return the row. Uploading
+    /// happens when the file is picked, so the send that follows only ever
+    /// carries ids; a row nobody claims with a message is swept server-side.
+    func upload(_ data: Data, contentType: String, filename: String?) async throws -> ChatAttachment {
+        let ticket: UploadTicket = try await get(
+            "/api/mobile/attachments/upload-ticket",
+            query: ["content_type": contentType, "byte_size": String(data.count)]
+        )
+        guard data.count <= ticket.maxBytes else {
+            throw APIError(status: 413,
+                           detail: "That file is over \(ticket.maxBytes / 1_048_576) MB.")
+        }
+        if ticket.direct || ticket.upload == nil {
+            return try await uploadDirect(data, contentType: contentType, filename: filename)
+        }
+        try await uploadPresigned(ticket.upload!, data: data,
+                                  contentType: contentType, filename: filename)
+        let confirmed: AttachmentResponse = try await post(
+            "/api/mobile/attachments",
+            body: ConfirmBody(storageKey: ticket.storageKey, contentType: contentType,
+                              byteSize: data.count, filename: filename)
+        )
+        return confirmed.attachment
+    }
+
+    /// The bytes as the request body — no multipart, which would mean a
+    /// parser dependency server-side for one route.
+    private func uploadDirect(
+        _ data: Data, contentType: String, filename: String?
+    ) async throws -> ChatAttachment {
+        var components = URLComponents(
+            url: AppConfig.baseURL.appendingPathComponent("/api/mobile/attachments/direct"),
+            resolvingAgainstBaseURL: false
+        )!
+        if let filename { components.queryItems = [URLQueryItem(name: "filename", value: filename)] }
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "POST"
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        request.httpBody = data
+        // A photo on a hotel connection needs longer than a JSON call.
+        request.timeoutInterval = 90
+        let (body, response) = try await attempt(request)
+        try check(response, body)
+        return try decode(AttachmentResponse.self, from: body).attachment
+    }
+
+    /// A presigned POST carries its own authorization in the signed fields,
+    /// so it goes out with none of ours attached — and the file part must be
+    /// last, which the storage service requires.
+    private func uploadPresigned(
+        _ upload: UploadTicket.Upload, data: Data, contentType: String, filename: String?
+    ) async throws {
+        let boundary = "medpull-\(UUID().uuidString)"
+        var body = Data()
+        func field(_ name: String, _ value: String) {
+            body.append(Data("--\(boundary)\r\n".utf8))
+            body.append(Data("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8))
+            body.append(Data("\(value)\r\n".utf8))
+        }
+        for (key, value) in upload.fields { field(key, value) }
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data(
+            "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename ?? "upload")\"\r\n".utf8
+        ))
+        body.append(Data("Content-Type: \(contentType)\r\n\r\n".utf8))
+        body.append(data)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+
+        var request = URLRequest(url: URL(string: upload.url)!)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)",
+                         forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 90
+        request.httpBody = body
+        let (answer, response) = try await attempt(request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            _ = answer
+            throw APIError(status: status, detail: "The upload was refused by storage.")
+        }
+    }
+
+    /// The bytes of one attachment, ready to draw.
+    ///
+    /// Where there is object storage the server hands back a short-lived
+    /// link and this fetches it directly, which keeps a large file off the
+    /// API's own response ceiling. Where there is not, the API streams it.
+    func attachmentData(id: Int) async throws -> Data {
+        struct WithURL: Decodable { let url: String? }
+        struct Wrapper: Decodable { let attachment: WithURL }
+        let path = "/api/mobile/attachments/\(id)"
+        let wrapper: Wrapper = try await get(path)
+        if let link = wrapper.attachment.url, let url = URL(string: link) {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 60
+            let (data, response) = try await attempt(request)
+            try check(response, data)
+            return data
+        }
+        var request = URLRequest(url: AppConfig.baseURL.appendingPathComponent("\(path)/raw"))
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        request.timeoutInterval = 60
+        let (data, response) = try await attempt(request)
+        try check(response, data)
+        return data
+    }
+
+    /// Take back a file. The bytes go; the line says something was removed.
+    func withdrawAttachment(id: Int) async throws {
+        let _: OKResponse = try await delete("/api/mobile/attachments/\(id)")
+    }
 }
 
 /// Answers are mixed: numbers for scale/number questions, strings otherwise.
