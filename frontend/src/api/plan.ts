@@ -457,6 +457,33 @@ export function useAssignPlan(id: string) {
   })
 }
 
+export type DailyCheckinResponse = {
+  ok: boolean
+  /** True when an open check-in was already waiting and was reused rather
+   *  than a second identical one created. */
+  reused: boolean
+  task_id: number
+  in_app: boolean
+  sms: { attempted: boolean; sent: boolean; detail: string; linked: boolean }
+}
+
+/** One press: today's check-in into the patient's app, and a text telling
+ *  them it's there. The text is best effort — the check-in has landed in the
+ *  app by the time this resolves either way, which is what `in_app` says. */
+export function useSendDailyCheckin(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<DailyCheckinResponse>(`/api/patients/${id}/actions/daily-checkin`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      invalidatePlan(qc, id)
+      qc.invalidateQueries({ queryKey: ['patient', id, 'messages'] })
+    },
+  })
+}
+
 export function useEndPlanTask(id: string) {
   const qc = useQueryClient()
   return useMutation({

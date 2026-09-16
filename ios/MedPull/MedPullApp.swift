@@ -18,12 +18,17 @@ struct MedPullApp: App {
 
     @UIApplicationDelegateAdaptor private var delegate: Delegate
     @State private var app = AppModel()
+    @State private var appearance = Appearance()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(app)
+                .environment(appearance)
                 .tint(MP.brand)
+                // Set here, on the window's root, so sheets, the tab bar and
+                // the keyboard follow the choice too.
+                .preferredColorScheme(appearance.mode.colorScheme)
                 .task { await app.bootstrap() }
                 .onOpenURL { url in app.handle(url: url) }
         }

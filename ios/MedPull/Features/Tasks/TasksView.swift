@@ -19,7 +19,15 @@ struct TasksView: View {
             .refreshable { await app.refreshTasks() }
             .screen()
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(item: $openTask) { task in TaskDetailView(task: task) }
+            // The check-in gets its own flow; every other kind uses the
+            // generic form. Both post the same answers to the same endpoint.
+            .navigationDestination(item: $openTask) { task in
+                if task.kind == "checkin" {
+                    CheckinView(task: task)
+                } else {
+                    TaskDetailView(task: task)
+                }
+            }
             .task { await app.refreshTasks() }
             .onChange(of: app.pendingTaskId, initial: true) { _, id in openPending(id) }
             .onChange(of: app.tasks) { _, _ in openPending(app.pendingTaskId) }

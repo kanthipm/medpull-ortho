@@ -80,3 +80,31 @@ class Message(Base):
     # way to tell a landline from a broken Sendblue account.
     delivery_detail: Mapped[str | None] = mapped_column(String, nullable=True)
     external_handle: Mapped[str | None] = mapped_column(String, nullable=True)
+    # An action the app offers on this line, drawn as a button under the
+    # bubble: "open_task" opens ``action_task_id`` in the app. NULL on every
+    # line that is only words, which is nearly all of them.
+    #
+    # It exists because a text cannot carry a button. A patient who has the
+    # app gets no link in their SMS at all (the content is already theirs,
+    # behind their session); what they get is this row, and the app turns it
+    # into one tap. The texted link is the fallback for somebody who has
+    # never enrolled.
+    action_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    action_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    action_label: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    def action_view(self) -> dict | None:
+        """The button a client should draw under this line, or None for a
+        line that is only words.
+
+        Lives on the model because both the patient app and the console
+        thread render it and the two must not drift, and because everything
+        it needs is already loaded — it costs no query.
+        """
+        if not self.action_kind:
+            return None
+        return {
+            "kind": self.action_kind,
+            "task_id": self.action_task_id,
+            "label": self.action_label or "Open",
+        }

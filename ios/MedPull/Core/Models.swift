@@ -204,6 +204,22 @@ struct CompleteResponse: Codable {
     let task: RecoveryTask
 }
 
+/// A button the server asks the app to draw under one message.
+///
+/// A text message cannot carry a button — no carrier renders one — so the
+/// affordance travels as data on the row instead. The care team texts "your
+/// check-in is ready"; in the app that same line grows one tap straight into
+/// the check-in. Nil on a line that is only words, which is nearly all of them.
+struct MessageAction: Codable, Hashable {
+    /// Only "open_task" so far. Unknown kinds are ignored rather than drawn,
+    /// so a newer server cannot make an older app render a dead button.
+    let kind: String
+    let taskId: Int?
+    let label: String
+
+    var opensTask: Int? { kind == "open_task" ? taskId : nil }
+}
+
 struct ChatMessage: Codable, Identifiable, Hashable {
     let id: Int
     let sender: String   // patient | care_team | copilot
@@ -217,6 +233,9 @@ struct ChatMessage: Codable, Identifiable, Hashable {
     let text: String
     let createdAt: String?
     let deliveryStatus: String?
+    /// The button this line offers, when it offers one. Absent from an older
+    /// server's response, which decodes to nil and simply draws no button.
+    let action: MessageAction?
     let read: Bool
 
     var fromClinician: Bool { authoredBy == "care_team" }

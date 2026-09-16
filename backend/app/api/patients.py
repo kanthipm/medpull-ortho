@@ -341,6 +341,9 @@ def _message_view(m, db: Session | None = None,
         "delivery_status": m.delivery_status,
         "delivery_detail": m.delivery_detail,
         "attachments": (attachments or {}).get(m.id, []),
+        # What the patient's app draws as a button on this line, so a
+        # clinician reading the thread sees what they actually sent.
+        "action": m.action_view(),
         "read_by_care_team": m.read_by_care_team_at is not None,
     }
 

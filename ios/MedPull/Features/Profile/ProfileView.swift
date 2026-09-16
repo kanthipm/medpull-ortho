@@ -2,12 +2,14 @@ import SwiftUI
 
 struct ProfileView: View {
     @Environment(AppModel.self) private var app
+    @Environment(Appearance.self) private var appearance
     @Environment(\.dismiss) private var dismiss
     @State private var serverURL = AppConfig.baseURL.absoluteString
     @State private var signingOut = false
 
     var body: some View {
-        NavigationStack {
+        @Bindable var appearance = appearance
+        return NavigationStack {
             List {
                 if let me = app.me {
                     Section {
@@ -39,6 +41,29 @@ struct ProfileView: View {
                     } footer: {
                         Text("Task texts come from your care team's MedPull number. Reply 1 to any of them to do the task by text, or open it here.")
                     }
+                }
+                Section {
+                    Picker("Appearance", selection: $appearance.mode) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("System follows your iPhone's Display & Brightness setting.")
+                }
+                Section {
+                    row("Spoken replies", SpeechController.voiceLabel)
+                } header: {
+                    Text("Voice")
+                } footer: {
+                    // We can't download a voice for them, so say where it is.
+                    Text(SpeechController.hasNaturalVoice
+                         ? "The voice MedPull talks back with on the Talk tab."
+                         : "This iPhone only has Apple's basic voice, which sounds flat. Settings → Accessibility → Spoken Content → Voices → English has free Premium voices (try Ava or Evan) — download one and MedPull uses it automatically.")
                 }
                 Section {
                     TextField("Server URL", text: $serverURL)

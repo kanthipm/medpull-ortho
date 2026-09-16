@@ -95,6 +95,7 @@ struct MessagesView: View {
 }
 
 struct Bubble: View {
+    @Environment(AppModel.self) private var app
     let message: ChatMessage
 
     private var mine: Bool { message.sender == "patient" }
@@ -123,6 +124,9 @@ struct Bubble: View {
                     .fill(mine ? MP.brand : (message.sender == "care_team" ? MP.brandTint : MP.panel)))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(mine ? .clear : MP.line))
+            if let taskId = message.action?.opensTask, let label = message.action?.label {
+                actionButton(label, taskId: taskId)
+            }
             HStack(spacing: 4) {
                 Text(who)
                 if message.fromClinician {
@@ -142,5 +146,30 @@ struct Bubble: View {
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .padding(mine ? .leading : .trailing, 48)
+    }
+
+    /// The tap a text message could not carry. It goes to the task itself
+    /// rather than to the Tasks list, because the message already said what
+    /// is being asked and making them find it again is the whole problem
+    /// this button exists to remove.
+    private func actionButton(_ label: String, taskId: Int) -> some View {
+        Button {
+            app.pendingTaskId = taskId
+            app.selectedTab = .tasks
+            // The task this points at was created moments ago, server-side,
+            // so the cached list may not hold it yet. Tasks opens on whatever
+            // arrives; without this the button lands on an empty list.
+            Task { await app.refreshTasks() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.right.circle.fill").font(.system(size: 14, weight: .semibold))
+                Text(label).font(.system(size: 14.5, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16).frame(minHeight: 40)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(MP.brand))
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 2)
     }
 }

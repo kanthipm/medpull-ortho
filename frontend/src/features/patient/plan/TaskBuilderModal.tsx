@@ -1,4 +1,4 @@
-import { Plus, Search, Sparkles, Star, Wand2 } from 'lucide-react'
+import { Plus, Search, Sparkles, Star, Wand2, Zap } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { CarePathway } from '../../../api/care'
 import type { DraftTask, TaskPhase, TaskTemplate } from '../../../api/plan'
@@ -6,6 +6,7 @@ import {
   firstNameOf,
   useAssignPlan,
   useDraftTasks,
+  useSendDailyCheckin,
   useSuggestPlan,
   useTaskTemplates,
   useUpdateTaskTemplate,
@@ -81,6 +82,26 @@ export default function TaskBuilderModal({
   const build = useDraftTasks()
   const pin = useUpdateTaskTemplate()
   const assign = useAssignPlan(patientId)
+  const checkin = useSendDailyCheckin(patientId)
+
+  /** One press, no draft list: today's check-in into the patient's app, and a
+   *  text telling them it's there. The text is the part that can fail — a
+   *  number Sendblue won't deliver to, or no number at all — and the toast
+   *  says so plainly, because the check-in itself has landed either way and
+   *  a warning that reads like nothing happened would be a lie. */
+  const sendCheckin = () => {
+    if (checkin.isPending) return
+    checkin.mutate(undefined, {
+      onSuccess: (r) => {
+        const waiting = r.reused ? `${first} already had today's check-in waiting` : `Daily check-in is in ${first}'s app`
+        if (r.sms.sent) toast(`${waiting} — and texted`, 'success')
+        else if (!r.sms.attempted) toast(`${waiting} — not texted, no phone on file`, 'info')
+        else toast(`${waiting} — the text didn't go through (${r.sms.detail})`, 'warning')
+        onClose()
+      },
+      onError: (e) => toast(`Could not send the check-in — ${e.message}`, 'warning'),
+    })
+  }
 
   const append = (rows: Partial<DraftTask>[]) =>
     setDrafts((d) => [...d, ...rows.map((r) => normalizeDraft(r, kinds))])
@@ -205,6 +226,23 @@ export default function TaskBuilderModal({
         {/* 1. Quick picks */}
         <section>
           <p className="zone-label mb-2">Quick picks</p>
+          <button
+            type="button"
+            onClick={sendCheckin}
+            disabled={checkin.isPending}
+            title={`Sends ${first} today's check-in now — in the app, and by text if they have a number`}
+            className="mb-2 flex w-full cursor-pointer items-center gap-2 rounded-row border border-brand/30 bg-brand-tint px-3 py-2.5 text-left transition-colors duration-150 hover:border-brand/50 disabled:opacity-60"
+          >
+            <Zap size={15} className={`shrink-0 text-brand ${checkin.isPending ? 'animate-pulse' : ''}`} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13.5px] font-semibold tracking-[-.01em] text-brand">
+                {checkin.isPending ? 'Sending…' : 'Send daily check-in'}
+              </span>
+              <span className="block text-[11.5px] font-medium text-muted">
+                Goes straight to {first} — no draft list, nothing else to confirm
+              </span>
+            </span>
+          </button>
           <div className="flex flex-wrap items-center gap-1.5">
             {pinned.map((t) => (
               <button

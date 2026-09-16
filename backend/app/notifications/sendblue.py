@@ -410,6 +410,49 @@ TASK_TEMPLATE = (
 VERIFICATION_TEMPLATE = "Your MedPull verification code is {code}. It expires in 10 minutes."
 
 
+# The daily check-in a clinician started from the console.
+#
+# Two shapes, because a patient with the app and a patient without one are
+# being asked to do two different things. Somebody who has never enrolled
+# needs the tokenized web page, so their text carries the link. Somebody who
+# has the app already holds the check-in behind their own session, and a
+# second copy of it on a public URL is a worse answer to the same question —
+# so their text carries no link at all and simply tells them it is waiting.
+# The tap they need is the button on the message in the app, which is a row
+# in their thread rather than anything a carrier can render.
+CHECKIN_TASK_TEMPLATE = "Time for your daily check-in — it takes about a minute."
+CHECKIN_IN_APP_TEMPLATE = (
+    "Time for your daily check-in — it takes about a minute. "
+    "It's waiting for you in MedPull."
+)
+
+
+def daily_checkin_text(link: str | None, member: CareTeamMember | None = None) -> str:
+    """The exact words of the check-in text, composed once so the row stored
+    on the patient's thread and the bytes handed to Sendblue cannot drift."""
+    return compose(
+        CHECKIN_TASK_TEMPLATE if link else CHECKIN_IN_APP_TEMPLATE,
+        member=member,
+        link=link,
+        link_label="Start your check-in",
+    )
+
+
+def send_daily_checkin_message(
+    phone_number: str,
+    *,
+    link: str | None = None,
+    member: CareTeamMember | None = None,
+) -> CheckinSendResult:
+    """Text a patient that their daily check-in is ready.
+
+    ``link`` is the tokenized web page for a patient without the app, and
+    None for one who has it. ``member`` tags the text when a clinician
+    pressed the button, which is the usual case for this one.
+    """
+    return send_sms(phone_number, daily_checkin_text(link, member))
+
+
 # Onboarding texts. Like every other patient text these carry no name and no
 # clinical detail. Both are placeholders until the product copy is settled.
 WELCOME_TEMPLATE = (

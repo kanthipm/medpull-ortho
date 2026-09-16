@@ -282,6 +282,8 @@ def _message_view(
         # Files on this line. Always a list, so a client never has to tell
         # "none" from "this server is older than attachments".
         "attachments": (attachments or {}).get(m.id, []),
+        # The button this line offers, or None — a text cannot carry one.
+        "action": m.action_view(),
         "read": m.read_by_patient_at is not None,
     }
 
