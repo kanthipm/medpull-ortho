@@ -60,6 +60,16 @@
      U+00B1 ±  U+00B5 µ  U+00B2 ²  U+00B3 ³  U+00B9 ¹  U+00BC ¼  U+00BD ½
      U+2032 ′  U+2033 ″  U+2044 ⁄  U+2215 ∕  U+2010 ‐  U+2011 ‑  U+2020 †
 
+   PLUS ONE GLYPH THE FONT HAS BUT CANNOT USE: U+00B7, the middle dot. Every
+   "Today · 8:12 AM" separator in the console is one. Instrument Sans draws it
+   0.103em wide with ZERO sidebearings, so with the -0.02em body tracking the
+   dot sits against the words ("Today·8:12"). Monospace used to hide this by
+   giving it a full cell. Arial's is 0.333em with 0.116em each side (0.357em
+   after size-adjust), which is close to Retell's Untitled Sans at 0.283em with
+   0.087em each side. Because these blocks are declared after the real faces,
+   and overlapping unicode-ranges are matched in reverse declaration order,
+   this face wins for U+00B7 even though Instrument Sans has the glyph.
+
    TWO RANGES, because no single local face carries all 14:
      Arial carries 12 of them but NOT U+2010/U+2011 (measured: macOS Arial.ttf
      has no cmap entry for either), so the hyphens get their own face.
@@ -88,8 +98,8 @@
   ascent-override: 90.47%;
   descent-override: 23.32%;
   line-gap-override: 0%;
-  unicode-range: U+00B1, U+00B2, U+00B3, U+00B5, U+00B9, U+00BC, U+00BD, U+2020, U+2032,
-    U+2033, U+2044, U+2215;
+  unicode-range: U+00B1, U+00B2, U+00B3, U+00B5, U+00B7, U+00B9, U+00BC, U+00BD, U+2020,
+    U+2032, U+2033, U+2044, U+2215;
 }
 @font-face {
   font-family: 'Instrument Sans';
@@ -100,8 +110,8 @@
   ascent-override: 90.47%;
   descent-override: 23.32%;
   line-gap-override: 0%;
-  unicode-range: U+00B1, U+00B2, U+00B3, U+00B5, U+00B9, U+00BC, U+00BD, U+2020, U+2032,
-    U+2033, U+2044, U+2215;
+  unicode-range: U+00B1, U+00B2, U+00B3, U+00B5, U+00B7, U+00B9, U+00BC, U+00BD, U+2020,
+    U+2032, U+2033, U+2044, U+2215;
 }
 /* The two hyphens Arial does not have. Helvetica first here for that reason.
    No bold file is named in either src: weight 500 points at the SAME regular

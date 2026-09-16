@@ -149,7 +149,7 @@ struct HealthView: View {
         Card {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("Your portfolio · last two weeks").eyebrow()
+                    Text("Your portfolio\(MP.dot)last two weeks").eyebrow()
                     Spacer()
                     if !app.portfolio.isEmpty {
                         Text("\(app.portfolio.count) signals").font(.labelMedium).foregroundStyle(MP.muted)

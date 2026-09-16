@@ -378,7 +378,7 @@ export default function TaskBuilderModal({
           <div className="mb-2 flex items-baseline justify-between gap-3">
             <p className="zone-label flex-1">
               Draft list
-              <span className="font-mono">{drafts.length}</span>
+              <span className="tabular-nums">{drafts.length}</span>
             </p>
             <button
               type="button"

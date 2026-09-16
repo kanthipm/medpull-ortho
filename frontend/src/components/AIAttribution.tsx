@@ -28,7 +28,7 @@ export default function AIAttribution({
         {rulesBased ? 'Rules-based' : 'AI'} {kind}
       </span>
       {generatedAt && (
-        <span className="font-mono normal-case tracking-normal text-muted">
+        <span className="tabular-nums normal-case tracking-normal text-muted">
           · {relativeTime(generatedAt)}
         </span>
       )}

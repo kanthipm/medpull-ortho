@@ -115,7 +115,7 @@ export default function Sparkline({
                   {/* 11px is reserved for chart axis labels; a tooltip line is
                       UI text, so it starts at the 12px rung. */}
                   <span className="text-label font-medium text-muted">{shortDate(p.date)}</span>{' '}
-                  <span className="font-mono text-label font-medium tabular-nums text-ink">
+                  <span className="text-label font-medium tabular-nums text-ink">
                     {Math.round(p.value * 10) / 10} {unit}
                   </span>
                 </div>

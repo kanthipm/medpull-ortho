@@ -44,7 +44,7 @@ export default function RecoveryTimeline({
         >
           {TRAJECTORY_LABEL[trajectory.state]}
           {trajectory.pct != null && trajectory.state !== 'on' && (
-            <span className="font-mono tabular-nums">({signedPct(trajectory.pct)})</span>
+            <span className="tabular-nums">({signedPct(trajectory.pct)})</span>
           )}
         </span>
       }
@@ -62,7 +62,7 @@ export default function RecoveryTimeline({
               <div key={`${e.date}-${e.kind}-${i}`} className="relative flex w-24 flex-col items-start">
                 <span className={`relative z-10 h-3.5 w-3.5 rounded-pill ${DOT[e.kind] ?? 'bg-line'}`} />
                 <span className="mt-2 text-copy font-medium text-ink">{e.label}</span>
-                <span className="font-mono text-label font-medium tabular-nums text-muted">
+                <span className="text-label font-medium tabular-nums text-muted">
                   {shortDate(e.date)}
                 </span>
               </div>

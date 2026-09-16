@@ -26,7 +26,7 @@ export default function InlineReadout({
       {items.map((item) => (
         <span key={item.key} role="listitem" className="inline-flex items-baseline gap-el">
           <span
-            className={`font-mono text-title font-medium tabular-nums ${
+            className={`text-title font-medium tabular-nums ${
               item.tone ? TONE[item.tone] : 'text-ink'
             }`}
           >

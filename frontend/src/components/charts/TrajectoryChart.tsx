@@ -163,12 +163,12 @@ export default function TrajectoryChart({ actual, expected, changePointDay }: Pr
                   <div className="overlay border border-overlay-border px-2.5 py-1.5">
                     <div className="text-label font-medium text-muted">Post-op day {label}</div>
                     {row.actual != null && (
-                      <div className="font-mono text-label font-medium tabular-nums text-ink">
+                      <div className="text-label font-medium tabular-nums text-ink">
                         Actual {Math.round(row.actual * 100)}%
                       </div>
                     )}
                     {row.mid != null && (
-                      <div className="font-mono text-label font-medium tabular-nums text-muted">
+                      <div className="text-label font-medium tabular-nums text-muted">
                         Expected {Math.round(row.mid * 100)}%
                       </div>
                     )}

@@ -20,7 +20,7 @@ export default function AdherenceDots({ days, rate }: { days: number[]; rate: nu
           />
         ))}
       </div>
-      <span className="font-mono text-[16px] font-medium tabular-nums tracking-tight text-ink">
+      <span className="text-[16px] font-medium tabular-nums tracking-tight text-ink">
         {Math.round(rate * 100)}%
       </span>
     </div>

@@ -144,7 +144,7 @@ export default function WorklistPage() {
                 <span className="text-label font-medium text-muted">
                   {PRIORITY[tier].label}
                 </span>
-                <span className="font-mono text-label font-medium tabular-nums text-muted">
+                <span className="text-label font-medium tabular-nums text-muted">
                   {patients.length}
                 </span>
               </div>
@@ -240,7 +240,7 @@ function WorklistRow({
           modes). Risk stays on the group header, the spine and PriorityBadge. */}
       <span
         aria-hidden
-        className="grid h-10 w-10 shrink-0 place-items-center rounded-pill bg-brand font-mono text-label font-medium text-on-brand"
+        className="grid h-10 w-10 shrink-0 place-items-center rounded-pill bg-brand tabular-nums text-label font-medium text-on-brand"
       >
         {p.initials}
       </span>
@@ -256,7 +256,7 @@ function WorklistRow({
               ·{' '}
               {/* "D6" means post-op day six, which says nothing true about a
                   patient who never had an operation. */}
-              <span className="font-mono">
+              <span className="tabular-nums">
                 {p.mode === 'general' ? `${p.postop_day}d` : `D${p.postop_day}`}
               </span>
             </>
@@ -287,7 +287,7 @@ function WorklistRow({
         )}
       </span>
       <span className="hidden w-32 shrink-0 text-right sm:block">
-        <span className={`block font-mono text-label font-medium tabular-nums ${meta}`}>
+        <span className={`block text-label font-medium tabular-nums ${meta}`}>
           {relativeTime(p.last_checkin_at)}
         </span>
         <span className={`mt-0.5 block truncate text-label ${meta}`}>

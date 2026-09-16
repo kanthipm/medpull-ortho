@@ -262,6 +262,17 @@ enum MP {
     static let radiusSurface: CGFloat = 12
     /// Buttons, fields, chips, segments — anything you touch. 10pt.
     static let radiusControl: CGFloat = 10
+
+    /// The separator between two facts: "Day 8 · Total Knee Replacement".
+    /// Instrument Sans draws "·" 0.103em wide with no sidebearings, so plain
+    /// spaces leave it 0.200em from each word and it crowds them. The face has
+    /// no thin space, so iOS takes U+2009 from San Francisco (0.103em), which
+    /// brings each side to 0.303em. Retell's Untitled Sans gets 0.304em from
+    /// space plus sidebearing.
+    static let dot = " \u{2009}·\u{2009} "
+    /// The same dot opening a trailing fact inside an HStack, where the stack's
+    /// own spacing already sits to its left: "· done by text".
+    static let dotLead = "·\u{2009} "
     // `cardRadius` and `buttonRadius` are DELETED. The doc comment here used
     // to name six surviving call sites in CheckinView and OnboardingFlow; all
     // six now use `surfaceShape`/`controlShape`, so a live-code scan of ios/

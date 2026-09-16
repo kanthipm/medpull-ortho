@@ -196,7 +196,7 @@ final class HealthConnector {
         }
         let result = try await api.uploadGait(GaitUpload(points: points, deviceModel: UIKitDeviceName.name))
         let taken = result.ingested + result.updated
-        lastGaitUpload = "Sent \(points.count) walking values · \(taken) new or updated"
+        lastGaitUpload = "Sent \(points.count) walking values\(MP.dot)\(taken) new or updated"
         return taken
     }
 }

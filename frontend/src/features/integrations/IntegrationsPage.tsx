@@ -117,7 +117,7 @@ function ProviderCard({
           <div>
             <h3 className="text-copy-lg font-medium text-ink">{p.name}</h3>
             {p.connected_patients > 0 && (
-              <p className="mt-0.5 font-mono text-label tabular-nums text-muted">
+              <p className="mt-0.5 text-label tabular-nums text-muted">
                 {p.connected_patients} patient{p.connected_patients === 1 ? '' : 's'} on this
                 device
               </p>
@@ -183,7 +183,7 @@ function EventRow({ e }: { e: JunctionEvent }) {
         : 'text-risk-high-ink'
   return (
     <li className="flex flex-wrap items-baseline gap-x-tight gap-y-0.5 py-seam text-copy">
-      <span className="font-mono text-label tabular-nums text-muted">
+      <span className="text-label tabular-nums text-muted">
         {e.received_at ? relativeTime(e.received_at) : '—'}
       </span>
       <span className="text-body">{e.event_type ?? 'unknown event'}</span>

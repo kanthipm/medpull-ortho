@@ -84,7 +84,7 @@ export default function NextSteps({
         title="Recommended next steps"
         aside={
           steps.data?.generated_at ? (
-            <span className="font-mono text-label font-medium tabular-nums text-muted">
+            <span className="text-label font-medium tabular-nums text-muted">
               {relativeTime(steps.data.generated_at)}
             </span>
           ) : undefined

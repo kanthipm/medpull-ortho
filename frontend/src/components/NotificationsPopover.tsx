@@ -102,7 +102,7 @@ export default function NotificationsPopover() {
                   <span>
                     <span className="block text-copy font-medium text-ink">{n.title}</span>
                     <span className="block text-copy text-body">{n.body}</span>
-                    <span className="mt-el block font-mono text-label text-body">
+                    <span className="mt-el block tabular-nums text-label text-body">
                       {relativeTime(n.created_at)}
                     </span>
                   </span>

@@ -210,7 +210,7 @@ export default function MessageComposerModal({
               Message
             </label>
             <span
-              className={`font-mono text-label tabular-nums ${over ? 'text-risk-med-ink' : 'text-muted'}`}
+              className={`text-label tabular-nums ${over ? 'text-risk-med-ink' : 'text-muted'}`}
             >
               {text.length}/{SOFT_LIMIT}
             </span>

@@ -288,8 +288,8 @@ struct Bubble: View {
         }
         switch message.sender {
         case "care_team": return "Care team"
-        case "copilot": return message.channel == "sms" ? "MedPull · text" : "MedPull"
-        default: return message.channel == "sms" ? "You · by text" : message.channel == "voice" ? "You · by voice" : "You"
+        case "copilot": return message.channel == "sms" ? "MedPull\(MP.dot)text" : "MedPull"
+        default: return message.channel == "sms" ? "You\(MP.dot)by text" : message.channel == "voice" ? "You\(MP.dot)by voice" : "You"
         }
     }
 
@@ -332,7 +332,7 @@ struct Bubble: View {
                 Text("·")
                 Text(Dates.relative(message.createdAt))
                 if message.deliveryStatus == "failed" {
-                    Text("· not delivered by text").foregroundStyle(MP.riskMed)
+                    Text("\(MP.dotLead)not delivered by text").foregroundStyle(MP.riskMed)
                 }
             }
             // 11.5 was a half-point size below the floor, on the non-text

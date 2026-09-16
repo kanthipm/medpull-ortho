@@ -307,7 +307,7 @@ function TaskRow({
               />
             ))}
           </div>
-          <span className="w-10 text-right font-mono text-copy-lg font-medium tabular-nums text-ink">
+          <span className="w-10 text-right text-copy-lg font-medium tabular-nums text-ink">
             {rate == null ? '—' : `${Math.round(rate * 100)}%`}
           </span>
         </div>

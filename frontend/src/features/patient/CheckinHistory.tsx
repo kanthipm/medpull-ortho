@@ -50,7 +50,7 @@ function CheckinRow({ checkin }: { checkin: Checkin }) {
         />
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-copy font-medium tabular-nums text-ink">
+            <span className="text-copy font-medium tabular-nums text-ink">
               {relativeTime(checkin.occurred_at)}
             </span>
             <span className="inline-flex items-center gap-1 text-label font-medium text-muted">
@@ -106,7 +106,7 @@ export default function CheckinHistory({
       title="Check-ins"
       aside={
         checkins.length > 0 && (
-          <span className="font-mono text-label font-medium tabular-nums text-muted">
+          <span className="text-label font-medium tabular-nums text-muted">
             {checkins.length} total · last {relativeTime(checkins[0].occurred_at).toLowerCase()}
           </span>
         )

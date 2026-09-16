@@ -24,7 +24,7 @@ export default function MetricCard({ m }: { m: CareMetric }) {
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="font-mono text-title font-medium tabular-nums text-ink">
+        <span className="text-title font-medium tabular-nums text-ink">
           {m.value ?? '—'}
         </span>
         {m.unit && <span className="text-label font-medium text-muted">{m.unit}</span>}

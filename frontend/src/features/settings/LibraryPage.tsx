@@ -227,7 +227,7 @@ function TaskLibrary({
       <SectionCard
         title="Task templates"
         aside={
-          <span className="font-mono text-label font-medium tabular-nums text-muted">{rows.length}</span>
+          <span className="text-label font-medium tabular-nums text-muted">{rows.length}</span>
         }
       >
         {rows.length === 0 ? (
@@ -276,7 +276,7 @@ function TaskLibrary({
                         )}
                       </span>
                     </td>
-                    <td className="py-seam pr-tight text-right align-top font-mono tabular-nums text-muted">{t.usage_count}</td>
+                    <td className="py-seam pr-tight text-right align-top tabular-nums text-muted">{t.usage_count}</td>
                     <td className="py-seam text-center align-top">
                       <PinButton pinned={t.pinned} onClick={() => toggle(t, { pinned: !t.pinned })} />
                     </td>
@@ -399,7 +399,7 @@ function MessageLibrary({
       <SectionCard
         title="Message templates"
         aside={
-          <span className="font-mono text-label font-medium tabular-nums text-muted">{rows.length}</span>
+          <span className="text-label font-medium tabular-nums text-muted">{rows.length}</span>
         }
       >
         {rows.length === 0 ? (
@@ -432,7 +432,7 @@ function MessageLibrary({
                         ))}
                       </span>
                     </td>
-                    <td className="py-seam pr-tight text-right align-top font-mono tabular-nums text-muted">{t.usage_count}</td>
+                    <td className="py-seam pr-tight text-right align-top tabular-nums text-muted">{t.usage_count}</td>
                     <td className="py-seam text-center align-top">
                       <PinButton pinned={t.pinned} onClick={() => toggle(t, { pinned: !t.pinned })} />
                     </td>

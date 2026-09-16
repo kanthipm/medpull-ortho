@@ -143,7 +143,7 @@ export default function ContactCard({
             </div>
           ) : (
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span className="font-mono text-copy font-medium text-ink">{phone ?? '—'}</span>
+              <span className="tabular-nums text-copy font-medium text-ink">{phone ?? '—'}</span>
               <span className={`text-label font-medium ${reach.tone}`}>{reach.label}</span>
               <button
                 type="button"

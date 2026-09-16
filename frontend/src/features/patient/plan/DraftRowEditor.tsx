@@ -42,7 +42,7 @@ export default function DraftRowEditor({
     <div className="rounded-surface bg-soft p-3">
       <div className="mb-2.5 flex items-center gap-2">
         {index != null && (
-          <span className="chip bg-panel font-mono tabular-nums text-muted">{index + 1}</span>
+          <span className="chip bg-panel tabular-nums text-muted">{index + 1}</span>
         )}
         <span className="text-label font-medium text-muted">
           {info?.label ?? titleCase(value.verify_kind)}
@@ -266,7 +266,7 @@ function ParamInput({
       </label>
       <input
         id={id}
-        className="field font-mono tabular-nums"
+        className="field tabular-nums"
         type={numeric ? 'number' : 'text'}
         step={field.type === 'float' ? 'any' : 1}
         min={field.min}

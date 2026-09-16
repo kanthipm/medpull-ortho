@@ -55,7 +55,7 @@ export default function MetricCluster({
             {item.label}
           </span>
           <span
-            className={`mt-el flex items-baseline gap-el font-mono text-title font-medium tabular-nums ${
+            className={`mt-el flex items-baseline gap-el text-title font-medium tabular-nums ${
               item.tone ? TONE[item.tone] : 'text-ink'
             }`}
           >

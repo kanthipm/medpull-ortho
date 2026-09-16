@@ -138,17 +138,17 @@ function ChartTip({
     <div className="overlay border border-overlay-border px-2.5 py-1.5">
       <div className="text-label font-medium text-muted">{xText(spec, row.x, row.label)}</div>
       {y != null && (
-        <div className="font-mono text-label font-medium tabular-nums text-ink">
+        <div className="text-label font-medium tabular-nums text-ink">
           {fmtNum(y)} {spec.y_label}
         </div>
       )}
       {y2 != null && (
-        <div className="font-mono text-label font-medium tabular-nums text-muted">
+        <div className="text-label font-medium tabular-nums text-muted">
           {fmtNum(y2)} {spec.y2_label}
         </div>
       )}
       {y == null && fit != null && (
-        <div className="font-mono text-label font-medium tabular-nums text-muted">
+        <div className="text-label font-medium tabular-nums text-muted">
           fit {fmtNum(fit)}
         </div>
       )}
@@ -271,7 +271,7 @@ function Gauge({ spec, thin }: { spec: ChartSpec; thin: boolean }) {
       {/* The gauge's own axis: the 11px chart-axis rung (was 10px, under the
           floor) on --chart-axis-label (5.393:1, was --faint at 2.585:1). */}
       {!thin && (
-        <div className="mt-1.5 flex justify-between font-mono text-micro font-medium tabular-nums text-chart-axis-label">
+        <div className="mt-1.5 flex justify-between text-micro font-medium tabular-nums text-chart-axis-label">
           <span>{fmtNum(g.min)}</span>
           {g.bands.slice(0, -1).map((b, i) => (
             <span key={i}>{fmtNum(b.to)}</span>
@@ -328,7 +328,7 @@ function Heat({ spec }: { spec: ChartSpec }) {
     <div className="space-y-1.5">
       <div className="grid grid-cols-[minmax(0,7rem)_1fr] items-center gap-x-2">
         <span />
-        <div className="flex justify-between font-mono text-micro font-medium tabular-nums text-chart-axis-label">
+        <div className="flex justify-between text-micro font-medium tabular-nums text-chart-axis-label">
           <span>{xTick(spec, days[0])}</span>
           <span>{xTick(spec, days[days.length - 1])}</span>
         </div>

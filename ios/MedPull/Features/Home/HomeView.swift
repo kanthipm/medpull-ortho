@@ -49,8 +49,8 @@ struct HomeView: View {
                 Text(greeting).title(MPSize.displayS)
                 if let me = app.me {
                     Text(me.patient.isRecovery
-                         ? "Day \(me.patient.postopDay ?? 0) · \(me.patient.procedureDisplay)"
-                         : "\(me.patient.hospital?.name ?? "Your hospital") · \(me.patient.daysEnrolled == 0 ? "joined today" : "member for \(me.patient.daysEnrolled) days")")
+                         ? "Day \(me.patient.postopDay ?? 0)\(MP.dot)\(me.patient.procedureDisplay)"
+                         : "\(me.patient.hospital?.name ?? "Your hospital")\(MP.dot)\(me.patient.daysEnrolled == 0 ? "joined today" : "member for \(me.patient.daysEnrolled) days")")
                         .font(.copyMedium).foregroundStyle(MP.muted)
                 }
             }
@@ -235,11 +235,11 @@ struct TaskRow: View {
                 HStack(spacing: 6) {
                     Text(task.kindLabel).font(.label).foregroundStyle(MP.muted)
                     if task.status == "done", let via = task.completedVia {
-                        Text("· done by \(via)").font(.label).foregroundStyle(MP.muted)
+                        Text("\(MP.dotLead)done by \(via)").font(.label).foregroundStyle(MP.muted)
                     } else if task.inSmsConversation {
-                        Text("· in progress by text").font(.label).foregroundStyle(MP.riskMed)
+                        Text("\(MP.dotLead)in progress by text").font(.label).foregroundStyle(MP.riskMed)
                     } else if let due = task.dueAt {
-                        Text("· due \(Dates.relative(due))").font(.label).foregroundStyle(MP.muted)
+                        Text("\(MP.dotLead)due \(Dates.relative(due))").font(.label).foregroundStyle(MP.muted)
                     }
                 }
             }

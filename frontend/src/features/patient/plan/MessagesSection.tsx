@@ -172,7 +172,7 @@ function Bubble({ m, first, patientId }: { m: PatientMessage; first: string; pat
           <span className="inline-flex items-center gap-1">
             <Icon size={10} /> {m.channel}
           </span>
-          <span className="font-mono">{relativeTime(m.created_at)}</span>
+          <span className="tabular-nums">{relativeTime(m.created_at)}</span>
           <span className={`chip ${status.pill}`}>{status.label}</span>
         </span>
         {m.delivery_status === 'failed' && m.delivery_detail && (

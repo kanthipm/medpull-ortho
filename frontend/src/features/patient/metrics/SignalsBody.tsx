@@ -102,7 +102,7 @@ export default function SignalsBody({
                     style={{ width: `${Math.round(d.contribution * 100)}%` }}
                   />
                 </div>
-                <span className="w-9 shrink-0 text-right font-mono text-label font-medium tabular-nums text-muted">
+                <span className="w-9 shrink-0 text-right text-label font-medium tabular-nums text-muted">
                   {Math.round(d.contribution * 100)}%
                 </span>
               </div>

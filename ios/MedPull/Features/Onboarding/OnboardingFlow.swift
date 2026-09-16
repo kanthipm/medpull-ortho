@@ -243,7 +243,7 @@ private struct HospitalStep: View {
                                         .frame(width: 22)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(h.name).font(.copyLargeMedium).foregroundStyle(MP.ink)
-                                        Text([h.system, "\(h.city), \(h.state)"].compactMap { $0 }.joined(separator: " · "))
+                                        Text([h.system, "\(h.city), \(h.state)"].compactMap { $0 }.joined(separator: MP.dot))
                                             .font(.label).foregroundStyle(MP.muted)
                                     }
                                     Spacer()
@@ -324,7 +324,7 @@ private struct IdentityStep: View {
                                         // mode. `body` is 6.24:1 light /
                                         // 5.51:1 dark on the tint and
                                         // 7.22 / 6.65 on panel.
-                                        Text("\(c.procedureDisplay) · \(c.surgeryMonth)").font(.label).foregroundStyle(MP.body)
+                                        Text("\(c.procedureDisplay)\(MP.dot)\(c.surgeryMonth)").font(.label).foregroundStyle(MP.body)
                                     }
                                     Spacer()
                                     if c.phoneMatch { StatusPill(text: "Number matches", tone: .low) }

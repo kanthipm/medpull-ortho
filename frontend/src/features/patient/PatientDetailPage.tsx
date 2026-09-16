@@ -117,7 +117,7 @@ export default function PatientDetailPage() {
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <span
             aria-hidden
-            className={`grid h-12 w-12 place-items-center rounded-pill font-mono text-copy font-medium ${
+            className={`grid h-12 w-12 place-items-center rounded-pill tabular-nums text-copy font-medium ${
               p.risk.level === 'high' ? 'bg-risk-high-ink text-panel' : 'bg-brand text-on-brand'
             }`}
           >
