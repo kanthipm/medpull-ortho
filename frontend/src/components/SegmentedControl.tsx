@@ -71,12 +71,15 @@ const TONE = {
     idle: 'text-muted hover:text-ink',
     focus: 'focus-visible:outline-brand',
   },
+  // The header bar carries its own hairline, so `track` stays empty — but the
+  // ink is the same as `default` now that the bar is a panel rather than a
+  // Medical Blue slab. These were white-on-white until the redesign.
   primary: {
     track: '',
-    bar: 'bg-white',
-    active: 'text-white',
-    idle: 'text-white/75 hover:text-white',
-    focus: 'focus-visible:outline-white',
+    bar: 'bg-brand',
+    active: 'text-brand',
+    idle: 'text-muted hover:text-ink',
+    focus: 'focus-visible:outline-brand',
   },
 } as const satisfies Record<SegmentTone, unknown>
 
@@ -109,7 +112,7 @@ export default function SegmentedControl<T extends string>({
     >
       <span
         aria-hidden
-        className={`pointer-events-none absolute bottom-0 z-0 h-[3px] ${t.bar} motion-safe:transition-[transform,width] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(.22,.61,.36,1)]`}
+        className={`pointer-events-none absolute bottom-0 z-0 h-[2px] ${t.bar} motion-safe:transition-[transform,width] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(.22,.61,.36,1)]`}
         style={{
           width: indicator.width,
           transform: `translateX(${indicator.left}px)`,

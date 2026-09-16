@@ -24,17 +24,20 @@ const NAV = [
   },
 ]
 
-/** Solid Medical Blue top app bar — the kiosk's primary-colour chrome. */
+/** Top app bar: an opaque panel with a bottom hairline, and a Medical Blue
+ *  rule under the active tab. The bar was a solid Medical Blue slab until the
+ *  redesign — brand now reads as the active-tab rule and the wordmark, not as
+ *  the largest saturated area on screen. */
 export default function AppShell() {
   return (
     <div className="min-h-screen">
-      <header className="glass sticky top-0 z-20 text-white shadow-card">
+      <header className="sticky top-0 z-20 border-b border-line bg-panel">
         <div className="mx-auto flex h-[64px] w-full items-center gap-3 px-[clamp(14px,3vw,44px)] sm:gap-5">
           <NavLink to="/" className="flex shrink-0 items-center gap-3">
             <img src="/medpull-logo.svg" alt="" aria-hidden className="h-[30px] w-auto" />
             <span className="hidden flex-col leading-none md:flex">
-              <span className="text-[20px] font-medium text-white">MedPull</span>
-              <span className="mt-1 text-[11px] font-medium uppercase tracking-[.08em] text-white/75">
+              <span className="text-[20px] font-medium text-ink">MedPull</span>
+              <span className="mt-1 text-[11px] font-medium uppercase tracking-[.08em] text-muted">
                 Recovery Copilot
               </span>
             </span>

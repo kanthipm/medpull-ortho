@@ -40,11 +40,11 @@ export default function NotificationsPopover() {
         aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className="relative grid h-10 w-10 cursor-pointer place-items-center rounded-btn text-white transition-colors duration-150 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+        className="relative grid h-10 w-10 cursor-pointer place-items-center rounded-btn text-muted transition-colors duration-150 hover:bg-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
       >
         <Bell size={20} />
         {unread > 0 && (
-          <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-risk-high ring-2 ring-[rgb(var(--glass-bg))]" />
+          <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-risk-high ring-2 ring-[rgb(var(--panel))]" />
         )}
       </button>
       {open && (
