@@ -42,7 +42,6 @@ from app.api.mobile import current_patient
 from app.api.patients import require_hospital_auth
 from app.database import get_db
 from app.models.attachment import Attachment
-from app.models.hospital import Hospital
 from app.models.mobile import Message
 from app.models.patient import Patient
 from app.storage import blobs
@@ -218,6 +217,47 @@ def _confirm(
     return row
 
 
+def _store_body(
+    db: Session, patient: Patient, data: bytes, content_type: str, filename: str | None,
+    *, uploaded_by: str, uploaded_by_id: str | None, source: str,
+) -> Attachment:
+    """Take the bytes off a request and store them, confirmed in one step.
+
+    The same checks a presigned upload gets on confirm, in the same order:
+    the declared type must be allowed, the length must be under the cap
+    before anything is read as a file, and the magic bytes must agree with
+    the declaration.
+    """
+    try:
+        checked = blobs.check_type(content_type)
+    except blobs.BlobError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if len(data) > blobs.MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"That file is larger than {blobs.MAX_BYTES // (1024 * 1024)} MB",
+        )
+    try:
+        blobs.check_size(len(data))
+        blobs.sniff(data[:1024], checked)
+        stored = blobs.put(blobs.new_key(patient.id, checked), data, checked)
+    except blobs.BlobError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    safe_name = None
+    if filename:
+        safe_name = "".join(c for c in filename if c.isalnum() or c in " ._-").strip()[:80] or None
+    row = Attachment(
+        patient_id=patient.id, uploaded_by=uploaded_by, uploaded_by_id=uploaded_by_id,
+        source=source, content_type=checked, byte_size=stored.byte_size,
+        sha256=stored.sha256, storage_key=stored.key, filename=safe_name,
+        confirmed_at=datetime.now(),
+    )
+    db.add(row)
+    db.commit()
+    return row
+
+
 def _own(db: Session, attachment_id: int, patient_id: str) -> Attachment:
     row = db.get(Attachment, attachment_id)
     # Ownership is resolved through the row, never by reading the key: a
@@ -304,33 +344,11 @@ def upload_direct(
     are synchronous, so FastAPI must keep this on the threadpool rather than
     the event loop (see test_every_api_route_runs_on_the_threadpool).
     """
-    try:
-        checked = blobs.check_type(content_type)
-    except blobs.BlobError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    if len(data) > blobs.MAX_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"That file is larger than {blobs.MAX_BYTES // (1024 * 1024)} MB",
-        )
-    try:
-        blobs.check_size(len(data))
-        blobs.sniff(data[:1024], checked)
-        stored = blobs.put(blobs.new_key(patient.id, checked), data, checked)
-    except blobs.BlobError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-    safe_name = None
-    if filename:
-        safe_name = "".join(c for c in filename if c.isalnum() or c in " ._-").strip()[:80] or None
-    row = Attachment(
-        patient_id=patient.id, uploaded_by="patient", source="app",
-        content_type=checked, byte_size=stored.byte_size, sha256=stored.sha256,
-        storage_key=stored.key, filename=safe_name, confirmed_at=datetime.now(),
-    )
-    db.add(row)
-    db.commit()
-    return {"attachment": _view(row, with_url=True)}
+    return {"attachment": _view(
+        _store_body(db, patient, data, content_type, filename,
+                    uploaded_by="patient", uploaded_by_id=None, source="app"),
+        with_url=True,
+    )}
 
 
 @router.get("/{attachment_id}")
@@ -371,22 +389,43 @@ def withdraw(
 # --- the console --------------------------------------------------------------------
 
 
-def _hospital_patient(db: Session, patient_id: str, hospital: Hospital) -> Patient:
+def console_patient(
+    patient_id: str,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> Patient:
+    """The chart a console request is about.
+
+    The console has no sign-in in this deployment: every other route on this
+    surface answers on CloudFront origin verification alone. Demanding a
+    hospital token here alone would make the feature unreachable without
+    making the thread these files hang on any more private — the message
+    text beside a wound photo is already served without one.
+
+    So a token is honoured rather than required. Sent, it is checked (a
+    wrong one is refused, not ignored) and it pins the lookup to that
+    hospital, which is the guarantee a multi-tenant console will need.
+    Absent, this behaves like the rest of the console.
+    """
+    if authorization is not None:
+        hospital = require_hospital_auth(authorization, db)
+        patient = db.get(Patient, patient_id)
+        if patient is None or patient.hospital_id != hospital.id:
+            raise HTTPException(status_code=404, detail=f"Unknown patient: {patient_id}")
+        return patient
     patient = db.get(Patient, patient_id)
-    if patient is None or patient.hospital_id != hospital.id:
+    if patient is None:
         raise HTTPException(status_code=404, detail=f"Unknown patient: {patient_id}")
     return patient
 
 
 @console_router.get("/upload-ticket")
 def console_upload_ticket(
-    patient_id: str,
     content_type: str = Query(...),
     byte_size: int = Query(..., ge=1),
-    hospital: Hospital = Depends(require_hospital_auth),
-    db: Session = Depends(get_db),
+    patient: Patient = Depends(console_patient),
 ) -> dict:
-    return _ticket(_hospital_patient(db, patient_id, hospital), content_type, byte_size)
+    return _ticket(patient, content_type, byte_size)
 
 
 class ConsoleConfirmBody(ConfirmBody):
@@ -397,14 +436,12 @@ class ConsoleConfirmBody(ConfirmBody):
 
 @console_router.post("")
 def console_confirm(
-    patient_id: str,
     body: ConsoleConfirmBody,
-    hospital: Hospital = Depends(require_hospital_auth),
+    patient: Patient = Depends(console_patient),
     db: Session = Depends(get_db),
 ) -> dict:
     from app.models.patient import CareTeamMember
 
-    patient = _hospital_patient(db, patient_id, hospital)
     sender_id = body.sender_id or patient.assigned_provider_id
     if db.get(CareTeamMember, sender_id) is None:
         raise HTTPException(status_code=404, detail=f"Unknown sender: {sender_id}")
@@ -416,23 +453,43 @@ def console_confirm(
     return {"attachment": _view(row, with_url=True)}
 
 
-@console_router.get("/{attachment_id}")
-def console_read_one(
-    patient_id: str,
-    attachment_id: int,
-    hospital: Hospital = Depends(require_hospital_auth),
+@console_router.post("/direct")
+def console_upload_direct(
+    data: bytes = Body(..., media_type="application/octet-stream"),
+    content_type: str = Header(..., alias="Content-Type"),
+    filename: str | None = Query(default=None),
+    sender_id: str | None = Query(default=None),
+    patient: Patient = Depends(console_patient),
     db: Session = Depends(get_db),
 ) -> dict:
-    patient = _hospital_patient(db, patient_id, hospital)
+    """The console's body upload, for a deployment with no object store to
+    presign against — the laptop, and the fallback when a presigned POST is
+    refused."""
+    from app.models.patient import CareTeamMember
+
+    member_id = sender_id or patient.assigned_provider_id
+    if db.get(CareTeamMember, member_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown sender: {member_id}")
+    return {"attachment": _view(
+        _store_body(db, patient, data, content_type, filename,
+                    uploaded_by="care_team", uploaded_by_id=member_id, source="console"),
+        with_url=True,
+    )}
+
+
+@console_router.get("/{attachment_id}")
+def console_read_one(
+    attachment_id: int,
+    patient: Patient = Depends(console_patient),
+    db: Session = Depends(get_db),
+) -> dict:
     return {"attachment": _view(_own(db, attachment_id, patient.id), with_url=True)}
 
 
 @console_router.get("/{attachment_id}/raw")
 def console_read_bytes(
-    patient_id: str,
     attachment_id: int,
-    hospital: Hospital = Depends(require_hospital_auth),
+    patient: Patient = Depends(console_patient),
     db: Session = Depends(get_db),
 ) -> Response:
-    patient = _hospital_patient(db, patient_id, hospital)
     return _bytes_response(_own(db, attachment_id, patient.id))

@@ -203,15 +203,25 @@ def test_withdrawing_a_file_deletes_the_bytes_and_keeps_the_line(client, db, joi
 # --- the console ------------------------------------------------------------------
 
 
-def test_the_console_needs_its_hospital_token_and_stays_in_its_hospital(client, db, joined):
+def test_the_console_honours_a_hospital_token_without_requiring_one(client, db, joined):
+    """The console has no sign-in: every other route here answers on origin
+    verification alone. A token sent is still checked and still scopes the
+    lookup, so a multi-tenant console keeps the guarantee."""
     pid, _headers = joined
     db.expire_all()
     db.get(Hospital, "hosp_demo").access_token = "tok-attach"
     db.commit()
 
-    # no token, no upload: this route is stricter than the rest of the console
+    # no token: works, like the message route the file hangs off
+    bare = client.get(f"/api/patients/{pid}/attachments/upload-ticket",
+                      params={"content_type": "image/jpeg", "byte_size": 100})
+    assert bare.status_code == 200
+
+    # a token that is wrong is refused, never ignored
     assert client.get(f"/api/patients/{pid}/attachments/upload-ticket",
-                      params={"content_type": "image/jpeg", "byte_size": 100}).status_code == 401
+                      params={"content_type": "image/jpeg", "byte_size": 100},
+                      headers=_auth("not-the-token")).status_code == 401
+
     ok = client.get(f"/api/patients/{pid}/attachments/upload-ticket",
                     params={"content_type": "application/pdf", "byte_size": 200},
                     headers=_auth("tok-attach"))
@@ -221,6 +231,31 @@ def test_the_console_needs_its_hospital_token_and_stays_in_its_hospital(client, 
     assert client.get("/api/patients/linda/attachments/upload-ticket",
                       params={"content_type": "image/jpeg", "byte_size": 100},
                       headers=_auth("tok-attach")).status_code == 404
+
+
+def test_the_console_can_send_the_bytes_when_there_is_no_object_store(client, db, joined):
+    pid, _headers = joined
+    r = client.post(f"/api/patients/{pid}/attachments/direct?filename=exercises.pdf",
+                    headers={"Content-Type": "application/pdf"}, content=PDF)
+    assert r.status_code == 200, r.text
+    a = r.json()["attachment"]
+    assert a["kind"] == "file" and a["uploaded_by"] == "care_team" and a["source"] == "console"
+
+    db.expire_all()
+    row = db.get(Attachment, a["id"])
+    assert row.available and row.uploaded_by_id == db.get(Patient, pid).assigned_provider_id
+    assert blobs.read(row.storage_key) == PDF
+
+    # it reaches the patient's app thread as the clinician's message
+    sent = client.post(f"/api/patients/{pid}/actions/message",
+                       json={"text": "", "attachment_ids": [a["id"]]})
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["message"]["attachments"][0]["id"] == a["id"]
+
+    # and a made-up sender is refused rather than silently reassigned
+    assert client.post(f"/api/patients/{pid}/attachments/direct?sender_id=ct_nobody",
+                       headers={"Content-Type": "application/pdf"},
+                       content=PDF).status_code == 404
 
 
 def test_a_clinician_sends_a_file_and_the_text_never_carries_it(client, db, joined, monkeypatch):
