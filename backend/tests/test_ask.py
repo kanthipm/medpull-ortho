@@ -69,9 +69,9 @@ def test_ask_sleep_finds_linda(db):
     assert result["provider"] == "fallback"
 
 
-def test_ask_fever_finds_marcus(db):
+def test_ask_fever_finds_reyes(db):
     result = ask(db, "Who has a fever or elevated temperature?")
-    assert "marcus" in result["patient_ids"]
+    assert "reyes" in result["patient_ids"]
     assert "Marcus" in result["answer"]
 
 
@@ -174,17 +174,17 @@ def test_ask_llm_verifies_every_candidate_before_citing_it(db, groq_configured, 
     llm = FakeLLM(
         retrieved={
             "answer": "Marcus and James both look feverish.",
-            "patient_ids": ["marcus", "james"],
+            "patient_ids": ["reyes", "james"],
         },
         verdicts={
-            "marcus": {"match": True, "evidence": "skin temperature elevated vs baseline"},
+            "reyes": {"match": True, "evidence": "skin temperature elevated vs baseline"},
             "james": {"match": False, "evidence": ""},
         },
         composed={"answer": "Marcus Reyes: skin temperature is elevated vs his baseline."},
     )
     monkeypatch.setattr(ask_mod, "complete_json", llm)
-    result = ask_mod._ask_llm("Who has a fever?", _roster_context(db), {"marcus", "james"})
-    assert result["patient_ids"] == ["marcus"]  # james was retrieved, then rejected
+    result = ask_mod._ask_llm("Who has a fever?", _roster_context(db), {"reyes", "james"})
+    assert result["patient_ids"] == ["reyes"]  # james was retrieved, then rejected
     assert result["answer"] == "Marcus Reyes: skin temperature is elevated vs his baseline."
     assert llm.calls == ["retrieve", "verify", "verify", "compose"]
     # each verification saw one patient and one patient only

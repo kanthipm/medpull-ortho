@@ -92,7 +92,7 @@ PATIENTS: list[PatientSpec] = [
     # The seeded high-risk case: a TKA at day 8 with a coupled vitals shift
     # and activity collapse (see scenarios.py), so the demo worklist always
     # has one patient in the HIGH tier.
-    _spec("marcus", "Marcus Reyes", 63, "M", ProcedureType.TKA,
+    _spec("reyes", "Marcus Reyes", 63, "M", ProcedureType.TKA,
           "Total Knee Replacement (TKA)", 8, SourceProvider.APPLE, "Apple Watch Series 10", 2, "hosp_demo"),
     # Demo patients for MedPull Demo Hospital
     _spec("medha", "Medha Rao", 35, "F", ProcedureType.NONE,
