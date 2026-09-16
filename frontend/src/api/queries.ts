@@ -249,13 +249,15 @@ export function useAssignTask(id: string) {
   })
 }
 
+/** Write to the patient's thread. A string is still accepted, because most
+ *  callers only ever send words; attachment ids ride along as an object. */
 export function useMessagePatient(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (text: string) =>
+    mutationFn: (input: string | { text: string; attachment_ids?: number[] }) =>
       fetchJson<MessagePatientResult>(`/api/patients/${id}/actions/message`, {
         method: 'POST',
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(typeof input === 'string' ? { text: input } : input),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['patient', id, 'messages'] }),
   })

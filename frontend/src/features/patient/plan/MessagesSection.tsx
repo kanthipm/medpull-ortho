@@ -7,6 +7,7 @@ import SectionCard from '../../../components/SectionCard'
 import { RefreshOverlay, SkeletonLine } from '../../../components/Skeleton'
 import { useToast } from '../../../components/Toast'
 import { relativeTime } from '../../../lib/format'
+import ThreadAttachments from '../ThreadAttachments'
 import MessageComposerModal from './MessageComposerModal'
 
 const SHOW = 20
@@ -94,7 +95,7 @@ export default function MessagesSection({
           <>
             <ul className="space-y-2.5">
               {visible.map((m) => (
-                <Bubble key={m.id} m={m} first={first} />
+                <Bubble key={m.id} m={m} first={first} patientId={patientId} />
               ))}
             </ul>
             {messages.length > SHOW && (
@@ -123,7 +124,7 @@ export default function MessagesSection({
   )
 }
 
-function Bubble({ m, first }: { m: PatientMessage; first: string }) {
+function Bubble({ m, first, patientId }: { m: PatientMessage; first: string; patientId: string }) {
   const inbound = m.sender === 'patient'
   const Icon = CHANNEL_ICON[m.channel] ?? Smartphone
   // A clinician's message says so by name; the copilot's says nothing, which
@@ -143,15 +144,23 @@ function Bubble({ m, first }: { m: PatientMessage; first: string }) {
   return (
     <li className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
       <div className={`max-w-[85%] ${inbound ? 'items-start' : 'items-end'} flex flex-col`}>
-        <div
-          className={`rounded-none px-3.5 py-2 text-[13px] font-medium leading-[1.45] ${
-            inbound
-              ? 'border border-line bg-panel text-ink'
-              : 'bg-brand text-white'
-          }`}
-        >
-          {m.text}
-        </div>
+        {/* A photo can be the whole message, so an empty bubble is not drawn. */}
+        {m.text.trim() !== '' && (
+          <div
+            className={`rounded-none px-3.5 py-2 text-[13px] font-medium leading-[1.45] ${
+              inbound
+                ? 'border border-line bg-panel text-ink'
+                : 'bg-brand text-white'
+            }`}
+          >
+            {m.text}
+          </div>
+        )}
+        <ThreadAttachments
+          patientId={patientId}
+          items={m.attachments ?? []}
+          align={inbound ? 'start' : 'end'}
+        />
         <span className="mt-1 flex flex-wrap items-center gap-1.5 px-1 text-[10.5px] font-medium uppercase tracking-[.05em] text-faint">
           {inbound && !m.read_by_care_team && (
             <span aria-label="Unread" className="h-1.5 w-1.5 rounded-full bg-brand" />

@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, MinusCircle, Send, Smartphone } from 'lucide-react'
+import { CheckCircle2, Circle, MinusCircle, Paperclip, Send, Smartphone } from 'lucide-react'
 import { useState } from 'react'
 import {
   useMarkPatientMessagesRead,
@@ -10,6 +10,8 @@ import SectionCard from '../../components/SectionCard'
 import { useToast } from '../../components/Toast'
 import { relativeTime } from '../../lib/format'
 import type { PatientMessage, PatientTask } from '../../api/types'
+import ThreadAttachments, { PendingAttachments } from './ThreadAttachments'
+import { useAttachmentPicker } from './useAttachmentPicker'
 
 /**
  * Tasks and the message thread, as the patient app sees them. Standalone so
@@ -28,6 +30,7 @@ export default function PatientThreadSection({
   const send = useMessagePatient(patientId)
   const markRead = useMarkPatientMessagesRead(patientId)
   const toast = useToast()
+  const files = useAttachmentPicker(patientId)
   const [draft, setDraft] = useState('')
   const firstName = patientName.split(' ')[0]
 
@@ -39,10 +42,12 @@ export default function PatientThreadSection({
 
   const submit = () => {
     const text = draft.trim()
-    if (!text) return
-    send.mutate(text, {
+    // A photo with no words is a message. Only both being empty is not.
+    if (!text && files.ids.length === 0) return
+    send.mutate({ text, attachment_ids: files.ids }, {
       onSuccess: (r) => {
         setDraft('')
+        files.reset()
         toast(
           r.status === 'sent_sms'
             ? `Texted ${firstName} — also in the app`
@@ -103,27 +108,40 @@ export default function PatientThreadSection({
             </p>
           )}
           {(messages.data?.messages ?? []).map((m) => (
-            <MessageLine key={m.id} message={m} />
+            <MessageLine key={m.id} message={m} patientId={patientId} />
           ))}
         </div>
-        <div className="mt-3 flex gap-2">
-          <input
-            className="field"
-            placeholder={`Message ${firstName}`}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') submit()
-            }}
-          />
-          <button
-            type="button"
-            className="qa-btn shrink-0"
-            disabled={!draft.trim() || send.isPending}
-            onClick={submit}
-          >
-            <Send size={14} className="text-brand" /> Send
-          </button>
+        <div className="mt-3" onDrop={files.drop} onDragOver={(e) => e.preventDefault()}>
+          <div className="flex gap-2">
+            <input
+              className="field"
+              placeholder={`Message ${firstName}`}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submit()
+              }}
+            />
+            <input {...files.inputProps} />
+            <button
+              type="button"
+              className="qa-btn shrink-0"
+              title="Attach a photo or file"
+              disabled={files.busy}
+              onClick={files.open}
+            >
+              <Paperclip size={14} className="text-brand" /> Attach
+            </button>
+            <button
+              type="button"
+              className="qa-btn shrink-0"
+              disabled={(!draft.trim() && files.ids.length === 0) || send.isPending || files.busy}
+              onClick={submit}
+            >
+              <Send size={14} className="text-brand" /> Send
+            </button>
+          </div>
+          <PendingAttachments items={files.pending} onRemove={files.remove} busy={files.busy} />
         </div>
       </SectionCard>
     </div>
@@ -163,7 +181,7 @@ function TaskLine({ task }: { task: PatientTask }) {
   )
 }
 
-function MessageLine({ message }: { message: PatientMessage }) {
+function MessageLine({ message, patientId }: { message: PatientMessage; patientId: string }) {
   const mine = message.sender !== 'patient'
   const who =
     message.sender === 'patient'
@@ -186,7 +204,10 @@ function MessageLine({ message }: { message: PatientMessage }) {
               : 'bg-brand-tint text-ink'
         }`}
       >
-        <p className="whitespace-pre-wrap">{message.text}</p>
+        {message.text.trim() !== '' && (
+          <p className="whitespace-pre-wrap">{message.text}</p>
+        )}
+        <ThreadAttachments patientId={patientId} items={message.attachments ?? []} />
         <p className="mt-1 flex items-center gap-1 text-[10.5px] font-medium text-faint">
           {message.channel === 'sms' && <Smartphone size={10} />}
           {who} · {relativeTime(message.created_at)}

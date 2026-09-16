@@ -1,4 +1,4 @@
-import { Send, Sparkles } from 'lucide-react'
+import { Paperclip, Send, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import type { MessageTone } from '../../../api/plan'
 import {
@@ -12,6 +12,8 @@ import type { MessagePatientResult } from '../../../api/types'
 import AIAttribution from '../../../components/AIAttribution'
 import SegmentedControl from '../../../components/SegmentedControl'
 import { useToast } from '../../../components/Toast'
+import { PendingAttachments } from '../ThreadAttachments'
+import { useAttachmentPicker } from '../useAttachmentPicker'
 import PlanModal from './PlanModal'
 import { numberWarning, resolvePlaceholders, templatize } from './planCopy'
 
@@ -51,6 +53,7 @@ export default function MessageComposerModal({
   const draft = useDraftPatientMessage(patientId)
   const send = useMessagePatient(patientId)
   const createTemplate = useCreateMessageTemplate()
+  const files = useAttachmentPicker(patientId)
 
   const [text, setText] = useState(prefill ?? '')
   const [templateId, setTemplateId] = useState<number | null>(null)
@@ -78,10 +81,20 @@ export default function MessageComposerModal({
 
   const submit = () => {
     const body = text.trim()
-    if (!body) return
-    send.mutate(body, {
+    // A file can be the whole message, so words are not required — but a
+    // send with neither is refused by the server, and here too.
+    if (!body && files.ids.length === 0) return
+    send.mutate({ text: body, attachment_ids: files.ids }, {
       onSuccess: (r) => {
-        if (r.status === 'sent_sms') toast(`Texted ${first} — also in the app`, 'success')
+        if (r.status === 'sent_sms')
+          toast(
+            files.ids.length
+              // A file is never attached to the text: an MMS link is a
+              // public URL, and this is a patient's own record.
+              ? `Texted ${first} — the ${files.ids.length === 1 ? 'file is' : 'files are'} in the app`
+              : `Texted ${first} — also in the app`,
+            'success',
+          )
         else if (r.status === 'stored_sms_failed')
           toast(
             // Carry the provider's reason: "the text didn't go through" sent
@@ -96,6 +109,7 @@ export default function MessageComposerModal({
             { onError: () => toast('The message sent, but the template was not saved', 'warning') },
           )
         }
+        files.reset()
         onSent?.(r)
         onClose()
       },
@@ -107,11 +121,23 @@ export default function MessageComposerModal({
     <div className="flex flex-wrap items-center gap-3">
       <p className="text-[11px] font-medium text-faint">
         {phone ? `Texts ${phone} and shows in the app.` : `No phone on file — ${first} sees it in the app.`}
+        {files.ids.length > 0 && ` Files open in the app, never in the text.`}
       </p>
+      <input {...files.inputProps} />
       <button
         type="button"
-        className="btn-primary sm:ml-auto sm:w-auto"
-        disabled={!text.trim() || send.isPending}
+        className="qa-btn sm:ml-auto"
+        title="Attach a photo or file"
+        disabled={files.busy}
+        onClick={files.open}
+      >
+        <Paperclip size={13} className="text-brand" />
+        {files.busy ? 'Uploading…' : 'Attach'}
+      </button>
+      <button
+        type="button"
+        className="btn-primary sm:w-auto"
+        disabled={(!text.trim() && files.ids.length === 0) || send.isPending || files.busy}
         onClick={submit}
       >
         <Send size={13} />
@@ -197,7 +223,10 @@ export default function MessageComposerModal({
             value={text}
             disabled={draft.isPending}
             onChange={(e) => setText(e.target.value)}
+            onDrop={files.drop}
+            onDragOver={(e) => e.preventDefault()}
           />
+          <PendingAttachments items={files.pending} onRemove={files.remove} busy={files.busy} />
           {warn && <p className="mt-1 text-[11px] font-medium leading-snug text-risk-med">{warn}</p>}
           {over && !warn && (
             <p className="mt-1 text-[11px] font-medium text-faint">

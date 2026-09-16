@@ -325,6 +325,31 @@ export interface PatientMessage {
   /** Why a text failed, in the provider's words. Null when it went out. */
   delivery_detail: string | null
   read_by_care_team: boolean
+  /** Images and files on this line. Empty for most of them. */
+  attachments: MessageAttachment[]
+  /** A button the line carries, e.g. "Open the task". Null for words only. */
+  action: { kind: string; task_id: number | null; label: string } | null
+}
+
+/**
+ * One file on the thread. No URL: a link is minted per request, because a
+ * link that outlives its request outlives its authorization check. Ask
+ * `attachmentSrc()` for one when the file is about to be shown.
+ */
+export interface MessageAttachment {
+  id: number
+  content_type: string
+  byte_size: number
+  filename: string | null
+  kind: 'image' | 'file'
+  /** Content hash: safe to cache bytes against across rotating links. */
+  sha256: string | null
+  uploaded_by: 'patient' | 'care_team' | 'copilot'
+  source: 'app' | 'console' | 'sms'
+  created_at: string | null
+  /** Taken back by whoever sent it. The bytes are gone; the line stays so
+   *  the thread does not silently lose something a reply refers to. */
+  withdrawn: boolean
 }
 
 /** PATCH /api/patients/:id/contact */
