@@ -56,6 +56,11 @@ class Attachment(Base):
     # What the person called it, sanitised. Shown for a document; an image
     # needs no name.
     filename: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Where the bytes came from when they were not uploaded to us: an inbound
+    # picture message arrives as a link on the provider's CDN, credential-free
+    # and public, so it is copied here and this is kept only so a fetch that
+    # timed out can be retried. Cleared once the bytes are ours.
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     # Set when the bytes have been seen in storage. Nothing is shown to
     # anybody before this.

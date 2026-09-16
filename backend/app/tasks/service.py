@@ -452,6 +452,12 @@ def dispatch(
             delivery_status="sent" if result.sent else "failed",
             delivery_detail=None if result.sent else result.detail,
             external_handle=result.message_handle,
+            # A patient who opens the app instead of the text should land in
+            # the same place: the link in the text and this button are two
+            # doors to one task.
+            action_kind="open_task",
+            action_task_id=task.id,
+            action_label="Open the task",
         )
     )
     if result.sent:
@@ -690,8 +696,13 @@ class InboundOutcome:
     handled: bool
     reply: str | None
     kind: str  # conversation_step | task_started | task_completed | task_cancelled |
-    # link_sent | no_tasks | message | unknown_number | empty
+    # link_sent | no_tasks | message | photo | unknown_number | empty | duplicate |
+    # lock_lost
     delivery: sendblue.CheckinSendResult | None = None
+    # How many files came in with the text, and how many of those are still
+    # links we have not managed to copy yet.
+    attachments: int = 0
+    attachments_pending: int = 0
 
 
 def _active_conversation(tasks: list[AdherenceTask]) -> AdherenceTask | None:
@@ -764,6 +775,50 @@ def advance_conversation(db: Session, task: AdherenceTask, body: str) -> tuple[s
     return _prompt(task, step), "conversation_step"
 
 
+def store_inbound_media(
+    db: Session, patient: Patient, message: Message, urls: list[str]
+) -> tuple[int, int]:
+    """Copy an inbound picture message's files onto the thread.
+
+    The provider hands us public links on its own CDN, so they are copied
+    immediately rather than left there — but this runs inside the database
+    write lock, so each fetch is hard-bounded and a failure stores the link
+    on a pending row to be retried instead of failing the delivery. Returns
+    (stored, pending).
+    """
+    from app.models.attachment import Attachment
+    from app.storage import blobs
+
+    stored = pending = 0
+    for url in urls[:4]:
+        row = Attachment(
+            patient_id=patient.id, message_id=message.id, uploaded_by="patient",
+            source="sms", content_type="application/octet-stream", storage_key="",
+            source_url=url,
+        )
+        try:
+            data, content_type = blobs.fetch_remote(url)
+            blob = blobs.put(blobs.new_key(patient.id, content_type), data, content_type)
+        except blobs.BlobError as e:
+            # Keep the link and say so: an unreadable photo the care team can
+            # be told about beats a message that quietly lost its picture.
+            logger.warning("Inbound media for %s not copied: %s", patient.id, e)
+            row.storage_key = f"pending:{secrets.token_hex(8)}"
+            db.add(row)
+            pending += 1
+            continue
+        row.content_type = content_type
+        row.storage_key = blob.key
+        row.byte_size = blob.byte_size
+        row.sha256 = blob.sha256
+        row.confirmed_at = datetime.now()
+        row.source_url = None  # the bytes are ours now
+        db.add(row)
+        stored += 1
+    db.flush()
+    return stored, pending
+
+
 def patient_for_phone(db: Session, phone: str) -> Patient | None:
     """The chart a number belongs to. Numbers are meant to be unique, but a
     roster can carry the same one twice (a clinician typed it on a chart the
@@ -791,7 +846,7 @@ def patient_for_phone(db: Session, phone: str) -> Patient | None:
 
 def handle_inbound_sms(
     db: Session, from_phone: str, text: str, *, base_url: str = "",
-    message_handle: str | None = None,
+    message_handle: str | None = None, media_urls: list[str] | None = None,
 ) -> InboundOutcome:
     """Everything an inbound Sendblue text can mean, in one place.
 
@@ -800,6 +855,11 @@ def handle_inbound_sms(
     asks for the app link; anything else is a message for the care team,
     answered by the patient copilot. The reply is texted back and both
     lines land on the message thread so the console sees the exchange.
+
+    A picture message can arrive with no words at all, so ``media_urls``
+    alone is enough to make this a message. Nothing here looks at the
+    image: it is stored, the care team is told, and the patient is told a
+    person will see it.
     """
     phone = sendblue.normalize_phone(from_phone)
     if phone is None:
@@ -809,7 +869,8 @@ def handle_inbound_sms(
         logger.info("Inbound text from a number no patient has on file")
         return InboundOutcome(None, False, None, "unknown_number")
     body = (text or "").strip()
-    if not body:
+    media = [u for u in (media_urls or []) if isinstance(u, str) and u.strip()]
+    if not body and not media:
         return InboundOutcome(patient.id, False, None, "empty")
     # Sendblue retries a delivery it did not get a 2xx for. The same text
     # processed twice would answer a conversation question twice, so the
@@ -821,14 +882,38 @@ def handle_inbound_sms(
     ) is not None:
         return InboundOutcome(patient.id, False, None, "duplicate")
 
-    db.add(Message(patient_id=patient.id, sender="patient", channel="sms", text=body[:2000],
-                   external_handle=message_handle))
+    inbound = Message(patient_id=patient.id, sender="patient", channel="sms",
+                      text=body[:2000], external_handle=message_handle)
+    db.add(inbound)
     db.flush()
+
+    stored = pending = 0
+    if media:
+        stored, pending = store_inbound_media(db, patient, inbound, media)
+        # A photograph of an incision must not sit unread because nothing
+        # said it arrived. This is the one inbound path with no clinician in
+        # the loop, so the notification is raised here rather than left to
+        # the copilot, which never sees the picture either.
+        count = stored + pending
+        what = "a photo or file" if count == 1 else f"{count} photos or files"
+        detail = body[:200] or "No message text."
+        if pending:
+            detail = f"{detail} ({pending} could not be downloaded — the link may have expired.)"
+        notify_care_team(db, patient, f"{patient.name} sent {what}", detail, "patient_message")
 
     tasks = open_tasks(db, patient.id)
     active = _active_conversation(tasks)
     lowered = body.lower()
-    if active is not None:
+    if media and not body:
+        # Nothing was said, so there is nothing to interpret — and nothing
+        # here has looked at the picture. Acknowledge that it arrived and
+        # that a person will see it; never characterise what is in it.
+        reply, kind = (
+            "Thanks — that's on your record and your care team will see it. "
+            "If something feels worse, tell us here or call the clinic.",
+            "photo",
+        )
+    elif active is not None:
         reply, kind = advance_conversation(db, active, body)
     elif lowered in START_WORDS:
         task = _texted_task(tasks)
@@ -888,4 +973,5 @@ def handle_inbound_sms(
         )
     )
     db.commit()
-    return InboundOutcome(patient.id, True, reply, kind, delivery)
+    return InboundOutcome(patient.id, True, reply, kind, delivery,
+                          attachments=stored, attachments_pending=pending)

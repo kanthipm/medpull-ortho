@@ -322,3 +322,126 @@ def test_attachments_follow_a_patient_through_a_link_and_die_with_a_chart(client
     db.execute(delete(PatientSession).where(PatientSession.patient_id == pid))
     db.execute(delete(Message).where(Message.patient_id == pid))
     db.commit()
+
+
+# --- a picture arriving by text ---------------------------------------------------
+
+
+def _mms(client, number, urls, content="", key="media_url"):
+    from tests.test_onboarding_e2e import SECRET
+
+    body = {"from_number": number, "content": content, "is_outbound": False,
+            key: urls if len(urls) != 1 else urls[0]}
+    r = client.post("/api/webhooks/sendblue", json=body, headers={"sb-signing-secret": SECRET})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_a_texted_photo_with_no_words_is_stored_acknowledged_and_escalated(
+    client, db, joined, monkeypatch
+):
+    """The one inbound path with nobody watching. A caption-less picture used
+    to be dropped as an empty message: no row, no file, nobody told."""
+    from app.models.notification import Notification
+
+    pid, _ = joined
+    provider = Sendblue(monkeypatch)
+    monkeypatch.setattr(blobs, "fetch_remote", lambda url: (JPEG, "image/jpeg"))
+
+    r = _mms(client, "+15125550910", ["https://cdn.sendblue.co/m/abc.jpg"])
+    assert r["handled"] is True and r["kind"] == "photo" and r["attachments"] == 1
+
+    db.expire_all()
+    rows = db.scalars(select(Attachment).where(Attachment.patient_id == pid)).all()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.source == "sms" and row.uploaded_by == "patient" and row.available
+    assert row.content_type == "image/jpeg" and row.byte_size == len(JPEG)
+    # the bytes are ours now, and the provider's public link is not kept
+    assert row.source_url is None and blobs.read(row.storage_key) == JPEG
+    # it hangs off the patient's own line, so the thread shows it in place
+    assert db.get(Message, row.message_id).sender == "patient"
+
+    # the patient is told a person will look, and nothing claims to have seen it
+    reply = provider.last()
+    assert "care team will see it" in reply
+    assert "incision" not in reply.lower() and "looks" not in reply.lower()
+
+    # and a clinician is told, because no clinician was in this loop
+    note = db.scalars(
+        select(Notification).where(Notification.patient_id == pid)
+        .order_by(Notification.id.desc())
+    ).first()
+    assert note is not None and "sent a photo or file" in note.title
+
+
+def test_a_texted_photo_that_cannot_be_downloaded_is_still_reported(
+    client, db, joined, monkeypatch
+):
+    """A fetch fails inside the write lock. Losing the picture silently is
+    worse than saying one arrived that we could not keep."""
+    from app.models.notification import Notification
+
+    pid, _ = joined
+    Sendblue(monkeypatch)
+
+    def refuse(url):
+        raise blobs.BlobError("timed out")
+
+    monkeypatch.setattr(blobs, "fetch_remote", refuse)
+    r = _mms(client, "+15125550910", ["https://cdn.sendblue.co/m/gone.jpg"], content="see this")
+    assert r["handled"] is True and r["attachments"] == 0
+
+    db.expire_all()
+    row = db.scalars(select(Attachment).where(Attachment.patient_id == pid)).one()
+    assert row.available is False  # never shown: there are no bytes to show
+    assert row.source_url == "https://cdn.sendblue.co/m/gone.jpg"
+    # a caption also raises the copilot's own "sent a message", so look for
+    # the one that says a file arrived rather than the newest
+    bodies = [
+        n.body for n in db.scalars(
+            select(Notification).where(Notification.patient_id == pid)
+        ).all()
+    ]
+    assert any("could not be downloaded" in b for b in bodies), bodies
+
+
+def test_a_caption_still_runs_the_conversation_and_keeps_the_photo(client, db, joined, monkeypatch):
+    """Words plus a picture is one message: the words are answered as they
+    always were, and the file rides along."""
+    pid, _ = joined
+    provider = Sendblue(monkeypatch)
+    monkeypatch.setattr(blobs, "fetch_remote", lambda url: (JPEG, "image/jpeg"))
+
+    r = _mms(client, "+15125550910", ["https://cdn.sendblue.co/m/a.jpg"],
+             content="is this normal?")
+    assert r["kind"] == "message" and r["attachments"] == 1
+    assert provider.sent  # the copilot answered the words
+    db.expire_all()
+    line = db.get(Message, db.scalars(
+        select(Attachment.message_id).where(Attachment.patient_id == pid)).first())
+    assert line.text == "is this normal?"
+
+
+def test_a_link_on_a_host_we_do_not_trust_is_not_followed(client, db, joined, monkeypatch):
+    """The link comes from an unauthenticated webhook body, so it is an
+    attacker-chosen URL until proven otherwise."""
+    pid, _ = joined
+    Sendblue(monkeypatch)
+    r = _mms(client, "+15125550910", ["https://sendblue.co.evil.example/x.jpg"], content="hi")
+    assert r["handled"] is True
+    db.expire_all()
+    row = db.scalars(select(Attachment).where(Attachment.patient_id == pid)).one()
+    assert row.available is False and row.storage_key.startswith("pending:")
+
+
+def test_media_links_are_read_whatever_key_they_arrive_under(client, db, joined, monkeypatch):
+    pid, _ = joined
+    Sendblue(monkeypatch)
+    monkeypatch.setattr(blobs, "fetch_remote", lambda url: (PNG, "image/png"))
+    r = _mms(client, "+15125550910",
+             ["https://cdn.sendblue.co/m/1.png", "https://cdn.sendblue.co/m/2.png"],
+             key="mediaURLs")
+    assert r["attachments"] == 2
+    db.expire_all()
+    assert db.scalars(select(Attachment).where(Attachment.patient_id == pid)).all().__len__() == 2

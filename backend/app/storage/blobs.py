@@ -316,6 +316,66 @@ def stat(key: str) -> int | None:
     return path.stat().st_size if path.is_file() else None
 
 
+# --- copying someone else's URL ------------------------------------------------
+
+# A provider hands us an inbound picture as a link on its own CDN: no
+# credential, public to anyone who has it, and alive for as long as they keep
+# it. Copying it is therefore urgent, and the copy runs inside a request that
+# holds the database write lock, so it is bounded hard rather than generously.
+FETCH_CONNECT_S = 2.0
+FETCH_READ_S = 5.0
+# Hosts an inbound media link may point at. A URL from a webhook body is
+# attacker-controlled input until something checks it: without this, a forged
+# delivery could make the server fetch an address of the caller's choosing.
+FETCH_HOSTS = ("sendblue.co", "sendblue.com", "storage.googleapis.com",
+               "amazonaws.com", "twilio.com")
+
+
+def fetchable(url: str) -> bool:
+    """Whether this is a link we are willing to dereference at all."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+    host = parsed.hostname.lower()
+    return any(host == allowed or host.endswith(f".{allowed}") for allowed in FETCH_HOSTS)
+
+
+def fetch_remote(url: str) -> tuple[bytes, str]:
+    """Copy a remote file, or raise BlobError. Returns (bytes, content type).
+
+    One attempt, no redirects, no retry: a request holding the write lock
+    cannot afford a second chance, and a redirect is how an allowlisted host
+    would be used to reach one that is not.
+    """
+    import httpx
+
+    if not fetchable(url):
+        raise BlobError("That file link is not one we will follow")
+    try:
+        with httpx.Client(
+            timeout=httpx.Timeout(FETCH_READ_S, connect=FETCH_CONNECT_S),
+            follow_redirects=False,
+        ) as client:
+            response = client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise BlobError(f"Could not fetch that file ({exc.__class__.__name__})") from exc
+    data = response.content
+    if len(data) > MAX_BYTES:
+        raise BlobError(f"That file is larger than {MAX_BYTES // (1024 * 1024)} MB")
+    declared = (response.headers.get("content-type") or "").split(";")[0].strip().lower()
+    # The provider's own header is a claim like any other; the bytes decide.
+    for candidate in ([declared] if declared in ALLOWED_TYPES else list(ALLOWED_TYPES)):
+        try:
+            sniff(data[:1024], candidate)
+            return data, candidate
+        except BlobError:
+            continue
+    raise BlobError("That file is not an image or document we can accept")
+
+
 # --- removing ------------------------------------------------------------------
 
 
