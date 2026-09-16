@@ -2,73 +2,73 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Theme tokens (calibrated instrument) ─────────────────────────────── */
+/* ── Theme tokens (MedPull Kiosk palette: Medical Blue + Teal, Material 3) ── */
 :root {
-  --ink: 13 18 32;
-  --body: 58 67 88;
-  --muted: 106 116 136;
-  --faint: 152 161 179;
-  --line: 233 236 243;
-  --hairline: 237 239 245;
-  --canvas: 247 248 251;
-  --canvas-top: 250 251 253;
-  --soft: 244 246 250;
+  --ink: 33 33 33;
+  --body: 66 66 66;
+  --muted: 117 117 117;
+  --faint: 158 158 158;
+  --line: 224 224 224;
+  --hairline: 238 238 238;
+  --canvas: 250 250 250;
+  --canvas-top: 250 250 250;
+  --soft: 241 244 248;
   --panel: 255 255 255;
-  --track: 236 238 244;
-  --brand: 91 104 223;
-  --brand-deep: 67 80 201;
-  --brand-light: 138 148 238;
-  --brand-cyan: 62 198 183;
-  --brand-tint: 236 238 252;
-  --sum-end: 248 249 253;
-  --risk-high: 229 72 77;
-  --risk-high-bg: 253 236 236;
-  --risk-med: 224 123 0;
-  --risk-med-bg: 255 244 229;
-  --risk-missing: 124 135 158;
-  --risk-missing-bg: 240 242 247;
-  --risk-low: 10 157 87;
-  --risk-low-bg: 231 248 239;
-  --shadow: 13 18 32;
-  --glass-bg: 250 251 253;
-  --glass-alpha: 0.72;
-  --shimmer-a: 236 239 245;
-  --shimmer-b: 247 249 252;
-  --scroll-thumb: 120 132 158;
+  --track: 232 236 242;
+  --brand: 25 118 210;
+  --brand-deep: 0 75 160;
+  --brand-light: 99 164 255;
+  --brand-cyan: 0 172 193;
+  --brand-tint: 227 242 253;
+  --sum-end: 240 247 255;
+  --risk-high: 229 57 53;
+  --risk-high-bg: 255 235 238;
+  --risk-med: 239 108 0;
+  --risk-med-bg: 255 243 224;
+  --risk-missing: 117 117 117;
+  --risk-missing-bg: 238 238 238;
+  --risk-low: 56 142 60;
+  --risk-low-bg: 232 245 233;
+  --shadow: 0 0 0;
+  --glass-bg: 25 118 210;
+  --glass-alpha: 1;
+  --shimmer-a: 236 239 243;
+  --shimmer-b: 247 248 250;
+  --scroll-thumb: 158 158 158;
 }
 
 .dark {
-  --ink: 236 239 246;
-  --body: 186 193 208;
-  --muted: 140 149 168;
-  --faint: 110 120 140;
-  --line: 42 48 64;
-  --hairline: 36 42 56;
-  --canvas: 12 14 20;
-  --canvas-top: 16 18 26;
-  --soft: 22 26 36;
-  --panel: 18 22 32;
-  --track: 28 33 46;
-  --brand: 122 134 236;
-  --brand-deep: 148 158 242;
-  --brand-light: 164 172 246;
-  --brand-cyan: 62 198 183;
-  --brand-tint: 36 40 68;
-  --sum-end: 22 26 40;
-  --risk-high: 255 107 112;
-  --risk-high-bg: 58 28 32;
-  --risk-med: 255 170 64;
-  --risk-med-bg: 54 38 18;
-  --risk-missing: 140 149 168;
-  --risk-missing-bg: 32 36 48;
-  --risk-low: 52 199 128;
-  --risk-low-bg: 20 48 36;
+  --ink: 255 255 255;
+  --body: 222 222 222;
+  --muted: 170 170 170;
+  --faint: 130 130 130;
+  --line: 52 52 52;
+  --hairline: 44 44 44;
+  --canvas: 18 18 18;
+  --canvas-top: 18 18 18;
+  --soft: 38 38 38;
+  --panel: 30 30 30;
+  --track: 44 44 44;
+  --brand: 99 164 255;
+  --brand-deep: 25 118 210;
+  --brand-light: 144 202 249;
+  --brand-cyan: 93 222 244;
+  --brand-tint: 21 46 74;
+  --sum-end: 24 32 44;
+  --risk-high: 239 83 80;
+  --risk-high-bg: 62 30 30;
+  --risk-med: 255 167 38;
+  --risk-med-bg: 58 42 20;
+  --risk-missing: 170 170 170;
+  --risk-missing-bg: 44 44 44;
+  --risk-low: 102 187 106;
+  --risk-low-bg: 24 50 30;
   --shadow: 0 0 0;
-  --glass-bg: 18 22 32;
-  --glass-alpha: 0.78;
-  --shimmer-a: 28 33 46;
-  --shimmer-b: 36 42 56;
-  --scroll-thumb: 90 100 122;
+  --glass-bg: 0 75 160;
+  --glass-alpha: 1;
+  --shimmer-a: 40 40 40;
+  --shimmer-b: 52 52 52;
+  --scroll-thumb: 120 120 120;
 }
 
 ::-webkit-scrollbar {
@@ -91,14 +91,7 @@
 
 body {
   @apply min-h-screen text-ink antialiased;
-  font-feature-settings: 'cv01', 'cv03', 'ss03';
-  background: linear-gradient(
-      180deg,
-      rgb(var(--canvas-top)) 0%,
-      rgb(var(--canvas)) 520px
-    )
-    rgb(var(--canvas));
-  background-attachment: fixed;
+  background: rgb(var(--canvas));
   transition: background-color 0.2s ease, color 0.15s ease;
 }
 
@@ -107,15 +100,12 @@ body {
 }
 
 @layer components {
+  /* Solid primary app bar, as on the kiosk's status bar. */
   .glass {
     background: rgb(var(--glass-bg) / var(--glass-alpha));
-    backdrop-filter: saturate(1.2) blur(18px);
-    -webkit-backdrop-filter: saturate(1.2) blur(18px);
   }
   .glass-strong {
-    background: rgb(var(--panel) / 0.92);
-    backdrop-filter: saturate(1.2) blur(16px);
-    -webkit-backdrop-filter: saturate(1.2) blur(16px);
+    background: rgb(var(--panel) / 0.96);
     border: 1px solid rgb(var(--line) / 0.9);
   }
 
@@ -135,28 +125,33 @@ body {
     animation-delay: var(--rise-delay, 0ms);
   }
 
+  /* Material outlined button — 1px outline, primary label, square. */
   .qa-btn {
-    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-btn border border-line bg-panel px-3 py-[7px] text-[12.5px] font-medium text-body transition-[border-color,color,background-color] duration-150 hover:border-brand/35 hover:bg-soft hover:text-ink active:bg-line/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-btn border border-line bg-panel px-4 py-2 text-[14px] font-medium text-brand transition-[border-color,color,background-color] duration-150 hover:border-brand/40 hover:bg-brand-tint active:bg-brand-tint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-40;
   }
 
+  /* Material filled button — primary container, square, 48px tall. */
   .btn-primary {
-    @apply inline-flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-btn bg-brand px-4 py-2.5 text-[13px] font-semibold text-white transition-[background-color,opacity] duration-150 hover:bg-brand-deep active:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-btn bg-brand px-6 py-2.5 text-[15px] font-medium text-white transition-[background-color,opacity] duration-150 hover:bg-brand-deep active:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-40;
   }
 
+  /* Material outlined text field. */
   .field {
-    @apply w-full rounded-btn border border-line bg-panel px-3 py-2 text-[13px] font-medium text-ink placeholder:text-faint transition-[border-color,box-shadow] duration-150 focus:border-brand/50 focus:outline-none focus:shadow-[0_0_0_3px_rgba(91,104,223,.18)];
+    @apply w-full rounded-field border border-line bg-panel px-3.5 py-2.5 text-[15px] text-ink placeholder:text-faint transition-[border-color,box-shadow] duration-150 focus:border-brand focus:outline-none focus:shadow-[0_0_0_1px_rgb(var(--brand))];
   }
 
+  /* Assist chip — square, label-large. */
   .chip {
-    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-[3px] text-[10.5px] font-medium leading-none;
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-btn px-2.5 py-[4px] text-[11.5px] font-medium leading-none;
   }
 
+  /* Material label-small: 11sp / medium / +0.5 tracking. */
   .micro {
-    @apply text-[10.5px] font-medium uppercase tracking-[.08em] text-faint;
+    @apply text-[11px] font-medium uppercase tracking-[.06em] text-muted;
   }
 
   .zone-label {
-    @apply flex items-center gap-2.5 text-[10.5px] font-semibold uppercase tracking-[.12em] text-faint;
+    @apply flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-[.08em] text-muted;
   }
   .zone-label::after {
     content: '';
@@ -164,18 +159,18 @@ body {
   }
 
   .segment {
-    @apply relative inline-flex rounded-[9px] bg-track p-[3px];
+    @apply relative inline-flex border-b border-line;
   }
   .segment button {
-    @apply relative z-10 flex-1 cursor-pointer whitespace-nowrap rounded-[7px] px-3 py-1.5 text-[12.5px] font-medium text-muted transition-colors duration-200;
+    @apply relative z-10 flex-1 cursor-pointer whitespace-nowrap px-4 py-3 text-[14px] font-medium text-muted transition-colors duration-200;
   }
   .segment button.on {
-    @apply text-ink;
+    @apply text-brand shadow-[inset_0_-3px_0_rgb(var(--brand))];
   }
 
-  /* Instrument panel — shared surface for cards / lists. */
+  /* Material elevated card — shared surface for cards / lists. */
   .panel {
-    @apply rounded-card border border-line bg-panel;
+    @apply rounded-card border border-line bg-panel shadow-card;
   }
 }
 

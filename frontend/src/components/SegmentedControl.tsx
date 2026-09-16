@@ -17,12 +17,16 @@ export type SegmentOption<T extends string = string> = {
   match?: (pathname: string) => boolean
 }
 
-type Pill = { left: number; width: number; ready: boolean }
+/** Visual tone: `default` sits on a light surface with a blue underline;
+ *  `primary` sits on the blue app bar with a white underline. */
+export type SegmentTone = 'default' | 'primary'
 
-function useSlidingPill(activeKey: string, optionCount: number) {
+type Indicator = { left: number; width: number; ready: boolean }
+
+function useSlidingIndicator(activeKey: string, optionCount: number) {
   const trackRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<(HTMLElement | null)[]>([])
-  const [pill, setPill] = useState<Pill>({ left: 0, width: 0, ready: false })
+  const [indicator, setIndicator] = useState<Indicator>({ left: 0, width: 0, ready: false })
 
   const measure = useCallback(() => {
     const track = trackRef.current
@@ -30,7 +34,7 @@ function useSlidingPill(activeKey: string, optionCount: number) {
     const active = track.querySelector<HTMLElement>('[data-segment-active="true"]')
     if (!active) return
 
-    setPill({
+    setIndicator({
       left: active.offsetLeft,
       width: active.offsetWidth,
       ready: true,
@@ -56,45 +60,66 @@ function useSlidingPill(activeKey: string, optionCount: number) {
     }
   }, [measure, optionCount])
 
-  return { trackRef, itemRefs, pill }
+  return { trackRef, itemRefs, indicator }
 }
 
-/** Sliding-pill segmented control — shared by header nav, filters, and future toggles. */
+const TONE = {
+  default: {
+    track: 'border-b border-line',
+    bar: 'bg-brand',
+    active: 'text-brand',
+    idle: 'text-muted hover:text-ink',
+    focus: 'focus-visible:outline-brand',
+  },
+  primary: {
+    track: '',
+    bar: 'bg-white',
+    active: 'text-white',
+    idle: 'text-white/75 hover:text-white',
+    focus: 'focus-visible:outline-white',
+  },
+} as const satisfies Record<SegmentTone, unknown>
+
+/** Underline tab strip — a sliding indicator marks the selected tab.
+ *  Shared by header nav, filters, and future toggles. */
 export default function SegmentedControl<T extends string>({
   options,
   value,
   onChange,
   className = '',
+  tone = 'default',
   'aria-label': ariaLabel,
 }: {
   options: SegmentOption<T>[]
   value: T
   onChange?: (key: T) => void
   className?: string
+  tone?: SegmentTone
   'aria-label'?: string
 }) {
-  const { trackRef, itemRefs, pill } = useSlidingPill(value, options.length)
+  const { trackRef, itemRefs, indicator } = useSlidingIndicator(value, options.length)
+  const t = TONE[tone]
 
   return (
     <div
       ref={trackRef}
       role="tablist"
       aria-label={ariaLabel}
-      className={`relative inline-flex rounded-[9px] bg-track p-[3px] ${className}`}
+      className={`relative inline-flex ${t.track} ${className}`}
     >
       <span
         aria-hidden
-        className="pointer-events-none absolute top-[3px] z-0 h-[calc(100%-6px)] rounded-[7px] bg-panel shadow-segment motion-safe:transition-[transform,width] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(.22,.61,.36,1)]"
+        className={`pointer-events-none absolute bottom-0 z-0 h-[3px] ${t.bar} motion-safe:transition-[transform,width] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(.22,.61,.36,1)]`}
         style={{
-          width: pill.width,
-          transform: `translateX(${pill.left}px)`,
-          opacity: pill.ready ? 1 : 0,
+          width: indicator.width,
+          transform: `translateX(${indicator.left}px)`,
+          opacity: indicator.ready ? 1 : 0,
         }}
       />
       {options.map((opt, i) => {
         const active = opt.key === value
-        const cls = `relative z-10 cursor-pointer whitespace-nowrap rounded-[7px] px-3 py-1.5 text-[13px] font-medium transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
-          active ? 'text-ink' : 'text-muted hover:text-ink'
+        const cls = `relative z-10 inline-flex h-full cursor-pointer items-center whitespace-nowrap px-4 py-3 text-[14px] font-medium transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${t.focus} ${
+          active ? t.active : t.idle
         }`
 
         if (opt.to) {
@@ -137,13 +162,15 @@ export default function SegmentedControl<T extends string>({
   )
 }
 
-/** Header nav — active route drives the sliding pill. */
+/** Header nav — active route drives the sliding underline. */
 export function NavSegmentedControl({
   options,
   className = '',
+  tone = 'default',
 }: {
   options: (SegmentOption & { to: string })[]
   className?: string
+  tone?: SegmentTone
 }) {
   const { pathname } = useLocation()
   const active =
@@ -159,7 +186,8 @@ export function NavSegmentedControl({
     <SegmentedControl
       options={options}
       value={active}
-      className={`min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className}`}
+      tone={tone}
+      className={`min-w-0 self-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className}`}
       aria-label="Primary"
     />
   )

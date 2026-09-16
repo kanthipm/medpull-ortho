@@ -22,13 +22,13 @@ export default function AIAttribution({
   const Icon = rulesBased ? Sigma : Sparkles
   const accent = rulesBased ? 'text-muted' : 'text-brand'
   return (
-    <span className="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[.1em] text-faint">
-      <Icon size={11} className={accent} aria-hidden />
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[.06em] text-muted">
+      <Icon size={12} className={accent} aria-hidden />
       <span className={accent}>
         {rulesBased ? 'Rules-based' : 'AI'} {kind}
       </span>
       {generatedAt && (
-        <span className="font-mono normal-case tracking-normal text-faint">
+        <span className="font-mono normal-case tracking-normal text-muted">
           · {relativeTime(generatedAt)}
         </span>
       )}

@@ -12,21 +12,21 @@ export default function MetricCard({ m }: { m: CareMetric }) {
   return (
     <article
       id={`metric-${m.id}`}
-      className={`relative flex scroll-mt-24 flex-col overflow-hidden rounded-card border border-line bg-panel p-4 pl-[18px] transition-shadow duration-500 ${
+      className={`relative flex scroll-mt-24 flex-col overflow-hidden rounded-card border border-line bg-panel p-5 pl-[22px] shadow-card transition-shadow duration-500 ${
         nodata ? 'opacity-70' : ''
       }`}
     >
-      <span aria-hidden className={`absolute inset-y-0 left-0 w-[2px] ${s.spine}`} />
+      <span aria-hidden className={`absolute inset-y-0 left-0 w-[4px] ${s.spine}`} />
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="chip bg-soft font-mono tabular-nums text-faint">{m.id}</span>
-          <span className="text-[13.5px] font-semibold tracking-[-.01em] text-ink">{m.name}</span>
+          <span className="chip bg-soft font-mono tabular-nums text-muted">{m.id}</span>
+          <span className="text-[15px] font-medium text-ink">{m.name}</span>
         </div>
         <span className={`chip shrink-0 uppercase tracking-[.03em] ${s.pill}`}>{statusChipText(m)}</span>
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="font-mono text-[22px] font-medium leading-none tabular-nums tracking-[-.02em] text-ink">
+        <span className="font-mono text-[24px] font-medium leading-none tabular-nums tracking-[-.02em] text-ink">
           {m.value ?? '—'}
         </span>
         {m.unit && <span className="text-[12px] font-medium text-muted">{m.unit}</span>}
@@ -40,7 +40,7 @@ export default function MetricCard({ m }: { m: CareMetric }) {
 
       {nodata ? (
         <div className="mt-3">
-          <p className="text-[13px] font-medium leading-[1.5] text-body">{m.unlock ?? m.finding}</p>
+          <p className="text-[14px] leading-[1.5] text-body">{m.unlock ?? m.finding}</p>
           {m.feeds_from_tasks.length > 0 && (
             <div className="mt-2">
               <p className="micro mb-1.5">What unlocks it</p>
@@ -55,17 +55,17 @@ export default function MetricCard({ m }: { m: CareMetric }) {
           )}
         </div>
       ) : (
-        <p className="mt-3 text-[13px] font-medium leading-[1.5] text-body">{m.finding}</p>
+        <p className="mt-3 text-[14px] leading-[1.5] text-body">{m.finding}</p>
       )}
 
       {m.next_step && !nodata && (
-        <p className="mt-2 flex items-start gap-1.5 text-[12.5px] font-medium text-brand">
+        <p className="mt-2 flex items-start gap-1.5 text-[13.5px] font-medium text-brand">
           <span aria-hidden>→</span> {m.next_step}
         </p>
       )}
 
       <div className="mt-auto pt-3">
-        <div className="border-t border-line pt-2 text-[11px] font-medium leading-[1.5] text-faint">
+        <div className="border-t border-line pt-2 text-[12px] leading-[1.5] text-muted">
           {m.method && <p>{m.method}</p>}
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
             {m.inputs.length > 0 && <span>{m.inputs.join(', ')}</span>}

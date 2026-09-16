@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f7f8fb" />
+    <meta name="theme-color" content="#1976d2" />
     <link rel="icon" type="image/svg+xml" href="/medpull-logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <!-- Apply stored/system theme before paint to avoid a light flash. -->
@@ -22,8 +22,8 @@
           if (t === 'dark') document.documentElement.classList.add('dark')
           document.documentElement.style.colorScheme = t
           var meta = document.querySelector('meta[name="theme-color"]')
-          if (meta) meta.setAttribute('content', t === 'dark' ? '#0c0e14' : '#f7f8fb')
-          document.documentElement.style.background = t === 'dark' ? '#0c0e14' : '#f7f8fb'
+          if (meta) meta.setAttribute('content', t === 'dark' ? '#004ba0' : '#1976d2')
+          document.documentElement.style.background = t === 'dark' ? '#121212' : '#fafafa'
         } catch (e) {}
       })()
     </script>

@@ -20,14 +20,14 @@ export default function Disclosure({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="group flex w-full cursor-pointer items-center gap-2 rounded-btn px-1 py-2 text-left text-[13px] font-medium text-body transition-colors duration-150 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+        className="group flex w-full cursor-pointer items-center gap-2 rounded-btn px-1 py-2 text-left text-[14px] font-medium text-body transition-colors duration-150 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
       >
         <ChevronRight
           size={15}
           className={`text-faint transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
         />
         {label}
-        {hint && !open && <span className="text-[12px] font-medium text-faint">{hint}</span>}
+        {hint && !open && <span className="text-[13px] text-muted">{hint}</span>}
       </button>
       <div
         className="grid transition-[grid-template-rows,opacity] duration-300 ease-out"

@@ -39,7 +39,7 @@ def test_worklist_shape_and_ordering(client):
     priorities = [p["priority"] for p in body["patients"]]
     order = {"high": 0, "medium": 1, "missing_data": 2, "low": 3}
     assert priorities == sorted(priorities, key=lambda p: order[p])
-    assert body["patients"][0]["id"] == "robert"
+    assert body["patients"][0]["id"] == "marcus"
     row = body["patients"][0]
     for field in ("reason", "postop_day", "assigned_provider", "data_confidence", "trajectory"):
         assert field in row

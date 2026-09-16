@@ -5,8 +5,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Geist', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Inter', 'Roboto', 'sans-serif'],
-        mono: ['"Geist Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+        sans: ['Roboto', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        mono: ['"Roboto Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       colors: {
         // Semantic tokens → CSS variables (light/dark flip in index.css).
@@ -20,16 +20,16 @@ export default {
         soft: 'rgb(var(--soft) / <alpha-value>)',
         panel: 'rgb(var(--panel) / <alpha-value>)',
         track: 'rgb(var(--track) / <alpha-value>)',
-        oxy: { DEFAULT: '#2f80ed', light: '#56ccf2' },
+        oxy: { DEFAULT: '#1976d2', light: '#63a4ff' },
         brand: {
           DEFAULT: 'rgb(var(--brand) / <alpha-value>)',
           deep: 'rgb(var(--brand-deep) / <alpha-value>)',
           light: 'rgb(var(--brand-light) / <alpha-value>)',
           cyan: 'rgb(var(--brand-cyan) / <alpha-value>)',
           tint: 'rgb(var(--brand-tint) / <alpha-value>)',
-          lavender: '#e6e9fb',
-          mint: '#a5e6d7',
-          periwinkle: '#a6ace6',
+          lavender: '#e3f2fd',
+          mint: '#b2ebf2',
+          periwinkle: '#63a4ff',
         },
         risk: {
           high: 'rgb(var(--risk-high) / <alpha-value>)',
@@ -42,18 +42,22 @@ export default {
           'low-bg': 'rgb(var(--risk-low-bg) / <alpha-value>)',
         },
       },
+      // Square corners everywhere; the tokens stay so one change re-rounds the app.
       borderRadius: {
-        card: '12px',
-        row: '10px',
-        btn: '9px',
+        card: '0px',
+        row: '0px',
+        btn: '0px',
+        field: '0px',
       },
+      // Material elevation levels. Cards sit at level 1, floating surfaces
+      // (popovers, toasts, modals) at level 3.
       boxShadow: {
-        card: 'none',
+        card: '0 1px 2px rgb(var(--shadow) / 0.14), 0 1px 3px 1px rgb(var(--shadow) / 0.08)',
         row: 'none',
-        lift: '0 8px 24px rgb(var(--shadow) / 0.18)',
-        glass: '0 12px 32px rgb(var(--shadow) / 0.22)',
+        lift: '0 1px 3px rgb(var(--shadow) / 0.18), 0 4px 8px 3px rgb(var(--shadow) / 0.10)',
+        glass: '0 2px 6px 2px rgb(var(--shadow) / 0.12), 0 8px 24px rgb(var(--shadow) / 0.16)',
         'high-row': 'none',
-        segment: '0 1px 2px rgb(var(--shadow) / 0.12)',
+        segment: '0 1px 2px rgb(var(--shadow) / 0.18)',
       },
       keyframes: {
         rise: {

@@ -34,17 +34,17 @@ export default function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative w-full max-w-md animate-modalIn rounded-card border border-line bg-panel p-5 shadow-glass"
+        className="relative w-full max-w-md animate-modalIn rounded-none bg-panel p-6 shadow-glass"
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-[15px] font-semibold tracking-[-.01em] text-ink">{title}</h2>
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-[22px] font-normal text-ink">{title}</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid h-8 w-8 cursor-pointer place-items-center rounded-btn border border-line bg-panel text-muted transition-colors duration-150 hover:bg-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+            className="grid h-10 w-10 cursor-pointer place-items-center rounded-btn text-muted transition-colors duration-150 hover:bg-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
           >
-            <X size={16} />
+            <X size={20} />
           </button>
         </div>
         {children}

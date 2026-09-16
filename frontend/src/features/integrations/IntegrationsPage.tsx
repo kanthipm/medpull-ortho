@@ -95,25 +95,25 @@ function ProviderCard({
   return (
     <div
       style={{ '--rise-delay': `${160 + index * 45}ms` } as CSSProperties}
-      className={`rise relative flex flex-col overflow-hidden rounded-card border border-line bg-panel p-4 ${
-        active ? 'pl-[18px]' : ''
+      className={`rise relative flex flex-col overflow-hidden rounded-card border border-line bg-panel p-5 shadow-card ${
+        active ? 'pl-[22px]' : ''
       }`}
     >
-      {active && <span aria-hidden className="absolute inset-y-0 left-0 w-[2px] bg-risk-low" />}
+      {active && <span aria-hidden className="absolute inset-y-0 left-0 w-[4px] bg-risk-low" />}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <span
             aria-hidden
-            className={`grid h-8 w-8 shrink-0 place-items-center rounded-btn ${
+            className={`grid h-10 w-10 shrink-0 place-items-center rounded-btn ${
               active ? 'bg-brand text-white' : 'bg-soft text-faint'
             }`}
           >
-            <Plug size={14} />
+            <Plug size={18} />
           </span>
           <div>
-            <h3 className="text-[14px] font-semibold tracking-[-.01em] text-ink">{p.name}</h3>
+            <h3 className="text-[16px] font-medium text-ink">{p.name}</h3>
             {p.connected_patients > 0 && (
-              <p className="mt-0.5 font-mono text-[11px] font-medium text-faint">
+              <p className="mt-0.5 font-mono text-[12px] text-muted">
                 {p.connected_patients} patient{p.connected_patients === 1 ? '' : 's'} on this
                 device
               </p>
@@ -159,7 +159,7 @@ function Readout({ label, value, tone }: { label: string; value: ReactNode; tone
     <div className="min-w-0">
       <p className="micro">{label}</p>
       <p
-        className={`mt-0.5 truncate text-[13px] font-semibold ${
+        className={`mt-0.5 truncate text-[15px] font-medium ${
           tone === 'ok' ? 'text-risk-low' : tone === 'warn' ? 'text-risk-med' : 'text-ink'
         }`}
       >
@@ -177,11 +177,11 @@ function EventRow({ e }: { e: JunctionEvent }) {
         ? 'text-faint'
         : 'text-risk-high'
   return (
-    <li className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5 text-[12px] font-medium">
-      <span className="font-mono text-[11px] text-faint">{e.received_at ? relativeTime(e.received_at) : '—'}</span>
+    <li className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 text-[13.5px]">
+      <span className="font-mono text-[12px] text-muted">{e.received_at ? relativeTime(e.received_at) : '—'}</span>
       <span className="text-body">{e.event_type ?? 'unknown event'}</span>
       <span className={`font-mono text-[11px] uppercase tracking-[.04em] ${tone}`}>{e.status}</span>
-      {e.error && <span className="basis-full text-[11.5px] text-muted">{e.error}</span>}
+      {e.error && <span className="basis-full text-[12.5px] text-muted">{e.error}</span>}
     </li>
   )
 }
@@ -208,21 +208,21 @@ function AggregatorCard({ a, events }: { a: AggregatorStatus; events: JunctionEv
         )
       }
     >
-      <p className="text-[13.5px] font-medium leading-[1.55] text-body">
+      <p className="text-[15px] leading-[1.6] text-body">
         {a.configured ? (
           <>
             One Junction account per patient, issued from the patient record. Every device a
             patient links on Junction's page delivers through{' '}
-            <span className="font-mono text-[12.5px] text-ink">{a.webhook_path}</span> into the same
+            <span className="font-mono text-[13.5px] text-ink">{a.webhook_path}</span> into the same
             normalized observation store the demo source uses — the worklist never learns which
             brand it came from.
           </>
         ) : (
           <>
             The connector is built and idle. Set{' '}
-            <span className="font-mono text-[12.5px] text-ink">JUNCTION_API_KEY</span> and{' '}
-            <span className="font-mono text-[12.5px] text-ink">JUNCTION_WEBHOOK_SECRET</span>{' '}
-            (in <span className="font-mono text-[12.5px] text-ink">.env</span>, or Parameter Store
+            <span className="font-mono text-[13.5px] text-ink">JUNCTION_API_KEY</span> and{' '}
+            <span className="font-mono text-[13.5px] text-ink">JUNCTION_WEBHOOK_SECRET</span>{' '}
+            (in <span className="font-mono text-[13.5px] text-ink">.env</span>, or Parameter Store
             on AWS), then register the endpoint below in Junction's webhook dashboard. Until then
             this workspace runs on the demo data source.
           </>
@@ -252,10 +252,10 @@ function AggregatorCard({ a, events }: { a: AggregatorStatus; events: JunctionEv
         />
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2 rounded-btn border border-line bg-panel px-3 py-2">
+      <div className="mt-4 flex flex-wrap items-center gap-2 rounded-field border border-line bg-soft px-3.5 py-2.5">
         <Webhook size={14} className="shrink-0 text-faint" />
         <span className="micro">Webhook endpoint</span>
-        <code className="min-w-0 truncate font-mono text-[12px] text-ink">{endpoint}</code>
+        <code className="min-w-0 truncate font-mono text-[13px] text-ink">{endpoint}</code>
       </div>
 
       {a.configured && (
@@ -268,7 +268,7 @@ function AggregatorCard({ a, events }: { a: AggregatorStatus; events: JunctionEv
                 ))}
               </ul>
             ) : (
-              <p className="text-[12.5px] font-medium text-muted">
+              <p className="text-[14px] text-muted">
                 Nothing received yet. Junction sends a delivery the moment a patient links a device.
               </p>
             )}
@@ -286,8 +286,8 @@ export default function IntegrationsPage() {
 
   const header = (
     <div className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
-      <h1 className="text-[26px] font-semibold tracking-[-.03em] text-ink">Integrations</h1>
-      <p className="mt-1 max-w-2xl text-[13px] font-medium text-muted">
+      <h1 className="text-[28px] font-normal text-ink">Integrations</h1>
+      <p className="mt-1.5 max-w-2xl text-[15px] text-muted">
         Every source feeds the same Recovery Intelligence Engine through one normalized data
         store — connecting a new provider never changes what you see on the worklist.
       </p>
@@ -298,7 +298,7 @@ export default function IntegrationsPage() {
     return (
       <div>
         {header}
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <SkeletonCard lines={3} />
           <SkeletonCard lines={3} />
           <SkeletonCard lines={3} />
@@ -320,13 +320,13 @@ export default function IntegrationsPage() {
 
       <AggregatorCard a={data.aggregator} events={status.data?.recent_events} />
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {providers.map((p, i) => (
           <ProviderCard key={p.key} p={p} index={i} aggregatorConfigured={configured} />
         ))}
       </div>
 
-      <p className="mt-6 border-t border-line pt-2 text-[11px] font-medium leading-[1.5] text-faint">
+      <p className="mt-6 border-t border-line pt-3 text-[12.5px] leading-[1.5] text-muted">
         Gait &amp; mobility metrics (walking speed, asymmetry, steadiness) are measured only by
         Apple devices, and Apple Health reaches Junction only through its mobile SDK inside a
         patient app. A patient chart carries a card for each signal their own device reported,

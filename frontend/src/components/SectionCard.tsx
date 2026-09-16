@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 
-/** Instrument panel — hairline border, flat panel surface, theme-aware.
- *  `sum` keeps a quiet brand tint for AI narrative panels. */
+/** Material elevated card — large corner radius, level-1 elevation, theme-aware.
+ *  `sum` keeps a quiet blue wash for AI narrative panels. */
 export default function SectionCard({
   spine,
   title,
@@ -27,17 +27,15 @@ export default function SectionCard({
   return (
     <section
       style={style}
-      className={`relative overflow-hidden rounded-card border border-line ${surface} ${className}`}
+      className={`relative overflow-hidden rounded-card border border-line shadow-card ${surface} ${className}`}
     >
-      {spine && <span aria-hidden className={`absolute inset-y-0 left-0 w-[2px] ${spine}`} />}
-      <div className={`p-4 ${spine ? 'pl-[18px]' : ''}`}>
+      {spine && <span aria-hidden className={`absolute inset-y-0 left-0 w-[4px] ${spine}`} />}
+      <div className={`p-5 ${spine ? 'pl-[22px]' : ''}`}>
         {(title || eyebrow || aside) && (
-          <div className="mb-3 flex items-baseline justify-between gap-3">
+          <div className="mb-3.5 flex items-baseline justify-between gap-3">
             <div>
               {eyebrow}
-              {title && (
-                <h2 className="text-[13px] font-semibold tracking-[-.01em] text-ink">{title}</h2>
-              )}
+              {title && <h2 className="text-[16px] font-medium text-ink">{title}</h2>}
             </div>
             {aside}
           </div>

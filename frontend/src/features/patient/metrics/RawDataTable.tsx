@@ -164,7 +164,7 @@ export default function RawDataTable({
             </div>
           )}
 
-          <div className="mt-2 max-h-80 overflow-auto rounded-[10px] border border-line">
+          <div className="mt-2 max-h-80 overflow-auto rounded-none border border-line">
             <table className="w-full min-w-[640px] border-collapse text-left text-[12px]">
               <thead className="sticky top-0 bg-soft">
                 <tr className="text-[10.5px] font-medium uppercase tracking-[.06em] text-faint">

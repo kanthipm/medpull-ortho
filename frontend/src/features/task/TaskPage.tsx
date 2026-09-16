@@ -192,7 +192,7 @@ export default function TaskPage() {
       </div>
 
       {submit.isError && (
-        <p className="mt-6 text-[13px] font-medium text-red-500">
+        <p className="mt-6 text-[13px] font-medium text-risk-high">
           {submit.error instanceof ApiError
             ? submit.error.message
             : "Couldn't send your answers — check your connection and try again."}

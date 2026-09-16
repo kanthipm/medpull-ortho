@@ -53,8 +53,8 @@ function DeviceRow({ d }: { d: WearableDevice }) {
   const tone =
     d.status === 'connected' ? 'text-risk-low' : d.status === 'error' ? 'text-risk-high' : 'text-faint'
   return (
-    <li className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5 text-[12.5px] font-medium">
-      <Watch size={13} className="relative top-[2px] shrink-0 text-faint" />
+    <li className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 text-[14px]">
+      <Watch size={15} className="relative top-[2px] shrink-0 text-faint" />
       <span className="text-ink">{d.model}</span>
       <span className={`font-mono text-[11px] uppercase tracking-[.04em] ${tone}`}>{d.status}</span>
       <span className="text-faint">
@@ -68,7 +68,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
       <p className="micro">{label}</p>
-      <p className="mt-0.5 truncate text-[13px] font-semibold text-ink">{children}</p>
+      <p className="mt-0.5 truncate text-[15px] font-medium text-ink">{children}</p>
     </div>
   )
 }
@@ -98,7 +98,7 @@ function LinkModal({
     : null
   return (
     <Modal title={`Connect ${firstName}'s wearable`} onClose={onClose}>
-      <p className="text-[13px] font-medium leading-[1.55] text-body">
+      <p className="text-[14.5px] leading-[1.6] text-body">
         Share this link with {firstName}. They sign in to their device's account (Oura, Fitbit,
         Garmin, WHOOP, Withings, Polar or Dexcom) on Junction's page — nothing is typed into this
         console. Data starts flowing within minutes and the pre-op history back-fills on its own.
@@ -109,12 +109,12 @@ function LinkModal({
           readOnly
           value={link.link_url}
           onFocus={(e) => e.currentTarget.select()}
-          className="mt-1 w-full rounded-btn border border-line bg-soft px-3 py-2 font-mono text-[12px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+          className="mt-1.5 w-full rounded-field border border-line bg-soft px-3.5 py-2.5 font-mono text-[13px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
         />
       </label>
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" onClick={copy} className="btn-primary w-auto">
-          <Copy size={14} /> {copied ? 'Copied' : 'Copy link'}
+          <Copy size={16} /> {copied ? 'Copied' : 'Copy link'}
         </button>
         <a
           href={link.link_url}
@@ -123,10 +123,10 @@ function LinkModal({
           className="qa-btn"
           title="Opens Junction's page in a new tab — hand the device to the patient to sign in"
         >
-          <ExternalLink size={14} /> Open here
+          <ExternalLink size={16} /> Open here
         </a>
       </div>
-      <p className="mt-3 text-[11.5px] font-medium leading-[1.5] text-faint">
+      <p className="mt-3 text-[12.5px] leading-[1.5] text-muted">
         The link is single-use. Issue a new one if it expires before {firstName} gets to it.
       </p>
     </Modal>
@@ -156,7 +156,7 @@ export default function WearableConnectionCard({
   if (isError || !data) {
     return (
       <SectionCard title="Wearable connection">
-        <p className="text-[13px] font-medium text-muted">The connection state couldn't be loaded.</p>
+        <p className="text-[14px] text-muted">The connection state couldn't be loaded.</p>
       </SectionCard>
     )
   }
@@ -238,7 +238,7 @@ export default function WearableConnectionCard({
       <RefreshOverlay show={refreshing} />
 
       {!configured && !active && (
-        <p className="text-[13px] font-medium leading-[1.55] text-body">
+        <p className="text-[14.5px] leading-[1.6] text-body">
           {firstName}'s chart runs on the demo data source. Live device linking arrives the moment
           Junction is configured on the Integrations page — the button below lights up and nothing
           else on this chart changes.
@@ -246,7 +246,7 @@ export default function WearableConnectionCard({
       )}
 
       {configured && !active && (
-        <p className="text-[13px] font-medium leading-[1.55] text-body">
+        <p className="text-[14.5px] leading-[1.6] text-body">
           No live wearable is linked. Issue a one-time Junction link for {firstName} to sign in to
           their device's account; readings then flow into this chart automatically.
         </p>
@@ -272,14 +272,14 @@ export default function WearableConnectionCard({
       )}
 
       {c && active && c.status === 'pending_link' && (
-        <p className="mt-3 text-[12.5px] font-medium leading-[1.5] text-muted">
+        <p className="mt-3 text-[14px] leading-[1.5] text-muted">
           Waiting for {firstName} to open the link and sign in. Links are single-use and expire
           within the hour — issue a fresh one if needed.
         </p>
       )}
 
       {c && wrongEnvironment && (
-        <p className="mt-3 flex items-start gap-2 rounded-btn border border-risk-med/30 bg-risk-med-bg px-3 py-2 text-[12.5px] font-medium leading-[1.5] text-risk-med">
+        <p className="mt-3 flex items-start gap-2 rounded-row border border-risk-med/30 bg-risk-med-bg px-3.5 py-2.5 text-[13.5px] font-medium leading-[1.5] text-risk-med">
           <TriangleAlert size={14} className="mt-0.5 shrink-0" />
           <span>
             This account lives on Junction's {c.environment} host and this deployment is
@@ -292,7 +292,7 @@ export default function WearableConnectionCard({
           presence of a message: a retired connection can carry a note about
           what Junction did not delete, which is shown as-is. */}
       {c && c.last_error && (c.status === 'error' || c.status === 'disconnected') && (
-        <p className="mt-3 flex items-start gap-2 rounded-btn border border-risk-high/30 bg-risk-high-bg px-3 py-2 text-[12.5px] font-medium leading-[1.5] text-risk-high">
+        <p className="mt-3 flex items-start gap-2 rounded-row border border-risk-high/30 bg-risk-high-bg px-3.5 py-2.5 text-[13.5px] font-medium leading-[1.5] text-risk-high">
           <TriangleAlert size={14} className="mt-0.5 shrink-0" />
           <span>
             {c.status === 'error'
@@ -329,7 +329,7 @@ export default function WearableConnectionCard({
             disabled={!configured || busy || wrongEnvironment}
             className={active ? 'qa-btn' : 'btn-primary w-auto'}
           >
-            <Link2 size={14} /> {active ? 'New link' : 'Connect wearable'}
+            <Link2 size={16} /> {active ? 'New link' : 'Connect wearable'}
           </button>
         </span>
         {active && (
@@ -341,7 +341,7 @@ export default function WearableConnectionCard({
               className="qa-btn"
               title="Ask Junction to re-sync every linked device, then pull the whole ingestible window"
             >
-              <RefreshCw size={14} className={backfill.isPending ? 'animate-spin' : ''} /> Back-fill
+              <RefreshCw size={16} className={backfill.isPending ? 'animate-spin' : ''} /> Back-fill
             </button>
             <button
               type="button"
@@ -357,7 +357,7 @@ export default function WearableConnectionCard({
               disabled={busy}
               className="qa-btn text-risk-high hover:border-risk-high/40"
             >
-              <Unplug size={14} /> Disconnect
+              <Unplug size={16} /> Disconnect
             </button>
           </>
         )}
@@ -367,7 +367,7 @@ export default function WearableConnectionCard({
 
       {confirmDisconnect && (
         <Modal title="Disconnect wearable" onClose={() => setConfirmDisconnect(false)}>
-          <p className="text-[13px] font-medium leading-[1.55] text-body">
+          <p className="text-[14.5px] leading-[1.6] text-body">
             This retires {firstName}'s Junction account and stops new readings. Everything already
             on the chart stays. Reconnecting later means issuing a new link.
           </p>

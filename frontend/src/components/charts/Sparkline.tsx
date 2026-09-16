@@ -28,7 +28,7 @@ export default function Sparkline({
   const gradientId = `spark-fade-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
 
   if (series.length === 0) {
-    return <div className="h-10 rounded-[10px] border border-line bg-soft" />
+    return <div className="h-10 rounded-row border border-line bg-soft" />
   }
   return (
     <div className="h-10">
@@ -78,8 +78,8 @@ export default function Sparkline({
               if (!active || !payload?.length) return null
               const p = payload[0].payload as { date: string; value: number }
               return (
-                <div className="rounded-btn border border-line bg-panel px-2 py-1 text-xs shadow-lift">
-                  <span className="text-[11px] font-medium text-faint">{shortDate(p.date)}</span>{' '}
+                <div className="rounded-field border border-line bg-panel px-2 py-1 text-xs shadow-lift">
+                  <span className="text-[11px] font-medium text-muted">{shortDate(p.date)}</span>{' '}
                   <span className="font-mono font-medium tabular-nums text-ink">
                     {Math.round(p.value * 10) / 10} {unit}
                   </span>
