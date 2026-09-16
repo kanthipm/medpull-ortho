@@ -55,12 +55,30 @@ class S3SqliteMiddleware(BaseHTTPMiddleware):
             # Re-read under the lock: another instance may have committed since
             # this one last looked, and a stale base would silently drop it.
             await run_sync(functools.partial(storage.hydrate, force=True))
+            response: Response | None = None
             try:
-                return await call_next(request)
+                response = await call_next(request)
             finally:
                 # Runs on the error path too: a handler that committed and then
                 # raised still has durable work sitting in /tmp.
                 if storage.is_dirty():
-                    await run_sync(functools.partial(storage.persist, conditional=False))
+                    try:
+                        await run_sync(functools.partial(storage.persist, conditional=False))
+                    except storage.LockLost:
+                        # Our lock was broken mid-request, so this instance's
+                        # copy is built on a stale base and was discarded. The
+                        # handler's work is gone: say so instead of answering
+                        # 200 for a write that is not durable.
+                        logger.warning(
+                            "Discarded %s %s: the write lock was taken over mid-request",
+                            request.method, request.url.path,
+                        )
+                        response = JSONResponse(
+                            {"detail": "That did not save — another update was in flight. "
+                                       "Please try again."},
+                            status_code=503,
+                            headers={"Retry-After": "2"},
+                        )
+            return response
         finally:
             await run_sync(storage.release_lock)

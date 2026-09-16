@@ -83,7 +83,10 @@ def s3(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "client", lambda: fake)
     monkeypatch.setattr(storage, "_dispose_engine", lambda: None)
     monkeypatch.setattr(
-        storage, "_state", {"etag": None, "checked_at": 0.0, "dirty": False}
+        storage,
+        "_state",
+        {"etag": None, "checked_at": 0.0, "dirty": False,
+         "lock_token": None, "lock_etag": None},
     )
     fake.db_path = db_path
     return fake
@@ -203,14 +206,28 @@ def test_persist_conditional_loses_a_race_without_clobbering(s3):
 
 
 def test_persist_unconditional_overwrites(s3):
-    """What a mutating request does while holding the lock."""
+    """What a mutating request does while holding the lock.
+
+    The lock is the whole licence for an unconditional upload, so this takes
+    it: without one, persist refuses rather than clobber (see
+    test_an_unconditional_upload_outside_the_lock_is_refused).
+    """
     s3.put_object("test-bucket", aws_settings.s3_db_key, b"v1")
     storage.hydrate()
     s3.put_object("test-bucket", aws_settings.s3_db_key, b"v2")
+    storage.acquire_lock()
 
     s3.db_path.write_bytes(b"authoritative")
     assert storage.persist(conditional=False) is True
     assert s3.objects[aws_settings.s3_db_key] == b"authoritative"
+    storage.release_lock()
+
+
+def test_an_unconditional_upload_outside_the_lock_is_refused(s3):
+    s3.db_path.write_bytes(b"not-under-any-lock")
+    with pytest.raises(storage.LockLost):
+        storage.persist(conditional=False)
+    assert aws_settings.s3_db_key not in s3.objects
 
 
 def test_persist_without_a_local_file_is_a_noop(s3):
@@ -481,3 +498,74 @@ def test_change_tracking_install_is_idempotent_and_reversible(s3, db):
 
     db.commit()
     assert storage.is_dirty() is False
+
+
+# --- lock fencing ---------------------------------------------------------------
+
+
+def test_the_lock_carries_a_token_and_is_only_released_by_its_holder(s3):
+    fake = s3
+    storage.acquire_lock()
+    assert storage.holds_lock() is True
+    body = fake.objects[aws_settings.s3_lock_key]
+    expiry, token = storage._parse_lock(body)
+    assert expiry > 0 and token, "the lock names who holds it"
+
+    # another writer breaks it (as it may, once the TTL has passed)
+    fake.objects[aws_settings.s3_lock_key] = storage._lock_body("someone-else", expiry + 60)
+    fake.etags[aws_settings.s3_lock_key] = '"etag-other"'
+    assert storage.holds_lock() is False
+
+    # the previous holder must not delete the new holder's lock on its way out
+    storage.release_lock()
+    assert aws_settings.s3_lock_key in fake.objects
+    assert storage._parse_lock(fake.objects[aws_settings.s3_lock_key])[1] == "someone-else"
+
+
+def test_a_holder_whose_lock_was_broken_refuses_to_overwrite_the_new_holder(s3):
+    """The resurrect-a-deleted-row failure: a slow writer's unconditional
+    upload lands after the breaker has already written, undoing it."""
+    fake = s3
+    path = aws_settings.local_db_path
+
+    # a first writer takes the lock and starts work
+    storage.acquire_lock()
+    path.write_bytes(b"slow-writer-base-plus-its-edit")
+    storage.mark_dirty()
+
+    # a second writer breaks the lock (the first one looked dead) and commits
+    expiry, _ = storage._parse_lock(fake.objects[aws_settings.s3_lock_key])
+    fake.objects[aws_settings.s3_lock_key] = storage._lock_body("breaker", expiry + 60)
+    fake.etags[aws_settings.s3_lock_key] = '"etag-breaker"'
+    fake.objects[aws_settings.s3_db_key] = b"breaker-committed-this"
+    fake.etags[aws_settings.s3_db_key] = '"etag-breaker-db"'
+
+    # the first writer now tries to publish: it must not win
+    with pytest.raises(storage.LockLost):
+        storage.persist(conditional=False)
+    assert fake.objects[aws_settings.s3_db_key] == b"breaker-committed-this"
+    # and it has disarmed itself: no stale etag to publish under later
+    assert storage._state["etag"] is None
+    assert storage.is_dirty() is False
+
+
+def test_an_uncontested_write_still_uploads_unconditionally(s3):
+    fake = s3
+    path = aws_settings.local_db_path
+    storage.acquire_lock()
+    path.write_bytes(b"the-only-writer")
+    storage.mark_dirty()
+    assert storage.persist(conditional=False) is True
+    assert fake.objects[aws_settings.s3_db_key] == b"the-only-writer"
+    storage.release_lock()
+    assert aws_settings.s3_lock_key not in fake.objects
+
+
+def test_taking_over_an_expired_lock_makes_the_taker_the_holder(s3):
+    fake = s3
+    # a dead holder left a lock that expired in the past
+    fake.objects[aws_settings.s3_lock_key] = storage._lock_body("dead-holder", time.time() - 10)
+    fake.etags[aws_settings.s3_lock_key] = '"etag-dead"'
+    storage.acquire_lock()
+    assert storage.holds_lock() is True
+    assert storage._parse_lock(fake.objects[aws_settings.s3_lock_key])[1] == storage._state["lock_token"]

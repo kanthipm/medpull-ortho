@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import tempfile
 import threading
 import time
@@ -44,6 +45,11 @@ _state: dict = {
     "etag": None,  # ETag the local file was hydrated from
     "checked_at": 0.0,  # monotonic clock of the last S3 freshness check
     "dirty": False,  # a session committed since the last successful upload
+    # The write lock this process believes it holds: the token written into
+    # the lock object, and the ETag S3 gave that write. Both are needed to
+    # tell "still ours" from "someone broke it and holds it now".
+    "lock_token": None,
+    "lock_etag": None,
 }
 
 _client = None
@@ -246,6 +252,21 @@ def persist(conditional: bool = True) -> bool:
         # No known ETag means we believe the object does not exist; If-None-Match
         # makes that belief safe to act on.
         extra = {"IfMatch": etag} if etag else {"IfNoneMatch": "*"}
+    elif not holds_lock():
+        # An unconditional upload is only safe under the lock. Ours was broken
+        # while the handler ran, so the base this file was built on is stale
+        # and uploading it would undo whatever the new holder committed.
+        logger.error(
+            "Refusing an unconditional upload: the write lock was taken over "
+            "while this request ran. Discarding local writes."
+        )
+        with _lock:
+            # Force a re-download before anything reads this file again, and
+            # make sure a later conditional persist cannot publish these rows.
+            _state["etag"] = None
+            _state["checked_at"] = 0.0
+            _state["dirty"] = False
+        raise LockLost("The database write lock was taken over mid-request")
 
     with path.open("rb") as fh:
         body = fh.read()
@@ -286,6 +307,16 @@ class LockUnavailable(RuntimeError):
     pass
 
 
+class LockLost(RuntimeError):
+    """The write lock was broken by another writer while we held it.
+
+    An unconditional upload at that point would overwrite whatever the new
+    holder committed — the failure mode is a row that comes back from the
+    dead minutes after it was deleted. The caller must discard its work and
+    let the client retry instead.
+    """
+
+
 def acquire_lock() -> None:
     """Serialize mutating requests across Lambda instances.
 
@@ -300,18 +331,20 @@ def acquire_lock() -> None:
     delay = 0.05
     while True:
         expires_at = time.time() + aws_settings.lock_ttl_seconds
+        token = secrets.token_hex(8)
         try:
-            client().put_object(
+            response = client().put_object(
                 Bucket=aws_settings.s3_bucket,
                 Key=aws_settings.s3_lock_key,
-                Body=str(expires_at).encode(),
+                Body=_lock_body(token, expires_at),
                 IfNoneMatch="*",
             )
+            _hold_lock(token, response.get("ETag"))
             return
         except Exception as e:  # noqa: BLE001
             if not (hasattr(e, "response") and _is_conflict(e)):
                 raise
-        if _take_over_expired_lock(expires_at):
+        if _take_over_expired_lock(expires_at, token):
             return
         if time.monotonic() >= deadline:
             raise LockUnavailable("Timed out waiting for the database write lock")
@@ -319,7 +352,59 @@ def acquire_lock() -> None:
         delay = min(delay * 2, 0.5)
 
 
-def _take_over_expired_lock(expires_at: float) -> bool:
+def _lock_body(token: str, expires_at: float) -> bytes:
+    """The lock object's contents. The expiry stays first and bare so an older
+    build, which read the whole body as a float, still parses it."""
+    return f"{expires_at}\n{token}".encode()
+
+
+def _parse_lock(raw: bytes) -> tuple[float, str | None]:
+    text = raw.decode(errors="replace")
+    expiry, _, token = text.partition("\n")
+    try:
+        held_until = float(expiry.strip() or 0)
+    except ValueError:
+        held_until = 0.0
+    return held_until, (token.strip() or None)
+
+
+def _hold_lock(token: str, etag: str | None) -> None:
+    with _lock:
+        _state["lock_token"] = token
+        _state["lock_etag"] = etag
+
+
+def _forget_lock() -> None:
+    with _lock:
+        _state["lock_token"] = None
+        _state["lock_etag"] = None
+
+
+def holds_lock() -> bool:
+    """Whether the lock object still carries our token.
+
+    The TTL exists so a writer that died cannot wedge the database, which
+    means a live-but-slow writer can have its lock broken out from under it.
+    Checking before the upload is what stops that writer from overwriting
+    the new holder's work.
+    """
+    if not enabled():
+        return True
+    with _lock:
+        token = _state["lock_token"]
+    if token is None:
+        return False
+    try:
+        obj = client().get_object(Bucket=aws_settings.s3_bucket, Key=aws_settings.s3_lock_key)
+        _held_until, held_token = _parse_lock(obj["Body"].read())
+    except Exception as e:  # noqa: BLE001
+        if hasattr(e, "response") and _is_missing(e):
+            return False  # released or deleted: not ours any more
+        raise
+    return held_token == token
+
+
+def _take_over_expired_lock(expires_at: float, token: str) -> bool:
     """Claim a lock whose holder died. Returns True if this process now holds it.
 
     Reading the lock and clearing it are two round trips, and another writer
@@ -331,7 +416,7 @@ def _take_over_expired_lock(expires_at: float) -> bool:
     try:
         obj = client().get_object(Bucket=aws_settings.s3_bucket, Key=aws_settings.s3_lock_key)
         held_etag = obj["ETag"]
-        held_until = float(obj["Body"].read().decode() or 0)
+        held_until, _held_token = _parse_lock(obj["Body"].read())
     except Exception:  # noqa: BLE001
         # Already released, or a body no float can be made of. Either way this
         # is not ours to break: fall back to the plain create on the next pass.
@@ -340,10 +425,10 @@ def _take_over_expired_lock(expires_at: float) -> bool:
         return False
     logger.warning("Breaking an expired database write lock (held past %.0f)", held_until)
     try:
-        client().put_object(
+        response = client().put_object(
             Bucket=aws_settings.s3_bucket,
             Key=aws_settings.s3_lock_key,
-            Body=str(expires_at).encode(),
+            Body=_lock_body(token, expires_at),
             IfMatch=held_etag,
         )
     except Exception as e:  # noqa: BLE001
@@ -352,16 +437,27 @@ def _take_over_expired_lock(expires_at: float) -> bool:
             logger.debug("Lock takeover raced with another writer", exc_info=True)
             return False
         raise
+    _hold_lock(token, response.get("ETag"))
     return True
 
 
 def release_lock() -> None:
+    """Drop the lock, but only if it is still ours.
+
+    A writer whose lock was broken used to delete it on the way out, taking
+    the new holder's lock with it and letting a third writer in beside them.
+    """
     if not enabled():
         return
     try:
+        if not holds_lock():
+            logger.warning("Not releasing the write lock: another writer holds it now")
+            return
         client().delete_object(Bucket=aws_settings.s3_bucket, Key=aws_settings.s3_lock_key)
     except Exception:  # noqa: BLE001 — the TTL is the backstop
         logger.warning("Failed to release the database write lock", exc_info=True)
+    finally:
+        _forget_lock()
 
 
 class write_lock:  # noqa: N801 — used as a context manager, reads better lowercase

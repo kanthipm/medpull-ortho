@@ -35,29 +35,40 @@ from app.seed.patients import CARE_TEAM, HOSPITALS, PATIENTS
 from app.seed.scenarios import get_scenario
 
 
-def live_patient_ids(db: Session) -> list[str]:
+def unrebuildable_patient_ids(db: Session) -> list[str]:
     """Patients a reseed would destroy rather than rebuild.
 
-    The roster is written from code with fixed ids, so seeded patients come
-    back. A person who enrolled from the app does not: their session token,
-    their message thread and every observation Apple Health ever delivered
-    are theirs alone. Anyone with a phone number on file or an app session
-    counts as real.
+    Three ways to qualify, and the third is the one that is easy to miss:
+
+    * a phone number on file, or an app session — a real person, whose
+      session token, message thread and Apple Health history are theirs
+      alone and exist nowhere in code;
+    * an id the shipped roster does not contain. The seed rebuilds exactly
+      the patients written in ``PATIENTS``; anyone else in the database got
+      there some other way (a clinician created the chart, someone joined
+      from the app, a demo-data script wrote them) and a reseed simply
+      deletes them.
+
+    That last clause matters more than it looks: clearing the phone numbers
+    off a set of demo patients — a reasonable thing to do — would otherwise
+    take them out from under this guard entirely.
     """
-    from sqlalchemy import or_, select
+    from sqlalchemy import select
 
     from app.models.mobile import PatientSession
 
-    return list(
-        db.scalars(
-            select(Patient.id).where(
-                or_(
-                    Patient.phone.is_not(None),
-                    Patient.id.in_(select(PatientSession.patient_id)),
-                )
-            ).order_by(Patient.id)
-        ).all()
-    )
+    shipped = {spec.id for spec in PATIENTS}
+    with_session = set(db.scalars(select(PatientSession.patient_id)).all())
+    rows = db.execute(select(Patient.id, Patient.phone).order_by(Patient.id)).all()
+    return [
+        patient_id
+        for patient_id, phone in rows
+        if phone is not None or patient_id in with_session or patient_id not in shipped
+    ]
+
+
+# The old name, for callers that predate the broader definition.
+live_patient_ids = unrebuildable_patient_ids
 
 
 def refuse_destructive_reseed(force: bool = False) -> dict[str, object] | None:
@@ -71,15 +82,16 @@ def refuse_destructive_reseed(force: bool = False) -> dict[str, object] | None:
     if force:
         return None
     with SessionLocal() as db:
-        live = live_patient_ids(db)
+        live = unrebuildable_patient_ids(db)
     if not live:
         return None
     shown = ", ".join(live[:8]) + ("…" if len(live) > 8 else "")
     return {
         "ok": False,
         "error": (
-            f"refusing to reseed: {len(live)} patient(s) have a phone or an app session "
-            f"({shown}). Pass force=true to destroy them."
+            f"refusing to reseed: {len(live)} patient(s) cannot be rebuilt from the seed "
+            f"(a phone, an app session, or not in the shipped roster): {shown}. "
+            "Pass force=true to destroy them."
         ),
         "live_patients": live,
     }

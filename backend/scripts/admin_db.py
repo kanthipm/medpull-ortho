@@ -178,7 +178,17 @@ def main() -> int:
             ensure_schema()
             with SessionLocal() as db:
                 report = apply(db)
-            uploaded = storage.persist(conditional=False)
+            try:
+                uploaded = storage.persist(conditional=False)
+            except storage.LockLost:
+                # Another writer broke this lock while we worked, so our base
+                # is stale. Uploading would undo whatever they committed.
+                print(
+                    "ABORTED: the S3 write lock was taken over while this ran, so nothing "
+                    "was uploaded and the database is unchanged. Re-run it.",
+                    file=sys.stderr,
+                )
+                return 3
         report["uploaded"] = uploaded
         report["etag"] = storage._state.get("etag")
     elif args.bucket:

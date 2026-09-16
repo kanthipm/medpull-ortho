@@ -265,8 +265,14 @@ def test_the_reseed_refuses_to_delete_real_patients(db):
         db.commit()
 
 
-def test_live_patient_ids_sees_a_phone_and_a_session(db):
-    from app.seed.seed import live_patient_ids
+def test_the_guard_covers_a_patient_the_seed_cannot_rebuild(db, monkeypatch):
+    """Three ways to be unrebuildable, and the third is the one that bites:
+    a patient the shipped roster does not contain. Clearing the phone
+    numbers off a set of demo patients — a reasonable thing to do — would
+    otherwise take them out from under the guard entirely."""
+    from app.seed import seed as seed_module
+    from app.seed.patients import PATIENTS, _spec
+    from app.seed.seed import unrebuildable_patient_ids
 
     marker = Patient(
         id="robustness-probe", name="Probe Person", initials="PP", age=40, sex="F",
@@ -276,19 +282,34 @@ def test_live_patient_ids_sees_a_phone_and_a_session(db):
     )
     db.add(marker)
     db.commit()
-    assert "robustness-probe" not in live_patient_ids(db)
-    db.add(PatientSession(patient_id="robustness-probe", token_hash="probe-hash"))
-    db.commit()
-    assert "robustness-probe" in live_patient_ids(db)
-    # a phone alone is enough, with no session at all
-    db.execute(delete(PatientSession).where(PatientSession.patient_id == "robustness-probe"))
-    db.get(Patient, "robustness-probe").phone = "+15125550699"
-    db.commit()
-    assert "robustness-probe" in live_patient_ids(db)
-    db.execute(delete(PatientSession).where(PatientSession.patient_id == "robustness-probe"))
-    db.execute(delete(Message).where(Message.patient_id == "robustness-probe"))
-    db.execute(delete(Patient).where(Patient.id == "robustness-probe"))
-    db.commit()
+    try:
+        # not in the shipped roster: a reseed would delete it for good
+        assert "robustness-probe" in unrebuildable_patient_ids(db)
+
+        # pretend the seed does know how to rebuild it, with no phone and no
+        # session: now it is genuinely disposable
+        from app.models.enums import ProcedureType
+
+        rebuildable = _spec("robustness-probe", "Probe Person", 40, "F", ProcedureType.NONE,
+                            "General care", 0, None, "", 0, "hosp_demo")
+        monkeypatch.setattr(seed_module, "PATIENTS", [*PATIENTS, rebuildable])
+        assert "robustness-probe" not in unrebuildable_patient_ids(db)
+
+        # a phone alone puts it back under the guard
+        marker.phone = "+15125550699"
+        db.commit()
+        assert "robustness-probe" in unrebuildable_patient_ids(db)
+
+        # so does an app session, with no phone at all
+        marker.phone = None
+        db.add(PatientSession(patient_id="robustness-probe", token_hash="probe-hash"))
+        db.commit()
+        assert "robustness-probe" in unrebuildable_patient_ids(db)
+    finally:
+        db.execute(delete(PatientSession).where(PatientSession.patient_id == "robustness-probe"))
+        db.execute(delete(Message).where(Message.patient_id == "robustness-probe"))
+        db.execute(delete(Patient).where(Patient.id == "robustness-probe"))
+        db.commit()
 
 
 # --- dates --------------------------------------------------------------------------
