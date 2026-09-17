@@ -153,7 +153,7 @@ export default function AppShell() {
               className="brand-lockup shrink-0 rounded-pill pr-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             >
               <span className="app-icon">
-                <img src="/medpull-mark.png" alt="" aria-hidden width={22} height={22} />
+                <img src="/medpull-mark.svg" alt="" aria-hidden width={22} height={22} />
               </span>
               <span className="hidden sm:inline">MedPull</span>
             </Link>

@@ -34,7 +34,7 @@ struct VoiceView: View {
                             turnView(t).id(t.id)
                         }
                         if speech.isListening && !speech.transcript.isEmpty {
-                            // NO `.italic()`: Instrument Sans ships no italic,
+                            // NO `.italic()`: the bundled face ships no italic,
                             // so SwiftUI would shear the roman. What is being
                             // heard is set apart by `muted` (5.03 / 5.24 on
                             // canvas), no bubble, and the live label by the mic.
@@ -42,7 +42,7 @@ struct VoiceView: View {
                                 .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                         if thinking {
-                            ProgressView().tint(MP.brand)
+                            ProgressView().tint(MP.brandInk)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .accessibilityLabel("MedPull is thinking")
                         }
@@ -75,7 +75,7 @@ struct VoiceView: View {
                 Text("Talk to MedPull").mpFont(.subheadSemibold).foregroundStyle(MP.ink)
                 // `body` on the ambient wash: 6.37:1 light / 6.52:1 dark at
                 // its densest.
-                Text("Tap the mic and say how you're doing. We'll log it, and pass anything important to your care team.")
+                Text("Tap the mic and say how you’re doing. We’ll log it, and pass anything important to your care team.")
                     .mpFont(.copy).foregroundStyle(MP.body)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -107,14 +107,21 @@ struct VoiceView: View {
             // cell and glass is barred from those.
             Text(t.text)
                 .font(.copyLarge)
-                .foregroundStyle(mine ? MP.onBrand : MP.ink)
+                .foregroundStyle(mine ? Color.white : MP.ink)
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(BubbleShape(mine: mine)
-                    .fill(mine ? MP.brand : t.flagged ? MP.riskHighBg : MP.panel))
-                // The flagged edge is SOLID `riskHigh` (4.83:1 on its tint
-                // light, 5.70:1 dark).
+                .background {
+                    if mine {
+                        BubbleFill().clipShape(BubbleShape(mine: true))
+                    } else {
+                        BubbleShape(mine: false)
+                            .fill(t.flagged ? MP.riskHighBg : MP.fill)
+                            .background(BubbleShape(mine: false).fill(MP.panel.opacity(0.7)))
+                    }
+                }
+                // The flagged edge is SOLID `riskHigh` (4.73 on its tint
+                // light, 6.12 dark).
                 .overlay(BubbleShape(mine: mine)
-                    .strokeBorder(mine ? .clear : t.flagged ? MP.riskHigh : MP.line, lineWidth: 1))
+                    .strokeBorder(t.flagged && !mine ? MP.riskHigh : .clear, lineWidth: 1))
             if t.flagged {
                 // Never colour alone: the escalation is also said in words.
                 // `riskHigh` on canvas is 5.24:1 light / 8.08:1 dark.
@@ -216,36 +223,50 @@ struct VoiceView: View {
     }
 }
 
-/// The mic: a bold 84pt disc. Idle, Medical Blue with a white mic (4.60:1)
-/// inside a soft brand-tint ring; listening, `riskHigh` with a stop glyph
-/// (`onRiskHigh`: 5.62 light / 8.08 dark) and a solid ring. The glyph swaps
-/// with the system's replace transition. Nothing repeats.
+/// The mic: a bold 84pt disc. Idle, the site's sage gradient with a white
+/// mic inside a lime halo that breathes; listening, `riskHigh` with a stop
+/// glyph and a solid ring. The glyph swaps with the system's replace
+/// transition. The halo holds still under Reduce Motion.
 private struct MicDisc: View {
     let listening: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
     @ScaledMetric(relativeTo: .title) private var side: CGFloat = 84
+    @State private var breathe = false
 
     var body: some View {
         let d = min(side, 120)
         ZStack {
-            // The halo is a flat tint ring, not a glow: no shadow, no blur.
             Circle()
-                .fill(listening ? MP.riskHighBg : MP.brandTint)
-                .frame(width: d + 20, height: d + 20)
+                .fill(listening ? MP.riskHighBg : MP.lime.opacity(0.3))
+                .frame(width: d + 24, height: d + 24)
+                .scaleEffect(breathe && !listening ? 1.06 : 1)
             if listening {
                 Circle().strokeBorder(MP.riskHigh, lineWidth: 2)
-                    .frame(width: d + 20, height: d + 20)
+                    .frame(width: d + 24, height: d + 24)
             }
-            Circle()
-                .fill(isEnabled ? (listening ? MP.riskHigh : MP.brand) : MP.disabledFill)
-                .frame(width: d, height: d)
+            Group {
+                if !isEnabled {
+                    Circle().fill(MP.disabledFill)
+                } else if listening {
+                    Circle().fill(MP.riskHigh)
+                } else {
+                    GradientFill(gradient: .sage).clipShape(Circle())
+                        .shadow(color: Color(red: 74 / 255, green: 102 / 255, blue: 62 / 255).opacity(0.45),
+                                radius: 14, y: 8)
+                }
+            }
+            .frame(width: d, height: d)
             Image(systemName: listening ? "stop.fill" : "mic.fill")
                 .font(.system(size: (d * 0.36).rounded(), weight: .semibold))
-                .foregroundStyle(isEnabled ? (listening ? MP.onRiskHigh : MP.onBrand) : MP.disabledInk)
+                .foregroundStyle(isEnabled ? (listening ? MP.onRiskHigh : Color.white) : MP.disabledInk)
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         }
         .animation(MPMotion.gated(MPMotion.state, reduceMotion: reduceMotion), value: listening)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) { breathe = true }
+        }
     }
 }
 

@@ -160,7 +160,7 @@ final class OnboardingModel {
             // or this person enrolled before). Don't dead-end: take them to
             // find-my-record, where the phone match lists that record.
             choose(.findRecord)
-            self.error = "This number is already on a record at \(hospital.name). Pick it below and you're in."
+            self.error = "This number is already on a record at \(hospital.name). Pick it below and you’re in."
         } catch {
             self.error = error.localizedDescription
         }
@@ -193,7 +193,7 @@ final class OnboardingModel {
             go(.verify)
         case "enrolled":
             guard let token = r.sessionToken, let me = r.me else {
-                throw APIError(status: 0, detail: "The server didn't return a session.")
+                throw APIError(status: 0, detail: "The server didn’t return a session.")
             }
             app.adoptSession(token: token, me: me)
             go(.health)

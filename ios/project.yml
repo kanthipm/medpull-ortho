@@ -26,7 +26,7 @@ targets:
         excludes:
           - "Info.plist"
           # The four EB Garamond TTFs are 1.53 MB of typeface the app stopped
-          # using when it moved to Instrument Sans, and `sources: - path:
+          # using long ago, and `sources: - path:
           # MedPull` was still sweeping them into the bundle as resources —
           # unregistered from UIAppFonts, so they loaded nothing and shipped
           # anyway (confirmed in the built MedPull.app). Excluding them here
@@ -34,9 +34,9 @@ targets:
           # so a future decision to bring the face back is one line.
           - "Resources/Fonts/EBGaramond-*.ttf"
           # OFL.txt is EB Garamond's licence and goes with those files. The
-          # licence that must still ship is OFL-InstrumentSans.txt, which the
-          # blanket sources rule above continues to pick up — SIL OFL 1.1
-          # requires it to accompany the two cuts that DO ship.
+          # licence that must still ship is OFL-Outfit.txt, which the blanket
+          # sources rule above continues to pick up — SIL OFL 1.1 requires it
+          # to accompany the cuts that DO ship.
           - "Resources/Fonts/OFL.txt"
     # XcodeGen (re)writes both files from these properties on every
     # `generate`, so this spec — not the files — is the source of truth.
@@ -51,33 +51,27 @@ targets:
         # sit in MedPull/Resources/Fonts and are picked up as resources by
         # the `sources: - path: MedPull` rule above.
         #
-        # Instrument Sans (SIL OFL 1.1) at 400, 500 and 600 — the cuts the
-        # console loads as woff2, so the app and the provider console are one
-        # face — plus 700, which ships ONLY as the Bold Text substitute for
-        # 600 (MPFont.name(for:bold:)). SemiBold and Bold are static
-        # wght=600/700, wdth=100 instances of the variable master, built with
-        # fontTools.varLib.instancer. MPFont maps any heavier weight down to a
-        # file that exists, because Font.custom falls back to San Francisco
-        # silently. The names here are filenames; UI/Theme.swift asks for the
-        # PostScript names InstrumentSans-Regular / -Medium / -SemiBold /
-        # -Bold, which the four files carry (read back with fontTools). The four EBGaramond-*.ttf files are still on disk
-        # but no longer ship: they are excluded from `sources` above, so
-        # nothing registers them and nothing copies them either.
+        # Outfit (SIL OFL 1.1), the medpull.org face, as static instances of
+        # the variable master (fontTools.varLib.instancer, the foundry's
+        # wordmark ligatures removed): 200 and 300 for display type and big
+        # numbers, 400 body, 500 titles and labels, and 600, which ships ONLY
+        # as the Bold Text step for 500 (MPFont.name(for:bold:)). The names
+        # here are filenames; UI/Theme.swift asks for the PostScript names
+        # Outfit-ExtraLight / -Light / -Regular / -Medium / -SemiBold.
         UIAppFonts:
-          - InstrumentSans-Regular.ttf
-          - InstrumentSans-Medium.ttf
-          - InstrumentSans-SemiBold.ttf
-          - InstrumentSans-Bold.ttf
-          # Outfit (SIL OFL 1.1) is the display face only, for numerals and
-          # titles at 20pt and up. OFL-Outfit.txt ships via the sources rule.
+          - Outfit-ExtraLight.ttf
           - Outfit-Light.ttf
           - Outfit-Regular.ttf
           - Outfit-Medium.ttf
+          - Outfit-SemiBold.ttf
         CFBundleURLTypes:
           - CFBundleURLName: com.medpull.recovery
             CFBundleURLSchemes: [medpull]
+        # The launch screen is the canvas (#FBFBF9 / #0B0B0C) with the mark,
+        # so the first frame already looks like the app.
         UILaunchScreen:
-          UIColorName: AccentColor
+          UIColorName: LaunchBackground
+          UIImageName: LaunchMark
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false

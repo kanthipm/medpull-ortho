@@ -1,57 +1,35 @@
 import SwiftUI
 
-/// The shared components, on the tokens.
+/// The shared components, in the medpull.org language.
 ///
 /// THE RULES THESE ENFORCE, so no screen has to remember them:
-///  * Separation is a hairline OR a fill, never both on the same edge, and
-///    never a shadow on a card. Nothing here casts a shadow; the ambient
-///    shadow belongs to floating overlays only.
-///  * `MP.brand` is a FILL and a stroke, never a foreground. A brand
-///    foreground is `MP.brandInk` (#1976D2 as text is 3.74:1 on dark panel;
-///    `brandInk` is 6.78:1). The app's root tint is `MP.brandInk`; a control
-///    whose FILL must be #1976D2 names `MP.brand` itself (the filled button
-///    style below does).
-///  * `MP.faint` carries NO TEXT. It is 2.59:1 on light panel. The only use
-///    below is EmptyRow's glyph, which is empty-state art.
-///  * Every button and every pill is a continuous capsule. Cards are 20pt
-///    continuous, controls 12, tiles 8.
-///  * Inside a tinted card, controls never take the card's own tint: the
-///    tinted and gray button styles switch to a panel fill there, and
-///    secondary text switches from `muted` to `body` (`MPOnTint`, below).
-///  * Type comes from the ladder, read inside `body` (never a stored `let`),
-///    so Bold Text and Dynamic Type reach every label.
+///  * A card is the site's glass card: a white gradient, a light-catching rim
+///    and a soft layered shadow drawn on the SHAPE only (never on its text,
+///    which would make scrolling expensive). Dark mode keeps the rim at 6%
+///    white — never a bright border.
+///  * The primary action is the near-black capsule with a lime dot; it
+///    inverts to a light capsule in dark mode. Everything else is a warm
+///    grey capsule, a white glass capsule, or sage text.
+///  * Icon tiles, avatars and hero tiles are grainy earthy gradients with
+///    white marks. Hue names a category, never a state: state is always a
+///    pill with a word (and a dot).
+///  * `MP.brand` (sage) is a FILL; sage text is `MP.brandInk`.
+///  * `MP.faint` carries no text.
+///  * Type comes from the ladder, read inside `body`, so Bold Text and
+///    Dynamic Type reach every label.
 ///
-/// CONTRAST, computed with the WCAG formula (0.04045 threshold), light / dark
-/// (script: scratchpad/i1contrast.py):
-///   filled      white on brand 4.602 / 4.602; pressed on brandDeep 8.631 / 4.602
-///   tinted      brandInk on brandTint 4.963 / 5.624; pressed: brandDeep on
-///               brandTintStrong 6.365 light, brandInk on it 4.954 dark
-///               (brandInk on brandTintStrong light is 4.238 and is NOT used)
-///   tinted on a tint card: brandInk on panel 5.746 / 6.783
-///   gray        ink on soft 16.202 / 16.060; pressed on track 14.517 / 12.810
-///   plain       brandInk on panel 5.746 / 6.783, on canvas 5.354 / 7.250;
-///               pressed on soft 5.066 / 6.336
-///   destructive riskHigh on riskHighBg 4.835 / 5.701; pressed (riskHigh 12%
-///               over the bg) with `MP.riskHighPressed` 6.600 light, riskHigh
-///               4.587 dark
-///   destructive filled: onRiskHigh on riskHigh 5.622 / 8.084; pressed
-///               (ink 12% over) 6.674 / 8.911
-///   disabled    disabledInk on disabledFill 4.755 / 4.582
-///   secondary on tint: body on brandTint 6.237 / 5.513, on tealTint 6.427 /
-///               5.002 (muted on brandTint dark is 4.067 and fails — R8)
-///   tiles       brandInk/brandTint 4.963 / 5.624, tealInk/tealTint 5.171 /
-///               8.142, indigo 6.950 / 6.721, violet 6.354 / 7.114
-///   initials    white on brand 4.602; onRiskHigh on riskHigh 5.622 / 8.084;
-///               soft variants: every risk ink on its own bg >= 4.731
-///
-/// NON-TEXT CONTRAST. Tinted and gray fills are only 1.13-1.21:1 against the
-/// panel. That is accepted under the WCAG 1.4.11 reading in which the visible
-/// text label identifies the control (the same basis as "Details" and "All
-/// tasks"). Under Increase Contrast every non-filled style gains a 1pt
-/// `lineStrong` edge (3.834 / 5.671 on panel), and so does every disabled
-/// style (its fill is 1.06:1 against canvas).
+/// CONTRAST (WCAG, light / dark):
+///   primary     white on #141414 18.42; ink on #F5F5F7 16.92
+///   tinted      ink on the warm fill 16.4 / 13.9
+///   glass       ink on white glass 17.6 / 13.8
+///   plain       brandInk on panel 7.25 / 10.53
+///   destructive riskHigh on riskHighBg 4.73 / 6.12
+///   disabled    disabledInk on disabledFill 5.19 / 4.63
+///   pills       every status ink on its tint 4.73 or better
+///   gradients   white on every tile's top band 5.65 or better (7.1 under the
+///               scrim); white marks only below it
 
-// MARK: - Tint context (R8, and the "never the same tint" rule)
+// MARK: - Tint context
 
 private struct MPOnTintKey: EnvironmentKey {
     static let defaultValue = false
@@ -59,8 +37,7 @@ private struct MPOnTintKey: EnvironmentKey {
 
 extension EnvironmentValues {
     /// True inside `Card(tint: true)`. Button styles and `.mpSecondary()`
-    /// read it; set it yourself on any other brand- or teal-tinted surface
-    /// with `.mpOnTint()`.
+    /// read it; set it yourself on any other tinted surface with `.mpOnTint()`.
     var mpOnTint: Bool {
         get { self[MPOnTintKey.self] }
         set { self[MPOnTintKey.self] = newValue }
@@ -77,26 +54,79 @@ private struct MPSecondaryInk: ViewModifier {
 }
 
 extension View {
-    /// Secondary text colour: `MP.muted` on panel/canvas, `MP.body` on a tinted
-    /// card (dark `muted` on `brandTint` is 4.067:1; `body` is 5.513:1).
+    /// Secondary text colour: `MP.muted` on glass and canvas, `MP.body` on a
+    /// tinted card.
     func mpSecondary() -> some View { modifier(MPSecondaryInk()) }
 
-    /// Marks a subtree as sitting on a brand/teal tint (see `mpOnTint`).
+    /// Marks a subtree as sitting on a tint (see `mpOnTint`).
     func mpOnTint(_ onTint: Bool = true) -> some View {
         environment(\.mpOnTint, onTint)
     }
 }
 
+// MARK: - Grain
+
+/// The site's grain: a tileable noise texture blended soft-light over a
+/// gradient (or as faint specks on a plain surface). Decorative; gone under
+/// Reduce Transparency and Increase Contrast.
+struct GrainOverlay: View {
+    enum Kind { case gradient, surface }
+    var kind: Kind = .gradient
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        if !reduceTransparency && contrast != .increased {
+            switch kind {
+            case .gradient:
+                Image("Grain")
+                    .resizable(resizingMode: .tile)
+                    .blendMode(.softLight)
+                    .opacity(0.7)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            case .surface:
+                Image("GrainSoft")
+                    .resizable(resizingMode: .tile)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+/// A grainy earthy gradient: the stops, the warm glow that pools at the
+/// bottom, and the grain. Used by icon tiles, avatars and gradient tiles.
+struct GradientFill: View {
+    let gradient: MPGradient
+
+    var body: some View {
+        ZStack {
+            // The site's 175° run: top to bottom, leaning a touch.
+            LinearGradient(stops: gradient.stops,
+                           startPoint: UnitPoint(x: 0.54, y: 0),
+                           endPoint: UnitPoint(x: 0.46, y: 1))
+            if let glow = gradient.glow {
+                GeometryReader { proxy in
+                    RadialGradient(colors: [glow.0, glow.0.opacity(0)],
+                                   center: glow.1,
+                                   startRadius: 0,
+                                   endRadius: max(proxy.size.width, proxy.size.height) * 0.55)
+                }
+            }
+            GrainOverlay()
+        }
+    }
+}
+
 // MARK: - Card
 
-/// Instrument panel: one hairline edge, flat surface, no shadow. 20pt
-/// continuous corners.
+/// The site's glass card: a white gradient (the fog shows faintly through),
+/// a light-catching rim, and the layered glass shadow. 26pt continuous.
 struct Card<Content: View>: View {
     var padding: CGFloat = 16
-    /// A brand-tinted card: the same surface, filled with the brand tint
-    /// SOLID. `MP.ink` on `brandTint` is 15.87:1 light / 14.26:1 dark.
-    /// Secondary text inside must use `.mpSecondary()` (or
-    /// `MP.onTintSecondary`), never `MP.muted` — see R8.
+    /// The narrative card (recovery summary): the site's briefing wash, lilac
+    /// into amber, over the glass. Secondary text inside is `body`.
     var tint: Bool = false
     @ViewBuilder var content: () -> Content
 
@@ -104,20 +134,62 @@ struct Card<Content: View>: View {
         content()
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(MP.surfaceShape.fill(tint ? MP.brandTint : MP.panel))
-            // ONE edge. On dark, `panel` is 1.07:1 against `canvas`, so this
-            // 1pt `MP.line` (3.63:1 on dark panel) is what says "card".
-            .overlay(MP.surfaceShape.strokeBorder(MP.line, lineWidth: 1))
+            .background { GlassSurface(shape: MP.surfaceShape, tint: tint) }
             .environment(\.mpOnTint, tint)
     }
 }
 
-/// A card's header row: a quiet title and an optional trailing text action
+/// The glass fill + rim + shadow, reusable for any shape.
+struct GlassSurface<S: InsettableShape>: View {
+    let shape: S
+    var tint: Bool = false
+    var solid: Bool = false
+    var elevated: Bool = true
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var flat: Bool { contrast == .increased || reduceTransparency }
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        shape
+            .fill(flat ? AnyShapeStyle(MP.panel)
+                  : AnyShapeStyle(LinearGradient(colors: solid ? [MP.glassSolidTop, MP.glassSolidBottom]
+                                                          : [MP.glassTop, MP.glassBottom],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
+            .overlay {
+                if tint && !flat {
+                    shape.fill(LinearGradient(colors: [MP.fogLilac.opacity(dark ? 0.8 : 0.45),
+                                                       MP.fogAmber.opacity(dark ? 0.6 : 0.32)],
+                                              startPoint: .topLeading, endPoint: .bottomTrailing))
+                }
+            }
+            .overlay {
+                shape.strokeBorder(flat ? MP.lineStrong : MP.glassRim, lineWidth: flat ? 1 : 1)
+            }
+            .overlay {
+                // The half-point outer hairline that keeps a white card
+                // from dissolving into a pale canvas.
+                if !flat { shape.stroke(MP.glassRing, lineWidth: 0.5) }
+            }
+            .shadow(color: MP.shadow.opacity(elevated && !flat ? (dark ? 0.35 : 0.05) : 0), radius: 1, y: 1)
+            .shadow(color: MP.shadow.opacity(elevated && !flat ? (dark ? 0.45 : 0.09) : 0), radius: 14, y: 8)
+    }
+}
+
+extension View {
+    /// Wraps any content in the site's glass surface.
+    func glassSurface<S: InsettableShape>(_ shape: S, solid: Bool = false, elevated: Bool = true) -> some View {
+        background { GlassSurface(shape: shape, solid: solid, elevated: elevated) }
+    }
+}
+
+/// A card's header row: the title and an optional trailing text action
 /// ("Details", "All tasks"). Pairs with `Card(padding: 0)`.
 ///
-/// The title is 12/500 in the secondary ink (muted 5.393 / 4.906 on panel,
-/// body on a tint card). The action is 14/500 `brandInk` (5.746 / 6.783 on
-/// panel, 4.963 / 5.624 on brandTint) with a 44pt target.
+/// The title is 15/500 ink, like the site's app cards. The action is sage
+/// `brandInk` (7.25 / 10.53) with a 44pt target.
 struct CardHeader: View {
     let title: String
     var actionTitle: String? = nil
@@ -132,8 +204,8 @@ struct CardHeader: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             Text(title)
-                .mpFont(.labelMedium)
-                .mpSecondary()
+                .mpFont(MPType(15, .medium))
+                .foregroundStyle(MP.ink)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 8)
             if let actionTitle, let action {
@@ -141,19 +213,14 @@ struct CardHeader: View {
                     .buttonStyle(MPButtonStyle(kind: .plain, bare: true))
             }
         }
-        // 44pt only when the row carries a tap target; a title-only header
-        // needs no hit area and the extra height read as a gap above the
-        // first row.
-        .frame(minHeight: actionTitle != nil && action != nil ? 44 : 32)
+        .frame(minHeight: actionTitle != nil && action != nil ? 44 : 34)
         .padding(.horizontal, 16)
-        .padding(.top, 6)
+        .padding(.top, 8)
     }
 }
 
-/// An inset hairline between rows in a card, aligned to the row text rather
-/// than the card edge (the Settings / Health list look). `leading` defaults to
-/// a row that starts with a 30pt `IconTile`: 16 + tile + 14, scaled with the
-/// tile. Pass `leading: 16` for rows without a tile.
+/// An inset hairline between rows in a card, aligned to the row text.
+/// `leading` defaults to a row that starts with a 30pt `IconTile`.
 struct InsetDivider: View {
     var leading: CGFloat? = nil
     @ScaledMetric(relativeTo: .body) private var tileSide: CGFloat = 30
@@ -162,7 +229,6 @@ struct InsetDivider: View {
 
     var body: some View {
         Rectangle()
-            // Decorative only (1.266 / 1.342). Increase Contrast uses `line`.
             .fill(contrast == .increased ? MP.line : MP.hairline)
             .frame(height: 1 / max(displayScale, 1))
             .padding(.leading, leading ?? (16 + tileSide + 14))
@@ -171,8 +237,9 @@ struct InsetDivider: View {
     }
 }
 
-/// A Health-style category tile: an SF Symbol in its family ink on the
-/// family tint, 8pt continuous corners. Families are non-risk hues only.
+/// The site's gradient glyph square: a white SF Symbol on a grainy gradient,
+/// with an inner highlight and a soft drop. Decorative — the row title
+/// carries the meaning.
 struct IconTile: View {
     let systemName: String
     var family: MP.Category = .blue
@@ -188,31 +255,181 @@ struct IconTile: View {
         self.init(systemName: systemName, family: family, size: size)
     }
 
+    private var radius: CGFloat { (side * 0.3).rounded() }
+
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         Image(systemName: systemName)
-            .symbolRenderingMode(.hierarchical)
-            // The side is already Dynamic-Type scaled, so the glyph is a
-            // fixed fraction of it (16 in 30).
+            .symbolRenderingMode(.monochrome)
             .font(.system(size: (side * 16 / 30).rounded(),
                           weight: MPFont.systemWeight(for: .medium)))
-            .foregroundStyle(MP.categoryInk(family))
+            .foregroundStyle(.white)
             .frame(width: side, height: side)
-            .background(MP.tileShape.fill(MP.categoryTint(family)))
+            .background {
+                GradientFill(gradient: MP.categoryGradient(family))
+                    .clipShape(shape)
+                    .overlay(alignment: .top) {
+                        shape.strokeBorder(
+                            LinearGradient(colors: [.white.opacity(0.35), .white.opacity(0)],
+                                           startPoint: .top, endPoint: .center),
+                            lineWidth: 1)
+                    }
+                    .shadow(color: MP.shadow.opacity(0.22), radius: 5, y: 3)
+            }
             .accessibilityHidden(true)
+    }
+}
+
+/// The site's lime accent dot with its halo.
+struct LimeDot: View {
+    var size: CGFloat = 8
+    var body: some View {
+        Circle()
+            .fill(MP.lime)
+            .frame(width: size, height: size)
+            .background(Circle().fill(MP.lime.opacity(0.35)).padding(-size * 0.45))
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Gradient tile
+
+/// The site's signature card: a grainy gradient, white type in the dark top
+/// band (kicker, big light number, a side note), white line art in the
+/// middle, and an ink caption on solid glass at the bottom.
+///
+///     GradientTile(.sage, kicker: "Daily steps", value: "4,820", unit: "steps",
+///                  side: ("Day 8", "latest")) { art } caption: { ... }
+struct GradientTile<Art: View, Caption: View>: View {
+    let gradient: MPGradient
+    let kicker: String
+    var value: String? = nil
+    var unit: String? = nil
+    var side: (String, String)? = nil
+    var valueSize: CGFloat = MPSize.displayL
+    @ViewBuilder var art: () -> Art
+    @ViewBuilder var caption: () -> Caption
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    init(_ gradient: MPGradient, kicker: String, value: String? = nil, unit: String? = nil,
+         side: (String, String)? = nil, valueSize: CGFloat = MPSize.displayL,
+         @ViewBuilder art: @escaping () -> Art,
+         @ViewBuilder caption: @escaping () -> Caption) {
+        self.gradient = gradient
+        self.kicker = kicker
+        self.value = value
+        self.unit = unit
+        self.side = side
+        self.valueSize = valueSize
+        self.art = art
+        self.caption = caption
+    }
+
+    var body: some View {
+        // At accessibility sizes the side note moves under the number and the
+        // unit under the figure, so nothing truncates.
+        let stacked = dynamicTypeSize.isAccessibilitySize
+        let header = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+        let figure = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 4))
+        VStack(alignment: .leading, spacing: 0) {
+            header {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(kicker)
+                        .mpFont(.labelMedium)
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let value {
+                        figure {
+                            Text(value)
+                                .font(.figuresDisplay(valueSize, weight: .light))
+                                .kerning(-valueSize * 0.045)
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.5)
+                                .contentTransition(reduceMotion ? .identity : .numericText())
+                            if let unit, !unit.isEmpty {
+                                Text(unit)
+                                    .mpFont(.copyMedium)
+                                    .foregroundStyle(.white.opacity(0.9))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                }
+                if !stacked { Spacer(minLength: 8) }
+                if let side {
+                    VStack(alignment: stacked ? .leading : .trailing, spacing: 0) {
+                        Text(side.0)
+                            .font(.mp(MPSize.subhead, weight: .light))
+                            .foregroundStyle(.white)
+                        Text(side.1)
+                            .mpFont(.label)
+                            .foregroundStyle(.white.opacity(0.92))
+                    }
+                    .multilineTextAlignment(stacked ? .leading : .trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .shadow(color: .black.opacity(0.12), radius: 10)
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+
+            art()
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .accessibilityHidden(true)
+
+            caption()
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glassSurface(MP.controlShape, solid: true, elevated: false)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+        }
+        .background {
+            GradientFill(gradient: gradient)
+                .overlay {
+                    // The scrim that keeps white type readable at the top.
+                    LinearGradient(stops: [.init(color: Color(red: 24 / 255, green: 22 / 255, blue: 14 / 255).opacity(0.3), location: 0),
+                                           .init(color: Color(red: 24 / 255, green: 22 / 255, blue: 14 / 255).opacity(0.1), location: 0.34),
+                                           .init(color: .clear, location: 0.55)],
+                                   startPoint: .top, endPoint: .bottom)
+                }
+                .clipShape(MP.surfaceShape)
+                .overlay(MP.surfaceShape.strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
+                .shadow(color: MP.shadow.opacity(0.1), radius: 2, y: 1)
+                .shadow(color: MP.shadow.opacity(0.22), radius: 18, y: 12)
+        }
+    }
+}
+
+extension GradientTile where Caption == EmptyView {
+    init(_ gradient: MPGradient, kicker: String, value: String? = nil, unit: String? = nil,
+         side: (String, String)? = nil, valueSize: CGFloat = MPSize.displayL,
+         @ViewBuilder art: @escaping () -> Art) {
+        self.init(gradient, kicker: kicker, value: value, unit: unit, side: side,
+                  valueSize: valueSize, art: art, caption: { EmptyView() })
     }
 }
 
 // MARK: - Buttons
 
-/// Apple's button hierarchy, all as continuous capsules.
+/// The site's button hierarchy, all continuous capsules.
 enum MPButtonKind {
-    /// Brand fill, white label. The one commit action on a screen.
+    /// The near-black capsule (light capsule in dark mode). The one commit
+    /// action on a screen.
     case filled
-    /// Brand tint fill, `brandInk` label. Secondary actions.
+    /// The warm grey capsule, ink label. Secondary actions.
     case tinted
-    /// Neutral `soft` fill, `ink` label. Tertiary / neutral actions.
+    /// The white glass capsule, ink label. Neutral actions.
     case gray
-    /// No fill, `brandInk` label; a soft capsule appears on press.
+    /// No fill, sage label; a warm capsule appears on press.
     case plain
     /// Risk tint, `riskHigh` label. Removing / cancelling something.
     case destructive
@@ -224,12 +441,10 @@ enum MPButtonKind {
 /// `.controlSize`: `.large` 52pt, `.extraLarge` 56pt, `.regular` 44pt,
 /// `.small` / `.mini` a 34pt capsule inside a 44pt hit target.
 ///
-/// Press feedback is a 0.97 scale on `MPMotion.press` (a snappy spring),
-/// none under Reduce Motion, plus a pressed fill that keeps its label pair
-/// above 4.5:1 (see the file header).
+/// Press feedback is the site's spring (a small overshoot) and a 0.97 scale,
+/// none under Reduce Motion.
 struct MPButtonStyle: ButtonStyle {
     var kind: MPButtonKind
-    /// Stretch to the container's width (`PrimaryButton`).
     var fullWidth: Bool = false
     /// Plain only: no horizontal inset, so the label aligns with the
     /// surrounding text (a card header's trailing action).
@@ -247,7 +462,6 @@ extension ButtonStyle where Self == MPButtonStyle {
     static var mpPlain: MPButtonStyle { MPButtonStyle(kind: .plain) }
     static var mpDestructive: MPButtonStyle { MPButtonStyle(kind: .destructive) }
     static var mpDestructiveFilled: MPButtonStyle { MPButtonStyle(kind: .destructiveFilled) }
-    /// Any kind, optionally full width.
     static func mp(_ kind: MPButtonKind, fullWidth: Bool = false) -> MPButtonStyle {
         MPButtonStyle(kind: kind, fullWidth: fullWidth)
     }
@@ -265,6 +479,7 @@ private struct MPButtonBody: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.mpOnTint) private var onTint
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
 
     private var pressed: Bool { configuration.isPressed }
 
@@ -283,7 +498,7 @@ private struct MPButtonBody: View {
         if bare { return 0 }
         switch controlSize {
         case .mini, .small: return 14
-        case .large, .extraLarge: return 22
+        case .large, .extraLarge: return 24
         default: return 18
         }
     }
@@ -293,39 +508,11 @@ private struct MPButtonBody: View {
     private var label: Color {
         guard isEnabled else { return MP.disabledInk }
         switch kind {
-        case .filled: return MP.onBrand
-        case .tinted: return pressed ? MP.brandInkPressed : MP.brandInk
-        case .gray: return MP.ink
+        case .filled: return MP.onAction
+        case .tinted, .gray: return MP.ink
         case .plain: return MP.brandInk
         case .destructive: return pressed ? MP.riskHighPressed : MP.riskHigh
         case .destructiveFilled: return MP.onRiskHigh
-        }
-    }
-
-    private var fill: Color {
-        if !isEnabled { return kind == .plain ? .clear : MP.disabledFill }
-        switch kind {
-        case .filled: return pressed ? MP.brandDeep : MP.brand
-        case .tinted:
-            // Never the card's own tint (R1): a panel capsule on a tint card.
-            if onTint { return pressed ? MP.soft : MP.panel }
-            return pressed ? MP.brandTintStrong : MP.brandTint
-        case .gray:
-            if onTint { return pressed ? MP.soft : MP.panel }
-            return pressed ? MP.track : MP.soft
-        case .plain: return pressed ? MP.soft : .clear
-        case .destructive: return MP.riskHighBg
-        case .destructiveFilled: return MP.riskHigh
-        }
-    }
-
-    /// A pressed overlay for the two risk fills (no token for a deeper red).
-    private var pressOverlay: Color {
-        guard isEnabled, pressed else { return .clear }
-        switch kind {
-        case .destructive: return MP.riskHigh.opacity(0.12)
-        case .destructiveFilled: return MP.ink.opacity(0.12)
-        default: return .clear
         }
     }
 
@@ -339,33 +526,63 @@ private struct MPButtonBody: View {
         }
     }
 
+    @ViewBuilder private var fill: some View {
+        let shape = MPAdaptiveCapsule()
+        if !isEnabled {
+            if kind != .plain { shape.fill(MP.disabledFill) }
+        } else {
+            switch kind {
+            case .filled:
+                shape
+                    .fill(RadialGradient(colors: [MP.actionTop, MP.action],
+                                         center: UnitPoint(x: 0.3, y: 0),
+                                         startRadius: 0, endRadius: 140))
+                    .overlay(shape.strokeBorder(
+                        LinearGradient(colors: [.white.opacity(colorScheme == .dark ? 0.9 : 0.24), .clear],
+                                       startPoint: .top, endPoint: .center),
+                        lineWidth: 1))
+                    .shadow(color: MP.shadow.opacity(colorScheme == .dark ? 0.5 : 0.28), radius: pressed ? 4 : 9,
+                            y: pressed ? 2 : 6)
+            case .tinted:
+                shape.fill(onTint ? MP.panel : (pressed ? MP.fillStrong : MP.fill))
+            case .gray:
+                shape.fill(onTint ? AnyShapeStyle(MP.panel)
+                           : AnyShapeStyle(LinearGradient(colors: [MP.glassSolidTop, MP.glassSolidBottom],
+                                                          startPoint: .top, endPoint: .bottom)))
+                    .overlay(shape.strokeBorder(MP.glassRim, lineWidth: 1))
+                    .overlay(shape.stroke(MP.glassRing, lineWidth: 0.5))
+                    .shadow(color: MP.shadow.opacity(colorScheme == .dark ? 0.35 : 0.08), radius: pressed ? 3 : 8,
+                            y: pressed ? 1 : 4)
+            case .plain:
+                shape.fill(pressed ? MP.fill : .clear)
+            case .destructive:
+                shape.fill(MP.riskHighBg)
+                    .overlay(shape.fill(pressed ? MP.riskHigh.opacity(0.12) : .clear))
+            case .destructiveFilled:
+                shape.fill(MP.riskHigh)
+                    .overlay(shape.fill(pressed ? MP.ink.opacity(0.12) : .clear))
+            }
+        }
+    }
+
     var body: some View {
         configuration.label
             .mpFont(font)
-            // Two lines at the standard sizes; at accessibility sizes a label
-            // wraps as far as it needs to (by word) rather than truncating to
-            // "Connect Apple Heal…". The capsule grows with it (minHeight).
             .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
             .fixedSize(horizontal: false, vertical: true)
             .multilineTextAlignment(.center)
             .foregroundStyle(label)
-            .tint(label) // a ProgressView inside the label
+            .tint(label)
             .padding(.horizontal, hPad)
             .padding(.vertical, 6)
             .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: height)
-            .background {
-                if !bare {
-                    MPAdaptiveCapsule().fill(fill)
-                        .overlay(MPAdaptiveCapsule().fill(pressOverlay))
-                }
-            }
+            .background { if !bare { fill } }
             .overlay {
                 if needsEdge && !bare {
                     MPAdaptiveCapsule().strokeBorder(MP.lineStrong, lineWidth: 1)
                 }
             }
             .opacity(bare && pressed ? 0.6 : 1)
-            // A 34pt capsule still gets a 44pt target.
             .padding(.vertical, isCompact ? 5 : 0)
             .contentShape(Rectangle())
             .scaleEffect(bare ? 1 : MPMotion.pressScale(pressed, reduceMotion: reduceMotion))
@@ -374,17 +591,14 @@ private struct MPButtonBody: View {
 }
 
 /// A capsule while the view is one control tall; a continuous rounded
-/// rectangle once it grows past `rowCeiling` (a wrapped label or a stacked
-/// bar at accessibility text sizes). A capsule stretched over three lines
-/// becomes a lozenge whose ends cut into the label; this stays a button.
+/// rectangle once it grows past `rowCeiling` (a wrapped label at
+/// accessibility text sizes).
 struct MPAdaptiveCapsule: InsettableShape {
     var rowCeiling: CGFloat = 64
     var stackedRadius: CGFloat = 26
     var inset: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
-        // The capsule-or-rectangle choice is made on the outer frame, so a
-        // stroked border matches its fill.
         let radius = (rect.height <= rowCeiling ? rect.height / 2 : stackedRadius) - inset
         let r = rect.insetBy(dx: inset, dy: inset)
         return RoundedRectangle(cornerRadius: max(0, min(radius, r.width / 2, r.height / 2)),
@@ -399,14 +613,14 @@ struct MPAdaptiveCapsule: InsettableShape {
     }
 }
 
-/// A whole-row button inside a card: the pressed state is a `soft` fill
-/// behind the row, no scale (a scaling row inside a card reads as a glitch).
+/// A whole-row button inside a card: the pressed state is a warm fill behind
+/// the row, no scale.
 struct MPRowButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .background(configuration.isPressed ? MP.soft : Color.clear)
+            .background(configuration.isPressed ? MP.fill : Color.clear)
     }
 }
 
@@ -414,9 +628,9 @@ extension ButtonStyle where Self == MPRowButtonStyle {
     static var mpRow: MPRowButtonStyle { MPRowButtonStyle() }
 }
 
-/// The one full-width commit button: `.mpFilled`, 52pt. `loading` keeps the
-/// brand fill with a white spinner and swallows taps; `disabled` uses the
-/// disabled token pair.
+/// The one full-width commit button: the near-black capsule with the site's
+/// lime dot, 52pt. `loading` keeps the fill with a spinner and swallows
+/// taps; `disabled` uses the disabled token pair.
 struct PrimaryButton: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let title: String
@@ -427,14 +641,13 @@ struct PrimaryButton: View {
 
     var body: some View {
         Button { if !loading { action() } } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 if loading {
                     ProgressView()
                 } else {
-                    // At accessibility sizes the words get the whole width;
-                    // a glyph beside a three-line label just pushes it off
-                    // centre.
-                    if let icon, !dynamicTypeSize.isAccessibilitySize { Image(systemName: icon) }
+                    if !disabled && !dynamicTypeSize.isAccessibilitySize {
+                        if let icon { Image(systemName: icon) } else { LimeDot(size: 7) }
+                    }
                     Text(title)
                 }
             }
@@ -448,8 +661,7 @@ struct PrimaryButton: View {
     }
 }
 
-/// The quieter full-width button: `.mpGray`, 52pt. On a tint card it takes a
-/// panel fill automatically.
+/// The quieter full-width button: the white glass capsule, 52pt.
 struct SecondaryButton: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let title: String
@@ -463,9 +675,6 @@ struct SecondaryButton: View {
                 if loading {
                     ProgressView()
                 } else {
-                    // At accessibility sizes the words get the whole width;
-                    // a glyph beside a three-line label just pushes it off
-                    // centre.
                     if let icon, !dynamicTypeSize.isAccessibilitySize { Image(systemName: icon) }
                     Text(title)
                 }
@@ -481,8 +690,9 @@ struct SecondaryButton: View {
 
 // MARK: - Chip
 
-/// The check-in answer chip. A capsule, 44pt minimum, a selection tick of
-/// haptic feedback and a gated press scale.
+/// The check-in answer: the site's quick reply. A white capsule with a ring
+/// and a soft lift; picked, the sage message bubble with white text and a
+/// check. 44pt minimum, a selection haptic, the spring press.
 struct Chip: View {
     let label: String
     let selected: Bool
@@ -504,60 +714,93 @@ private struct MPChipStyle: ButtonStyle {
     }
 }
 
+/// The site's sage bubble gradient, for anything the patient has said.
+struct BubbleFill: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 94 / 255, green: 125 / 255, blue: 78 / 255),
+                                    Color(red: 68 / 255, green: 95 / 255, blue: 57 / 255)],
+                           startPoint: .top, endPoint: .bottom)
+            GrainOverlay()
+        }
+    }
+}
+
 private struct MPChipBody: View {
     let configuration: ButtonStyleConfiguration
     let selected: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        configuration.label
-            .mpFont(.copyLargeMedium)
-            // brandInk on brandTint 4.963 / 5.624; ink on panel 18.4 / 17.2.
-            .foregroundStyle(selected ? MP.brandInk : MP.ink)
-            .padding(.horizontal, 18)
-            .frame(minHeight: 44)
-            .background(MP.capsuleShape.fill(selected ? MP.brandTint : (configuration.isPressed ? MP.soft : MP.panel)))
-            // The stroke is the state cue, so it is a graphic: `brand`
-            // selected, `lineStrong` idle. Selection is never colour alone —
-            // the fill and the isSelected trait change with it.
-            .overlay(MP.capsuleShape.strokeBorder(selected ? MP.brand : MP.lineStrong,
-                                                  lineWidth: selected ? 1.5 : 1))
-            .contentShape(MP.capsuleShape)
-            .scaleEffect(MPMotion.pressScale(configuration.isPressed, reduceMotion: reduceMotion))
-            .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion),
-                       value: configuration.isPressed)
+        HStack(spacing: 6) {
+            if selected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .transition(.scale.combined(with: .opacity))
+            }
+            configuration.label
+        }
+        .mpFont(.copyLargeMedium)
+        // White on the sage bubble 6.4; ink on the white capsule 18.4.
+        .foregroundStyle(selected ? Color.white : MP.ink)
+        .padding(.horizontal, 20)
+        .frame(minHeight: 48)
+        .background {
+            if selected {
+                BubbleFill()
+                    .clipShape(MP.capsuleShape)
+                    .shadow(color: Color(red: 74 / 255, green: 102 / 255, blue: 62 / 255).opacity(0.45),
+                            radius: 8, y: 4)
+            } else {
+                MP.capsuleShape
+                    .fill(colorScheme == .dark ? MP.fill : MP.panel)
+                    .overlay(MP.capsuleShape.strokeBorder(MP.lineStrong.opacity(0.6), lineWidth: 1))
+                    .shadow(color: MP.shadow.opacity(colorScheme == .dark ? 0 : 0.08),
+                            radius: configuration.isPressed ? 2 : 6, y: configuration.isPressed ? 1 : 3)
+            }
+        }
+        .contentShape(MP.capsuleShape)
+        .scaleEffect(MPMotion.pressScale(configuration.isPressed, reduceMotion: reduceMotion))
+        .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion), value: configuration.isPressed)
+        .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion), value: selected)
     }
 }
 
 // MARK: - Pills and avatars
 
-/// A state pill. 12pt / 500, a continuous capsule on the tone's bg. Risk
-/// pills are opaque fills and always carry a word.
+/// A state pill, the site's: a capsule on the tone's tint, a dot and the
+/// word. Missing data gets a hollow dot. 12pt / 500.
 struct StatusPill: View {
     let text: String
     let tone: MP.Tone
 
     var body: some View {
-        Text(text)
-            .font(.labelMedium)
-            .foregroundStyle(MP.foreground(tone))
-            // A pill never splits ("Not/conn/ecte/d" at AX3): one line at its
-            // ideal width. Callers that can run out of room stack the pill
-            // under the title at accessibility sizes instead.
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(MP.pillShape.fill(MP.background(tone)))
+        HStack(spacing: 5) {
+            Group {
+                if tone == .missing {
+                    Circle().strokeBorder(MP.foreground(tone), lineWidth: 1.5)
+                } else {
+                    Circle().fill(MP.foreground(tone))
+                }
+            }
+            .frame(width: 6, height: 6)
+            .accessibilityHidden(true)
+            Text(text)
+                .font(.labelMedium)
+                .foregroundStyle(MP.foreground(tone))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(MP.pillShape.fill(MP.background(tone)))
     }
 }
 
-/// An avatar disc that scales with Dynamic Type (capped at 1.5x).
-///
-/// `.filled` (default): brand disc with white initials (4.602), or for
-/// `.high` a riskHigh disc with `onRiskHigh` (5.622 light / 8.084 dark —
-/// white on the dark #FF8A87 would be 2.27, so it is n-950 there). Other
-/// risk tones never fill; they fall back to `.soft`.
-/// `.soft`: the tone's bg with its ink (every pair >= 4.731).
+/// An avatar disc that scales with Dynamic Type (capped at 1.5x): the site's
+/// grainy gradient avatar with white initials, its tone picked from the
+/// initials so a person keeps their colour. `.high` is the clay disc.
+/// `.soft` keeps the tone's tint with its ink (every pair 4.73 or better).
 struct Initials: View {
     enum Style { case filled, soft }
 
@@ -576,46 +819,63 @@ struct Initials: View {
 
     private var side: CGFloat { (size * min(scale, 1.5)).rounded() }
 
-    private var isFilled: Bool {
-        style == .filled && (tone == .brand || tone == .high)
-    }
+    private static let tones: [(Color, Color)] = [
+        (Color(red: 192 / 255, green: 132 / 255, blue: 98 / 255), Color(red: 138 / 255, green: 89 / 255, blue: 66 / 255)),
+        (Color(red: 135 / 255, green: 151 / 255, blue: 187 / 255), Color(red: 82 / 255, green: 95 / 255, blue: 134 / 255)),
+        (Color(red: 201 / 255, green: 164 / 255, blue: 76 / 255), Color(red: 143 / 255, green: 111 / 255, blue: 31 / 255)),
+        (Color(red: 136 / 255, green: 168 / 255, blue: 110 / 255), Color(red: 74 / 255, green: 103 / 255, blue: 62 / 255)),
+        (Color(red: 157 / 255, green: 147 / 255, blue: 203 / 255), Color(red: 100 / 255, green: 104 / 255, blue: 168 / 255)),
+    ]
 
-    private var ink: Color {
-        if isFilled { return tone == .high ? MP.onRiskHigh : MP.onBrand }
-        return MP.foreground(tone)
-    }
-
-    private var disc: Color {
-        if isFilled { return tone == .high ? MP.riskHigh : MP.brand }
-        return MP.background(tone)
+    private var colors: [Color] {
+        if tone == .high {
+            return [Color(red: 201 / 255, green: 121 / 255, blue: 90 / 255),
+                    Color(red: 154 / 255, green: 74 / 255, blue: 46 / 255)]
+        }
+        let h = text.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
+        let pair = Self.tones[h % Self.tones.count]
+        return [pair.0, pair.1]
     }
 
     var body: some View {
+        let soft = style == .soft && tone != .brand && tone != .high
         Text(text)
             .font(.mp(side * 0.36, weight: .medium, relativeTo: .body))
-            .dynamicTypeSize(...DynamicTypeSize.large) // the disc already scaled
+            .dynamicTypeSize(...DynamicTypeSize.large)
             .lineLimit(1)
             .minimumScaleFactor(0.6)
-            .foregroundStyle(ink)
+            .foregroundStyle(soft ? MP.foreground(tone) : .white)
+            .shadow(color: soft ? .clear : .black.opacity(0.18), radius: 1, y: 1)
             .frame(width: side, height: side)
-            .background(Circle().fill(disc))
+            .background {
+                if soft {
+                    Circle().fill(MP.background(tone))
+                } else {
+                    ZStack {
+                        LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                        GrainOverlay()
+                    }
+                    .clipShape(Circle())
+                    .overlay(Circle().strokeBorder(
+                        LinearGradient(colors: [.white.opacity(0.3), .clear], startPoint: .top, endPoint: .center),
+                        lineWidth: 1))
+                    .shadow(color: MP.shadow.opacity(0.25), radius: 3, y: 2)
+                }
+            }
     }
 }
 
 // MARK: - Empty, error, field
 
-/// The in-card empty state.
+/// The in-card empty state: a quiet gradient glyph and one line of ink.
 struct EmptyRow: View {
     let icon: String
     let title: String
     var detail: String? = nil
 
     var body: some View {
-        VStack(spacing: 8) {
-            // The ONE sanctioned `MP.faint` in this file: empty-state art is
-            // decoration, and the row says the same thing in `ink` below it.
-            Image(systemName: icon).font(.displayS).foregroundStyle(MP.faint)
-                .accessibilityHidden(true)
+        VStack(spacing: 10) {
+            IconTile(icon, family: .teal, size: 40)
             Text(title).font(.copyLargeMedium).foregroundStyle(MP.ink)
             if let detail {
                 Text(detail).font(.copy).mpSecondary()
@@ -624,10 +884,11 @@ struct EmptyRow: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
+        .padding(.horizontal, 16)
     }
 }
 
-/// An inline error. Separation is the `riskMedBg` fill alone.
+/// An inline error, on the amber status tint.
 struct ErrorBanner: View {
     let text: String
 
@@ -643,56 +904,156 @@ struct ErrorBanner: View {
     }
 }
 
-/// A text field. 16pt / 400. A field keeps its `lineStrong` border (3.834 /
-/// 5.671): an empty field's boundary is its only cue.
+/// A text field, the site's form control: a light fill, 14pt corners and a
+/// `lineStrong` ring (3.39 / 3.87) — an empty field's boundary is its only cue.
 struct FieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .font(.copyLarge)
             .foregroundStyle(MP.ink)
-            .padding(.horizontal, 14)
-            // Vertical inset so a multiline field's first line (and its
-            // "Optional" placeholder) does not sit on the top border. A
-            // single-line field still centres inside the 52pt minimum.
+            .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .frame(minHeight: 52)
-            .background(MP.controlShape.fill(MP.panel))
-            .overlay(MP.controlShape.strokeBorder(MP.lineStrong, lineWidth: 1))
+            .background(MP.thumbShape.fill(MP.panel.opacity(0.8)))
+            .overlay(MP.thumbShape.strokeBorder(MP.lineStrong.opacity(0.75), lineWidth: 1))
     }
 }
+
+// MARK: - Screen backgrounds
 
 struct ScreenBackground: ViewModifier {
     func body(content: Content) -> some View {
-        content.background(MP.canvas.ignoresSafeArea())
-    }
-}
-
-/// Canvas with the ambient brand wash at the top (tab roots). Plain canvas
-/// under Increase Contrast.
-struct AmbientScreenBackground: ViewModifier {
-    var height: CGFloat = 320
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    func body(content: Content) -> some View {
         content.background {
-            ZStack(alignment: .top) {
+            ZStack {
                 MP.canvas
-                if contrast != .increased {
-                    LinearGradient(colors: [MP.ambient, MP.ambient.opacity(0)],
-                                   startPoint: .top, endPoint: .bottom)
-                        .frame(height: height)
-                }
+                GrainOverlay(kind: .surface)
             }
             .ignoresSafeArea()
         }
     }
 }
 
+/// The site's canvas: warm white with soft colour fog that drifts slowly
+/// (transform only, rendered once as a Metal layer), grain, and a faint dot
+/// grid at the top. Static under Reduce Motion; plain canvas under Increase
+/// Contrast or Reduce Transparency.
+struct FogBackground: View {
+    var height: CGFloat = 520
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var drift = false
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            MP.canvas
+            if contrast != .increased && !reduceTransparency {
+                GeometryReader { proxy in
+                    let w = proxy.size.width
+                    ZStack {
+                        blob(MP.fogSage, size: w * 1.0, x: w * 0.78, y: height * 0.12, dx: 26, dy: -18)
+                        blob(MP.fogAmber, size: w * 0.8, x: w * 1.02, y: height * 0.52, dx: -22, dy: 16)
+                        blob(MP.fogClay, size: w * 0.75, x: w * 0.42, y: height * 0.78, dx: 18, dy: 12)
+                        blob(MP.fogLilac, size: w * 0.8, x: w * 0.02, y: height * 0.08, dx: 20, dy: 14)
+                        blob(MP.fogMint, size: w * 0.6, x: w * -0.05, y: height * 0.7, dx: -14, dy: -10)
+                    }
+                    .frame(width: w, height: height)
+                    .drawingGroup()
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0),
+                                                 .init(color: .black, location: 0.62),
+                                                 .init(color: .clear, location: 1)],
+                                         startPoint: .top, endPoint: .bottom))
+                }
+                .frame(height: height)
+                DotGrid()
+                    .frame(height: height * 0.7)
+                    .mask(LinearGradient(colors: [.black, .black.opacity(0.4), .clear],
+                                         startPoint: .top, endPoint: .bottom))
+                GrainOverlay(kind: .surface)
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+        .onAppear { startDrift() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { startDrift() }
+        }
+    }
+
+    private func startDrift() {
+        guard !reduceMotion else { return }
+        drift = false
+        withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) { drift = true }
+    }
+
+    private func blob(_ color: Color, size: CGFloat, x: CGFloat, y: CGFloat, dx: CGFloat, dy: CGFloat) -> some View {
+        Circle()
+            .fill(RadialGradient(colors: [color, color.opacity(0)], center: .center,
+                                 startRadius: 0, endRadius: size / 2))
+            .frame(width: size, height: size)
+            .scaleEffect(drift ? 1.1 : 0.96)
+            .position(x: x + (drift ? dx : -dx * 0.6), y: y + (drift ? dy : -dy * 0.6))
+    }
+}
+
+/// The site's faint dot grid (graph paper).
+private struct DotGrid: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let step: CGFloat = 22
+            var path = Path()
+            var y: CGFloat = step / 2
+            while y < size.height {
+                var x: CGFloat = step / 2
+                while x < size.width {
+                    path.addEllipse(in: CGRect(x: x - 0.75, y: y - 0.75, width: 1.5, height: 1.5))
+                    x += step
+                }
+                y += step
+            }
+            ctx.fill(path, with: .color(MP.ink.opacity(0.06)))
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// Canvas with the fog at the top (tab roots).
+struct AmbientScreenBackground: ViewModifier {
+    var height: CGFloat = 520
+
+    func body(content: Content) -> some View {
+        content.background { FogBackground(height: height) }
+    }
+}
+
 extension View {
     func screen() -> some View { modifier(ScreenBackground()) }
-    /// `screen()` plus the ambient wash; for Home, Tasks and Health roots.
-    func ambientScreen(height: CGFloat = 320) -> some View {
+    /// The fog canvas; for Home, Tasks, Health and Messages roots.
+    func ambientScreen(height: CGFloat = 520) -> some View {
         modifier(AmbientScreenBackground(height: height))
+    }
+
+    /// The site's entrance: fade in and rise 18pt, staggered by `index`
+    /// (60ms steps). Nothing under Reduce Motion.
+    func mpRise(_ index: Int = 0) -> some View {
+        modifier(MPRise(index: index))
+    }
+}
+
+private struct MPRise: ViewModifier {
+    let index: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown || reduceMotion ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 18)
+            .onAppear {
+                guard !shown, !reduceMotion else { return }
+                withAnimation(MPMotion.enter.delay(Double(index) * 0.06)) { shown = true }
+            }
     }
 }
 

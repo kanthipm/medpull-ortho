@@ -29,8 +29,8 @@ struct CheckinView: View {
 
     private var questions: [Question] { task.questions }
 
-    /// The reached-dot fill: `MP.stateFill` (Medical Blue on light, 3.64:1 on
-    /// `track`; `brandInk` on dark, 5.05:1, where the anchor is only 2.78:1).
+    /// The reached-dot fill: `MP.stateFill`, the site's sage (a light sage on
+    /// dark), which clears 3:1 against `track` in both modes.
     private var reachedDot: Color { MP.stateFill }
     private var isReview: Bool { step >= questions.count }
     private var current: Question? { isReview ? nil : questions[step] }
@@ -60,7 +60,7 @@ struct CheckinView: View {
                 }
             }
         }
-        .screen()
+        .ambientScreen()
         .navigationTitle("Daily check-in")
         .navigationBarTitleDisplayMode(.inline)
         .animation(stepMotion, value: step)
@@ -98,16 +98,8 @@ struct CheckinView: View {
                     .contentTransition(.numericText(countsDown: false))
                 Spacer()
             }
-            // TWO states, both solid tokens. It was three, and the middle
-            // one was `brand.opacity(0.45)` — an alpha wash whose real
-            // contrast depends on which ground shows through (it composites
-            // to #92BDE8 on the light canvas and #13436E on the dark one),
-            // which is the same defect the tinted Card's gradient was. There
-            // is no solid token between `brand` and `track` to put there:
-            // `brandTintStrong` is 1.19:1 against `track` in light, i.e.
-            // invisible. So the current step now counts as reached, which
-            // also makes the dots agree with the "N of M" label beside them
-            // instead of showing N-1 filled and one half-filled.
+            // TWO states, both solid tokens: reached (including the current
+            // step, so the dots agree with the "N of M" label) and not yet.
             HStack(spacing: 6) {
                 ForEach(questions.indices, id: \.self) { i in
                     MP.capsuleShape
@@ -132,7 +124,7 @@ struct CheckinView: View {
             // `.largeTitle` rather than `.body`, so at AX5 a long prompt
             // grows 1.69x instead of 2.81x: the sore patient this screen was
             // designed for is exactly the one who has Larger Text on.
-            Text(q.prompt)
+            Text(q.prompt.typeset)
                 .title(MPSize.displayS)
 
             switch q.kind {
@@ -169,7 +161,7 @@ struct CheckinView: View {
 
     private var review: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(answered == 0 ? "Nothing answered yet" : "Here's what goes to your care team")
+            Text(answered == 0 ? "Nothing answered yet" : "Here’s what goes to your care team")
                 .title(MPSize.displayS)
                 .accessibilityAddTraits(.isHeader)
             if answered == 0 {
@@ -182,7 +174,7 @@ struct CheckinView: View {
                         Button { withAnimation(stepMotion) { step = index(of: q) } } label: {
                             HStack(alignment: .top, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(q.prompt)
+                                    Text(q.prompt.typeset)
                                         .mpFont(.copy).foregroundStyle(MP.muted)
                                         .multilineTextAlignment(.leading)
                                     // "Not answered" is TEXT, so the
@@ -238,8 +230,8 @@ struct CheckinView: View {
             PrimaryButton(title: isReview ? sendTitle : "Next", loading: sending) {
                 if isReview { submit() } else { withAnimation(stepMotion) { typing = false; step += 1 } }
             }
-            // Plain capsules in brandInk (5.75:1 light / 6.78:1 dark on
-            // panel), each a full 44pt target.
+            // Plain sage capsules (7.25 / 10.53 on panel), each a full 44pt
+            // target.
             HStack {
                 if step > 0 {
                     Button { withAnimation(stepMotion) { typing = false; step -= 1 } } label: {
@@ -262,7 +254,11 @@ struct CheckinView: View {
             .frame(minHeight: 44)
         }
         .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
-        .background(MP.panel.overlay(alignment: .top) { InsetDivider(leading: 0) }.ignoresSafeArea(edges: .bottom))
+        .background(
+            LinearGradient(colors: [MP.glassSolidTop, MP.glassSolidBottom], startPoint: .top, endPoint: .bottom)
+                .overlay(alignment: .top) { InsetDivider(leading: 0) }
+                .ignoresSafeArea(edges: .bottom)
+        )
     }
 
     private var sendTitle: String {
@@ -371,16 +367,15 @@ struct ScaleAnswer: View {
         }
     }
 
-    /// The slider's fill. A FILL is exactly what Medical Blue is for, so the
-    /// non-pain case keeps `brand`; an untouched slider stays on `track`.
+    /// The slider's fill: the risk tone for pain, the site's sage otherwise;
+    /// an untouched slider stays on `track`.
     private var sliderTint: Color {
         guard value != nil else { return MP.track }
         return riskInk ?? MP.brand
     }
 
-    /// The readout is TEXT, so the non-pain case is `brandInk`, not `brand`:
-    /// #1976D2 as text is 3.74:1 on the dark panel and `brandInk` is 6.78:1.
-    /// This is the one place the two jobs of the brand split apart.
+    /// The readout is TEXT, so the non-pain case is `brandInk`, not the
+    /// `brand` fill.
     private var readoutInk: Color { riskInk ?? MP.brandInk }
 }
 
@@ -408,32 +403,33 @@ private struct ChoiceAnswer: View {
                     value = selected ? nil : .string(opt)
                 } label: {
                     HStack(spacing: 12) {
-                        // The unselected ring was `line` — 1.55:1 on the
-                        // light panel, i.e. the state of a control conveyed at
-                        // a ratio 1.4.11 asks 3:1 for. `lineStrong` is 3.83:1
-                        // light / 5.67:1 dark. Selected goes to `brandInk`,
-                        // because a glyph is a foreground.
                         Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                             .font(.subhead)
-                            .foregroundStyle(selected ? MP.brandInk : MP.lineStrong)
+                            .foregroundStyle(selected ? Color.white : MP.lineStrong)
                             .contentTransition(.symbolEffect(.replace))
                             .accessibilityHidden(true)
                         Text(Self.labels[opt] ?? opt.capitalized)
                             .mpFont(.copyLargeMedium)
-                            .foregroundStyle(MP.ink)
+                            .foregroundStyle(selected ? Color.white : MP.ink)
                         Spacer()
                     }
-                    .padding(.horizontal, 16).frame(minHeight: 56)
-                    // `MP.controlShape` — the deprecated `buttonRadius`
-                    // literal resolved to the same 10pt, but the shape is the
-                    // vocabulary and it carries `.continuous` with it. One
-                    // fill and one hairline, which is the sanctioned pairing
-                    // (a row's fill is 1.13:1 on canvas, so the edge is the
-                    // only thing that says the control is there); never a
-                    // second edge and never a shadow.
-                    .background(MP.controlShape.fill(selected ? MP.brandTint : MP.panel))
-                    .overlay(MP.controlShape
-                        .strokeBorder(selected ? MP.brand : MP.lineStrong, lineWidth: selected ? 1.5 : 1))
+                    .padding(.horizontal, 18).frame(minHeight: 58)
+                    // The site's quick reply as a row: a white capsule-cornered
+                    // row with a `lineStrong` ring (the ring is the control's
+                    // boundary, 3:1 or better); picked, the sage bubble with
+                    // white text (6.4) and a filled check.
+                    .background {
+                        if selected {
+                            BubbleFill()
+                                .clipShape(MP.controlShape)
+                                .shadow(color: Color(red: 74 / 255, green: 102 / 255, blue: 62 / 255).opacity(0.4),
+                                        radius: 8, y: 4)
+                        } else {
+                            MP.controlShape.fill(MP.panel)
+                                .overlay(MP.controlShape.strokeBorder(MP.lineStrong.opacity(0.7), lineWidth: 1))
+                                .shadow(color: MP.shadow.opacity(0.06), radius: 6, y: 3)
+                        }
+                    }
                     .contentShape(MP.controlShape)
                 }
                 .buttonStyle(ChoiceRowPress())
@@ -485,7 +481,7 @@ private struct CheckinDoneView: View {
             Text("Sent to your care team")
                 .title(MPSize.displayS)
                 .multilineTextAlignment(.center)
-            Text("That's today done. They'll see it with their next review.")
+            Text("That’s today done. They’ll see it with their next review.")
                 .mpFont(.copyLarge).foregroundStyle(MP.muted)
                 .multilineTextAlignment(.center)
             Spacer()
@@ -501,23 +497,29 @@ private struct CheckinDoneView: View {
         }
     }
 
-    @ViewBuilder
+    /// The site's done mark: a sage gradient disc with a white check, a lime
+    /// halo, and a spring pop as it lands.
     private var seal: some View {
-        let base = Image(systemName: "checkmark.seal.fill")
-            .symbolRenderingMode(.hierarchical)
-            .font(.displayXL)
-            .foregroundStyle(MP.riskLow)
-            .accessibilityHidden(true)
-        if #available(iOS 26, *) {
-            // Indefinite draw-on: active = drawn off; clearing it draws in.
-            base
-                .symbolEffect(.drawOn, isActive: sealHidden && !reduceMotion)
-                .symbolEffectsRemoved(reduceMotion)
-        } else {
-            base
-                .symbolEffect(.bounce, value: landed)
-                .symbolEffectsRemoved(reduceMotion)
+        ZStack {
+            Circle()
+                .fill(MP.lime.opacity(0.35))
+                .frame(width: 104, height: 104)
+                .scaleEffect(landed || reduceMotion ? 1 : 0.6)
+            ZStack {
+                GradientFill(gradient: .sage)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 84, height: 84)
+            .clipShape(Circle())
+            .shadow(color: Color(red: 74 / 255, green: 102 / 255, blue: 62 / 255).opacity(0.5), radius: 14, y: 8)
+            .scaleEffect(landed || reduceMotion ? 1 : 0.4)
+            .opacity(sealHidden && !reduceMotion ? 0 : 1)
         }
+        .animation(MPMotion.gated(.spring(response: 0.5, dampingFraction: 0.6), reduceMotion: reduceMotion), value: landed)
+        .accessibilityHidden(true)
+        .padding(.bottom, 8)
     }
 }
 

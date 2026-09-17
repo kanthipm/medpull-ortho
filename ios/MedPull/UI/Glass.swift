@@ -17,14 +17,14 @@ import SwiftUI
 //     TaskDetailView (inside TasksView.swift). Kept on all of them (R13).
 //   * `mpGlassActionBar(isPresented:content:)` — TaskDetailView, the one
 //     custom glass surface in the app.
-//   * `mpGlassButton(prominent:)` — the buttons INSIDE that bar (added
-//     2026-09-16, group I1). On iOS 26 the commit action is
-//     `.glassProminent` tinted `MP.brand` with a white label (4.66:1 as
-//     measured in the spec; flat white on #1976D2 is 4.602), and any other
-//     glass button is `.glass` with `.primary` ink. Pre-26 they fall back to
-//     `.mpFilled` and a material capsule. System toolbars on 26 draw glass
-//     buttons inside a glass bar themselves, so this is the platform idiom,
-//     not glass-on-glass stacking of two independent surfaces.
+//   * `mpGlassButton(prominent:)` — the buttons INSIDE that bar. On iOS 26
+//     the commit action is `.glassProminent` tinted with the site's
+//     near-black primary (`MP.action`, white label; inverted in dark), and
+//     the disabled pair when disabled; any other glass button is `.glass`
+//     with `.primary` ink. Pre-26 they fall back to `.mpFilled` and a
+//     material capsule. System toolbars on 26 draw glass buttons inside a
+//     glass bar themselves, so this is the platform idiom, not glass-on-glass
+//     stacking of two independent surfaces.
 // DELETED, deliberately, 2026-09-16:
 //   * `mpGlass(in:)` — a free-standing glass surface. Mutually exclusive with
 //     the action bar by its own contract, and no screen has a floating thing
@@ -70,11 +70,11 @@ import SwiftUI
 //   * NO glass carrying a clinical number. A pain score, a heart rate, a dose
 //     is read once and acted on; it does not get a background that changes
 //     with whatever scrolls behind it.
-//   * NO tinted glass with light ink. `Glass.tint(_:)` exists and this file
-//     never calls it: Medical Blue #1976D2 on a glass surface that has taken
-//     on Medical Blue's own luminance is 1.00:1, and white on Teal #00ACC1 is
-//     2.74:1. Monochrome `.primary` / `.secondary` ink on untinted `.regular`
-//     is the only combination that holds in both appearances.
+//   * NO tinted glass with light ink on a SURFACE. `Glass.tint(_:)` exists and
+//     this file never calls it for a bar: a tinted surface takes on whatever
+//     scrolls behind it, and ink on it stops being predictable. Monochrome
+//     `.primary` / `.secondary` ink on untinted `.regular` is the only
+//     combination that holds in both appearances.
 //   * NO ungated morph. Any future `glassEffectID` / `.matchedGeometry` must
 //     read `accessibilityReduceMotion`, pin `glassEffectTransition(.identity)`
 //     and cross-fade instead (SwiftUI does not apply reduce-motion to explicit
@@ -237,12 +237,10 @@ private let mpActionBarShape = MPAdaptiveCapsule(rowCeiling: 88, stackedRadius: 
 ///
 /// INK IS MONOCHROME AND THAT IS LOAD-BEARING. The bar sets
 /// `foregroundStyle(.primary)` and `tint(.primary)`, which override the
-/// app-wide `.tint(MP.brandInk)` from MedPullApp for the bar's subtree only.
-/// Without the tint override, `.buttonStyle(.glass)` would draw its label in
-/// Medical Blue on a surface that has picked up whatever is scrolling behind
-/// it — and #1976D2 against a ground at its own luminance is 1.00:1. The one
-/// exception is `mpGlassButton(prominent: true)`, which re-tints ITSELF with
-/// `MP.brand` as a fill and draws a white label on it. Use
+/// app-wide `.tint(MP.brandInk)` from MedPullApp for the bar's subtree only,
+/// so a glass label never takes a colour against a ground that changes with
+/// the scroll. The one exception is `mpGlassButton(prominent: true)`, which
+/// re-tints ITSELF with the primary fill and draws its label on it. Use
 /// `.secondary` ONLY on a glyph that should recede, never on words: system
 /// secondaryLabel is 3.44:1 on the light panel (clears the 3:1 graphic floor,
 /// fails 4.5:1 text). Do not reach for a token colour in here.
@@ -284,21 +282,24 @@ private struct MPGlassActionBar<Bar: View>: ViewModifier {
 
 // MARK: - 5. Glass buttons (inside the action bar only)
 
-/// iOS 26: `.glassProminent` (brand fill, white label) or `.glass` (`.primary`
+/// iOS 26: `.glassProminent` (the near-black primary) or `.glass` (`.primary`
 /// ink). iOS 17-25, or `MP_GLASS_LEGACY=1`: `.mpFilled`, or a material
-/// capsule. The prominent variant sets `.tint(MP.brand)` on itself, which
-/// wins over the bar's `.tint(.primary)` and over the root `MP.brandInk`
-/// tint (dark brandInk #63A4FF under white would be 2.6:1).
+/// capsule. The prominent variant sets its own tint, which wins over the
+/// bar's `.tint(.primary)` and over the root `MP.brandInk` tint.
 private struct MPGlassButton: ViewModifier {
     let prominent: Bool
+    @Environment(\.isEnabled) private var isEnabled
 
     @ViewBuilder func body(content: Content) -> some View {
         if #available(iOS 26, *), !MPGlass.legacyOverride {
             if prominent {
+                // The site's primary: near-black (light capsule in dark).
+                // Disabled, the tint drops to the disabled pair, so the
+                // commit action cannot look ready when it is not.
                 content
                     .buttonStyle(.glassProminent)
-                    .tint(MP.brand)
-                    .foregroundStyle(MP.onBrand)
+                    .tint(isEnabled ? MP.action : MP.disabledFill)
+                    .foregroundStyle(isEnabled ? MP.onAction : MP.disabledInk)
             } else {
                 content
                     .buttonStyle(.glass)
@@ -378,9 +379,9 @@ extension View {
     }
 
     /// A button inside `mpGlassActionBar`. `prominent: true` for the bar's one
-    /// commit action (Liquid Glass prominent in Medical Blue on iOS 26,
-    /// `.mpFilled` before); `false` for a secondary glass button. A quiet
-    /// text action ("Skip this one") stays `.plain` with `.primary` ink.
+    /// commit action (Liquid Glass prominent in the near-black primary on
+    /// iOS 26, `.mpFilled` before); `false` for a secondary glass button. A
+    /// quiet text action ("Skip this one") stays `.plain` with `.primary` ink.
     func mpGlassButton(prominent: Bool = false) -> some View {
         modifier(MPGlassButton(prominent: prominent))
     }

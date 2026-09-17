@@ -13,16 +13,11 @@ import SwiftUI
 /// here goes through `MPMotion.gated`. Nothing repeats: the only moments are
 /// one-shot entrances on Welcome and Done.
 ///
-/// CONTRAST (WCAG, 0.04045 threshold; scratchpad/i5contrast.py), light / dark.
-/// The form steps sit on the ambient wash, whose densest point is
-/// (232,242,251) / (17,30,44):
-///   ink on wash 16.24 / 16.84 · body 6.38 / 6.51 · muted 4.77 / 4.81 ·
-///   brandInk 5.08 / 6.64
-/// Welcome and Done sit on the stronger `OnboardingSky`; its own numbers are
-/// on that type. The brand mark is the vector logo on a `panel` tile.
-/// Everything else sits on `panel`: muted 5.39 / 4.91, lineStrong edge 3.83 /
-/// 5.67. Secondary text on the Health card (brandTint) is `body` via
-/// `.mpSecondary()` (6.24 / 5.51; R8).
+/// The look is medpull.org's: the fog canvas (taller on Welcome and Done),
+/// light display titles, gradient glyph tiles, glass cards and the
+/// near-black primary with its lime dot. Text on the fog is `ink` or `body`
+/// (5.0 or better at the fog's strongest point); secondary text on glass is
+/// `muted`.
 struct OnboardingFlow: View {
     @Environment(AppModel.self) private var app
     @State private var model = OnboardingModel()
@@ -36,9 +31,9 @@ struct OnboardingFlow: View {
                     destination(step)
                 }
         }
-        // R10: the flow's system controls include the back button now, which
-        // is text, so the tint is `brandInk`. The Toggles pass `MP.brand`
-        // themselves because their FILL must stay #1976D2.
+        // The flow's system controls include the back button, which is
+        // text, so the tint is the sage text colour. The Toggles pass the
+        // sage fill themselves.
         .tint(MP.brandInk)
     }
 
@@ -94,11 +89,11 @@ struct OnboardingFlow: View {
     }
 }
 
-/// Progress through the flow. Reached segments are `brand` FILL (4.29:1 light
-/// / 3.99:1 dark on canvas, a graphic); the rest are `lineStrong` (3.57 /
-/// 6.06), because an unreached dot still carries information. The current
-/// step is the long capsule. Hidden from VoiceOver: each screen's eyebrow
-/// ("Step 2 of 5") says the same thing in words.
+/// Progress through the flow. Reached segments are ink (the site's current
+/// item); the rest are `lineStrong` (3:1 or better), because an unreached dot
+/// still carries information. The current step is the long capsule. Hidden
+/// from VoiceOver: each screen's eyebrow ("Step 2 of 5") says the same thing
+/// in words.
 private struct StepDots: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let current: OnboardingModel.Step
@@ -108,7 +103,7 @@ private struct StepDots: View {
         HStack(spacing: 6) {
             ForEach(shown, id: \.rawValue) { s in
                 MP.capsuleShape
-                    .fill(s.rawValue <= current.rawValue ? MP.brand : MP.lineStrong)
+                    .fill(s.rawValue <= current.rawValue ? MP.ink : MP.lineStrong.opacity(0.6))
                     .frame(width: s == current ? 24 : 8, height: 8)
             }
         }
@@ -117,8 +112,8 @@ private struct StepDots: View {
     }
 }
 
-/// Every form step: eyebrow, a 600 display title, a lede, the content, and a
-/// footer pinned above the keyboard / home indicator.
+/// Every form step: eyebrow, a light display title, a lede, the content, and
+/// a footer pinned above the keyboard / home indicator.
 private struct StepScaffold<Content: View, Footer: View>: View {
     let eyebrow: String
     let title: String
@@ -133,7 +128,7 @@ private struct StepScaffold<Content: View, Footer: View>: View {
                 Text(title).title(MPSize.displayS)
                     .accessibilityAddTraits(.isHeader)
                 if let subtitle {
-                    // The lede: 16/400 on `body` (6.38 / 6.51 on the wash).
+                    // The lede: 16/400 on `body`.
                     Text(subtitle).mpFont(.copyLarge).foregroundStyle(MP.body)
                         .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -156,9 +151,8 @@ private struct StepScaffold<Content: View, Footer: View>: View {
 }
 
 /// The pinned footer. The form scrolls UNDER it, and "Skip for now" is bare
-/// text, so the strip is opaque `canvas` (the wash only lives in the top
-/// 320pt) with a short canvas fade above it: nothing ever reads through the
-/// quiet action. The fade is decoration and carries no text.
+/// text, so the strip is opaque `canvas` with a short canvas fade above it:
+/// nothing ever reads through the quiet action.
 private struct OnboardingFooter<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
@@ -184,8 +178,7 @@ private struct OnboardingFooter<Content: View>: View {
 }
 
 /// The quiet tertiary action — Skip / Send a new code. A full-width plain
-/// capsule: `brandInk` (5.08 / 6.64 on the wash) with a 44pt target and a
-/// soft press fill.
+/// sage capsule with a 44pt target and a soft press fill.
 private struct QuietAction: View {
     let title: String
     let action: () -> Void
@@ -261,10 +254,8 @@ private extension View {
     }
 }
 
-/// The MedPull mark, the same vector logo as the web console's bar, on a
-/// lifted `panel` squircle (Aside's white lifted tile). The mark's fills were
-/// tuned for `panel`: #4a90d9 3.34 / 5.14, #0097a7 3.51 / 4.90, #1976d2
-/// 4.60 / 3.74 (light / dark), all over the 3:1 graphic floor.
+/// The MedPull mark on the site's white app-icon tile, lifted. The tile is
+/// white in both modes, like the app icon.
 private struct BrandMark: View {
     var side: CGFloat = 64
     @ScaledMetric(relativeTo: .largeTitle) private var scale: CGFloat = 1
@@ -274,7 +265,7 @@ private struct BrandMark: View {
         let d = (side * min(scale, 1.4)).rounded()
         let shape = RoundedRectangle(cornerRadius: d * 0.28, style: .continuous)
         shape
-            .fill(MP.panel)
+            .fill(Color.white)
             .frame(width: d, height: d)
             .overlay(
                 Image("MedPullMark")
@@ -282,105 +273,37 @@ private struct BrandMark: View {
                     .scaledToFit()
                     .padding(d * 0.17)
             )
-            .overlay(shape.strokeBorder(contrast == .increased ? MP.line : MP.hairline, lineWidth: 1))
-            // A soft 6% ground shadow, the only lift in the flow. Decoration.
-            .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 6)
+            .overlay(shape.strokeBorder(contrast == .increased ? MP.line : Color.black.opacity(0.08), lineWidth: 0.5))
+            .shadow(color: Color.black.opacity(0.18), radius: 14, x: 0, y: 8)
             .accessibilityHidden(true)
     }
 }
 
-/// A small capsule label with a hairline ring, above the Welcome headline.
-/// Opaque `panel`, so its `ink` text is 18.38 / 17.19 whatever sky is under
-/// it.
+/// The site's hero badge above the Welcome headline: a glass capsule with a
+/// lime dot and ink text (17 or better on the glass).
 private struct SkyBadge: View {
     let text: String
-    let icon: String
-    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: MPFont.systemWeight(for: .semibold)))
-                .foregroundStyle(MP.tealInk)
+        HStack(spacing: 8) {
+            LimeDot(size: 7)
             Text(text)
-                .mpFont(.labelMedium)
+                .mpFont(.copyMedium)
                 .foregroundStyle(MP.ink)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(MP.capsuleShape.fill(MP.panel))
-        .overlay(MP.capsuleShape.strokeBorder(contrast == .increased ? MP.line : MP.hairline, lineWidth: 1))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .glassSurface(MP.capsuleShape, solid: true)
     }
 }
 
-/// The Welcome and Done backdrop: a STATIC Medical-Blue sky with a teal
-/// glow at the top trailing corner and two soft cloud blobs, fading to
-/// `canvas` by 62% of the height. Nothing moves.
-///
-/// Contrast is computed at the MOST saturated point of every layer, opaque
-/// (scratchpad/ib_contrast.py, ib_c2.py), light / dark:
-///   sky blue (200,225,250) / (17,45,78): ink 13.66 / 13.91, body 5.37 / 5.38
-///   teal peak (196,238,244) / (8,50,62): ink 14.77 / 13.67, body 5.81 / 5.29
-///   cloud over either (white .75 / (36,66,98) .30): ink >= 17.10 / 12.64,
-///   body >= 6.72 / 4.89 (scratchpad/ib_final.py)
-/// Only `ink` and `body` text may sit in the sky. `muted` (4.01 / 3.97) and
-/// `brandInk` (4.27 light) do NOT clear it. Because the sky stays put while
-/// the content scrolls (AX sizes), no `muted` or `brandInk` text is used on
-/// these two steps at all: the disclaimer is `body`.
-/// Increase Contrast and Reduce Transparency get plain canvas.
+/// The Welcome and Done backdrop: the site's hero canvas, taller — soft
+/// drifting colour fog, grain and the dot grid (see `FogBackground`). Text
+/// on it is `ink` or `body` only.
 private struct OnboardingSky: View {
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    private static func tone(_ light: (CGFloat, CGFloat, CGFloat),
-                             _ dark: (CGFloat, CGFloat, CGFloat),
-                             lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) -> Color {
-        Color(UIColor { t in
-            let isDark = t.userInterfaceStyle == .dark
-            let c = isDark ? dark : light
-            return UIColor(red: c.0 / 255, green: c.1 / 255, blue: c.2 / 255,
-                           alpha: isDark ? darkAlpha : lightAlpha)
-        })
-    }
-
-    private static let blue = tone((200, 225, 250), (17, 45, 78))
-    private static let teal = tone((196, 238, 244), (8, 50, 62))
-    private static let cloud = tone((255, 255, 255), (36, 66, 98), lightAlpha: 0.75, darkAlpha: 0.30)
-
     var body: some View {
-        GeometryReader { proxy in
-            let w = proxy.size.width
-            let h = proxy.size.height
-            ZStack(alignment: .topLeading) {
-                MP.canvas
-                if contrast != .increased && !reduceTransparency {
-                    LinearGradient(stops: [
-                        .init(color: Self.blue, location: 0),
-                        .init(color: Self.blue.opacity(0.7), location: 0.28),
-                        .init(color: Self.blue.opacity(0), location: 0.62),
-                    ], startPoint: .top, endPoint: .bottom)
-                    // Teal glow, top trailing; its radius ends well above 62%.
-                    RadialGradient(colors: [Self.teal, Self.teal.opacity(0)],
-                                   center: UnitPoint(x: 1.0, y: 0.04),
-                                   startRadius: 0, endRadius: min(w * 0.85, h * 0.4))
-                    // Two clouds, soft edged.
-                    cloudBlob(width: w * 0.9, height: h * 0.14)
-                        .position(x: w * 0.18, y: h * 0.2)
-                    cloudBlob(width: w * 0.75, height: h * 0.11)
-                        .position(x: w * 0.92, y: h * 0.36)
-                }
-            }
-        }
-        .ignoresSafeArea()
-        .accessibilityHidden(true)
-        .allowsHitTesting(false)
-    }
-
-    private func cloudBlob(width: CGFloat, height: CGFloat) -> some View {
-        Ellipse()
-            .fill(RadialGradient(colors: [Self.cloud, Self.cloud.opacity(0)],
-                                 center: .center, startRadius: 0, endRadius: width / 2))
-            .frame(width: width, height: height)
+        FogBackground(height: 760)
+            .allowsHitTesting(false)
     }
 }
 
@@ -400,16 +323,16 @@ private struct WelcomeStep: View {
                     VStack(alignment: .leading, spacing: 18) {
                         HStack(spacing: 14) {
                             BrandMark(side: 60)
-                            // 20/500 frozen on the UI band: a wordmark, not a title.
-                            Text("MedPull").mpFont(.subheadSemibold).foregroundStyle(MP.ink)
+                            // 20/500 on the UI band: a wordmark, not a title.
+                            Text("MedPull").mpFont(.subheadMedium).kerning(-0.6).foregroundStyle(MP.ink)
                         }
                         .entrance(shown, order: 0)
                         .accessibilityElement(children: .combine)
 
                         VStack(alignment: .leading, spacing: 12) {
-                            SkyBadge(text: "Recovery, with your care team", icon: "heart.fill")
+                            SkyBadge(text: "Recovery, with your care team")
                                 .padding(.bottom, 2)
-                            Text("Hi there.\nLet's get you set up.")
+                            Text("Hi there.\nLet’s get you set up.")
                                 .title(MPSize.displayM)
                                 .accessibilityAddTraits(.isHeader)
                             Text("Your hospital, your watch and your care team, together in one place. It takes about two minutes.")
@@ -438,10 +361,8 @@ private struct WelcomeStep: View {
                     Spacer(minLength: 28)
                     VStack(spacing: 12) {
                         PrimaryButton(title: "Get started", icon: "arrow.right") { model.go(.hospital) }
-                        // THE DISCLAIMER: `body`, not `muted`. At accessibility
-                        // sizes this line scrolls up over the fixed sky, where
-                        // `muted` drops to 4.01 / 3.97; `body` holds 5.37 / 4.89
-                        // at the sky's worst point and 6.73 / 7.11 on canvas.
+                        // THE DISCLAIMER: `body`, not `muted`, because at
+                        // accessibility sizes it scrolls up over the fog.
                         Text("Monitoring signals for your care team — not a diagnosis.")
                             .mpFont(.label).foregroundStyle(MP.body)
                             .multilineTextAlignment(.center)
@@ -566,11 +487,11 @@ private struct PathStep: View {
             VStack(spacing: 12) {
                 pathCard(icon: "person.text.rectangle.fill", family: .blue,
                          title: "My care team set me up",
-                         detail: "The clinic already has a record for you, or you've used MedPull before. We'll find it so their messages reach this phone.") {
+                         detail: "The clinic already has a record for you, or you’ve used MedPull before. We’ll find it so their messages reach this phone.") {
                     model.choose(.findRecord)
                 }
                 pathCard(icon: "sparkles", family: .violet,
-                         title: "I'm new here",
+                         title: "I’m new here",
                          detail: "Start a record now, with or without a surgery. Your activity, sleep and vitals build a picture your care team can see.") {
                     model.choose(.joinGeneral)
                 }
@@ -587,7 +508,7 @@ private struct PathStep: View {
                 HStack(alignment: .top, spacing: 14) {
                     IconTile(icon, family: family, size: 44)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(title).mpFont(.lede.weight(.semibold)).foregroundStyle(MP.ink)
+                        Text(title).mpFont(.ledeMedium).foregroundStyle(MP.ink)
                         Text(detail).mpFont(.copy).mpSecondary().lineSpacing(2)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
@@ -615,8 +536,8 @@ private struct IdentityStep: View {
     enum Field { case name, phone }
 
     var body: some View {
-        StepScaffold(eyebrow: "Step 3 of 5", title: "Let's find your record",
-                     subtitle: "Your name as it's on file at \(model.hospital?.name ?? "the hospital"), and a mobile number we can text. If the clinic already has your number, that finds you on its own.") {
+        StepScaffold(eyebrow: "Step 3 of 5", title: "Let’s find your record",
+                     subtitle: "Your name as it’s on file at \(model.hospital?.name ?? "the hospital"), and a mobile number we can text. If the clinic already has your number, that finds you on its own.") {
             VStack(spacing: 14) {
                 // Every placeholder carries a `muted` prompt: SwiftUI's own
                 // placeholder colour is 1.72:1.
@@ -660,7 +581,7 @@ private struct IdentityStep: View {
                 if let error = model.error { ErrorBanner(text: error) }
             }
         } footer: {
-            PrimaryButton(title: model.selected == nil ? "Find my record" : "That's me — continue",
+            PrimaryButton(title: model.selected == nil ? "Find my record" : "That’s me — continue",
                           loading: model.loading, disabled: !model.canEnroll) {
                 Task { await model.enroll(api: app.api, app: app) }
             }
@@ -678,17 +599,14 @@ private struct IdentityStep: View {
         let isSelected = model.selected?.id == c.id
         return Button { model.selected = c } label: {
             HStack(spacing: 12) {
-                // Unselected: `lineStrong` ring (3.83 / 5.67 on panel), the
-                // only cue the control exists. Selected: `brandInk` on the
-                // tint it then sits on (4.96 / 5.62).
+                // Unselected: `lineStrong` ring, the only cue the control
+                // exists. Selected: an ink check (the site's selected card).
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.systemGlyphs(22, weight: .regular))
-                    .foregroundStyle(isSelected ? MP.brandInk : MP.lineStrong)
+                    .foregroundStyle(isSelected ? MP.ink : MP.lineStrong)
                     .contentTransition(.symbolEffect(.replace))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(c.displayName).mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
-                    // `body`: the ground becomes `brandTint` when selected,
-                    // where `muted` is 4.07 dark (R8). 6.24 / 5.51 there.
                     Text("\(c.procedureDisplay)\(MP.dot)\(c.surgeryMonth)")
                         .mpFont(.label).foregroundStyle(MP.body)
                 }
@@ -696,10 +614,10 @@ private struct IdentityStep: View {
                 if c.phoneMatch { StatusPill(text: "Number matches", tone: .low) }
             }
             .padding(14)
-            // Selection changes the fill AND the stroke colour, never colour
-            // alone (the glyph changes too), at a constant 1pt width.
-            .background(MP.surfaceShape.fill(isSelected ? MP.brandTint : MP.panel))
-            .overlay(MP.surfaceShape.strokeBorder(isSelected ? MP.brand : MP.line, lineWidth: 1))
+            // The site's selected card: glass with a 1.5pt ink ring; the glyph
+            // changes too, so selection is never colour alone.
+            .glassSurface(MP.surfaceShape, solid: true)
+            .overlay(MP.surfaceShape.strokeBorder(isSelected ? MP.ink : .clear, lineWidth: 1.5))
             .contentShape(MP.surfaceShape)
         }
         .buttonStyle(CardPressStyle())
@@ -715,7 +633,7 @@ private struct VerifyStep: View {
 
     var body: some View {
         StepScaffold(eyebrow: "Step 4 of 5", title: "Check your texts",
-                     subtitle: "We sent a code to \(model.phoneMasked ?? "your number"). It's good for 10 minutes.") {
+                     subtitle: "We sent a code to \(model.phoneMasked ?? "your number"). It’s good for 10 minutes.") {
             VStack(spacing: 14) {
                 // `FieldStyle` sets the font on the configuration, so a
                 // monospaced override here would be inert.
@@ -773,7 +691,7 @@ private struct HealthStep: View {
                             if i < reads.count - 1 { InsetDivider() }
                         }
                         // `.mpSecondary()` is `body` on this tint (R8).
-                        Text("We never write to Health. Turn any type off on the next screen and we simply won't read it.")
+                        Text("We never write to Health. Turn any type off on the next screen and we simply won’t read it.")
                             .mpFont(.label).mpSecondary()
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 16)
@@ -782,7 +700,7 @@ private struct HealthStep: View {
                     }
                 }
                 if !(app.me?.features.appleHealth ?? true) {
-                    ErrorBanner(text: "This server isn't connected to Junction yet, so Health data has nowhere to go. You can skip and connect later.")
+                    ErrorBanner(text: "This server isn’t connected to Junction yet, so Health data has nowhere to go. You can skip and connect later.")
                 }
                 if let failure { ErrorBanner(text: failure) }
                 if app.health.state == .connected {
@@ -811,7 +729,7 @@ private struct HealthStep: View {
                         working = false
                         if !ok {
                             if case .failed(let m) = app.health.state { failure = m }
-                            else if app.health.state == .unavailable { failure = "Health isn't available on this device." }
+                            else if app.health.state == .unavailable { failure = "Health isn’t available on this device." }
                         }
                     }
                 }
@@ -935,29 +853,32 @@ private struct DoneStep: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer(minLength: 24)
                     VStack(alignment: .leading, spacing: 18) {
-                        // The brand disc with a white check (4.60:1): a
-                        // celebration, not a risk state, so no risk green. It
-                        // bounces ONCE on arrival (off under Reduce Motion).
+                        // The site's done mark: a sage gradient disc with a
+                        // white check and a lime halo. It pops once on arrival
+                        // (off under Reduce Motion).
                         let d = min(discSide, 132)
-                        Circle()
-                            .fill(MP.brand)
+                        GradientFill(gradient: .sage)
+                            .clipShape(Circle())
                             .frame(width: d, height: d)
+                            .background(Circle().fill(MP.lime.opacity(0.35)).padding(-10))
                             .overlay(
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: (d * 0.42).rounded(), weight: MPFont.systemWeight(for: .semibold)))
-                                    .foregroundStyle(MP.onBrand)
+                                    .font(.system(size: (d * 0.4).rounded(), weight: .semibold))
+                                    .foregroundStyle(.white)
                                     .symbolEffect(.bounce, options: .nonRepeating, value: reduceMotion ? false : shown)
                             )
+                            .shadow(color: Color(red: 74 / 255, green: 102 / 255, blue: 62 / 255).opacity(0.45),
+                                    radius: 14, y: 8)
                             .scaleEffect(shown || reduceMotion ? 1 : 0.6)
                             .opacity(shown || reduceMotion ? 1 : 0)
                             .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion), value: shown)
                             .accessibilityHidden(true)
 
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("You're all set, \(app.me?.patient.firstName ?? "there").")
+                            Text("You’re all set, \(app.me?.patient.firstName ?? "there").")
                                 .title(MPSize.displayM)
                                 .accessibilityAddTraits(.isHeader)
-                            Text("Welcome to MedPull. Here's what happens next.")
+                            Text("Welcome to MedPull. Here’s what happens next.")
                                 .mpFont(.lede).foregroundStyle(MP.body)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -966,7 +887,7 @@ private struct DoneStep: View {
                         VStack(alignment: .leading, spacing: 18) {
                             if app.me?.patient.isRecovery == true {
                                 FeatureRow(icon: "message.fill", family: .blue,
-                                           title: "We'll text you",
+                                           title: "We’ll text you",
                                            detail: "When a task is ready, answer right in Messages or open the app. Either way your care team sees it.")
                                     .entrance(shown, order: 2)
                                 FeatureRow(icon: "checklist", family: .teal,
@@ -979,13 +900,13 @@ private struct DoneStep: View {
                                            detail: "Your portfolio grows as your data arrives. Give it a day or two.")
                                     .entrance(shown, order: 2)
                                 FeatureRow(icon: "message.fill", family: .blue,
-                                           title: "We'll text you",
+                                           title: "We’ll text you",
                                            detail: "When your care team asks for something, answer by text or right here in the app.")
                                     .entrance(shown, order: 3)
                             }
                             FeatureRow(icon: "waveform", family: .indigo,
                                        title: "Talk any time",
-                                       detail: "Tell MedPull how you're doing in your own words. Anything important goes to your care team.")
+                                       detail: "Tell MedPull how you’re doing in your own words. Anything important goes to your care team.")
                                 .entrance(shown, order: 4)
                         }
                         .padding(.top, 6)
@@ -1020,7 +941,7 @@ private struct JoinStep: View {
 
     var body: some View {
         StepScaffold(eyebrow: "Step 3 of 5", title: "Tell us about you",
-                     subtitle: "This starts your record at \(model.hospital?.name ?? "the hospital"). Had an operation? Add it and we'll follow your recovery. If not, we'll follow your everyday signals.") {
+                     subtitle: "This starts your record at \(model.hospital?.name ?? "the hospital"). Had an operation? Add it and we’ll follow your recovery. If not, we’ll follow your everyday signals.") {
             VStack(spacing: 14) {
                 TextField("Full name", text: $model.name,
                           prompt: Text("Full name").foregroundColor(MP.muted))
@@ -1056,7 +977,7 @@ private struct JoinStep: View {
                         InsetDivider()
                         Toggle(isOn: surgicalBinding) {
                             Label {
-                                Text("I'm recovering from an operation").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                                Text("I’m recovering from an operation").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
                             } icon: {
                                 IconTile("cross.case.fill", family: .violet)
                             }

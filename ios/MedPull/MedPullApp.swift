@@ -32,10 +32,10 @@ struct MedPullApp: App {
                 .environment(app)
                 .environment(appearance)
                 // brandInk, not brand: the tint is what native back buttons,
-                // "Done", "Cancel" and toolbar text draw in, and #1976D2 is
-                // 3.99:1 on dark canvas. brandInk is 5.35 / 7.25 on canvas.
-                // A control whose FILL must stay #1976D2 (Toggle, Slider,
-                // ProgressView) passes `.tint(MP.brand)` itself.
+                // "Done", "Cancel" and toolbar text draw in, so it is the
+                // sage TEXT colour (7.0 / 12.2 on canvas). A control whose
+                // FILL should be the sage fill (Toggle, Slider) passes
+                // `.tint(MP.brand)` itself.
                 .tint(MP.brandInk)
                 // Publishes @Environment(\.legibilityWeight) to every font
                 // rung, so Bold Text re-renders text in place — no `.id`,

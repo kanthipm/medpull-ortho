@@ -175,8 +175,7 @@ struct AttachmentFileView: View {
     var body: some View {
         HStack(spacing: 8) {
             // `brandInk`, not `brand`: a glyph set with `foregroundStyle` is
-            // a foreground, and #1976D2 as a foreground is 3.74:1 on dark
-            // panel. `brandInk` is 5.75:1 light / 6.78:1 dark.
+            // a foreground (sage text, 7.25 light / 10.53 dark on panel).
             Image(systemName: attachment.contentType == "application/pdf" ? "doc.richtext" : "doc")
                 .font(.copyLarge)
                 .foregroundStyle(MP.brandInk)
@@ -208,7 +207,7 @@ struct AttachmentStrip: View {
             VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
                 ForEach(attachments) { a in
                     if a.isWithdrawn {
-                        // NO `.italic()`. Instrument Sans ships no italic file,
+                        // NO `.italic()`. The bundled face ships no italic file,
                         // so SwiftUI shears the roman — synthetic obliquing,
                         // the same defect class as synthetic bold. The
                         // distinction is carried by weight and colour instead:

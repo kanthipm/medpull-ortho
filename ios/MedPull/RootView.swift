@@ -52,11 +52,8 @@ struct MainTabs: View {
         // be glass-on-glass. A screen's action bar goes in that screen, with
         // `.mpGlassActionBar { }`.
         .mpTabBarMinimizeOnScroll()
-        // R10: the selected tab item is drawn in the tint, and a tab label is
-        // text, so the tint is `brandInk` (5.35:1 light / 7.25:1 dark on
-        // canvas) rather than #1976D2 (3.99:1 dark). MedPullApp already sets
-        // it at the root; it is restated here so the bar never depends on an
-        // ancestor it cannot see.
-        .tint(MP.brandInk)
+        // The selected tab is ink, like the current item in the site's nav
+        // capsule: monochrome chrome, colour kept for content.
+        .tint(MP.ink)
     }
 }

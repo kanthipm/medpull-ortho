@@ -52,7 +52,7 @@ struct MessagesView: View {
                 // `soft` — so no text ever reads against moving content.
                 .mpComposerBar { composer }
             }
-            .screen()
+            .ambientScreen()
             .navigationTitle("Messages")
             .navigationBarTitleDisplayMode(.inline)
             .photosPicker(isPresented: $choosingPhotos, selection: $photoPicks,
@@ -248,7 +248,7 @@ struct MessagesView: View {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 guard let ready = AttachmentPrep.file(at: url) else {
-                    error = "That file can't be sent — photos and PDFs only."
+                    error = "That file can’t be sent — photos and PDFs only."
                     continue
                 }
                 do {
@@ -310,22 +310,24 @@ struct Bubble: View {
     var body: some View {
         VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
             if !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // 16pt / 400: a message is the patient's own copy, and 15
-                // is not a rung. Opaque on purpose — a bubble is a repeating
-                // list cell, which is barred from glass outright, and it
-                // carries the words a post-operative patient is reading.
+                // 16pt / 400, the site's Messages look: the patient's words
+                // on the sage bubble (white 6.4), everyone else's on the warm
+                // grey bubble (ink 16). Opaque — a bubble is a repeating list
+                // cell and carries what a post-operative patient is reading.
                 Text(message.text)
                     .font(.copyLarge)
-                    .foregroundStyle(mine ? MP.onBrand : MP.ink)
+                    .foregroundStyle(mine ? Color.white : MP.ink)
                     .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(BubbleShape(mine: mine)
-                        .fill(mine ? MP.brand : (message.sender == "care_team" ? MP.brandTint : MP.panel)))
-                    // ONE edge, and only where the fill does not separate:
-                    // `brand` and `brandTint` are their own boundary, `panel`
-                    // is 1.13:1 on canvas light and 1.07:1 dark and needs the
-                    // hairline. No shadow — this is not a floating overlay.
-                    .overlay(BubbleShape(mine: mine)
-                        .strokeBorder(mine || message.sender == "care_team" ? .clear : MP.line, lineWidth: 1))
+                    .background {
+                        if mine {
+                            BubbleFill().clipShape(BubbleShape(mine: true))
+                        } else {
+                            BubbleShape(mine: false)
+                                .fill(message.sender == "care_team" || message.fromClinician
+                                      ? MP.fillStrong : MP.fill)
+                                .background(BubbleShape(mine: false).fill(MP.panel.opacity(0.7)))
+                        }
+                    }
             }
             AttachmentStrip(attachments: message.files, mine: mine)
             if let taskId = message.action?.opensTask, let label = message.action?.label {
@@ -334,9 +336,7 @@ struct Bubble: View {
             HStack(spacing: 4) {
                 Text(who)
                 if message.fromClinician {
-                    // Was 10pt — under the floor — with `brand` as its ink,
-                    // which is 3.10:1 on its own tint in dark. 12pt / 500 on
-                    // `brandInk`: 4.96:1 light / 5.62:1 dark on `brandTint`.
+                    // 12pt / 500 sage on its tint: 6.27 light / 7.98 dark.
                     Text("Care team approved")
                         .font(.labelMedium)
                         .padding(.horizontal, 6).padding(.vertical, 2)
@@ -372,8 +372,8 @@ struct Bubble: View {
         } label: {
             Label(label, systemImage: "arrow.right.circle.fill")
         }
-        // The shared filled capsule: #1976D2 as a FILL with white (4.60:1),
-        // pressed scale gated on Reduce Motion, 44pt tall.
+        // The shared primary capsule, pressed scale gated on Reduce Motion,
+        // 44pt tall.
         .buttonStyle(.mpFilled)
         .padding(.top, 2)
     }
@@ -465,7 +465,7 @@ struct ComposerField: View {
             Button(action: send) {
                 ZStack {
                     if busy {
-                        ProgressView().tint(MP.onBrand).controlSize(.small)
+                        ProgressView().tint(MP.onAction).controlSize(.small)
                     } else {
                         Image(systemName: "arrow.up")
                             .font(.systemGlyphs(15, weight: .semibold))
@@ -473,11 +473,11 @@ struct ComposerField: View {
                             // `disabledInk` on `disabledFill` is 4.75 / 4.58,
                             // with the `lineStrong` edge because that fill is
                             // 1.06:1 against the panel it sits in.
-                            .foregroundStyle(canSend ? MP.onBrand : MP.disabledInk)
+                            .foregroundStyle(canSend ? MP.onAction : MP.disabledInk)
                     }
                 }
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(canSend || busy ? MP.brand : MP.disabledFill))
+                .background(Circle().fill(canSend || busy ? MP.action : MP.disabledFill))
                 .overlay {
                     if !canSend && !busy { Circle().strokeBorder(MP.lineStrong, lineWidth: 1) }
                 }

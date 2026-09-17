@@ -98,7 +98,7 @@ struct HealthView: View {
                         } else if let last = app.wearables?.appleHealth.lastSyncAt {
                             Text("Last data \(Dates.relative(last))")
                         } else {
-                            Text("Syncing in the background. Data appears on your care team's console as it arrives.")
+                            Text("Syncing in the background. Data appears on your care team’s console as it arrives.")
                         }
                     }
                     .mpFont(.copy).mpSecondary()
@@ -110,10 +110,10 @@ struct HealthView: View {
                         VStack(spacing: 10) { syncButton; gaitButton }
                     }
                 } else {
-                    Text("One tap connects steps, sleep, heart rate, workouts and Apple's walking metrics. Nothing is written to Health.")
+                    Text("One tap connects steps, sleep, heart rate, workouts and Apple’s walking metrics. Nothing is written to Health.")
                         .mpFont(.copy).foregroundStyle(MP.body)
                     if !junctionReady {
-                        ErrorBanner(text: "This server isn't connected to Junction yet, so there is nowhere for Health data to go.")
+                        ErrorBanner(text: "This server isn’t connected to Junction yet, so there is nowhere for Health data to go.")
                     }
                     if case .failed(let m) = app.health.state { ErrorBanner(text: m) }
                     PrimaryButton(title: "Connect Apple Health", icon: "heart.fill", loading: connecting,
@@ -231,10 +231,8 @@ struct HealthView: View {
     /// then one card per signal, each led by its category tile.
     private var portfolioSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // The same quiet header Home uses for this section (CardHeader:
-            // 12/500, 16pt text inset), so "Your portfolio" reads as one
-            // thing on both tabs. `body`, not `muted`: this line sits on the
-            // ambient brand wash, where dark `muted` drops to ~4.07:1.
+            // A section header on the canvas, like the site's: the title in
+            // 20/500 ink, the count in `body`.
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     portfolioTitle
@@ -246,10 +244,8 @@ struct HealthView: View {
                     portfolioMeta
                 }
             }
-            .mpFont(.labelMedium)
-            .foregroundStyle(MP.body)
-            .padding(.top, 10)
-            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.horizontal, 4)
 
             if app.portfolio.isEmpty {
                 Card {
@@ -257,8 +253,8 @@ struct HealthView: View {
                              detail: "Connect Apple Health or a wearable and every signal it provides charts here.")
                 }
             } else {
-                ForEach(app.portfolio) { m in
-                    Card { MetricChart(metric: m) }
+                ForEach(Array(app.portfolio.enumerated()), id: \.element.id) { i, m in
+                    MetricChart(metric: m).mpRise(i)
                 }
             }
         }
@@ -266,6 +262,8 @@ struct HealthView: View {
 
     private var portfolioTitle: some View {
         Text("Your portfolio")
+            .mpFont(.subheadMedium)
+            .foregroundStyle(MP.ink)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
     }
@@ -273,6 +271,8 @@ struct HealthView: View {
     private var portfolioMeta: some View {
         Text(app.portfolio.isEmpty ? "Last two weeks"
              : "\(app.portfolio.count) signals\(MP.dot)two weeks")
+            .mpFont(.copy)
+            .foregroundStyle(MP.body)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -300,9 +300,9 @@ extension PortfolioMetric {
         }
     }
 
-    /// The tile family: activity is teal, sleep indigo, heart and vitals
-    /// violet, body and everything else blue. Never red/amber/green — those
-    /// are risk colours (spec doNotCopy).
+    /// The tile family (and so the gradient): activity sage, sleep lilac,
+    /// heart and vitals clay, body and everything else amber. Hue is the
+    /// category, never the state.
     var tileFamily: MP.Category {
         switch key {
         case "steps", "walking_speed", "walking_steadiness", "exercise_session", "active_energy":
@@ -318,19 +318,19 @@ extension PortfolioMetric {
     }
 }
 
+/// One signal as the site's gradient tile: the name and the reading in
+/// white over the dark top of the gradient, the last two weeks as white
+/// marks (bars grow in; the newest is lime), and the average and range on a
+/// solid-glass caption. Scrubbing the chart shows that day's value on an
+/// opaque capsule and in the tile's number.
 struct MetricChart: View {
     let metric: PortfolioMetric
     @State private var picked: Date?
+    @State private var grown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    /// A bar's end cap. Mark geometry, not a surface radius: every radius
-    /// token is wider than a 14-day bar, and a bar capped at one would stop
-    /// reading as a bar.
     private static let barCap: CGFloat = 3
-    /// The average rule's dash. It is the chart's second series, so the 4-2
-    /// dash plus its direct label are what separate it from the data, not hue.
-    private static let averageDash: [CGFloat] = [4, 2]
+    private static let averageDash: [CGFloat] = [3, 5]
 
     private var isBar: Bool { metric.isDailyTotal }
 
@@ -344,123 +344,90 @@ struct MetricChart: View {
         return metric.series.min { abs($0.day.timeIntervalSince(picked)) < abs($1.day.timeIntervalSince(picked)) }
     }
 
-    /// What the header reads: the scrubbed day while dragging, otherwise the
-    /// latest value. The latest is always on screen without a gesture.
+    /// The scrubbed day while dragging, otherwise the latest value.
     private var shown: PortfolioPoint { pickedPoint ?? metric.latest }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(metric.text(for: shown.value))
-                    .font(.figures(MPSize.displayS, weight: .semibold, relativeTo: .title))
-                    .foregroundStyle(MP.ink)
-                    .contentTransition(.numericText())
-                    .animation(MPMotion.gated(MPMotion.state, reduceMotion: reduceMotion), value: shown.value)
-                if !metric.hideUnit {
-                    Text(metric.unit)
-                        .mpFont(.copyMedium)
-                        .foregroundStyle(MP.muted)
-                }
-            }
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text("\(metric.label), \(pickedPoint == nil ? "latest" : dayCaption)"))
-            .accessibilityValue(Text(metric.spokenText(for: shown.value)))
-
-            chart
-        }
-    }
-
-    /// Tile, name and day on one row; stacked at accessibility sizes so the
-    /// name wraps by word and the day is never truncated.
-    @ViewBuilder
-    private var header: some View {
-        let tile = IconTile(metric.tileSymbol, family: metric.tileFamily)
-        // `body`, not `muted`: the date is the one label here that carries
-        // data, and `body` gives it headroom (7.22 / 7.11 on panel).
-        let caption = Text(dayCaption)
-            .mpFont(.label)
-            .foregroundStyle(MP.body)
-            .monospacedDigit()
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 6) {
-                tile
-                Text(metric.label)
-                    .mpFont(.copyMedium)
-                    .foregroundStyle(MP.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                caption.fixedSize(horizontal: false, vertical: true)
-            }
-        } else {
-            HStack(spacing: 12) {
-                tile
-                Text(metric.label)
-                    .mpFont(.copyMedium)
-                    .foregroundStyle(MP.ink)
-                    .lineLimit(2)
-                Spacer(minLength: 8)
-                caption.lineLimit(1)
-            }
-        }
-    }
-
-    private var dayCaption: String {
+    private var sideDay: String {
         let date = shown.day
-        if date == .distantPast { return pickedPoint == nil ? "Latest" : shown.date }
-        let text = date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-        return pickedPoint == nil ? "Latest\(MP.dot)\(text)" : text
+        if date == .distantPast { return shown.date }
+        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 
-    // TWO SERIES, AND THAT IS THE CAP. The data is series 1: daily totals as
-    // bars on `chartS1`, sampled measurements as a line on `chartS2` (the teal
-    // graphic cut, 5.02:1; the old `cyan` fill was 2.74:1 as a stroke). The
-    // 14-day average is series 2: a 4-2 DASHED rule with a DIRECT label, in
-    // the axis-label grey, so it separates from the data by dash and label
-    // rather than hue. The data line itself is never dashed — a dashed line
-    // through a patient's own heart rate reads as projected data. There is no
-    // series 3 here; `chartSeq` is not reached.
+    private var range: String? {
+        guard let first = metric.series.first?.day, let last = metric.series.last?.day,
+              first != .distantPast else { return nil }
+        let f = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        return "\(first.formatted(f)) – \(last.formatted(f))"
+    }
+
+    var body: some View {
+        GradientTile(MP.categoryGradient(metric.tileFamily),
+                     kicker: metric.label,
+                     value: metric.text(for: shown.value),
+                     unit: metric.hideUnit ? nil : metric.unit,
+                     side: (sideDay, pickedPoint == nil ? "latest" : "selected")) {
+            chart
+        } caption: {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let avg = metric.average, metric.series.count > 1 {
+                    Text("Avg \(metric.text(for: avg))")
+                        .mpFont(.copyMedium).foregroundStyle(MP.ink)
+                }
+                Text([range, "\(metric.daysWithData) days of data"].compactMap { $0 }
+                        .joined(separator: MP.dot))
+                    .mpFont(.label).foregroundStyle(MP.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("\(metric.label), \(pickedPoint == nil ? "latest" : sideDay)"))
+        .accessibilityValue(Text(metric.spokenText(for: shown.value)))
+        .onAppear {
+            guard !grown else { return }
+            if reduceMotion { grown = true } else {
+                withAnimation(MPMotion.ease(0.9).delay(0.2)) { grown = true }
+            }
+        }
+    }
+
+    // TWO SERIES, AND THAT IS THE CAP. The data is white (bars for daily
+    // totals, a line for samples); the newest mark is lime. The 14-day
+    // average is a dashed rule with a direct label on an opaque capsule.
+    // No axes: the range and the average are in the caption, and a scrub
+    // puts any day's value on an opaque capsule.
     private var chart: some View {
-        Chart {
+        let lastID = metric.series.last?.id
+        return Chart {
             ForEach(metric.series) { pt in
                 if isBar {
                     BarMark(x: .value("Day", pt.day, unit: .day),
-                            y: .value(metric.label, pt.value))
-                        .foregroundStyle(MP.chartS1)
+                            y: .value(metric.label, grown ? pt.value : 0))
+                        .foregroundStyle(pt.id == lastID ? MP.lime : Color.white.opacity(0.9))
                         .cornerRadius(Self.barCap)
-                        .opacity(pickedPoint == nil || pickedPoint?.id == pt.id ? 1 : 0.45)
+                        .opacity(pickedPoint == nil || pickedPoint?.id == pt.id ? 1 : 0.4)
                 } else {
                     LineMark(x: .value("Day", pt.day, unit: .day),
                              y: .value(metric.label, pt.value))
-                        .foregroundStyle(MP.chartS2)
-                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                        .foregroundStyle(Color.white)
+                        .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                         .interpolationMethod(.monotone)
                     PointMark(x: .value("Day", pt.day, unit: .day),
                               y: .value(metric.label, pt.value))
-                        .foregroundStyle(MP.chartS2)
-                        .symbolSize(pickedPoint?.id == pt.id ? 60 : 18)
+                        .foregroundStyle(pt.id == lastID ? MP.lime : Color.white)
+                        .symbolSize(pt.id == lastID ? 90 : (pickedPoint?.id == pt.id ? 60 : 16))
                 }
             }
 
             if pickedPoint == nil, let avg = metric.average, metric.series.count > 1 {
                 RuleMark(y: .value("Average", avg))
-                    .foregroundStyle(MP.chartAxisLabel)
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: Self.averageDash))
-                    .annotation(position: .top, alignment: .leading, spacing: 2) {
-                        Text("Avg \(metric.text(for: avg))")
-                            .font(.axis)
-                            .foregroundStyle(MP.chartAxisLabel)
-                            .padding(.horizontal, 3)
-                            .background(MP.panel, in: MP.capsuleShape)
-                    }
+                    .foregroundStyle(Color.white.opacity(0.7))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: Self.averageDash))
                     .accessibilityHidden(true)
             }
 
             if let p = pickedPoint {
                 RuleMark(x: .value("Day", p.day, unit: .day))
-                    .foregroundStyle(MP.chartAxisLabel)
+                    .foregroundStyle(Color.white.opacity(0.8))
                     .lineStyle(StrokeStyle(lineWidth: 1))
                     .zIndex(-1)
                     .annotation(position: .top, spacing: 4,
@@ -468,48 +435,28 @@ struct MetricChart: View {
                         // A clinical number sits on an OPAQUE fill.
                         HStack(spacing: 4) {
                             Text(metric.text(for: p.value))
-                                .font(.figures(MPSize.copy, weight: .semibold))
+                                .font(.figures(MPSize.copy, weight: .medium))
                                 .foregroundStyle(MP.ink)
                             Text(p.day.formatted(.dateTime.month(.abbreviated).day()))
                                 .font(.figuresLabel)
                                 .foregroundStyle(MP.body)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(MP.soft, in: MP.capsuleShape)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(MP.panel, in: MP.capsuleShape)
                     }
                     .accessibilityHidden(true)
             }
         }
         .chartXSelection(value: $picked)
         .chartYScale(domain: .automatic(includesZero: isBar))
-        // 11pt (`MPSize.axis`, the app's floor) in `chartAxisLabel`
-        // (5.39:1 light / 4.91:1 dark on panel) — never `faint`.
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { value in
-                AxisTick().foregroundStyle(MP.chartGrid)
-                AxisValueLabel {
-                    if let d = value.as(Date.self) {
-                        Text(d, format: .dateTime.month(.abbreviated).day())
-                            .font(.axis)
-                            .foregroundStyle(MP.chartAxisLabel)
-                    }
-                }
-            }
-        }
+        .chartXAxis(.hidden)
         .chartYAxis {
-            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
-                AxisGridLine().foregroundStyle(MP.chartGrid)
-                AxisValueLabel {
-                    if let v = value.as(Double.self) {
-                        Text(metric.axisText(for: v))
-                            .font(.axis)
-                            .foregroundStyle(MP.chartAxisLabel)
-                    }
-                }
+            AxisMarks(values: .automatic(desiredCount: 3)) { _ in
+                AxisGridLine().foregroundStyle(Color.white.opacity(0.2))
             }
         }
-        .frame(height: 132)
+        .frame(height: 124)
         .mpSelectionFeedback(pickedPoint?.id)
         .accessibilityChartDescriptor(MetricChartDescriptor(metric: metric))
     }

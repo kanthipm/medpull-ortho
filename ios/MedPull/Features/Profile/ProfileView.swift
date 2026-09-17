@@ -36,7 +36,7 @@ struct ProfileView: View {
                             }
                         }
                         group("Connections",
-                              footer: "Task texts come from your care team's MedPull number. Reply 1 to any of them to do the task by text, or open it here.") {
+                              footer: "Task texts come from your care team’s MedPull number. Reply 1 to any of them to do the task by text, or open it here.") {
                             row("Texts from MedPull", me.features.sms ? "On" : "Not set up on this server",
                                 icon: "message.fill", family: .blue)
                             InsetDivider()
@@ -46,7 +46,7 @@ struct ProfileView: View {
                         }
                     }
 
-                    group("Appearance", footer: "System follows your iPhone's Display & Brightness setting.") {
+                    group("Appearance", footer: "Light is the default. System follows your iPhone’s Display & Brightness setting.") {
                         Picker("Appearance", selection: $appearance.mode) {
                             ForEach(AppearanceMode.allCases) { mode in
                                 Text(mode.label).tag(mode)
@@ -78,7 +78,7 @@ struct ProfileView: View {
                     }
 
                     group("Developer",
-                          footer: "Where this app talks to. On a phone running against `make dev`, use your Mac's address, e.g. http://192.168.1.20:8000. Built-in: \(AppConfig.builtInBaseURL.absoluteString)") {
+                          footer: "Where this app talks to. On a phone running against `make dev`, use your Mac’s address, e.g. http://192.168.1.20:8000. Built-in: \(AppConfig.builtInBaseURL.absoluteString)") {
                         // The placeholder goes through `prompt:` so it lands on
                         // `MP.muted` (5.39:1) instead of the system tertiary
                         // label, which measures 1.72:1 — a placeholder is text.
@@ -116,7 +116,7 @@ struct ProfileView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 28)
             }
-            .screen()
+            .ambientScreen()
             .tint(MP.brandInk)
             .mpNavigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)

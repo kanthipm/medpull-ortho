@@ -2,59 +2,28 @@ import Observation
 import SwiftUI
 import UIKit
 
-/// The console's design tokens (frontend/src/index.css), so the app and the
-/// provider console read as one product. Every hex below is the same hex the
-/// console's `:root` / `.dark` blocks resolve to — the two files were written
-/// against each other, not from the same prose.
+/// The design tokens, shared with the console (frontend/src/index.css) and
+/// taken from medpull.org: warm neutrals, a near-black primary capsule, the
+/// site's sage as the brand fill, clay/amber/sage/periwinkle status pills,
+/// lime accent dots, and earthy gradient tiles. Light is the default; dark
+/// follows the site's retired dark theme in structure (warm-neutral surfaces,
+/// low-alpha fills, no bright borders) and keeps the same gradients and lime.
 ///
-/// ONE RAMP, TWO INDEXES. There is a single blue-cast neutral ramp (every step
-/// R<G<B, hue held at 210-216 rather than drifting, because clinic displays are
-/// uncalibrated). Light and dark are not two palettes — they re-index the same
-/// hexes, which is why seven steps do double duty and why a hue change is one
-/// edit for both modes. The acceptance test is the mirror: `body` lands at
-/// 7.22:1 light / 7.11:1 dark and `muted` at 5.39:1 / 5.24:1 (deltas 0.11 and
-/// 0.15), all four computed here.
+/// Every hex below is the hex the console's `:root` / `.dark` blocks resolve
+/// to, so the app and the console read as one product. Ratios are WCAG
+/// (sRGB, 0.04045 threshold), light / dark:
 ///
-///     n-0   #FFFFFF  L=1.00000     n-475 #6B7480  L=0.17175  (inserted)
-///     n-50  #F5F7FA  L=0.92836     n-500 #626B78  L=0.14468
-///     n-100 #EDF1F6  L=0.87569     n-600 #4E5865  L=0.09539
-///     n-200 #E0E5EC  L=0.77942     n-700 #2A333D  L=0.03197
-///     n-300 #C9D0DA  L=0.62591     n-800 #1A222B  L=0.01538
-///     n-400 #98A2AF  L=0.35611     n-900 #141C24  L=0.01107
-///     n-425 #8B95A3  L=0.28818 (inserted)
-///     n-450 #7F8A98  L=0.24956     n-950 #0E151C  L=0.00714
-///     n-460 #7A8390  L=0.22867 (inserted)
-///
-/// The three inserted steps are what the adversarial review added; the spec's
-/// 13 could not carry a compliant boundary and four text tiers without two
-/// roles landing on the same hex:
-///   * n-460 is light `lineStrong`. The spec used #626B78, which is byte-
-///     identical to light `muted` — that collapses the three-weight rule
-///     system into secondary text. n-460 is 3.83:1 on panel: clears WCAG
-///     1.4.11 without reading at text weight.
-///   * n-425 is dark `lineStrong`, one step ABOVE dark `muted` (n-450) for
-///     the same reason. 5.67:1 on dark panel.
-///   * n-475 is dark `faint` AND dark `line`. The spec published dark faint at
-///     3.94/3.68/3.44; recomputed it is 3.41/3.19/2.98 — under the 3:1
-///     non-text floor on `soft`. n-475 is the first step that clears 3:1 on
-///     all three dark grounds (3.63 panel / 3.88 canvas / 3.39 soft).
-///
-/// Every ratio in this file was computed here, from sRGB relative luminance
-/// with the 0.04045 linearisation threshold and (L1+0.05)/(L2+0.05).
+///     ink      #141414 / #F5F5F7   18.42 on panel / 15.63 on dark panel
+///     body     #585B58 / #A1A1A6    6.88 / 6.61
+///     muted    #636662 / #8E8E93    5.82 / 5.22 (5.19 / 4.63 on soft)
+///     lineStr  #8A8C88 / #78787D    3.39 / 3.87 — field boundaries
+///     brand    #4A663E / #5A7D4A    white on it 6.44 / 4.70
+///     brandInk #3F5F33 / #B7D68A    7.25 / 10.53
 enum MP {
     /// One dynamic UIColor per token: the trait closure is the only place the
-    /// mode is read, so a repalette never needs an asset catalog entry or a
-    /// per-screen `colorScheme` branch. The alpha parameters exist for `scrim`
-    /// alone — every tint is a solid in both modes, deliberately, because an
-    /// alpha wash's real ratio depends on which of the three grounds is behind
-    /// it and these carry clinical state. The dark tints below ARE the
-    /// 0.16/0.18/0.28 washes, frozen over `panel`.
-    ///
-    /// `lightHigh`/`darkHigh` are the Increase Contrast substitutions, and
-    /// they are the same four tokens the console strengthens under
-    /// `@media (prefers-contrast: more)`. The trait is right here in the
-    /// closure, so honouring it costs nothing and the alternative is a
-    /// clinician who turns Increase Contrast on and gets no card edge back.
+    /// mode is read. `lightHigh`/`darkHigh` are the Increase Contrast
+    /// substitutions, the same tokens the console strengthens under
+    /// `@media (prefers-contrast: more)`.
     private static func pair(_ light: (Double, Double, Double),
                              _ dark: (Double, Double, Double),
                              lightAlpha: Double = 1,
@@ -74,171 +43,141 @@ enum MP {
 
     // MARK: - Text
 
-    /// n-950 / n-0. 18.38:1 on panel in both modes.
-    static let ink = pair((14, 21, 28), (255, 255, 255))
-    /// n-600 / n-400. Panel/canvas/soft: 7.22 / 6.73 / 6.37 light,
-    /// 6.65 / 7.11 / 6.21 dark.
-    static let body = pair((78, 88, 101), (152, 162, 175))
-    /// n-500 / n-450. Secondary text AND the placeholder tier:
-    /// 5.39 / 5.03 / 4.75 light, 4.91 / 5.24 / 4.58 dark — clears 4.5:1 on
-    /// panel, canvas and a zebra `soft` row in both modes. Placeholders live
-    /// here, not on `faint`: placeholder text is text under WCAG 1.4.3.
-    static let muted = pair((98, 107, 120), (127, 138, 152))
-    /// n-400 / n-475. NON-TEXT AND INACTIVE ONLY — decoration, disabled
-    /// glyphs, empty-state art. Light is 2.59:1 on panel and 2.28:1 on soft,
-    /// which is conformant only because inactive components are exempt from
-    /// 1.4.11; dark is 3.63 / 3.88 / 3.39. Anything a patient must read goes
-    /// on `muted`, and a disabled control goes on `disabledInk`.
-    /// Increase Contrast: n-500 light (2.59 -> 5.39:1), n-425 dark
-    /// (3.63 -> 5.67:1).
-    static let faint = pair((152, 162, 175), (107, 116, 128),
-                            lightHigh: (98, 107, 120), darkHigh: (139, 149, 163))
+    /// #141414 / #F5F5F7.
+    static let ink = pair((20, 20, 20), (245, 245, 247))
+    /// #585B58 / #A1A1A6. 6.88 / 6.14 on panel/soft light, 6.61 / 5.87 dark.
+    static let body = pair((88, 91, 88), (161, 161, 166))
+    /// #636662 / #8E8E93. Secondary text and placeholders: 5.82 / 5.19 light,
+    /// 5.22 / 4.63 dark on panel / soft.
+    static let muted = pair((99, 102, 98), (142, 142, 147))
+    /// #A6A8A4 / #58585D. NON-TEXT, inactive or decorative only.
+    static let faint = pair((166, 168, 164), (88, 88, 93),
+                            lightHigh: (99, 102, 98), darkHigh: (142, 142, 147))
 
-    // MARK: - Rules (three weights, distinct in both modes)
+    // MARK: - Rules
 
-    /// n-200 / n-700. Decorative inset dividers only — 1.27:1 light, 1.34:1
-    /// dark on panel (dark moved n-800 -> n-700: at 1.07:1 the inset rows of a
-    /// grouped card read as one slab). Never the sole cue for anything.
-    /// Increase Contrast: n-300 light (1.27 -> 1.55:1), n-475 dark
-    /// (1.34 -> 3.63:1).
-    static let hairline = pair((224, 229, 236), (42, 51, 61),
-                               lightHigh: (201, 208, 218), darkHigh: (107, 116, 128))
-    /// n-300 / n-475. Structural table rules and card edges. The dark half
-    /// steps all the way to n-475 (3.63:1 on panel, 3.88 canvas, 3.39 soft)
-    /// because on dark this line is the ONLY cue that a card is a card: dark
-    /// `panel` is 1.07:1 against `canvas`, so there is no fill delta and no
-    /// 8pt seam to lean on, and the spec's n-700 edge was 1.34:1 — less than
-    /// half of 1.4.11's 3:1. Light stays low (1.55:1) because there the
-    /// canvas seam is a real second cue. Increase Contrast: n-460 light
-    /// (1.55 -> 3.83:1), n-425 dark (3.63 -> 5.67:1) — this is the token that
-    /// gives a card edge back to a clinician who turns the setting on.
-    static let line = pair((201, 208, 218), (107, 116, 128),
-                           lightHigh: (122, 131, 144), darkHigh: (139, 149, 163))
-    /// n-460 / n-425. For a boundary that is the only cue a control exists:
-    /// field borders, the focused edge, a table rule that carries meaning.
-    /// 3.83 / 3.57 / 3.38 light, 5.67 / 6.06 / 5.30 dark.
-    static let lineStrong = pair((122, 131, 144), (139, 149, 163))
+    /// Ink at .08 on white / white at .09 on dark. Decorative inset dividers.
+    static let hairline = pair((236, 236, 236), (44, 44, 47),
+                               lightHigh: (196, 197, 193), darkHigh: (88, 88, 93))
+    /// Ink at .14 / #3A3A3D. A quiet structural rule; cards separate by fill
+    /// and shadow, never by a bright border.
+    static let line = pair((222, 222, 222), (58, 58, 61),
+                           lightHigh: (138, 140, 136), darkHigh: (120, 120, 125))
+    /// #8A8C88 / #78787D. The boundary that is a control's only cue (field
+    /// borders): 3.39 on light panel, 3.87 on dark panel.
+    static let lineStrong = pair((138, 140, 136), (120, 120, 125))
 
     // MARK: - Surfaces
 
-    /// n-50 / n-950.
-    static let canvas = pair((245, 247, 250), (14, 21, 28))
-    /// n-100 / n-800. Zebra rows, grouping, recessed wells. 1.13:1 against
-    /// panel light, 1.07:1 dark — a seam, not a colour change.
-    static let soft = pair((237, 241, 246), (26, 34, 43))
-    /// n-0 / n-900.
-    static let panel = pair((255, 255, 255), (20, 28, 36))
-    /// n-200 / n-700. Slider and progress troughs. 1.27:1 on light panel,
-    /// 1.43:1 on dark canvas — a trough, not a boundary.
-    static let track = pair((224, 229, 236), (42, 51, 61))
-    /// The disabled-control pair, and the fix for the send buttons that put a
-    /// white arrow on a `faint` disc (2.60:1, reading as an enabled button
-    /// that is badly drawn). n-100/n-500 light, n-800/n-450 dark:
-    /// `disabledInk` on `disabledFill` is 4.75:1 light / 4.58:1 dark, so a
-    /// disabled label stays readable even though it does not have to be.
-    static let disabledFill = pair((237, 241, 246), (26, 34, 43))
-    static let disabledInk = pair((98, 107, 120), (127, 138, 152))
+    /// #FBFBF9 / #0B0B0C — the site's hero canvas.
+    static let canvas = pair((251, 251, 249), (11, 11, 12))
+    /// Warm fill .10 over white / #262628.
+    static let soft = pair((242, 242, 240), (38, 38, 40))
+    /// #FFFFFF / #1C1C1E.
+    static let panel = pair((255, 255, 255), (28, 28, 30))
+    /// Slider and progress troughs: the site's fill-strong.
+    static let track = pair((227, 227, 224), (52, 52, 55))
+    /// The disabled pair: 5.19:1 light / 4.63:1 dark.
+    static let disabledFill = pair((242, 242, 240), (38, 38, 40))
+    static let disabledInk = pair((99, 102, 98), (142, 142, 147))
 
-    // MARK: - Brand — Medical Blue #1976D2 is a FILL, never a foreground
+    // MARK: - Primary action — the site's near-black capsule
 
-    /// The exact anchor, unchanged in both modes because white on it is
-    /// 4.60:1 either way. FILLS, focus rings, the 2pt active-tab rule, dots.
-    /// As text it is 4.60:1 on light panel (passing by 0.10) but 3.74:1 on
-    /// dark panel and 3.99:1 on dark canvas — both AA failures, which is why
-    /// every foreground use goes to `brandInk`.
-    static let brand = pair((25, 118, 210), (25, 118, 210))
-    /// 4.60:1 on `brand`. Zero headroom: `brand` must never be lightened.
+    /// #141414 light, #F5F5F7 dark (the capsule inverts).
+    static let action = pair((20, 20, 20), (245, 245, 247))
+    /// The radial highlight at the top of the capsule.
+    static let actionTop = pair((58, 58, 58), (255, 255, 255))
+    /// White on the light capsule (18.42), ink on the dark one (16.92).
+    static let onAction = pair((255, 255, 255), (20, 20, 20))
+
+    // MARK: - Brand — the site's sage
+
+    /// #4A663E / #5A7D4A. A FILL: outgoing message bubbles, switches,
+    /// "verified" marks, a selected answer. White on it 6.44 / 4.70.
+    static let brand = pair((74, 102, 62), (90, 125, 74))
     static let onBrand = pair((255, 255, 255), (255, 255, 255))
-    /// #1565C0 / #63A4FF. Links, active labels, brand text on paper, brand
-    /// glyphs. 5.75 / 5.35 / 5.07 on panel/canvas/soft light, 6.78 / 7.25 /
-    /// 6.34 dark, and 4.96:1 light / 5.62:1 dark on `brandTint`. The 21 sites
-    /// that pass `MP.brand` to `foregroundStyle` move here in the migration
-    /// phase; without that move dark brand text goes from today's measured
-    /// 5.92:1 to 3.99:1, an AA failure the redesign would have introduced.
-    static let brandInk = pair((21, 101, 192), (99, 164, 255))
-    /// Pressed/hover fill, and any brand surface that must carry white text:
-    /// white on it is 8.63:1 light / 5.75:1 dark. On light it is also the only
-    /// brand ink allowed on `brandTintStrong` (6.36:1, where `brandInk` is
-    /// 4.24:1). The dark half is the base anchor, as on the console.
-    static let brandDeep = pair((13, 71, 161), (25, 118, 210))
-    /// #E3F0FC / #152C43 (the 0.18 wash frozen over dark panel). 1.16:1 on
-    /// light panel. `brandInk` on it: 4.96:1 light, 5.62:1 dark.
-    static let brandTint = pair((227, 240, 252), (21, 44, 67))
-    /// #C8E0F9 / #153555 (the 0.28 wash frozen). Selected rows, chart bands,
-    /// text selection. Text on this is `ink` (13.55:1 light / 12.56:1 dark)
-    /// or, on light only, `brandDeep`. NOT `brandInk`, which is 4.24:1 here.
-    static let brandTintStrong = pair((200, 224, 249), (21, 53, 85))
-    /// Brand ink on a PRESSED tinted control (`brandTintStrong`): brandDeep
-    /// light (6.365:1), brandInk dark (4.954:1). One token because dark
-    /// brandDeep is the base anchor and would be 2.73:1 there, and light
-    /// brandInk is 4.238:1. Used by the tinted button style.
-    static let brandInkPressed = pair((13, 71, 161), (99, 164, 255))
-    /// A "reached" state mark on a `track` trough (progress dots, a filled
-    /// step): the #1976D2 fill on light (3.635:1 on track, 4.602 on panel)
-    /// but `brandInk` on dark, where the anchor is only 2.784:1 on track and
-    /// fails the 1.4.11 floor; #63A4FF is 5.054:1 on track, 6.783 on panel.
-    static let stateFill = pair((25, 118, 210), (99, 164, 255))
+    /// #3F5F33 / #B7D68A. Links, active labels, sage text and glyphs:
+    /// 7.25 / 10.53 on panel, 6.27 / 7.98 on `brandTint`.
+    static let brandInk = pair((63, 95, 51), (183, 214, 138))
+    /// Pressed fill: #334D29 / #4A663E (white 8.9 / 6.44).
+    static let brandDeep = pair((51, 77, 41), (74, 102, 62))
+    /// #E9F1E4 / #2C3428.
+    static let brandTint = pair((233, 241, 228), (44, 52, 40))
+    /// #DBE8D3 / #35402F. `brandInk` on it: 5.8 / 7.1.
+    static let brandTintStrong = pair((219, 232, 211), (53, 64, 47))
+    static let brandInkPressed = pair((51, 77, 41), (183, 214, 138))
+    /// A "reached" mark on a `track` trough (progress dots, a filled step).
+    static let stateFill = pair((74, 102, 62), (159, 214, 122))
 
-    // MARK: - Teal — one semantic slot: verified / adherent / live
+    // MARK: - Live / adherent — the site's "ok" green
 
-    /// The exact anchor. FILL and 4pt accent bars only on light, where it is
-    /// 2.74:1 on white — it fails even the 3:1 non-text bar, and white on it
-    /// is also 2.74:1, so white-on-teal is banned outright. On dark the same
-    /// hex inverts into the strong half (6.28:1 panel / 6.71 canvas / 5.87
-    /// soft) and may carry text there; `tealInk` covers both modes so no call
-    /// site has to know that.
-    static let teal = pair((0, 172, 193), (0, 172, 193))
-    /// n-950 on `teal`: 6.71:1.
-    static let onTeal = pair((14, 21, 28), (14, 21, 28))
-    /// #00707D / #5DDEF4 — the only teal allowed as text. 5.81 / 5.41 / 5.12
-    /// light, 10.82 / 11.57 / 10.11 dark.
-    static let tealInk = pair((0, 112, 125), (93, 222, 244))
-    /// Chart strokes, icon strokes, 1pt rules. #0097A7 clears 1.4.11 at
-    /// 3.51:1 on light panel; on dark the base anchor works at 6.28:1.
-    static let tealGraphic = pair((0, 151, 167), (0, 172, 193))
-    /// #DFF6F9 / #103640. `tealInk` on it: 5.17:1 light, 8.14:1 dark.
-    static let tealTint = pair((223, 246, 249), (16, 54, 64))
+    static let teal = pair((95, 127, 79), (90, 125, 74))
+    static let onTeal = pair((255, 255, 255), (255, 255, 255))
+    /// #43712F / #9FD67A: 5.77 / 10.03.
+    static let tealInk = pair((67, 113, 47), (159, 214, 122))
+    static let tealGraphic = pair((95, 127, 79), (159, 214, 122))
+    static let tealTint = pair((231, 239, 225), (45, 54, 40))
+
+    // MARK: - Accent
+
+    /// #D4F14A. Dots, "now" markers, the primary capsule's dot. Never text.
+    static let lime = Color(red: 212 / 255, green: 241 / 255, blue: 74 / 255)
 
     // MARK: - Secondary text on a tinted card
 
-    /// Secondary text (labels, meta) on `brandTint` / `tealTint` cards. This is
-    /// `body`, not `muted`: dark `muted` on `brandTint` is 4.07:1 and fails,
-    /// dark `body` there is 5.51:1; light `body` on #E3F0FC is 6.24:1.
-    /// `Card(tint:)` passes this to its secondary labels.
+    /// `body` on the briefing wash and on status tints (5.7 or better).
     static let onTintSecondary = body
 
-    // MARK: - Ambient wash
+    // MARK: - Fog — the soft colour fields behind the glass
 
-    /// The soft brand wash at the top of a tab root (a LinearGradient from
-    /// this to clear, ~320pt, behind the content). Alpha pairs .70 / .40 over
-    /// `canvas`. Its only job is to give the bars something to show. Text at
-    /// the wash peak: muted 4.76 light / 4.81 dark, body 6.37 / 6.52. Drop it
-    /// (plain `canvas`) under `colorSchemeContrast == .increased`.
-    static let ambient = pair((227, 240, 252), (21, 44, 67), lightAlpha: 0.70, darkAlpha: 0.40)
-    /// The teal half of the wash, same alphas. muted on its peak 4.86 / 4.67.
-    static let ambientTeal = pair((223, 246, 249), (16, 54, 64), lightAlpha: 0.70, darkAlpha: 0.40)
+    /// The site's --fog-1..5, strong in light, quiet in dark.
+    static let fogSage = pair((143, 174, 116), (143, 174, 116), lightAlpha: 0.42, darkAlpha: 0.16)
+    static let fogAmber = pair((236, 199, 110), (236, 199, 110), lightAlpha: 0.40, darkAlpha: 0.09)
+    static let fogClay = pair((233, 160, 125), (233, 160, 125), lightAlpha: 0.34, darkAlpha: 0.09)
+    static let fogLilac = pair((154, 163, 220), (154, 163, 220), lightAlpha: 0.36, darkAlpha: 0.15)
+    static let fogMint = pair((120, 190, 175), (120, 190, 175), lightAlpha: 0.32, darkAlpha: 0.09)
+    /// Kept for older call sites: the lilac field.
+    static let ambient = fogLilac
+    static let ambientTeal = fogMint
 
-    // MARK: - Category tiles (Health-style, NON-RISK hues only)
+    // MARK: - Glass
 
-    /// Four families for leading icon tiles: blue, teal, indigo, violet. Red,
-    /// amber and green are risk colours and never a category. Ink is the
-    /// glyph, tint the tile fill; every pair clears 4.5:1 anyway:
-    ///   blue   #1565C0 on #E3F0FC 4.96  |  #63A4FF on #152C43 5.62
-    ///   teal   #00707D on #DFF6F9 5.17  |  #5DDEF4 on #103640 8.14
-    ///   indigo #3F3DB8 on #ECEBFD 6.95  |  #A9A6FF on #24244A 6.72
-    ///   violet #7B2FA8 on #F4E9FA 6.35  |  #D7A3F5 on #33224A 7.11
-    static let catBlue = brandInk
-    static let catBlueTint = brandTint
-    static let catTeal = tealInk
-    static let catTealTint = tealTint
-    static let catIndigo = pair((63, 61, 184), (169, 166, 255))
-    static let catIndigoTint = pair((236, 235, 253), (36, 36, 74))
-    static let catViolet = pair((123, 47, 168), (215, 163, 245))
-    static let catVioletTint = pair((244, 233, 250), (51, 34, 74))
+    /// The card fill, top and bottom of its 160° gradient (the console's
+    /// --glass-card), and the light-catching rim.
+    static let glassTop = pair((255, 255, 255), (36, 36, 40), lightAlpha: 0.92, darkAlpha: 0.94)
+    static let glassBottom = pair((255, 255, 255), (28, 28, 30), lightAlpha: 0.78, darkAlpha: 0.9)
+    static let glassRim = pair((255, 255, 255), (255, 255, 255), lightAlpha: 0.85, darkAlpha: 0.06)
+    /// Solid glass, for captions on gradient tiles and floating rows.
+    static let glassSolidTop = pair((255, 255, 255), (46, 46, 50), lightAlpha: 0.95, darkAlpha: 0.96)
+    static let glassSolidBottom = pair((255, 255, 255), (34, 34, 38), lightAlpha: 0.84, darkAlpha: 0.92)
+    /// The half-point hairline around a floating surface.
+    static let glassRing = pair((20, 20, 20), (0, 0, 0), lightAlpha: 0.10, darkAlpha: 0.5)
+    /// The shadow tint for glass (ink in light, black in dark).
+    static let shadow = pair((20, 20, 20), (0, 0, 0), lightAlpha: 1, darkAlpha: 1)
+    /// The site's recessed / tinted fills.
+    static let fill = pair((120, 120, 110), (255, 255, 255), lightAlpha: 0.10, darkAlpha: 0.07)
+    static let fillStrong = pair((120, 120, 110), (255, 255, 255), lightAlpha: 0.18, darkAlpha: 0.12)
+
+    // MARK: - Icon tiles — the site's gradient glyph squares
+
+    /// The four families, named for their old slots. Hue is category, never
+    /// state:
+    ///   blue   -> amber  communication, check-ins, engagement
+    ///   teal   -> sage   activity, mobility
+    ///   indigo -> lilac  sleep, trajectory, AI
+    ///   violet -> clay   vitals, medication, wound, care plan
+    static let catBlue = pair((124, 93, 10), (243, 196, 106))
+    static let catBlueTint = pair((248, 240, 216), (62, 52, 38))
+    static let catTeal = brandInk
+    static let catTealTint = brandTint
+    static let catIndigo = pair((84, 78, 142), (179, 174, 240))
+    static let catIndigoTint = pair((236, 235, 245), (44, 43, 66))
+    static let catViolet = pair((122, 89, 70), (224, 180, 154))
+    static let catVioletTint = pair((244, 236, 231), (58, 44, 38))
 
     enum Category: CaseIterable { case blue, teal, indigo, violet }
 
-    /// Glyph colour for a category tile.
+    /// Ink for a glyph drawn in a category colour on its own (not in a tile).
     static func categoryInk(_ c: Category) -> Color {
         switch c {
         case .blue: return catBlue
@@ -248,7 +187,7 @@ enum MP {
         }
     }
 
-    /// Fill for a category tile.
+    /// A soft category fill, for the few places a flat tint is wanted.
     static func categoryTint(_ c: Category) -> Color {
         switch c {
         case .blue: return catBlueTint
@@ -257,125 +196,87 @@ enum MP {
         case .violet: return catVioletTint
         }
     }
-    // MARK: - Risk grid (re-derived; all four Material pairs were failing)
 
-    /// 5.62:1 on panel, 4.83:1 on its own tint (was #E53935 on #FFEBEE, 3.70:1).
-    static let riskHigh = pair((198, 40, 40), (255, 138, 135))
-    /// Light solid / the 0.16 wash frozen over dark panel. 5.70:1 against
-    /// `riskHigh` on dark, 4.83:1 on light.
-    static let riskHighBg = pair((251, 234, 234), (58, 46, 52))
-    /// `riskHigh` ink on a PRESSED destructive capsule (riskHigh 12% over
-    /// `riskHighBg`): deep red #8E1818 light (6.600:1), riskHigh dark
-    /// (4.587:1).
-    static let riskHighPressed = pair((142, 24, 24), (255, 138, 135))
-    /// Ink for a SOLID `riskHigh` disc or bar — the one place the two modes
-    /// need different inks rather than one token. White on #C62828 is 5.62:1,
-    /// but white on the dark half #FF8A87 is only 2.27:1, so dark flips to
-    /// n-950 (8.08:1). `onBrand` cannot cover this case, which is why the
-    /// avatar disc used to put white on a light-red fill in dark mode.
-    static let onRiskHigh = pair((255, 255, 255), (14, 21, 28))
-    /// 5.82:1 on panel, 5.17:1 on tint (was #EF6C00 on #FFF3E0, 2.81:1).
-    static let riskMed = pair((154, 83, 0), (255, 178, 92))
-    static let riskMedBg = pair((251, 240, 225), (58, 52, 45))
-    /// 5.37:1 on panel, 4.73:1 on tint (was #388E3C on #E8F5E9, 3.66:1).
-    static let riskLow = pair((27, 122, 67), (92, 209, 153))
-    static let riskLowBg = pair((230, 244, 235), (32, 57, 55))
-    /// n-600 / n-400. 7.22:1 on panel, 6.37:1 light / 5.09:1 dark on tint
-    /// (was #757575 on #EEEEEE, 3.97:1).
-    static let riskMissing = pair((78, 88, 101), (152, 162, 175))
-    static let riskMissingBg = pair((237, 241, 246), (41, 49, 58))
+    /// The gradient behind a category's tile.
+    static func categoryGradient(_ c: Category) -> MPGradient {
+        switch c {
+        case .blue: return .amber
+        case .teal: return .sage
+        case .indigo: return .lilac
+        case .violet: return .clay
+        }
+    }
 
-    // MARK: - Overlays (the light/dark inversion)
+    // MARK: - Status — the site's pills, deepened to clear AA on their tints
 
-    /// On light a sheet separates by FILL: `panel` on the scrim composite is
-    /// 6.50:1. On dark a fill cannot separate — n-800 on the scrim is 1.26:1
-    /// and n-700 only 1.58:1 — so the panel steps UP to n-700 and the 1pt
-    /// border carries the edge instead.
-    static let overlayPanel = pair((255, 255, 255), (42, 51, 61))
-    /// n-460 / n-425. On dark this IS the modal edge: 4.22:1 on
-    /// `overlayPanel` and 6.69:1 against the scrim composite. On light it is
-    /// 3.83:1 on white and merely reinforces a fill that already separates.
-    static let overlayBorder = pair((122, 131, 144), (139, 149, 163))
-    /// Black at 62% light / 70% dark, and deliberately NOT `ink`, which
-    /// inverts to #FFFFFF in dark and would brighten the page behind the
-    /// sheet. Light composites to #5D5E5F over canvas; dark to #040608.
-    static let scrim = pair((0, 0, 0), (0, 0, 0), lightAlpha: 0.62, darkAlpha: 0.70)
+    /// high #B04A26 on #FBECE6 4.73 | #FF9477 on #402B28 6.12
+    static let riskHigh = pair((176, 74, 38), (255, 148, 119))
+    static let riskHighBg = pair((251, 236, 230), (64, 43, 40))
+    static let riskHighPressed = pair((140, 56, 26), (255, 148, 119))
+    /// Ink for a SOLID `riskHigh` fill: white light (5.45), ink dark.
+    static let onRiskHigh = pair((255, 255, 255), (20, 20, 20))
+    /// med #7C5D0A on #F8F0D8 5.38 | #F3C46A on #3E3426 7.49
+    static let riskMed = pair((124, 93, 10), (243, 196, 106))
+    static let riskMedBg = pair((248, 240, 216), (62, 52, 38))
+    /// low #43712F on #E7EFE1 4.90 | #9FD67A on #2D3628 7.41
+    static let riskLow = pair((67, 113, 47), (159, 214, 122))
+    static let riskLowBg = pair((231, 239, 225), (45, 54, 40))
+    /// missing #4C5680 on #E8EAF3 5.93 | #AAB3E6 on #303240 6.22
+    static let riskMissing = pair((76, 86, 128), (170, 179, 230))
+    static let riskMissingBg = pair((232, 234, 243), (48, 50, 64))
 
-    // MARK: - Charts (categorical caps at 2 series)
+    // MARK: - Overlays
 
-    /// Series 1, solid stroke. 4.60:1 on light panel / 6.78:1 dark.
-    static let chartS1 = pair((25, 118, 210), (99, 164, 255))
-    /// Series 2 — and the 4-2 dash plus a direct end-of-line label are
-    /// MANDATORY, not decorative: s1-vs-s2 separation is only 1.26:1 light
-    /// and 1.60:1 dark, so colour alone does not distinguish them. There is
-    /// no series 3: 3+ series uses `chartSeq`.
-    static let chartS2 = pair((0, 112, 125), (93, 222, 244))
-    /// Single-hue sequential ramp for 3+ series, heatmaps and bands. Adjacent
-    /// steps are 1.56 / 1.85 / 1.72 / 1.50 light and 2.48 / 1.72 / 1.85 /
-    /// 1.48 dark, so neighbours stay separable; dark runs dark-to-light. The
-    /// lowest light step is 1.16:1 on panel, so a sequential cell always
-    /// takes a `line` stroke or an empty cell and a low cell are one pixel.
+    static let overlayPanel = pair((255, 255, 255), (36, 36, 40))
+    static let overlayBorder = pair((222, 222, 222), (58, 58, 61))
+    /// The site's dialog backdrop: warm and light.
+    static let scrim = pair((30, 30, 25), (0, 0, 0), lightAlpha: 0.34, darkAlpha: 0.55)
+
+    // MARK: - Charts (sage and lilac; the dash and label carry identity)
+
+    static let chartS1 = pair((74, 102, 62), (183, 214, 138))
+    static let chartS2 = pair((84, 78, 142), (179, 174, 240))
     static let chartSeq: [Color] = [
-        pair((227, 240, 252), (13, 44, 74)),
-        pair((156, 197, 238), (21, 101, 192)),
-        pair((74, 144, 217), (74, 144, 217)),
-        pair((21, 101, 192), (156, 197, 238)),
-        pair((13, 71, 161), (220, 234, 251)),
+        pair((238, 243, 233), (44, 52, 40)),
+        pair((207, 224, 194), (63, 90, 51)),
+        pair((157, 189, 134), (95, 127, 79)),
+        pair((95, 127, 79), (143, 180, 111)),
+        pair((63, 95, 51), (197, 224, 155)),
     ]
-    /// n-200 / n-700. 1.27:1 light / 1.34:1 dark on panel. Increase Contrast:
-    /// n-460 light (-> 3.83:1), n-425 dark (-> 5.67:1).
-    static let chartGrid = pair((224, 229, 236), (42, 51, 61),
-                                lightHigh: (122, 131, 144), darkHigh: (139, 149, 163))
-    /// n-500 / n-450, 5.39:1 light / 4.91:1 dark on panel. Axis labels are
-    /// text; they never take `faint`, which was 2.59:1 under them.
-    static let chartAxisLabel = pair((98, 107, 120), (127, 138, 152))
-    /// n-400 / n-475, dashed, non-text. 3.63:1 on dark panel.
-    static let chartRefLine = pair((152, 162, 175), (107, 116, 128))
+    static let chartGrid = pair((236, 236, 236), (44, 44, 47),
+                                lightHigh: (138, 140, 136), darkHigh: (120, 120, 125))
+    static let chartAxisLabel = pair((99, 102, 98), (142, 142, 147))
+    static let chartRefLine = pair((138, 140, 136), (120, 120, 125))
 
-    // MARK: - Radii
+    // MARK: - Radii — the site's
 
-    /// Sheets, cards, grouped lists — anything that holds content. 20pt,
-    /// continuous (was 12). The console's `--r-surface` is the same 20.
-    static let radiusSurface: CGFloat = 20
-    /// Fields, grey metric tiles, segmented tracks, menus. 12pt (was 10).
-    /// Buttons and pills are NOT this: they are capsules.
-    static let radiusControl: CGFloat = 12
-    /// Compact controls and a segmented thumb inside a 12pt track with 2pt
-    /// padding (12 - 2 = 10). Console `--r-control-sm`.
-    static let radiusThumb: CGFloat = 10
-    /// The 30pt leading category tile. 8/30 = 0.27, near Apple's 0.22.
-    /// Console `--r-tile`.
-    static let radiusTile: CGFloat = 8
+    /// Cards and tiles: 26pt continuous.
+    static let radiusSurface: CGFloat = 26
+    /// Inner rows, menus, the check-in scale cells: 18.
+    static let radiusControl: CGFloat = 18
+    /// Fields and compact controls: 14.
+    static let radiusThumb: CGFloat = 14
+    /// The 30pt icon tile: 9.
+    static let radiusTile: CGFloat = 9
+    /// The fog canvas and big panels: 34.
+    static let radiusCanvas: CGFloat = 34
 
     /// The separator between two facts: "Day 8 · Total Knee Replacement".
-    /// Instrument Sans draws "·" 0.103em wide with no sidebearings, so plain
-    /// spaces leave it 0.200em from each word and it crowds them. The face has
-    /// no thin space, so iOS takes U+2009 from San Francisco (0.103em), which
-    /// brings each side to 0.303em. Retell's Untitled Sans gets 0.304em from
-    /// space plus sidebearing.
+    /// Outfit draws "·" 0.13em wide with no sidebearings, so the dot is held
+    /// off each word by a thin space (Outfit has none; iOS takes U+2009 from
+    /// San Francisco).
     static let dot = " \u{2009}·\u{2009} "
-    /// The same dot opening a trailing fact inside an HStack, where the stack's
-    /// own spacing already sits to its left: "· done by text".
+    /// The same dot opening a trailing fact inside an HStack.
     static let dotLead = "·\u{2009} "
-    // `cardRadius` and `buttonRadius` are DELETED. The doc comment here used
-    // to name six surviving call sites in CheckinView and OnboardingFlow; all
-    // six now use `surfaceShape`/`controlShape`, so a live-code scan of ios/
-    // finds ZERO references to either name (any hit a grep still returns is
-    // prose describing the migration). They had already gone before this deletion, so no
-    // deprecation warning was firing — the names were simply unreachable.
 
-    /// Always `.continuous`. `.circular` is the iOS 6 corner and reads as a
-    /// different product next to a system sheet; the app has exactly one
-    /// non-continuous corner left (Components.swift's ErrorBanner) and it is
-    /// visible at r=10 across its instances.
+    /// Always `.continuous`.
     static let surfaceShape = RoundedRectangle(cornerRadius: radiusSurface, style: .continuous)
     static let controlShape = RoundedRectangle(cornerRadius: radiusControl, style: .continuous)
     static let thumbShape = RoundedRectangle(cornerRadius: radiusThumb, style: .continuous)
     static let tileShape = RoundedRectangle(cornerRadius: radiusTile, style: .continuous)
-    /// Every button and pill. Same shape as `pillShape`, named for buttons.
+    static let canvasShape = RoundedRectangle(cornerRadius: radiusCanvas, style: .continuous)
+    /// Every button and pill.
     static let capsuleShape = Capsule(style: .continuous)
-    /// A pill is a Capsule, not a large radius — a 999pt rectangle and a
-    /// capsule diverge the moment the element is taller than it is wide.
     static let pillShape = Capsule(style: .continuous)
 
     enum Tone { case low, med, high, missing, brand }
@@ -395,8 +296,6 @@ enum MP {
         case .med: return riskMed
         case .high: return riskHigh
         case .missing: return riskMissing
-        // This helper is by definition a foreground, so brand resolves to
-        // brandInk: #1976D2 is 3.74:1 on dark panel.
         case .brand: return brandInk
         }
     }
@@ -412,44 +311,94 @@ enum MP {
     }
 }
 
+// MARK: - Typesetting
+
+extension String {
+    /// Straight apostrophes turned into typographic ones for display. Server
+    /// copy keeps plain ones because it is also sent by text, where a curly
+    /// apostrophe can push a message into a costlier encoding.
+    var typeset: String {
+        replacingOccurrences(of: "(\\w)'(\\w)", with: "$1\u{2019}$2", options: .regularExpression)
+    }
+}
+
+// MARK: - Gradients
+
+/// The site's grainy gradient tiles: dark at the top, where white text sits
+/// (every top stop is 5.6:1 or better against white, 7.1 or better under the
+/// tile scrim), light at the bottom, where art and solid-glass captions sit.
+/// The same in both modes.
+enum MPGradient: CaseIterable {
+    case sage, meadow, amber, clay, dusk, lilac, mint
+
+    private static func c(_ r: Double, _ g: Double, _ b: Double) -> Color {
+        Color(red: r / 255, green: g / 255, blue: b / 255)
+    }
+
+    var stops: [Gradient.Stop] {
+        switch self {
+        case .sage: return [.init(color: Self.c(64, 90, 54), location: 0), .init(color: Self.c(95, 125, 76), location: 0.52), .init(color: Self.c(174, 191, 135), location: 1)]
+        case .meadow: return [.init(color: Self.c(63, 87, 53), location: 0), .init(color: Self.c(88, 117, 72), location: 0.42), .init(color: Self.c(138, 165, 106), location: 0.78), .init(color: Self.c(184, 185, 119), location: 1)]
+        case .amber: return [.init(color: Self.c(125, 100, 32), location: 0), .init(color: Self.c(168, 140, 53), location: 0.42), .init(color: Self.c(205, 180, 106), location: 1)]
+        case .clay: return [.init(color: Self.c(122, 89, 70), location: 0), .init(color: Self.c(162, 122, 100), location: 0.48), .init(color: Self.c(201, 168, 147), location: 1)]
+        case .dusk: return [.init(color: Self.c(154, 90, 57), location: 0), .init(color: Self.c(168, 128, 122), location: 0.42), .init(color: Self.c(107, 127, 160), location: 1)]
+        case .lilac: return [.init(color: Self.c(64, 69, 127), location: 0), .init(color: Self.c(84, 78, 142), location: 0.62), .init(color: Self.c(128, 107, 140), location: 1)]
+        case .mint: return [.init(color: Self.c(63, 127, 116), location: 0), .init(color: Self.c(120, 187, 168), location: 0.5), .init(color: Self.c(212, 224, 166), location: 1)]
+        }
+    }
+
+    /// The warm glow that pools at the bottom of some tiles.
+    var glow: (Color, UnitPoint)? {
+        switch self {
+        case .sage: return (Self.c(230, 219, 124), UnitPoint(x: 0.5, y: 1.08))
+        case .meadow: return (Self.c(217, 207, 126), UnitPoint(x: 0.7, y: 1.1))
+        case .amber: return (Self.c(238, 194, 122), UnitPoint(x: 0.25, y: 1.0))
+        case .clay: return (Self.c(227, 170, 102), UnitPoint(x: 0.3, y: 1.0))
+        default: return nil
+        }
+    }
+
+    /// The top stop, for anything that needs one flat colour of the family.
+    var top: Color { stops[0].color }
+}
+
 // MARK: - Motion
 
-/// THE APP'S ONE MOTION VOCABULARY. Every duration in the app lives here.
+/// THE APP'S ONE MOTION VOCABULARY — the site's. Every duration lives here.
 ///
-/// Rules: 150-350ms, `easeOut` entering, `easeIn` leaving. Springs are
-/// allowed for controls and layout only (`press`, `layout`), are critically
-/// damped (no visible overshoot), and never move a clinical number — a
-/// number changes with `.contentTransition(.numericText())` gated here. SwiftUI does NOT honour `accessibilityReduceMotion` for
-/// explicit animations — `.animation(_:value:)` and `withAnimation` run
-/// regardless — so a call site reads the environment value and goes through
+/// The site moves with two curves: an ease (cubic-bezier .2, .8, .2, 1) for
+/// entrances and colour, and a spring with a small overshoot for buttons,
+/// tabs and chips. Entrances are opacity plus a short rise, never a blur.
+/// Loops (drifting fog, a light travelling a line, breathing bars) are
+/// transform-only and stop under Reduce Motion.
+///
+/// SwiftUI does NOT honour `accessibilityReduceMotion` for explicit
+/// animations, so a call site reads the environment value and goes through
 /// `MPMotion.gated(_:reduceMotion:)` (nil: no animation) or
 /// `MPMotion.transition(reduceMotion:)` (a 150ms cross-fade instead).
-///
-/// Glass.swift carries no motion of its own; its old private copies were
-/// deleted, so this enum is the only place a duration is written.
 enum MPMotion {
-    /// 150ms ease-out. The reduce-motion substitute: a cross-fade at the
-    /// bottom of the band.
+    /// The site's ease, as a timing curve.
+    static func ease(_ duration: Double) -> Animation {
+        .timingCurve(0.2, 0.8, 0.2, 1, duration: duration)
+    }
+    /// 150ms ease-out. The reduce-motion substitute.
     static let crossFade = Animation.easeOut(duration: 0.15)
-    /// 180ms ease-out. A step within a screen (the check-in questions).
-    static let step = Animation.easeOut(duration: 0.18)
-    /// 180ms ease-in. Leaving.
+    /// A step within a screen (the check-in questions).
+    static let step = ease(0.32)
+    /// Leaving.
     static let exit = Animation.easeIn(duration: 0.18)
-    /// 200ms ease-out. A small state change (step dots, a toggle's knock-on).
-    static let state = Animation.easeOut(duration: 0.2)
-    /// 240ms ease-out. Entering — a step advancing, a surface appearing.
-    static let enter = Animation.easeOut(duration: 0.24)
-    /// 250ms ease-out. A completion state settling in (check-in sent).
-    static let settle = Animation.easeOut(duration: 0.25)
-    /// 280ms ease-out. A morph between two shapes. Top of the band, because
-    /// a morph that is too quick reads as a glitch rather than a move.
-    static let morph = Animation.easeOut(duration: 0.28)
-    /// 250ms snappy spring, no bounce. A control reacting to a press: the 0.97
-    /// scale on a capsule button or chip.
-    static let press = Animation.snappy(duration: 0.25)
-    /// 350ms smooth spring, no bounce. A layout change: a card expanding, a
-    /// row inserting, a done-state settling.
-    static let layout = Animation.smooth(duration: 0.35)
+    /// A small state change (step dots, a toggle's knock-on).
+    static let state = ease(0.25)
+    /// Entering — a surface appearing: 600ms on the site's ease.
+    static let enter = ease(0.6)
+    /// A completion state settling in (check-in sent).
+    static let settle = Animation.spring(response: 0.45, dampingFraction: 0.72)
+    /// A morph between two shapes.
+    static let morph = ease(0.36)
+    /// The site's spring: buttons, chips, thumbs. A small overshoot.
+    static let press = Animation.spring(response: 0.32, dampingFraction: 0.68)
+    /// A layout change: a card expanding, a row inserting.
+    static let layout = Animation.spring(response: 0.42, dampingFraction: 0.82)
     /// The press scale, and 1 (no scale) under Reduce Motion.
     static func pressScale(_ isPressed: Bool, reduceMotion: Bool) -> CGFloat {
         (isPressed && !reduceMotion) ? 0.97 : 1
@@ -536,8 +485,8 @@ enum MPSize {
 ///
 /// WHY THIS EXISTS. Measured on the iOS 26 simulator with ImageRenderer:
 /// SwiftUI applies `legibilityWeight == .bold` to San Francisco (595 -> 631pt
-/// for the same string) but NOT to `Font.custom` — Instrument Sans stayed at
-/// 651pt with Bold Text on, with or without `.weight(_:)`. So the app has to
+/// for the same string) but NOT to `Font.custom` — a bundled face keeps its
+/// width with Bold Text on, with or without `.weight(_:)`. So the app has to
 /// swap the file itself, and it has to do it at render time: a `static let`
 /// font is evaluated once, and rebuilding the tree with `.id` would throw away
 /// a half-answered check-in.
@@ -563,10 +512,8 @@ final class MPLegibility {
 /// the font alone for sites that only take a `Font`.
 ///
 /// Tracking (points at the default size, scaled with the rung by
-/// `@ScaledMetric`): label 0, copy -0.15, copyLarge -0.32, lede -0.47,
-/// subhead -0.44, displayS -0.62, displayM/largeTitle -0.83, displayL -1.21,
-/// displayXL -1.6. These are the console's --track-* rungs in points;
-/// Instrument Sans wants negative tracking at size, not SF Display's positive.
+/// `@ScaledMetric`) is the site's, in points: body barely closes, titles
+/// close, display type closes hard (-0.04em to -0.05em).
 struct MPType {
     let size: CGFloat
     let weight: Font.Weight
@@ -600,19 +547,18 @@ struct MPType {
     static let subhead = MPType(MPSize.subhead)
     static let subheadMedium = MPType(MPSize.subhead, .medium)
     static let subheadSemibold = MPType(MPSize.subhead, .semibold)
-    static let displayS = MPType(MPSize.displayS, .semibold, style: .largeTitle)
-    static let displayM = MPType(MPSize.displayM, .semibold, style: .largeTitle)
-    static let displayL = MPType(MPSize.displayL, .semibold, style: .largeTitle)
-    static let displayXL = MPType(MPSize.displayXL, .semibold, style: .largeTitle)
+    static let displayS = MPType(MPSize.displayS, .light, style: .largeTitle)
+    static let displayM = MPType(MPSize.displayM, .light, style: .largeTitle)
+    static let displayL = MPType(MPSize.displayL, .light, style: .largeTitle)
+    static let displayXL = MPType(MPSize.displayXL, .light, style: .largeTitle)
 }
 
 extension Font {
     /// The app's typeface, in one place so the face is one edit.
     ///
-    /// Instrument Sans (SIL OFL 1.1), bundled at 400, 500 and 600, plus 700
-    /// which is ONLY the Bold Text substitute for 600. It is the stand-in for
-    /// the console's unlicensed reference face on both surfaces; the console
-    /// loads the same cuts as woff2.
+    /// Outfit (SIL OFL 1.1), the medpull.org face, bundled at 200, 300, 400
+    /// and 500, plus 600 which is ONLY the Bold Text step for 500. The
+    /// console loads the same family as a variable woff2.
     ///
     /// Scales with Dynamic Type relative to the text style its size maps to
     /// (12 caption, 14 subheadline, 16 callout, 18 body, 20 title3, 28 title,
@@ -667,40 +613,36 @@ extension Font {
 
     // MARK: - The display band (fluid)
 
-    /// Display sizes scale from `.largeTitle`. The default weight is now 600
-    /// (was 500): titles are the one place the app raises its voice.
+    /// Display sizes scale from `.largeTitle`, in the site's light display
+    /// weight (300): big type stays quiet and lets size carry it.
     ///
     /// It does not clamp: `display(20)` would be a 20pt fluid font, which is
     /// a bug, not a size. Name a rung instead.
-    static func display(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+    static func display(_ size: CGFloat, weight: Font.Weight = .light) -> Font {
         .custom(MPFont.name(for: weight), size: size, relativeTo: .largeTitle)
     }
 
-    /// 28pt / 600, fluid. Screen titles.
+    /// 28pt / 300, fluid. Screen titles.
     static var displayS: Font { .display(MPSize.displayS) }
-    /// 34pt / 600, fluid.
+    /// 34pt / 300, fluid.
     static var displayM: Font { .display(MPSize.displayM) }
-    /// 44pt / 600, fluid.
+    /// 44pt / 300, fluid.
     static var displayL: Font { .display(MPSize.displayL) }
-    /// 54pt / 600, fluid. Guard it with `.lineLimit(1).minimumScaleFactor(0.7)`.
+    /// 54pt / 300, fluid. Guard it with `.lineLimit(1).minimumScaleFactor(0.7)`.
     static var displayXL: Font { .display(MPSize.displayXL) }
     // `Font.largeTitle` / `MPType.largeTitle` (aliases of displayM) are
     // DELETED: zero users, and the Font one shadowed the system's own
-    // `Font.largeTitle`, so `.font(.largeTitle)` silently meant Instrument
-    // Sans 34 instead of the system style. Use `.displayM`.
+    // `Font.largeTitle`. Use `.displayM`.
 
     // MARK: - Figures
 
     /// Numbers that have to line up: portfolio values, the recovery stats,
     /// the pain readout, an avatar's initials.
     ///
-    /// `.custom(…, relativeTo:).monospacedDigit()` switches Instrument Sans's
-    /// `tnum` on AND scales with Dynamic Type. Measured on the iOS 26
-    /// simulator at 20pt: "1111111111" and "0000000000" both render 121pt wide
-    /// (120/121 for Medium; proportional they are 77 vs 136), and at AX5 both
-    /// 312pt. So the old fixed-size UIFontDescriptor path is gone, and a
-    /// readout now grows with the patient's text size: guard one-line
-    /// readouts with `.lineLimit(1).minimumScaleFactor(0.7)`.
+    /// `.custom(…, relativeTo:).monospacedDigit()` switches Outfit's `tnum` on
+    /// AND scales with Dynamic Type, so a readout grows with the patient's
+    /// text size: guard one-line readouts with
+    /// `.lineLimit(1).minimumScaleFactor(0.7)`.
     static func figures(_ size: CGFloat, weight: Font.Weight = .regular,
                         relativeTo style: Font.TextStyle? = nil) -> Font {
         Font.mp(size, weight: weight, relativeTo: style).monospacedDigit()
@@ -718,64 +660,60 @@ extension Font {
     static var figuresSubhead: Font { .figures(MPSize.subhead, weight: .medium) }
     /// 20pt figures / 600, a stat in a summary card.
     static var figuresSubheadSemibold: Font { .figures(MPSize.subhead, weight: .semibold) }
-    /// A display-band readout, such as the pain-scale number. 600, and scaled
-    /// on the `.largeTitle` curve.
-    static func figuresDisplay(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+    /// A display-band readout, such as the pain-scale number: the site's big
+    /// light number, scaled on the `.largeTitle` curve.
+    static func figuresDisplay(_ size: CGFloat, weight: Font.Weight = .light) -> Font {
         figures(size, weight: weight, relativeTo: .largeTitle)
     }
 
-    /// GLYPHS INSTRUMENT SANS DOES NOT HAVE. Its cmap has no U+00B1 `±`, no
-    /// U+00B5 `µ`, no U+03BC `μ`, and no `≥`/`≤`/`′`/`″`. iOS has no
-    /// unicode-range, so those fall back to San Francisco one glyph at a time,
-    /// at a different width. A string that must carry one should use this, so
-    /// the whole string is San Francisco and the faces cannot mix mid-number.
-    /// (It does have `°`, `×`, `·`, `–`, `−`, `—`, `→`, `’` and `…`.) San
-    /// Francisco follows Bold Text on its own.
+    /// GLYPHS OUTFIT DOES NOT HAVE: `≥`, `≤`, `≈`, `′`, `″` and the thin
+    /// spaces. iOS has no unicode-range, so those fall back to San Francisco
+    /// one glyph at a time. A string that must carry one can use this, so the
+    /// whole string is San Francisco. (Outfit does have `±`, `µ`, `°`, `×`,
+    /// `·`, `–`, `−`, `—`, `’` and `…`.) San Francisco follows Bold Text on
+    /// its own.
     static func systemGlyphs(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: MPFont.systemWeight(for: weight)).monospacedDigit()
     }
 }
 
 enum MPFont {
-    /// The typographic family name. The Medium and SemiBold files carry
-    /// "Instrument Sans Medium"/"… SemiBold" as name ID 1 (the RIBBI split,
-    /// with 16/17 = "Instrument Sans"/weight), so this resolves the Regular
-    /// only — never pass it to `Font.custom`. CoreText does group all four
-    /// files under it (`UIFont.fontNames(forFamilyName:)` lists all four),
-    /// which is why `.fontWeight(.semibold)` on an `.mp` font now lands on
-    /// the real SemiBold file (measured 668pt, same as naming it).
-    static let family = "Instrument Sans"
+    /// The typographic family name. Never pass it to `Font.custom`: each
+    /// static file carries its own PostScript name, listed below.
+    static let family = "Outfit"
 
     /// PostScript names — what `Font.custom` and `UIFont(name:size:)` match
-    /// on. Read back from the bundled files with fontTools AND resolved on the
-    /// simulator via `UIFont(name:size:)?.fontName`.
-    static let regular = "InstrumentSans-Regular"
-    static let medium = "InstrumentSans-Medium"
-    /// Static wght=600, wdth=100 instance of the variable master.
-    static let semibold = "InstrumentSans-SemiBold"
-    /// Static wght=700 instance. Bold Text substitute for 600 ONLY.
-    static let bold = "InstrumentSans-Bold"
+    /// on, read back from the bundled files with fontTools.
+    static let extraLight = "Outfit-ExtraLight"
+    static let light = "Outfit-Light"
+    static let regular = "Outfit-Regular"
+    static let medium = "Outfit-Medium"
+    /// Static wght=600. The Bold Text step for 500 ONLY; the design never
+    /// asks for 600.
+    static let semibold = "Outfit-SemiBold"
 
     /// The live Bold Text state. Written by `mpLegibilityBridge()`, seeded at
     /// launch from `UIAccessibility.isBoldTextEnabled`.
     static let live = MPLegibility()
 
-    /// Three weights ship, and Bold Text moves each up one file:
+    /// The site never sets UI type heavier than 500, so every weight maps
+    /// onto the five files, and Bold Text moves each up one:
     ///
-    ///     asked          normal      Bold Text
-    ///     ≤ regular      Regular     Medium
-    ///     medium         Medium      SemiBold
-    ///     semibold+      SemiBold    Bold
+    ///     asked          normal       Bold Text
+    ///     ultraLight/thin ExtraLight  Light
+    ///     light          Light        Regular
+    ///     regular        Regular      Medium
+    ///     medium+        Medium       SemiBold
     ///
-    /// Anything heavier than semibold maps to SemiBold: 700 is not a weight
-    /// the design uses, only the Bold Text step. Mapping (rather than naming a
-    /// file per weight) matters because `Font.custom` with a name that does
-    /// not resolve falls back to San Francisco silently.
+    /// Mapping (rather than naming a file per weight) matters because
+    /// `Font.custom` with a name that does not resolve falls back to San
+    /// Francisco silently.
     static func name(for weight: Font.Weight, bold: Bool) -> String {
         switch weight {
-        case .ultraLight, .thin, .light, .regular: return bold ? medium : regular
-        case .medium: return bold ? semibold : medium
-        default: return bold ? self.bold : semibold
+        case .ultraLight, .thin: return bold ? light : extraLight
+        case .light: return bold ? regular : light
+        case .regular: return bold ? medium : regular
+        default: return bold ? semibold : medium
         }
     }
 
@@ -785,13 +723,14 @@ enum MPFont {
         name(for: weight, bold: live.isBold)
     }
 
-    /// The ceiling for the `.system` path: 600, matching the bundled files.
-    /// San Francisco applies Bold Text itself, so no bump here.
+    /// The `.system` path, matched to the bundled files (500 is the
+    /// ceiling). San Francisco applies Bold Text itself, so no bump here.
     static func systemWeight(for weight: Font.Weight) -> Font.Weight {
         switch weight {
-        case .ultraLight, .thin, .light, .regular: return .regular
-        case .medium: return .medium
-        default: return .semibold
+        case .ultraLight, .thin: return .ultraLight
+        case .light: return .light
+        case .regular: return .regular
+        default: return .medium
         }
     }
 
@@ -829,14 +768,14 @@ enum MPFont {
     static func kerning(for size: CGFloat) -> CGFloat {
         switch size {
         case ..<13: return 0
-        case ..<15: return -0.15
-        case ..<17: return -0.32
-        case ..<19: return -0.47
-        case ..<28: return -0.44
-        case ..<34: return -0.62
-        case ..<44: return -0.83
-        case ..<54: return -1.21
-        default: return -1.6
+        case ..<15: return -0.06
+        case ..<17: return -0.1
+        case ..<19: return -0.18
+        case ..<28: return -0.4
+        case ..<34: return -1.1
+        case ..<44: return -1.4
+        case ..<54: return -2.0
+        default: return -2.7
         }
     }
 
@@ -848,7 +787,7 @@ enum MPFont {
                        maximumPointSize: CGFloat? = nil) -> UIFont {
         let file = name(for: weight, bold: UIAccessibility.isBoldTextEnabled)
         let base = UIFont(name: file, size: size)
-            ?? .systemFont(ofSize: size, weight: weight == .regular ? .regular : .semibold)
+            ?? .systemFont(ofSize: size, weight: weight == .regular ? .regular : .medium)
         let metrics = UIFontMetrics(forTextStyle: style)
         if let cap = maximumPointSize {
             return metrics.scaledFont(for: base, maximumPointSize: cap)
@@ -867,13 +806,12 @@ enum MPFont {
     /// is a surface whose contrast and Reduce Transparency behaviour we would
     /// then own by hand.
     ///
-    /// Large title: 34pt / 600, kern -0.83, on the `.largeTitle` curve.
-    /// Inline title: 17pt / 600, kern -0.4, on the `.headline` curve (17 is
+    /// Large title: 34pt / 300, kern -1.4, on the `.largeTitle` curve (the
+    /// site's light display type). Inline title: 17pt / 500, kern -0.3, on
+    /// the `.headline` curve (17 is
     /// the system bar size, and the one off-ladder number the app keeps,
     /// because it has to match the system back button beside it), capped at
-    /// 22pt. Verified on the iOS 26 simulator: a NavigationStack large title
-    /// renders in Instrument Sans SemiBold through these proxies, 34pt at the
-    /// default size and 58pt at AX5.
+    /// 22pt.
     ///
     /// DYNAMIC TYPE AND BOLD TEXT. A proxy's attributes are copied into a bar
     /// when the bar is created, and UIFontMetrics scales to the content size
@@ -887,15 +825,15 @@ enum MPFont {
     /// does not wrap, it truncates — use `mpNavigationTitle(_:short:)`.
     @MainActor
     static func applyUIKitAppearance() {
-        let large = uiFont(MPSize.displayM, .semibold, style: .largeTitle)
+        let large = uiFont(MPSize.displayM, .light, style: .largeTitle)
         // The system inline title barely grows with text size; uncapped, the
         // headline curve took it to 48pt at AX5 (measured) and the bar with it.
-        let inline = uiFont(17, .semibold, style: .headline, maximumPointSize: 22)
+        let inline = uiFont(17, .medium, style: .headline, maximumPointSize: 22)
         let largeAttrs: [NSAttributedString.Key: Any] = [
-            .font: large, .kern: -0.83 * large.pointSize / MPSize.displayM,
+            .font: large, .kern: -1.4 * large.pointSize / MPSize.displayM,
         ]
         let inlineAttrs: [NSAttributedString.Key: Any] = [
-            .font: inline, .kern: -0.4 * inline.pointSize / 17,
+            .font: inline, .kern: -0.3 * inline.pointSize / 17,
         ]
         let navProxy = UINavigationBar.appearance()
         navProxy.largeTitleTextAttributes = largeAttrs
@@ -1001,12 +939,8 @@ extension View {
 
     /// The console's `.micro` eyebrow: uppercase, tracked out, muted.
     ///
-    /// Real capitals, not small caps — Instrument Sans has no `smcp` in its
-    /// GSUB (it carries `case`, `tnum` and ss01-ss12), so
-    /// `.textCase(.uppercase)` is the whole mechanism. Tracking is the
-    /// console's `--track-eyebrow` +0.06em, which at 12pt is 0.72pt.
-    ///
-    /// 12pt, `muted` (5.39:1 light / 4.91:1 dark on panel), never `faint`.
+    /// Real capitals (`.textCase(.uppercase)`), tracked +0.06em, which at
+    /// 12pt is 0.72pt. 12pt, `muted`, never `faint`.
     /// ONE PER SCREEN: that is the uppercase budget.
     func eyebrow() -> some View {
         self.font(.labelMedium)
@@ -1015,10 +949,9 @@ extension View {
             .foregroundStyle(MP.muted)
     }
 
-    /// A display-band title: fluid, `ink`, wraps freely, tracked per rung.
-    /// 600 by default (was 500); pass `weight: .medium` to keep a line at the
-    /// old voice. Pass `MPSize` values, not literals.
-    func title(_ size: CGFloat = MPSize.displayS, weight: Font.Weight = .semibold) -> some View {
+    /// A display-band title: fluid, `ink`, wraps freely, tracked per rung, in
+    /// the site's light display weight. Pass `MPSize` values, not literals.
+    func title(_ size: CGFloat = MPSize.displayS, weight: Font.Weight = .light) -> some View {
         self.mpFont(MPType(size, weight, style: .largeTitle))
             .foregroundStyle(MP.ink)
             .fixedSize(horizontal: false, vertical: true)

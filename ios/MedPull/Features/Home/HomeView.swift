@@ -23,11 +23,11 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    header
-                    if let me = app.me { recoveryCard(me) }
-                    portfolioCard
-                    todayCard
-                    quickRow
+                    header.mpRise(0)
+                    if let me = app.me { recoveryCard(me).mpRise(1) }
+                    portfolioCard.mpRise(2)
+                    todayCard.mpRise(3)
+                    quickRow.mpRise(4)
                     if let me = app.me, !me.wearables.appleHealth.connected, me.features.appleHealth {
                         healthNudge
                     }
@@ -52,7 +52,7 @@ struct HomeView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text("Home")
-                        .font(.mp(17, weight: .semibold, relativeTo: .headline))
+                        .font(.mp(17, weight: .medium, relativeTo: .headline))
                         .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                         .foregroundStyle(MP.ink)
                         .opacity(greetingGone ? 1 : 0)
@@ -81,10 +81,8 @@ struct HomeView: View {
     }
 
     /// The MedPull lockup on the leading side of the same row as the avatar,
-    /// so the bar reads as one row (mark, wordmark ... avatar) instead of a
-    /// lone disc over empty space. The mark is the web bar's vector logo;
-    /// its fills clear 3:1 on canvas and panel in both modes (3.11 / 5.50
-    /// for the lightest, #4a90d9). The wordmark is `ink` (18.38 / 17.19).
+    /// so the bar reads as one row (mark, wordmark ... avatar): the site's
+    /// white app-icon tile with the mark, then the wordmark in `ink`.
     @ToolbarContentBuilder private var brandItem: some ToolbarContent {
         if #available(iOS 26, *) {
             ToolbarItem(placement: .topBarLeading) { brandLockup }
@@ -95,13 +93,20 @@ struct HomeView: View {
     }
 
     private var brandLockup: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 9) {
+            // The site's app-icon tile: the mark on white.
             Image("MedPullMark")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 26, height: 24)
+                .frame(width: 21, height: 21)
+                .frame(width: 30, height: 30)
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.white)
+                    .shadow(color: .black.opacity(0.08), radius: 1, y: 1))
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
             Text("MedPull")
-                .font(.mp(17, weight: .semibold, relativeTo: .headline))
+                .font(.mp(19, weight: .medium, relativeTo: .headline))
+                .kerning(-0.5)
                 .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                 .foregroundStyle(MP.ink)
                 .fixedSize()
@@ -116,8 +121,7 @@ struct HomeView: View {
 
     private var avatarButton: some View {
         Button { showProfile = true } label: {
-            // `.high` fills riskHigh with onRiskHigh initials (5.622 / 8.084);
-            // every other tone is the brand disc (4.602) or a soft disc (R1).
+            // The gradient avatar; `.high` is the clay disc.
             Initials(text: app.me?.patient.initials ?? "··", size: 36,
                      tone: avatarTone)
                 .frame(width: 44, height: 44)
@@ -136,21 +140,21 @@ struct HomeView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // The patient likes this at its shipped size and weight (R6).
+            // The site's display type: large and light, two lines (R6).
             Text(greeting)
-                .title(MPSize.displayS, weight: .medium)
+                .title(MPSize.displayM)
                 .accessibilityAddTraits(.isHeader)
             if let me = app.me {
-                // muted: 5.025 on canvas, 4.758 at the wash peak (light);
-                // 5.243 / 4.809 dark.
+                // `body` on the fog: 5.0 or better at its strongest point.
                 Text(me.patient.isRecovery
                      ? "Day \(me.patient.postopDay ?? 0)\(MP.dot)\(me.patient.procedureDisplay)"
                      : "\(me.patient.hospital?.name ?? "Your hospital")\(MP.dot)\(me.patient.daysEnrolled == 0 ? "joined today" : "member for \(me.patient.daysEnrolled) days")")
-                    .mpFont(.copyMedium).foregroundStyle(MP.muted)
+                    .mpFont(.copyLarge).foregroundStyle(MP.body)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 4)
+        .padding(.top, 6)
+        .padding(.bottom, 6)
         .onGeometryChange(for: Bool.self) { proxy in
             // Gone once its last line is behind the (transparent) bar.
             proxy.frame(in: .scrollView).maxY < 8
@@ -161,19 +165,32 @@ struct HomeView: View {
 
     // MARK: Recovery
 
+    /// The recovery tile: the site's sage gradient with the patient's
+    /// trajectory drawn as white line art, the big light number, and the
+    /// summary on a solid-glass caption with the state pill and the stats.
     private func recoveryCard(_ me: Me) -> some View {
         let tone = MP.tone(for: me.recovery.level)
-        return Card(tint: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text(me.patient.isRecovery ? "Your recovery" : "Your signals")
-                        .mpFont(.labelMedium).mpSecondary()
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer()
-                    StatusPill(text: me.recovery.label, tone: tone)
-                }
+        let traj = me.recovery.trajectory
+        let pct = traj.state != "unknown" ? traj.pct : nil
+        let recovery = me.patient.isRecovery
+        let value: String = {
+            if let pct { return (pct >= 0 ? "+" : "\u{2212}") + String(format: "%.0f%%", abs(pct)) }
+            if let day = me.patient.postopDay, recovery { return "D\(day)" }
+            return "\(me.recovery.daysWithData ?? 0)"
+        }()
+        let unitLabel: String = pct != nil ? (recovery ? "vs expected" : "vs baseline")
+            : (recovery && me.patient.postopDay != nil ? "post-op day" : "days of data")
+        return GradientTile(.sage,
+                            kicker: recovery ? "Your recovery" : "Your signals",
+                            value: value, unit: unitLabel,
+                            side: recovery ? me.patient.postopDay.map { ("Day \($0)", "since surgery") } : nil) {
+            RecoveryCurveArt(pct: pct)
+                .padding(.top, 6)
+        } caption: {
+            VStack(alignment: .leading, spacing: 10) {
+                StatusPill(text: me.recovery.label, tone: tone)
                 Text(me.recovery.blurb)
-                    .mpFont(.copyLargeMedium).foregroundStyle(MP.ink).lineSpacing(2)
+                    .mpFont(.copyLarge).foregroundStyle(MP.ink).lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 22) { stats(me) }
@@ -182,6 +199,7 @@ struct HomeView: View {
                 .padding(.top, 2)
             }
         }
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder private func stats(_ me: Me) -> some View {
@@ -202,11 +220,11 @@ struct HomeView: View {
     }
 
     private func stat(_ label: String, _ text: String, value: Double) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            // On the tint card: body, 6.237 / 5.513 (R8).
-            Text(label).mpFont(.labelMedium).mpSecondary()
+        VStack(alignment: .leading, spacing: 0) {
+            Text(label).mpFont(.label).foregroundStyle(MP.body)
             Text(text)
-                .font(.figures(MPSize.subhead, weight: .medium, relativeTo: .title3))
+                .font(.figuresDisplay(MPSize.displayS))
+                .kerning(-1.1)
                 .foregroundStyle(MP.ink)
                 .lineLimit(1).minimumScaleFactor(0.7)
                 .contentTransition(reduceMotion ? .identity : .numericText(value: value))
@@ -341,9 +359,9 @@ private struct HomeCardPressStyle: ButtonStyle {
     }
 }
 
-/// One Health-style tile in the portfolio grid: category glyph and date on
-/// top, the reading, then its name. Everything sits on `soft` (muted 4.755 /
-/// 4.582, ink 16.202 / 16.060).
+/// One tile in the portfolio grid, the site's inset metric: category glyph
+/// and date on top, the reading in big light figures, then its name, on the
+/// warm inset fill.
 private struct PortfolioTile: View {
     let metric: PortfolioMetric
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -363,24 +381,42 @@ private struct PortfolioTile: View {
                     .lineLimit(1)
             }
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(metric.latestText)
-                    .font(.figuresLede).foregroundStyle(MP.ink)
-                    .contentTransition(reduceMotion ? .identity : .numericText(value: metric.latest.value))
-                    .animation(MPMotion.gated(MPMotion.state, reduceMotion: reduceMotion),
-                               value: metric.latest.value)
-                if !metric.hideUnit {
-                    Text(metric.unit).mpFont(.label).foregroundStyle(MP.muted)
+                if metric.hideUnit {
+                    // A duration reads as the site's big numbers with small
+                    // units: "6 h 24 min".
+                    let minutes = Int((metric.latest.value * 60).rounded())
+                    figure("\(minutes / 60)", value: metric.latest.value)
+                    unitText("h")
+                    if minutes % 60 > 0 {
+                        figure("\(minutes % 60)", value: metric.latest.value)
+                        unitText("min")
+                    }
+                } else {
+                    figure(metric.latestText, value: metric.latest.value)
+                    unitText(metric.unit)
                 }
             }
-            .lineLimit(1).minimumScaleFactor(0.7)
+            .lineLimit(1).minimumScaleFactor(0.6)
+            .accessibilityLabel(Text(metric.spokenText(for: metric.latest.value)))
             Text(metric.label)
                 .mpFont(.labelMedium).foregroundStyle(MP.muted)
                 .lineLimit(2).minimumScaleFactor(0.85)
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(MP.controlShape.fill(MP.soft))
+        .background(MP.controlShape.fill(MP.fill))
         .accessibilityElement(children: .combine)
+    }
+
+    private func figure(_ text: String, value: Double) -> some View {
+        Text(text)
+            .font(.figuresDisplay(MPSize.displayS)).kerning(-0.9).foregroundStyle(MP.ink)
+            .contentTransition(reduceMotion ? .identity : .numericText(value: value))
+            .animation(MPMotion.gated(MPMotion.state, reduceMotion: reduceMotion), value: value)
+    }
+
+    private func unitText(_ text: String) -> some View {
+        Text(text).mpFont(.label).foregroundStyle(MP.muted)
     }
 }
 

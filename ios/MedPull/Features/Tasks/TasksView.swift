@@ -50,7 +50,7 @@ struct TasksView: View {
     private var caughtUp: some View {
         ContentUnavailableView {
             Label {
-                Text("You're all caught up").mpFont(.subheadSemibold).foregroundStyle(MP.ink)
+                Text("You’re all caught up").mpFont(.subheadSemibold).foregroundStyle(MP.ink)
             } icon: {
                 // Decorative (the title says the same thing), so riskLow
                 // on the canvas is fine at any ratio; it is 5.2:1 anyway.
@@ -279,13 +279,12 @@ struct TaskDetailView: View {
                     if let schedule = task.scheduleLabel {
                         Text(schedule)
                             .mpFont(.labelMedium)
-                            // brandInk on brandTint is 4.96:1 light /
-                            // 5.62:1 dark; `brand` was 3.10:1 on the dark tint.
+                            // Sage on its tint: 6.27 light / 7.98 dark.
                             .foregroundStyle(MP.brandInk)
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(MP.capsuleShape.fill(MP.brandTint))
                     }
-                    Text(task.title).title(MPSize.displayS)
+                    Text(task.title.typeset).title(MPSize.displayS)
                     if !task.why.isEmpty {
                         Text(task.why).mpFont(.copy).foregroundStyle(MP.muted)
                     }
@@ -299,7 +298,7 @@ struct TaskDetailView: View {
                             seal
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Sent to your care team").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
-                                Text("They'll see it with their next review.").mpFont(.copy).mpSecondary()
+                                Text("They’ll see it with their next review.").mpFont(.copy).mpSecondary()
                             }
                         }
                     }
@@ -323,7 +322,7 @@ struct TaskDetailView: View {
         // the form is inset by its height and nothing is under it at rest.
         // Hidden once the task is sent: the confirmation card is the screen.
         .mpGlassActionBar(isPresented: !done) { actionBarContent }
-        .screen()
+        .ambientScreen()
         .navigationTitle(task.kindLabel)
         .navigationBarTitleDisplayMode(.inline)
         .animation(MPMotion.gated(MPMotion.settle, reduceMotion: reduceMotion), value: done)
@@ -360,8 +359,8 @@ struct TaskDetailView: View {
 
     /// "Skip this one" stays a plain `.primary` label (system secondaryLabel
     /// is 3.44:1 on the light reduce-transparency ground, so it is never used
-    /// for words). The commit is the prominent glass capsule on iOS 26 — tinted
-    /// Medical Blue with a white label — and the filled capsule before it.
+    /// for words). The commit is the prominent glass capsule on iOS 26 — the
+    /// site's near-black primary — and the filled capsule before it.
     ///
     /// One row when it fits. At accessibility sizes (and whenever the row
     /// does not fit) it stacks: a full-width commit above a full-width

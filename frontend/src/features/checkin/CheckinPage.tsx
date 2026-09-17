@@ -70,7 +70,7 @@ export function PatientShell({
   const lockup = (
     <p className="brand-lockup text-lede">
       <span className="app-icon">
-        <img src="/medpull-mark.png" alt="" width={22} height={22} />
+        <img src="/medpull-mark.svg" alt="" width={22} height={22} />
       </span>
       MedPull
     </p>
