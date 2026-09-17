@@ -2043,24 +2043,6 @@ body {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   CONTINUOUS CORNERS — where the engine has them.
-   ══════════════════════════════════════════════════════════════════════════ */
-@supports (corner-shape: squircle) {
-  .panel,
-  .overlay:not(.overlay-menu),
-  .card-group,
-  .card-tint,
-  .gtile {
-    border-radius: 44px;
-    corner-shape: squircle;
-  }
-  .sky-window {
-    border-radius: 58px;
-    corner-shape: squircle;
-  }
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
    INCREASE CONTRAST — cards get a real edge, glass goes opaque, the fog goes.
    ══════════════════════════════════════════════════════════════════════════ */
 @media (prefers-contrast: more) {
