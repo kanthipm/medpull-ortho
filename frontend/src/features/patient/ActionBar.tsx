@@ -2,13 +2,20 @@ import { ClipboardList, MessageSquare, RefreshCw, TriangleAlert } from 'lucide-r
 import { useState } from 'react'
 import type { CarePathway } from '../../api/care'
 import { useEscalate } from '../../api/queries'
+import { Tooltip } from '../../components/Menu'
 import { useToast } from '../../components/Toast'
 import MessageComposerModal from './plan/MessageComposerModal'
 import TaskBuilderModal from './plan/TaskBuilderModal'
 
-/** The patient page's quick actions. Assign tasks opens the care-plan
- *  builder, Message the composer; both live in `plan/` and are the same
- *  modals the sections below open. Escalate and Refresh are unchanged. */
+/** The patient header's action cluster: four capsules, no panel around them.
+ *
+ *    Message        .btn-filled   the primary action (white on #1976D2 4.602)
+ *    Assign tasks   .btn-tinted   opens the care-plan builder
+ *    Escalate       .btn-danger   risk ink on its tint (4.835 / 5.701) + icon + word
+ *    Refresh        .btn-icon     labelled "Refresh analysis"; spins while busy
+ *
+ *  Assign tasks and Message open the same modals the sections below open.
+ *  Escalate and Refresh behave exactly as before. */
 export default function ActionBar({
   patientId,
   patientName,
@@ -18,6 +25,7 @@ export default function ActionBar({
   smsAvailable,
   onRefresh,
   refreshing,
+  className = '',
 }: {
   patientId: string
   patientName: string
@@ -27,6 +35,7 @@ export default function ActionBar({
   smsAvailable: boolean
   onRefresh: () => void
   refreshing: boolean
+  className?: string
 }) {
   const toast = useToast()
   const [modal, setModal] = useState<'assign' | 'message' | null>(null)
@@ -41,31 +50,37 @@ export default function ActionBar({
 
   return (
     <>
-      <div className="panel flex flex-wrap items-center gap-2.5 p-3">
-        <button type="button" className="qa-btn flex-1" onClick={() => setModal('assign')}>
-          <ClipboardList size={16} /> Assign tasks
+      <div
+        role="group"
+        aria-label={`Actions for ${patientName}`}
+        className={`flex flex-wrap items-center gap-2 ${className}`}
+      >
+        <button type="button" className="btn-filled" onClick={() => setModal('message')}>
+          <MessageSquare size={16} aria-hidden /> Message
         </button>
-        <button type="button" className="qa-btn flex-1" onClick={() => setModal('message')}>
-          <MessageSquare size={16} /> Message
+        <button type="button" className="btn-tinted" onClick={() => setModal('assign')}>
+          <ClipboardList size={16} aria-hidden /> Assign tasks
         </button>
         <button
           type="button"
-          className="qa-btn flex-1 text-risk-high-ink"
+          className="btn-danger"
           onClick={fireEscalate}
           disabled={escalate.isPending}
         >
-          <TriangleAlert size={16} /> Escalate
+          <TriangleAlert size={16} aria-hidden /> Escalate
         </button>
-        <button
-          type="button"
-          className="qa-btn flex-1"
-          onClick={onRefresh}
-          disabled={refreshing}
-          title="Re-run the analysis and regenerate the AI summary"
-        >
-          <RefreshCw size={16} className={refreshing ? 'animate-spin' : undefined} />
-          {refreshing ? 'Refreshing…' : 'Refresh analysis'}
-        </button>
+        <Tooltip content={refreshing ? 'Refreshing…' : 'Re-run the analysis and regenerate the AI summary'}>
+          <button
+            type="button"
+            className="btn-icon"
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-label={refreshing ? 'Refreshing analysis' : 'Refresh analysis'}
+            aria-busy={refreshing || undefined}
+          >
+            <RefreshCw size={18} aria-hidden className={refreshing ? 'animate-spin' : undefined} />
+          </button>
+        </Tooltip>
       </div>
 
       {modal === 'assign' && (

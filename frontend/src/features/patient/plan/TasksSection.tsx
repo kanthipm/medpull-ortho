@@ -1,5 +1,5 @@
-import { ClipboardList, Sparkles, Wand2 } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowUp, Ban, CircleCheck, ClipboardList, Plus, Sparkles, Wand2 } from 'lucide-react'
+import { useId, useState } from 'react'
 import type { CarePathway } from '../../../api/care'
 import type { DraftTask, PlanTask } from '../../../api/plan'
 import {
@@ -12,9 +12,13 @@ import {
   useTaskTemplates,
 } from '../../../api/plan'
 import Disclosure from '../../../components/Disclosure'
+import EmptyState from '../../../components/EmptyState'
 import InlineReadout from '../../../components/InlineReadout'
+import ListRow, { ListGroup } from '../../../components/ListRow'
+import { Menu } from '../../../components/Menu'
 import SectionCard from '../../../components/SectionCard'
 import { RefreshOverlay, SkeletonLine } from '../../../components/Skeleton'
+import Tile from '../../../components/Tile'
 import { useToast } from '../../../components/Toast'
 import { shortDate } from '../../../lib/format'
 import TaskBuilderModal from './TaskBuilderModal'
@@ -24,6 +28,7 @@ import {
   phaseLabel,
   planRates,
   scheduleLabel,
+  taskKindTile,
   taskPhase,
   taskSchedule,
   todayIso,
@@ -33,7 +38,13 @@ import {
 type Builder = { drafts?: DraftTask[]; provider?: string | null } | null
 
 /** "Care plan" — the patient's tasks as our `/plan` view sees them: their
- *  lifecycle status, our verification kind and the last 14 days of records. */
+ *  lifecycle status, our verification kind and the last 14 days of records.
+ *
+ *  App anatomy: an ask-style capsule field that drafts tasks with AI, a
+ *  single-baseline readout, and an inset-hairline list whose rows carry the
+ *  app's category tile (TasksView's mapping). Neutral facts (verified by,
+ *  schedule, phase) are one .meta line; the lifecycle status is the only
+ *  chip. Row actions live in a top-layer "…" menu (R5). */
 export default function TasksSection({
   patientId,
   patientName,
@@ -60,6 +71,7 @@ export default function TasksSection({
   const record = useRecordPlanTask(patientId)
   const [builder, setBuilder] = useState<Builder>(null)
   const [prompt, setPrompt] = useState('')
+  const promptId = useId()
 
   const tasks = plan.data?.tasks ?? []
   const active = tasks.filter((t) => t.active !== false)
@@ -113,51 +125,70 @@ export default function TasksSection({
       onError: () => toast('Could not end the task — try again', 'warning'),
     })
 
-  const assignButton = (
-    <button type="button" className="qa-btn" onClick={() => setBuilder({})}>
-      <ClipboardList size={13} /> Assign tasks
-    </button>
-  )
+  const busy = record.isPending || endTask.isPending
 
   return (
     <>
-      <SectionCard title="Care plan" aside={assignButton}>
+      <SectionCard
+        flush
+        title="Care plan"
+        action={
+          <button type="button" className="btn-plain btn-sm" onClick={() => setBuilder({})}>
+            <ClipboardList aria-hidden /> Assign tasks
+          </button>
+        }
+      >
         <RefreshOverlay show={refreshing} />
 
+        {/* The ask field: the app's rounded capsule, a wand at the left and a
+            round send button at the right. */}
         <form
-          className="mb-3 flex flex-wrap items-center gap-2"
+          className="px-5 pb-3"
           onSubmit={(e) => {
             e.preventDefault()
             runBuild()
           }}
         >
-          <label className="relative min-w-[220px] flex-1">
+          <div className="relative">
+            <label htmlFor={promptId} className="sr-only">
+              Describe tasks to build with AI
+            </label>
             <Wand2
-              size={13}
-              className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-brand-ink ${build.isPending ? 'animate-pulse' : ''}`}
+              aria-hidden
+              size={18}
+              className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cat-teal-ink ${
+                build.isPending ? 'motion-safe:animate-pulse' : ''
+              }`}
             />
             <input
-              className={`field pl-8 ${build.isPending ? 'shimmer text-transparent' : ''}`}
+              id={promptId}
+              className={`field field-pill text-copy ${build.isPending ? 'shimmer text-transparent' : ''}`}
               placeholder={`Tell ${first} what to do, e.g. walk twice a day and log pain each evening`}
               value={prompt}
               disabled={build.isPending}
               onChange={(e) => setPrompt(e.target.value)}
-              aria-label="Describe tasks to build with AI"
             />
-          </label>
-          <button
-            type="submit"
-            className="qa-btn"
-            disabled={!prompt.trim() || build.isPending}
-            title="Turn this sentence into tasks you can review and assign"
-          >
-            <Wand2 size={13} />
-            {build.isPending ? 'Building…' : 'Build with AI'}
-          </button>
+            {/* Wrapped: the press scale sets `transform`, which would undo a
+                translate on the button itself. */}
+            <span className="absolute right-2 top-1/2 flex -translate-y-1/2">
+              <button
+                type="submit"
+                className="btn-send"
+                disabled={!prompt.trim() || build.isPending}
+                aria-label={build.isPending ? 'Building tasks…' : 'Build tasks with AI'}
+                title="Turn this sentence into tasks you can review and assign"
+              >
+                <ArrowUp aria-hidden size={16} />
+              </button>
+            </span>
+          </div>
+          <p className="meta mt-1.5 px-4">
+            Drafts open in the builder for review — nothing is assigned until you confirm.
+          </p>
         </form>
 
         {plan.isLoading && (
-          <div className="space-y-3">
+          <div className="space-y-3 px-5 pb-5 pt-1">
             <SkeletonLine className="h-5 w-1/2" />
             <SkeletonLine className="h-3.5 w-full" />
             <SkeletonLine className="h-3.5 w-2/3" />
@@ -165,35 +196,46 @@ export default function TasksSection({
         )}
 
         {plan.isError && (
-          <p className="text-label font-medium text-muted">
+          <p className="px-5 pb-5 text-copy text-secondary">
             The care plan is not available for this patient yet.
           </p>
         )}
 
         {plan.data && tasks.length === 0 && (
-          <div className="rounded-surface border border-dashed border-line px-4 py-6 text-center">
-            <p className="text-copy font-medium text-ink">No care plan yet.</p>
-            <p className="mt-1 text-label font-medium text-muted">
-              Let the builder pick a starting set for {first}'s pathway, or assign tasks by hand.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                className="qa-btn"
-                disabled={suggest.isPending}
-                onClick={runSuggest}
-              >
-                <Sparkles size={13} className={suggest.isPending ? 'animate-spin' : undefined} />
-                {suggest.isPending ? 'Thinking…' : 'Suggest a plan'}
-              </button>
-            </div>
-          </div>
+          <EmptyState
+            variant="inline"
+            family="violet"
+            icon={<ClipboardList />}
+            title="No care plan yet"
+            action={
+              <>
+                <button
+                  type="button"
+                  className="btn-tinted"
+                  disabled={suggest.isPending}
+                  onClick={runSuggest}
+                >
+                  <Sparkles
+                    aria-hidden
+                    size={16}
+                    className={suggest.isPending ? 'motion-safe:animate-spin' : undefined}
+                  />
+                  {suggest.isPending ? 'Thinking…' : 'Suggest a plan'}
+                </button>
+                <button type="button" className="btn-gray" onClick={() => setBuilder({})}>
+                  <Plus aria-hidden size={16} /> Assign by hand
+                </button>
+              </>
+            }
+          >
+            Let the builder pick a starting set for {first}'s pathway, or assign tasks by hand.
+          </EmptyState>
         )}
 
         {plan.data && tasks.length > 0 && (
           <>
             <InlineReadout
-              className="mb-3"
+              className="px-5 pb-2 pt-1"
               items={[
                 {
                   key: 'active',
@@ -202,9 +244,8 @@ export default function TasksSection({
                 },
                 {
                   key: 'verified',
-                  label: 'verified',
+                  label: 'verified by data',
                   value: rates.verifiedPct == null ? '—' : `${rates.verifiedPct}%`,
-                  hint: 'by data',
                 },
                 {
                   key: 'incl',
@@ -214,7 +255,7 @@ export default function TasksSection({
               ]}
             />
 
-            <ul className="divide-y divide-line">
+            <ListGroup embedded inset="tile" aria-label="Active tasks">
               {active.map((t) => (
                 <TaskRow
                   key={t.id}
@@ -222,28 +263,24 @@ export default function TasksSection({
                   verifiedBy={verifiedByLabel(kinds, t)}
                   onDone={() => markDone(t)}
                   onEnd={() => end(t)}
-                  busy={record.isPending || endTask.isPending}
+                  busy={busy}
                 />
               ))}
-            </ul>
+            </ListGroup>
 
             {ended.length > 0 && (
-              <div className="mt-2 border-t border-line">
+              <div className="px-5 pt-1">
                 <Disclosure label="Ended tasks" hint={`${ended.length}`}>
-                  <ul className="divide-y divide-line">
+                  <ListGroup embedded inset="tile" aria-label="Ended tasks" className="-mx-5">
                     {ended.map((t) => (
                       <TaskRow key={t.id} t={t} verifiedBy={verifiedByLabel(kinds, t)} />
                     ))}
-                  </ul>
+                  </ListGroup>
                 </Disclosure>
               </div>
             )}
 
-            <p className="mt-2.5 border-t border-line pt-2 text-label font-medium text-muted">
-              Blue dots are days confirmed by device data; grey dots are the patient's own report;
-              rings are missed days. The patient sees task titles and reasons only — never these
-              numbers.
-            </p>
+            <Legend />
           </>
         )}
       </SectionCard>
@@ -264,6 +301,26 @@ export default function TasksSection({
   )
 }
 
+/** The strip's key, drawn with the strip's own marks (shape, not only hue). */
+function Legend() {
+  const keys = ['verified', 'self_attested', 'missed'] as const
+  return (
+    <div className="px-5 pb-5 pt-3">
+      <ul className="meta flex flex-wrap items-center gap-x-4 gap-y-1">
+        {keys.map((k) => (
+          <li key={k} className="inline-flex items-center gap-1.5">
+            <span aria-hidden className={`inline-block ${RECORD_DOT[k].cls}`} />
+            {RECORD_DOT[k].label}
+          </li>
+        ))}
+      </ul>
+      <p className="meta mt-1">
+        Each strip is the last 14 days, oldest first. The patient sees task titles and reasons only — never these numbers.
+      </p>
+    </div>
+  )
+}
+
 function TaskRow({
   t,
   verifiedBy,
@@ -280,64 +337,74 @@ function TaskRow({
   const status = TASK_STATUS[t.status] ?? TASK_STATUS.pending
   const rate = t.verified_rate ?? t.rate
   const strip = padStrip(t.last14 ?? [])
+  const kind = taskKindTile(t.task_kind)
+  const Icon = kind.icon
+  const ended = t.active === false
+  const pct = rate == null ? '—' : `${Math.round(rate * 100)}%`
+
   return (
-    <li className="py-3 first:pt-0 last:pb-0">
-      <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-copy font-medium text-ink">{t.title}</p>
-          {t.why && <p className="mt-0.5 text-label font-medium text-muted">{t.why}</p>}
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <span className="chip bg-soft text-muted">{verifiedBy}</span>
-            <span className="chip bg-soft text-muted">{scheduleLabel(taskSchedule(t))}</span>
-            <span className="chip bg-soft text-muted">{phaseLabel(taskPhase(t))}</span>
-            <span className={`chip ${status.pill}`}>{status.label}</span>
-          </div>
+    <ListRow
+      leading={<Tile family={kind.family} icon={<Icon />} />}
+      title={t.title}
+      wrapTitle
+      titleClassName={ended ? '!text-secondary' : ''}
+      subtitle={t.why || undefined}
+      subtitleLines={2}
+      meta={[verifiedBy, scheduleLabel(taskSchedule(t)), phaseLabel(taskPhase(t))].join(' · ')}
+      aside={<span className={`chip ${status.pill}`}>{status.label}</span>}
+      trailing={
+        onDone || onEnd ? (
+          <Menu
+            label={`Actions for ${t.title}`}
+            items={[
+              ...(onDone
+                ? [
+                    {
+                      key: 'done',
+                      label: 'Mark done today',
+                      description: 'Counts as self-reported, not device-verified',
+                      icon: <CircleCheck aria-hidden />,
+                      disabled: busy,
+                      onSelect: onDone,
+                    },
+                  ]
+                : []),
+              ...(onDone && onEnd ? [{ key: 'sep', separator: true as const }] : []),
+              ...(onEnd
+                ? [
+                    {
+                      key: 'end',
+                      label: 'End task',
+                      icon: <Ban aria-hidden />,
+                      danger: true,
+                      disabled: busy,
+                      onSelect: onEnd,
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        ) : undefined
+      }
+    >
+      {/* The 14-day strip and its rate: an opaque row on the panel. */}
+      <div className="flex items-center gap-3">
+        <div
+          className="flex items-center gap-1.5"
+          role="img"
+          aria-label={`Last 14 days${rate != null ? `, ${pct} done` : ''}`}
+        >
+          {strip.map((r, i) => (
+            <span
+              key={i}
+              title={r.date ? `${shortDate(r.date)} · ${RECORD_DOT[r.status].label}` : undefined}
+              className={RECORD_DOT[r.status].cls}
+            />
+          ))}
         </div>
-        <div className="flex shrink-0 items-center gap-3">
-          <div
-            className="flex items-center gap-1.5"
-            role="img"
-            aria-label={`Last 14 days${rate != null ? `, ${Math.round(rate * 100)}% done` : ''}`}
-          >
-            {strip.map((r, i) => (
-              <span
-                key={i}
-                title={r.date ? `${shortDate(r.date)} · ${RECORD_DOT[r.status].label}` : undefined}
-                className={RECORD_DOT[r.status].cls}
-              />
-            ))}
-          </div>
-          <span className="w-10 text-right text-copy-lg font-medium tabular-nums text-ink">
-            {rate == null ? '—' : `${Math.round(rate * 100)}%`}
-          </span>
-        </div>
+        <span className="text-copy font-medium tabular-nums text-ink">{pct}</span>
       </div>
-      {(onDone || onEnd) && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {onDone && (
-            <button
-              type="button"
-              className="cursor-pointer rounded-control px-2 py-1 text-label font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint disabled:text-disabled-ink"
-              disabled={busy}
-              onClick={onDone}
-              title="Records that the patient did this today (counts as self-reported, not device-verified)"
-            >
-              Mark done today
-            </button>
-          )}
-          {onEnd && (
-            <button
-              type="button"
-              className="cursor-pointer rounded-control px-2 py-1 text-label font-medium text-muted transition-colors duration-150 hover:bg-soft hover:text-ink disabled:text-disabled-ink"
-              disabled={busy}
-              onClick={onEnd}
-            >
-              End task
-            </button>
-          )}
-        </div>
-      )}
-    </li>
+    </ListRow>
   )
 }
 

@@ -54,6 +54,8 @@
 	<array>
 		<string>InstrumentSans-Regular.ttf</string>
 		<string>InstrumentSans-Medium.ttf</string>
+		<string>InstrumentSans-SemiBold.ttf</string>
+		<string>InstrumentSans-Bold.ttf</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

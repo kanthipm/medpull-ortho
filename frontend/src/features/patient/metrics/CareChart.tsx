@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useRef, type RefObject } from 'react'
 import {
   Area,
   Bar,
@@ -13,7 +13,18 @@ import {
   ZAxis,
 } from 'recharts'
 import type { ChartPoint, ChartSpec, GaugeExtra } from '../../../api/care'
-import { fmtNum } from './labels'
+import {
+  CHART_TOOLTIP_WRAPPER,
+  ChangeLabel,
+  ChartTooltip,
+  lineDomain,
+  markerSide,
+} from '../../../components/charts/Sparkline'
+import { fmtNum as fmtRaw } from './labels'
+
+/** fmtNum with a true minus (U+2212) — R19: a negative reading never shows a
+ *  hyphen. */
+const fmtNum = (v: number) => fmtRaw(v).replace('-', '\u2212')
 
 /** Every `ChartSpec.kind` the care engine emits, drawn in the app's chart
  *  idiom: quiet grid and references, a warm marker for change-points, status
@@ -51,6 +62,10 @@ const AXIS = 'rgb(var(--chart-axis-label))'
 const REF = 'rgb(var(--chart-ref-line))'
 const MARKER = 'rgb(var(--risk-med-ink))'
 const PANEL = 'rgb(var(--panel))'
+
+/** Bar totals keep zero in the domain (a bar's length is its value); a
+ *  negative total still gets room below the axis. */
+const ZERO_BASED: [(dataMin: number) => number, 'auto'] = [(dataMin) => Math.min(0, dataMin), 'auto']
 
 type Row = {
   x: number | string
@@ -93,27 +108,37 @@ function xText(spec: ChartSpec, x: number | string, label?: string): string {
   if (label) return label
   if (typeof x === 'string') return x
   const axis = spec.x_label || 'Post-op day'
-  return /^post-?op day$/i.test(axis) ? `Post-op day ${x}` : `${axis} ${x}`
+  return /^post-?op day$/i.test(axis) ? `Post-op day ${fmtNum(x)}` : `${axis} ${fmtNum(x)}`
 }
 
 function xTick(spec: ChartSpec, x: number | string): string {
   if (typeof x === 'string') return x
   const axis = spec.x_label || 'Post-op day'
-  if (/^post-?op day$/i.test(axis)) return `D${x}`
-  if (/^day/i.test(axis)) return `D${x}`
-  if (/^hour/i.test(axis)) return `${x}h`
-  if (/^minute/i.test(axis)) return `${x}m`
+  // fmtNum carries the true minus, so pre-op days read "D−5".
+  if (/^post-?op day$/i.test(axis)) return `D${fmtNum(x)}`
+  if (/^day/i.test(axis)) return `D${fmtNum(x)}`
+  if (/^hour/i.test(axis)) return `${fmtNum(x)}h`
+  if (/^minute/i.test(axis)) return `${fmtNum(x)}m`
   return fmtNum(x)
 }
 
+/** Tooltip body for every card chart. It renders through <ChartTooltip>, so
+ *  it lives in the top layer (R5) as an opaque `.overlay` with the overlay
+ *  scope (secondary text is --body there: 7.222 light / 4.955 dark; ink
+ *  18.377 / 12.810). The value it shows is also stated in the card header —
+ *  a clinical number is never only in a hover. */
 function ChartTip({
   spec,
+  hostRef,
   active,
   payload,
+  coordinate,
 }: {
   spec: ChartSpec
+  hostRef: RefObject<HTMLElement | null>
   active?: boolean
   payload?: { payload?: Row & ChartPoint }[]
+  coordinate?: { x?: number; y?: number }
 }) {
   if (!active || !payload?.length) return null
   const row = payload[0].payload
@@ -122,38 +147,37 @@ function ChartTip({
   const y2 = row.y2 ?? null
   const fit = 'fit' in row ? row.fit : null
   return (
-    // A tooltip IS a floating overlay, so it is one of the three surfaces the
-    // ambient shadow is allowed on and `.overlay` carries it — along with
-    // dark's own hairline and the forced-colors border. The retired
-    // lift-shadow alias and the hairline border that double-drew the
-    // edge beside it are both gone. 11px is axis labels only, so every line
-    // here is on the 12px rung, and the x label moves off --faint (2.585:1,
-    // non-text only) onto --muted (5.393:1).
-    // The `border-overlay-border` is the ONE separation: light
-    // --overlay-panel is #FFFFFF, the same as light --panel, so the fill
-    // gives 1.000:1 and --shadow-overlay is a soft wash offset downward,
-    // not an edge. See Sparkline.tsx for the full note and the exit
-    // condition. In dark, `.dark .overlay` already sets this, so it is
-    // a no-op there.
-    <div className="overlay border border-overlay-border px-2.5 py-1.5">
-      <div className="text-label font-medium text-muted">{xText(spec, row.x, row.label)}</div>
+    <ChartTooltip hostRef={hostRef} x={coordinate?.x} y={coordinate?.y}>
+      <div className="text-label text-secondary">{xText(spec, row.x, row.label)}</div>
       {y != null && (
-        <div className="text-label font-medium tabular-nums text-ink">
-          {fmtNum(y)} {spec.y_label}
+        <div className="text-copy font-medium tabular-nums text-ink">
+          {fmtNum(y)} <span className="text-label font-normal text-secondary">{spec.y_label}</span>
         </div>
       )}
       {y2 != null && (
-        <div className="text-label font-medium tabular-nums text-muted">
+        <div className="text-label tabular-nums text-secondary">
           {fmtNum(y2)} {spec.y2_label}
         </div>
       )}
       {y == null && fit != null && (
-        <div className="text-label font-medium tabular-nums text-muted">
-          fit {fmtNum(fit)}
-        </div>
+        <div className="text-label tabular-nums text-secondary">Fit {fmtNum(fit)}</div>
       )}
-    </div>
+    </ChartTooltip>
   )
+}
+
+/** "Post-op day 19" for the newest plotted point — the date line under a
+ *  metric's value, like the app's portfolio tiles. Null when nothing is
+ *  plotted or the chart is not a series (gauge / heat). */
+export function latestLabel(spec: ChartSpec | null): string | null {
+  if (!spec || spec.kind === 'gauge' || spec.kind === 'heat') return null
+  const pts = spec.series.filter((p) => p.y != null)
+  if (pts.length === 0) return null
+  let last = pts[pts.length - 1]
+  if (pts.every((p) => typeof p.x === 'number')) {
+    last = pts.reduce((a, b) => ((b.x as number) > (a.x as number) ? b : a))
+  }
+  return xText(spec, last.x, last.label)
 }
 
 /** Sparkline's panel-cored dot on the newest reading. */
@@ -247,7 +271,7 @@ function Gauge({ spec, thin }: { spec: ChartSpec; thin: boolean }) {
   return (
     <div className={thin ? 'py-[18px]' : 'py-2'}>
       <div
-        className={`relative flex w-full overflow-hidden rounded-full bg-line ${thin ? 'h-1.5' : 'h-2.5'}`}
+        className={`relative flex w-full overflow-hidden rounded-pill bg-line ${thin ? 'h-1.5' : 'h-2.5'}`}
         role="img"
         aria-label={`${fmtNum(g.value)} of ${fmtNum(g.max)}`}
       >
@@ -283,26 +307,23 @@ function Gauge({ spec, thin }: { spec: ChartSpec; thin: boolean }) {
   )
 }
 
-/** Adherence has THREE levels plus "not scheduled", which is more than the
- *  two-series categorical cap, so it takes the single-hue sequential ramp
- *  rather than a third hue. `bg-brand/35` was a 35% wash of a FILL token — an
- *  invented step whose ratio depended on the ground; --chart-seq-3 is the
- *  declared step. On --panel, light / dark: seq-5 8.631 / 14.087, seq-3
- *  3.343 / 5.144, and 2.582 / 2.739 between the two. The "missed" ring moves
- *  from --line (1.553:1, a border token) to --line-strong (3.834 / 5.671),
- *  which is the 1.4.11 boundary tier. Every cell also carries the state as a
- *  word in its `title`, so none of this is colour alone.
+/** Adherence has THREE levels plus "not scheduled". They are told apart by
+ *  SHAPE, matching AdherenceDots: verified is a filled --chart-seq-5 dot,
+ *  self-attested a 2px --chart-seq-5 ring, missed a short --line-strong dash,
+ *  not scheduled is empty. One hue (seq-5: 8.631 light / 14.087 dark on
+ *  --panel) plus the 1.4.11 boundary tier (--line-strong 3.834 / 5.671), so
+ *  nothing relies on a wash or on a second hue, and the states survive
+ *  greyscale. Every cell also carries the state as a word in its `title`.
  *
- *  The ring is `border-2`, not `border`. Measured off a screenshot: a 1px ring
- *  on an 8px circle antialiases so hard that its strongest pixel came back
- *  #8F97A2 = 2.951:1 on light panel, i.e. the declared 3.834 never reaches the
- *  screen and the ring lands under the 1.4.11 floor anyway. At 2px the token
- *  value survives the rasteriser. */
+ *  Rings are `border-2`: a 1px ring on an 8px circle antialiases below the
+ *  declared ratio (measured #8F97A2 = 2.951:1), a 2px ring does not. */
 function heatDot(v: number | null | undefined, size: string): string {
   if (v == null) return `${size} rounded-full bg-transparent`
   if (v >= 1) return `${size} rounded-full bg-chart-seq-5`
-  if (v >= 0.5) return `${size} rounded-full bg-chart-seq-3`
-  return `${size} rounded-full border-2 border-line-strong bg-transparent`
+  if (v >= 0.5) return `${size} rounded-full border-2 border-chart-seq-5 bg-transparent`
+  // missed: a short dash, so the three states are three SHAPES (dot, ring,
+  // dash) and survive greyscale and forced colours, like AdherenceDots.
+  return 'h-0.5 w-2 rounded-pill bg-line-strong'
 }
 
 function heatGrid(spec: ChartSpec) {
@@ -335,7 +356,7 @@ function Heat({ spec }: { spec: ChartSpec }) {
       </div>
       {rows.map((r) => (
         <div key={r} className="grid grid-cols-[minmax(0,7rem)_1fr] items-center gap-x-2">
-          <span className="truncate text-label font-medium text-muted" title={r}>
+          <span className="truncate text-label text-secondary" title={r}>
             {r}
           </span>
           <div className="grid" style={colStyle}>
@@ -356,15 +377,15 @@ function Heat({ spec }: { spec: ChartSpec }) {
       {/* Legend swatches track heatDot exactly. 10.5px on --faint (2.279:1) was
           a half-pixel size below the floor on the non-text tier; this is the
           12px rung on --muted (5.393:1). */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5 text-label font-medium text-muted">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5 text-label text-secondary">
         <span className="inline-flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-chart-seq-5" /> verified
+          <span className="h-2 w-2 rounded-full bg-chart-seq-5" /> verified
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-chart-seq-3" /> self-attested
+          <span className="h-2 w-2 rounded-full border-2 border-chart-seq-5" /> self-attested
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full border-2 border-line-strong" /> missed
+          <span className="h-0.5 w-2 rounded-pill bg-line-strong" /> missed
         </span>
       </div>
     </div>
@@ -388,7 +409,7 @@ function HeatStrip({ spec }: { spec: ChartSpec }) {
     >
       {perDay.map((v, i) => (
         <span key={i} className="grid place-items-center">
-          <span className={heatDot(v, 'h-1.5 w-1.5')} />
+          <span className={heatDot(v, 'h-2 w-2')} />
         </span>
       ))}
     </div>
@@ -398,10 +419,11 @@ function HeatStrip({ spec }: { spec: ChartSpec }) {
 function Empty({ thin }: { thin: boolean }) {
   return (
     <div
-      // A fill OR a hairline, never both: an empty slot is a quiet fill.
-      className={`grid place-items-center rounded-surface bg-soft ${thin ? 'h-11' : 'h-28'}`}
+      // No fill of its own: every caller already draws the opaque --panel
+      // well, and a second box inside it read as a double frame.
+      className={`grid place-items-center ${thin ? 'h-11' : 'h-28'}`}
     >
-      {!thin && <span className="micro">No chart data</span>}
+      {!thin && <span className="meta">No chart data yet</span>}
     </div>
   )
 }
@@ -413,6 +435,7 @@ function hasPoints(spec: ChartSpec): boolean {
 /** Card-size chart (h-28) with axes, tooltip, legend for dual series. */
 export default function CareChart({ spec }: { spec: ChartSpec | null }) {
   const gradientId = `care-fade-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+  const hostRef = useRef<HTMLDivElement>(null)
   if (!spec) return <Empty thin={false} />
   if (spec.kind === 'gauge') return <Gauge spec={spec} thin={false} />
   if (spec.kind === 'heat') return <Heat spec={spec} />
@@ -426,7 +449,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
         x={spec.marker_x}
         stroke={MARKER}
         strokeDasharray="4 3"
-        label={{ value: 'Change', position: 'top', fontSize: 11, fontWeight: 500, fill: MARKER }}
+        label={<ChangeLabel side={markerSide(spec.marker_x, spec.series.map((p) => p.x))} />}
       />
     ) : null
   const reference =
@@ -435,8 +458,10 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
     ) : null
   const tooltip = (
     <Tooltip
+      wrapperStyle={CHART_TOOLTIP_WRAPPER}
+      isAnimationActive={false}
       cursor={{ stroke: GRID, strokeWidth: 1 }}
-      content={(props) => <ChartTip spec={spec} {...(props as object)} />}
+      content={(props) => <ChartTip spec={spec} hostRef={hostRef} {...(props as object)} />}
     />
   )
 
@@ -444,7 +469,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
     const hasLabel = spec.series.some((p) => p.label)
     const data = spec.series.map((p) => ({ x: p.x, y: p.y ?? null, label: p.label }))
     return (
-      <div className="h-28">
+      <div ref={hostRef} className="h-28">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={margin}>
             <XAxis
@@ -456,7 +481,8 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
               tickFormatter={(v: string | number) => (hasLabel ? String(v) : xTick(spec, v))}
               interval={hasLabel ? 0 : 'preserveStartEnd'}
             />
-            <YAxis hide />
+            {/* Bar totals keep zero (y-domain rule): a bar's length IS its value. */}
+            <YAxis hide domain={ZERO_BASED} />
             {reference}
             <Bar
               dataKey="y"
@@ -475,7 +501,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
 
   if (spec.kind === 'scatter') {
     return (
-      <div className="h-28">
+      <div ref={hostRef} className="h-28">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart margin={margin}>
             <XAxis
@@ -488,7 +514,15 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
               tickFormatter={(v: number) => xTick(spec, v)}
               interval="preserveStartEnd"
             />
-            <YAxis dataKey="y" hide />
+            <YAxis
+              dataKey="y"
+              hide
+              domain={lineDomain([
+                ...spec.series.map((p) => p.y),
+                ...(spec.fit ?? []).map((f) => f.y),
+                spec.reference,
+              ])}
+            />
             <ZAxis range={[36, 36]} />
             {reference}
             {spec.fit && spec.fit.length > 0 && (
@@ -506,8 +540,12 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
             <Scatter data={spec.series} dataKey="y" fill={S1} isAnimationActive={false} />
             {marker}
             <Tooltip
+              wrapperStyle={CHART_TOOLTIP_WRAPPER}
+              isAnimationActive={false}
               cursor={{ stroke: GRID, strokeWidth: 1, strokeDasharray: '3 3' }}
-              content={(props) => <ChartTip spec={spec} {...(props as object)} />}
+              content={(props) => (
+                <ChartTip spec={spec} hostRef={hostRef} {...(props as object)} />
+              )}
             />
           </ComposedChart>
         </ResponsiveContainer>
@@ -523,6 +561,14 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
   // across gaps but the dot renderer is not called for a null point.
   const lastY2 = rows.reduce((last, r, i) => (r.y2 != null ? i : last), -1)
   const y2Label = spec.y2_label || 'Secondary'
+  // Line / band / dual: the domain follows the data (HIG) instead of pinning 0.
+  const leftDomain = lineDomain([
+    ...rows.map((r) => r.y),
+    ...rows.map((r) => r.fit),
+    ...rows.flatMap((r) => r.band ?? []),
+    spec.reference,
+  ])
+  const rightDomain = lineDomain(rows.map((r) => r.y2))
 
   return (
     <div>
@@ -531,7 +577,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
         // solid rule for S1, a 4-2 dashed one for S2 — because the two colours
         // are 1.263:1 apart in light and a pair of identical bars in two
         // near-identical blues would be the legend lying about the plot.
-        <div className="mb-1.5 flex items-center gap-4 text-label font-medium text-muted">
+        <div className="mb-1.5 flex items-center gap-4 text-label text-secondary">
           <span className="inline-flex items-center gap-el">
             <span aria-hidden className="h-0.5 w-4 bg-chart-s1" /> {spec.y_label || 'Primary'}
           </span>
@@ -547,7 +593,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
           </span>
         </div>
       )}
-      <div className="h-28">
+      <div ref={hostRef} className="h-28">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={rows} margin={margin}>
             <defs>
@@ -566,8 +612,8 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
               tickFormatter={(v: number | string) => xTick(spec, v)}
               interval="preserveStartEnd"
             />
-            <YAxis yAxisId="left" hide domain={['auto', 'auto']} />
-            {dual && <YAxis yAxisId="right" orientation="right" hide domain={['auto', 'auto']} />}
+            <YAxis yAxisId="left" hide domain={leftDomain} />
+            {dual && <YAxis yAxisId="right" orientation="right" hide domain={rightDomain} />}
             {spec.kind === 'band' && (
               <Area
                 yAxisId="left"
@@ -633,13 +679,7 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
                 x={spec.marker_x}
                 stroke={MARKER}
                 strokeDasharray="4 3"
-                label={{
-                  value: 'Change',
-                  position: 'top',
-                  fontSize: 11,
-                  fontWeight: 500,
-                  fill: MARKER,
-                }}
+                label={<ChangeLabel side={markerSide(spec.marker_x, rows.map((r) => r.x))} />}
               />
             )}
             {tooltip}
@@ -670,7 +710,7 @@ export function MiniChart({ spec }: { spec: ChartSpec | null }) {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={margin}>
             <XAxis dataKey={hasLabel ? 'label' : 'x'} type="category" hide />
-            <YAxis hide />
+            <YAxis hide domain={ZERO_BASED} />
             {spec.reference != null && (
               <ReferenceLine y={spec.reference} stroke={REF} strokeDasharray="3 3" />
             )}
@@ -693,7 +733,11 @@ export function MiniChart({ spec }: { spec: ChartSpec | null }) {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart margin={margin}>
             <XAxis dataKey="x" type="number" domain={['dataMin', 'dataMax']} hide />
-            <YAxis dataKey="y" hide />
+            <YAxis
+              dataKey="y"
+              hide
+              domain={lineDomain([...spec.series.map((p) => p.y), ...(spec.fit ?? []).map((f) => f.y)])}
+            />
             <ZAxis range={[14, 14]} />
             {spec.fit && spec.fit.length > 0 && (
               <Line
@@ -730,7 +774,14 @@ export function MiniChart({ spec }: { spec: ChartSpec | null }) {
             domain={numericX ? ['dataMin', 'dataMax'] : undefined}
             hide
           />
-          <YAxis hide domain={['auto', 'auto']} />
+          <YAxis
+            hide
+            domain={lineDomain([
+              ...rows.map((r) => r.y),
+              ...rows.flatMap((r) => r.band ?? []),
+              spec.reference,
+            ])}
+          />
           {spec.kind === 'band' && (
             <Area dataKey="band" stroke="none" fill={GRID} isAnimationActive={false} connectNulls />
           )}

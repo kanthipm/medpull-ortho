@@ -1,13 +1,31 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 export type Theme = 'light' | 'dark'
+/** The glass kill switch (R18). 'on' is the default: the app bar turns into
+ *  translucent material once content scrolls under it. 'off' makes every
+ *  blurred surface opaque (index.css `[data-glass='off']`). */
+export type Glass = 'on' | 'off'
 
 const STORAGE_KEY = 'medpull-theme'
+/** Shared with index.html's pre-paint script, which applies 'off' before the
+ *  first frame. This file owns the key at runtime. */
+const GLASS_KEY = 'medpull-glass'
+const REDUCED_TRANSPARENCY = '(prefers-reduced-transparency: reduce)'
 
 type ThemeContextValue = {
   theme: Theme
   setTheme: (theme: Theme) => void
   toggleTheme: () => void
+  /** The user's stored glass choice. */
+  glass: Glass
+  setGlass: (glass: Glass) => void
+  toggleGlass: () => void
+  /** True when the OS asks for reduced transparency. The CSS already makes the
+   *  bar opaque in that case, whatever `glass` says; the Settings row should
+   *  say so instead of pretending the toggle does something. */
+  systemReducedTransparency: boolean
+  /** What the viewer actually gets: glass === 'on' and the OS allows it. */
+  glassActive: boolean
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -26,9 +44,10 @@ function systemTheme(): Theme {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-/** The app bar is `--panel` in both modes (it stopped being a Medical Blue
- *  slab when --glass-bg was re-pointed at --panel), so `theme-color` — which
- *  tints the browser and OS chrome directly above that bar — is --panel too.
+/** The app bar is a --panel material in both modes (transparent over the
+ *  ambient wash at scroll 0, --panel at --bar-alpha once scrolled), so
+ *  `theme-color` — which tints the browser and OS chrome directly above that
+ *  bar — is --panel too.
  *
  *  WHICH FILE WINS, and why it matters. There are two writers of this meta tag
  *  and they disagreed:
@@ -80,6 +99,39 @@ function applyTheme(theme: Theme) {
   if (meta && panel) meta.setAttribute('content', panel)
 }
 
+function readStoredGlass(): Glass {
+  try {
+    return localStorage.getItem(GLASS_KEY) === 'off' ? 'off' : 'on'
+  } catch {
+    return 'on'
+  }
+}
+
+/** Mirror the choice onto <html data-glass>. 'on' removes the attribute, so
+ *  the default document carries nothing and the CSS default applies. */
+function applyGlass(glass: Glass) {
+  const root = document.documentElement
+  if (glass === 'off') root.setAttribute('data-glass', 'off')
+  else root.removeAttribute('data-glass')
+}
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(query).matches
+      : false,
+  )
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const mql = window.matchMedia(query)
+    const onChange = () => setMatches(mql.matches)
+    onChange()
+    mql.addEventListener?.('change', onChange)
+    return () => mql.removeEventListener?.('change', onChange)
+  }, [query])
+  return matches
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light'
@@ -95,15 +147,44 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [theme])
 
+  const [glass, setGlassState] = useState<Glass>(() =>
+    typeof window === 'undefined' ? 'on' : readStoredGlass(),
+  )
+  const systemReducedTransparency = useMediaQuery(REDUCED_TRANSPARENCY)
+
+  useEffect(() => {
+    applyGlass(glass)
+    try {
+      if (glass === 'off') localStorage.setItem(GLASS_KEY, 'off')
+      else localStorage.setItem(GLASS_KEY, 'on')
+    } catch {
+      /* ignore */
+    }
+  }, [glass])
+
   const setTheme = useCallback((next: Theme) => setThemeState(next), [])
+  const setGlass = useCallback((next: Glass) => setGlassState(next), [])
+  const toggleGlass = useCallback(
+    () => setGlassState((g) => (g === 'off' ? 'on' : 'off')),
+    [],
+  )
   const toggleTheme = useCallback(
     () => setThemeState((t) => (t === 'dark' ? 'light' : 'dark')),
     [],
   )
 
   const value = useMemo(
-    () => ({ theme, setTheme, toggleTheme }),
-    [theme, setTheme, toggleTheme],
+    () => ({
+      theme,
+      setTheme,
+      toggleTheme,
+      glass,
+      setGlass,
+      toggleGlass,
+      systemReducedTransparency,
+      glassActive: glass === 'on' && !systemReducedTransparency,
+    }),
+    [theme, setTheme, toggleTheme, glass, setGlass, toggleGlass, systemReducedTransparency],
   )
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
@@ -113,4 +194,14 @@ export function useTheme() {
   const ctx = useContext(ThemeContext)
   if (!ctx) throw new Error('useTheme must be used within ThemeProvider')
   return ctx
+}
+
+/** The glass kill switch for the Settings row (R18):
+ *    const { glass, setGlass, systemReducedTransparency } = useGlass()
+ *  Render it as a switch (checked = glass === 'on'); when
+ *  systemReducedTransparency is true, show the switch disabled with a note
+ *  that the system setting already keeps the bar opaque. */
+export function useGlass() {
+  const { glass, setGlass, toggleGlass, systemReducedTransparency, glassActive } = useTheme()
+  return { glass, setGlass, toggleGlass, systemReducedTransparency, glassActive }
 }

@@ -10,23 +10,28 @@ import SwiftUI
 // use one of the three helpers below instead, because each of them carries the
 // pre-iOS-26 fallback and the accessibility gate that a bare call does not.
 //
-// THREE HELPERS, EACH WITH A CALL SITE. This file used to publish seven and
-// one was used. Dead API in a design system is an invitation to a call site
-// nobody reviewed, so what is here is exactly what the app renders:
+// FOUR HELPERS. What is here is exactly what the app is allowed to render:
 //   * `mpTabBarMinimizeOnScroll()` — RootView's TabView.
-//   * `mpHardScrollEdge(_:)`       — screens whose clinical content scrolls
-//     under the tab bar: HealthView, TasksView, TaskDetailView. (HomeView
-//     needs it too; it is owned elsewhere — see the 2026-09-16 handoff.)
+//   * `mpHardScrollEdge(_:)`       — the tab roots whose clinical content
+//     scrolls under system chrome: HomeView, TasksView, HealthView, and
+//     TaskDetailView (inside TasksView.swift). Kept on all of them (R13).
 //   * `mpGlassActionBar(isPresented:content:)` — TaskDetailView, the one
 //     custom glass surface in the app.
+//   * `mpGlassButton(prominent:)` — the buttons INSIDE that bar (added
+//     2026-09-16, group I1). On iOS 26 the commit action is
+//     `.glassProminent` tinted `MP.brand` with a white label (4.66:1 as
+//     measured in the spec; flat white on #1976D2 is 4.602), and any other
+//     glass button is `.glass` with `.primary` ink. Pre-26 they fall back to
+//     `.mpFilled` and a material capsule. System toolbars on 26 draw glass
+//     buttons inside a glass bar themselves, so this is the platform idiom,
+//     not glass-on-glass stacking of two independent surfaces.
 // DELETED, deliberately, 2026-09-16:
 //   * `mpGlass(in:)` — a free-standing glass surface. Mutually exclusive with
 //     the action bar by its own contract, and no screen has a floating thing
 //     that is not a bar. If one ever does, it is a design review, not a
 //     one-line call.
-//   * `mpGlassButton()` — `.buttonStyle(.glass)`. Its only sanctioned home was
-//     inside the glass bar, and a glass button on a glass bar is glass-on-glass
-//     (banned below). The bar's buttons are plain monochrome ink instead.
+//   * (`mpGlassButton()` was deleted here and reinstated with a prominence
+//     parameter by I1 — see the list above.)
 //   * `mpGlassMorph(_:in:)` and `MPGlassGroup` — morphs between two touching
 //     glass shapes. The app has one glass shape per screen; there is nothing
 //     for it to morph into. The reduce-motion gate they carried is recorded in
@@ -75,9 +80,10 @@ import SwiftUI
 //     and cross-fade instead (SwiftUI does not apply reduce-motion to explicit
 //     animations). A gel-like morph is a plausible dizziness trigger, and this
 //     app's user is a medicated post-operative patient.
-//   * NO glass-on-glass. `mpGlassActionBar` sits inside the safe area above
-//     the tab bar, never on top of it, and nothing inside it is glass — which
-//     is why `.buttonStyle(.glass)` has no helper.
+//   * NO glass-on-glass SURFACES. `mpGlassActionBar` sits inside the safe
+//     area above the tab bar, never on top of it. The only glass inside it is
+//     the system glass button style via `mpGlassButton`, which is how iOS 26
+//     draws a toolbar's own buttons.
 //
 // ONE THING THIS FILE DELIBERATELY DOES NOT READ. On iOS 26 the material
 // handles `accessibilityReduceTransparency` itself, and it does it better than
@@ -225,10 +231,12 @@ private struct MPLegacyGlassSurface<S: Shape>: ViewModifier {
 ///
 /// INK IS MONOCHROME AND THAT IS LOAD-BEARING. The bar sets
 /// `foregroundStyle(.primary)` and `tint(.primary)`, which override the
-/// app-wide `.tint(MP.brand)` from MedPullApp for the bar's subtree only.
+/// app-wide `.tint(MP.brandInk)` from MedPullApp for the bar's subtree only.
 /// Without the tint override, `.buttonStyle(.glass)` would draw its label in
 /// Medical Blue on a surface that has picked up whatever is scrolling behind
-/// it — and #1976D2 against a ground at its own luminance is 1.00:1. Use
+/// it — and #1976D2 against a ground at its own luminance is 1.00:1. The one
+/// exception is `mpGlassButton(prominent: true)`, which re-tints ITSELF with
+/// `MP.brand` as a fill and draws a white label on it. Use
 /// `.secondary` ONLY on a glyph that should recede, never on words: system
 /// secondaryLabel is 3.44:1 on the light panel (clears the 3:1 graphic floor,
 /// fails 4.5:1 text). Do not reach for a token colour in here.
@@ -268,7 +276,70 @@ private struct MPGlassActionBar<Bar: View>: ViewModifier {
     }
 }
 
-// MARK: - The three call sites this file publishes
+// MARK: - 5. Glass buttons (inside the action bar only)
+
+/// iOS 26: `.glassProminent` (brand fill, white label) or `.glass` (`.primary`
+/// ink). iOS 17-25, or `MP_GLASS_LEGACY=1`: `.mpFilled`, or a material
+/// capsule. The prominent variant sets `.tint(MP.brand)` on itself, which
+/// wins over the bar's `.tint(.primary)` and over the root `MP.brandInk`
+/// tint (dark brandInk #63A4FF under white would be 2.6:1).
+private struct MPGlassButton: ViewModifier {
+    let prominent: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26, *), !MPGlass.legacyOverride {
+            if prominent {
+                content
+                    .buttonStyle(.glassProminent)
+                    .tint(MP.brand)
+                    .foregroundStyle(MP.onBrand)
+            } else {
+                content
+                    .buttonStyle(.glass)
+                    .tint(Color.primary)
+                    .foregroundStyle(.primary)
+            }
+        } else if prominent {
+            content.buttonStyle(.mpFilled)
+        } else {
+            content.buttonStyle(MPMaterialButtonStyle())
+        }
+    }
+}
+
+/// The pre-26 non-prominent glass button: a material capsule (opaque panel
+/// plus `lineStrong` under Reduce Transparency, via `MPLegacyGlassSurface`),
+/// `.primary` ink, the gated press scale.
+private struct MPMaterialButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        MPMaterialButtonBody(configuration: configuration)
+    }
+}
+
+private struct MPMaterialButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.controlSize) private var controlSize
+
+    var body: some View {
+        let compact = controlSize == .small || controlSize == .mini
+        configuration.label
+            .mpFont(compact ? .copyMedium : .copyLargeMedium)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, compact ? 14 : 18)
+            .frame(minHeight: compact ? 34 : 44)
+            .modifier(MPLegacyGlassSurface(shape: MP.capsuleShape, fallback: .regular))
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .padding(.vertical, compact ? 5 : 0)
+            .contentShape(Rectangle())
+            .scaleEffect(MPMotion.pressScale(configuration.isPressed, reduceMotion: reduceMotion))
+            .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion),
+                       value: configuration.isPressed)
+    }
+}
+
+// MARK: - The call sites this file publishes
+
 
 extension View {
     /// RootView's TabView, and nowhere else. See `MPTabBarMinimize`.
@@ -277,8 +348,9 @@ extension View {
     }
 
     /// Exactly once per view, on the scrolling container. See `MPHardScrollEdge`.
-    /// Tab roots pass `.vertical`: the top edge meets the status bar (their
-    /// navigation bar is hidden) and the bottom edge meets the tab bar.
+    /// Tab roots pass `.vertical`: the top edge meets the navigation bar (or
+    /// the status bar while Home's bar is hidden) and the bottom edge meets
+    /// the tab bar. Keep it on Home, Tasks and Health (R13).
     func mpHardScrollEdge(_ edges: Edge.Set = .vertical) -> some View {
         modifier(MPHardScrollEdge(edges: edges))
     }
@@ -295,5 +367,13 @@ extension View {
         @ViewBuilder content: @escaping () -> Bar
     ) -> some View {
         modifier(MPGlassActionBar(isPresented: isPresented, alignment: alignment, bar: content))
+    }
+
+    /// A button inside `mpGlassActionBar`. `prominent: true` for the bar's one
+    /// commit action (Liquid Glass prominent in Medical Blue on iOS 26,
+    /// `.mpFilled` before); `false` for a secondary glass button. A quiet
+    /// text action ("Skip this one") stays `.plain` with `.primary` ink.
+    func mpGlassButton(prominent: Bool = false) -> some View {
+        modifier(MPGlassButton(prominent: prominent))
     }
 }

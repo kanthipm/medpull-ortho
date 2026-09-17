@@ -28,12 +28,41 @@ export const GUARDED_NOTE = 'for review · not a diagnosis'
  *  to one decimal, small values to two. */
 export function fmtNum(v: number): string {
   const abs = Math.abs(v)
-  if (abs >= 1000) return Math.round(v).toLocaleString()
-  if (abs >= 10) return String(Math.round(v * 10) / 10)
-  return String(Math.round(v * 100) / 100)
+  const out =
+    abs >= 1000
+      ? Math.round(v).toLocaleString()
+      : abs >= 10
+        ? String(Math.round(v * 10) / 10)
+        : String(Math.round(v * 100) / 100)
+  // A negative reading carries a true minus (U+2212, R19), never a hyphen.
+  return out.replace('-', '\u2212')
 }
 
-/** `metric_type` keys read as words: `walking_asymmetry_pct` → "Walking asymmetry pct". */
+/** Readable names for the engine's `metric_type` keys (backend
+ *  app/models/enums.py MetricType). Keys that read fine as words are left to
+ *  the fallback. */
+const METRIC_TYPE_LABEL: Record<string, string> = {
+  resting_hr: 'Resting heart rate',
+  hr_sample: 'Heart rate samples',
+  hrv_rmssd: 'HRV (RMSSD)',
+  hrv_sdnn: 'HRV (SDNN)',
+  spo2: 'Blood oxygen',
+  skin_temp: 'Skin temperature',
+  skin_temp_delta: 'Skin temperature change',
+  double_support_pct: 'Double support',
+  walking_asymmetry_pct: 'Walking asymmetry',
+  stair_speed_up: 'Stair speed up',
+  stair_speed_down: 'Stair speed down',
+  six_min_walk: 'Six-minute walk',
+  wear_time_minutes: 'Wear time',
+  pain_nrs: 'Pain score',
+  prom_score: 'PROM score',
+  bp_systolic: 'Blood pressure, systolic',
+  bp_diastolic: 'Blood pressure, diastolic',
+}
+
+/** `metric_type` keys read as words: `hrv_rmssd` → "HRV (RMSSD)", and
+ *  anything unmapped falls back to `sleep_duration` → "Sleep duration". */
 export function metricTypeLabel(key: string): string {
-  return taskKindLabel(key)
+  return METRIC_TYPE_LABEL[key] ?? taskKindLabel(key)
 }

@@ -1,8 +1,9 @@
-import { MessageSquarePlus, Smartphone, MessageSquareText, Phone, Terminal } from 'lucide-react'
-import { useState } from 'react'
+import { MessageCircle, MessageSquarePlus, MessageSquareText, Phone, Smartphone, Terminal } from 'lucide-react'
+import { Fragment, useState } from 'react'
 import { firstNameOf } from '../../../api/plan'
 import { useMarkPatientMessagesRead, usePatientMessages } from '../../../api/queries'
 import type { PatientMessage } from '../../../api/types'
+import EmptyState from '../../../components/EmptyState'
 import SectionCard from '../../../components/SectionCard'
 import { RefreshOverlay, SkeletonLine } from '../../../components/Skeleton'
 import { useToast } from '../../../components/Toast'
@@ -12,16 +13,19 @@ import MessageComposerModal from './MessageComposerModal'
 
 const SHOW = 20
 
-const CHANNEL_ICON = {
-  app: Smartphone,
-  sms: MessageSquareText,
-  voice: Phone,
-  console: Terminal,
+const CHANNEL = {
+  app: { icon: Smartphone, label: 'app' },
+  sms: { icon: MessageSquareText, label: 'text' },
+  voice: { icon: Phone, label: 'voice' },
+  console: { icon: Terminal, label: 'console' },
 } as const
 
 /** The patient <-> care team thread, newest first, read through the thread's
- *  own hooks. Patient lines sit left on the panel surface; the care team's
- *  and the copilot's sit right in brand, like a check-in transcript. */
+ *  own hooks. Messages-app bubbles: the patient's lines sit left in a grey
+ *  bubble (ink on --soft, 16.202 light / 16.060 dark), the care team's and
+ *  the copilot's sit right in a filled brand bubble (white on #1976D2,
+ *  4.602 in both modes), each with a small "tail" corner. Days are marked
+ *  by a centred .meta label, like the app's thread. */
 export default function MessagesSection({
   patientId,
   patientName,
@@ -52,12 +56,13 @@ export default function MessagesSection({
     <>
       <SectionCard
         title="Messages"
-        aside={
-          <span className="flex items-center gap-1.5">
+        aside={unread > 0 ? `${unread} new` : undefined}
+        action={
+          <>
             {unread > 0 && (
               <button
                 type="button"
-                className="chip cursor-pointer bg-brand-tint text-on-brand-tint transition-colors duration-150 hover:bg-brand-tint-strong disabled:bg-disabled-fill disabled:text-disabled-ink"
+                className="btn-plain btn-sm"
                 disabled={markRead.isPending}
                 onClick={() =>
                   markRead.mutate(undefined, {
@@ -65,47 +70,65 @@ export default function MessagesSection({
                   })
                 }
               >
-                {unread} new · Mark all read
+                Mark all read
               </button>
             )}
-            <button type="button" className="qa-btn" onClick={() => setComposer(true)}>
-              <MessageSquarePlus size={13} /> New message
+            <button type="button" className="btn-tinted btn-sm" onClick={() => setComposer(true)}>
+              <MessageSquarePlus aria-hidden /> New message
             </button>
-          </span>
+          </>
         }
       >
         <RefreshOverlay show={refreshing} />
 
         {thread.isLoading && (
           <div className="space-y-2.5">
-            <SkeletonLine className="ml-auto h-8 w-2/3 rounded-surface" />
-            <SkeletonLine className="h-8 w-1/2 rounded-surface" />
+            <SkeletonLine className="ml-auto h-9 w-2/3 !rounded-[20px]" />
+            <SkeletonLine className="h-9 w-1/2 !rounded-[20px]" />
           </div>
         )}
         {thread.isError && (
-          <p className="text-label font-medium text-muted">The thread could not be loaded.</p>
+          <p className="text-copy text-secondary">The thread could not be loaded.</p>
         )}
         {thread.data && messages.length === 0 && (
-          <p className="text-label font-medium text-muted">
-            No messages yet. Anything {first} writes in the app or texts back lands here.
-          </p>
+          <EmptyState
+            variant="inline"
+            icon={<MessageCircle />}
+            title="No messages yet"
+            className="!py-4"
+          >
+            Anything {first} writes in the app or texts back lands here.
+          </EmptyState>
         )}
 
         {messages.length > 0 && (
           <>
-            <ul className="space-y-2.5">
-              {visible.map((m) => (
-                <Bubble key={m.id} m={m} first={first} patientId={patientId} />
-              ))}
-            </ul>
+            <ol className="space-y-3" aria-label={`Thread with ${first}, newest first`}>
+              {visible.map((m, i) => {
+                const day = dayLabel(m.created_at)
+                const newDay = i === 0 || dayLabel(visible[i - 1].created_at) !== day
+                return (
+                  <Fragment key={m.id}>
+                    {newDay && (
+                      <li className="meta pb-0.5 pt-1 text-center font-medium" aria-hidden>
+                        {day}
+                      </li>
+                    )}
+                    <Bubble m={m} first={first} patientId={patientId} />
+                  </Fragment>
+                )
+              })}
+            </ol>
             {messages.length > SHOW && (
-              <button
-                type="button"
-                onClick={() => setShowAll((s) => !s)}
-                className="mt-2 cursor-pointer rounded-control px-1 py-1 text-label font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint"
-              >
-                {showAll ? 'Show recent only' : `Show all ${messages.length} messages`}
-              </button>
+              <div className="mt-3 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setShowAll((s) => !s)}
+                  className="btn-plain btn-sm"
+                >
+                  {showAll ? 'Show recent only' : `Show all ${messages.length} messages`}
+                </button>
+              </div>
             )}
           </>
         )}
@@ -124,32 +147,55 @@ export default function MessagesSection({
   )
 }
 
+/** "Today", "Yesterday", else "Mon, Sep 14". */
+function dayLabel(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const today = new Date()
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const diff = Math.round((startOf(today) - startOf(d)) / 86_400_000)
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Yesterday'
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...(d.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}),
+  })
+}
+
 function Bubble({ m, first, patientId }: { m: PatientMessage; first: string; patientId: string }) {
   const inbound = m.sender === 'patient'
-  const Icon = CHANNEL_ICON[m.channel] ?? Smartphone
+  const channel = CHANNEL[m.channel] ?? CHANNEL.app
+  const Icon = channel.icon
   // A clinician's message says so by name; the copilot's says nothing, which
   // is what "AI is the default" means — a badge is a claim, and only a person
   // standing behind the words is a claim worth printing.
   const clinician = !inbound && m.authored_by?.kind === 'care_team' ? m.authored_by.name : null
-  const who = inbound ? first : clinician ? clinician : 'Copilot'
-  const status = inbound
-    ? { label: 'received', pill: 'bg-soft text-muted' }
-    : m.delivery_status === 'delivered'
-      ? { label: 'delivered', pill: 'bg-risk-low-tint text-risk-low-ink' }
-      : m.delivery_status === 'sent'
-        ? { label: 'texted', pill: 'bg-risk-low-tint text-risk-low-ink' }
-        : m.delivery_status === 'failed'
-          ? { label: 'failed', pill: 'bg-risk-high-tint text-risk-high-ink' }
-          : { label: 'in app', pill: 'bg-soft text-muted' }
+  const who = inbound ? first : clinician ? `${clinician}, care team` : 'Copilot'
+  const unread = inbound && !m.read_by_care_team
+  const failed = m.delivery_status === 'failed'
+  // Delivery as a word in the meta line; only a failure is a state chip.
+  const delivery =
+    inbound || failed
+      ? null
+      : m.delivery_status === 'delivered'
+        ? 'Delivered'
+        : m.delivery_status === 'sent'
+          ? 'Texted'
+          : null
+
   return (
     <li className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
-      <div className={`max-w-[85%] ${inbound ? 'items-start' : 'items-end'} flex flex-col`}>
+      <div className={`flex max-w-[78%] flex-col ${inbound ? 'items-start' : 'items-end'}`}>
         {/* A photo can be the whole message, so an empty bubble is not drawn. */}
         {m.text.trim() !== '' && (
           <div
-            className={`rounded-surface px-3.5 py-2 text-copy font-medium ${
-              inbound ? 'border border-line bg-panel text-ink' : 'bg-brand text-on-brand'
-            }`}
+            className={`whitespace-pre-wrap break-words rounded-[20px] px-4 py-2.5 text-copy-lg ${
+              inbound
+                ? 'rounded-bl-[6px] bg-soft text-ink'
+                : 'rounded-br-[6px] bg-brand text-on-brand'
+            } ${failed ? 'ring-2 ring-risk-high-ink ring-offset-2 ring-offset-panel' : ''}`}
           >
             {m.text}
           </div>
@@ -159,28 +205,40 @@ function Bubble({ m, first, patientId }: { m: PatientMessage; first: string; pat
           items={m.attachments ?? []}
           align={inbound ? 'start' : 'end'}
         />
-        <span className="mt-1 flex flex-wrap items-center px-1 gap-1.5 text-label font-medium text-muted">
-          {inbound && !m.read_by_care_team && (
-            <span aria-label="Unread" className="h-1.5 w-1.5 rounded-pill bg-brand" />
-          )}
-          <span>{who}</span>
-          {clinician && (
-            <span className="chip bg-brand-tint text-on-brand-tint">
-              Care team approved
+        <p
+          className={`meta mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 px-2 ${
+            inbound ? '' : 'justify-end'
+          }`}
+        >
+          {unread && (
+            <span className="inline-flex items-center gap-1 font-medium text-brand-ink">
+              <span aria-hidden className="h-2 w-2 rounded-pill bg-brand" />
+              New
             </span>
           )}
+          {unread && <span aria-hidden>·</span>}
+          <span className={clinician ? 'font-medium' : undefined}>{who}</span>
+          <span aria-hidden>·</span>
           <span className="inline-flex items-center gap-1">
-            <Icon size={10} /> {m.channel}
+            <Icon aria-hidden size={12} />
+            <span>{channel.label}</span>
           </span>
-          <span className="tabular-nums">{relativeTime(m.created_at)}</span>
-          <span className={`chip ${status.pill}`}>{status.label}</span>
-        </span>
-        {m.delivery_status === 'failed' && m.delivery_detail && (
+          <span aria-hidden>·</span>
+          <time dateTime={m.created_at} className="tabular-nums">
+            {relativeTime(m.created_at)}
+          </time>
+          {delivery && (
+            <>
+              <span aria-hidden>·</span>
+              <span>{delivery}</span>
+            </>
+          )}
+          {failed && <span className="chip bg-risk-high-tint text-risk-high-ink">Not delivered</span>}
+        </p>
+        {failed && m.delivery_detail && (
           // The provider's own words. "Not delivered" alone left a clinician
           // unable to tell a landline from a broken texting account.
-          <span className="px-1 mt-0.5 text-label font-medium text-risk-high-ink">
-            {m.delivery_detail}
-          </span>
+          <p className="mt-0.5 px-2 text-label text-risk-high-ink">{m.delivery_detail}</p>
         )}
       </div>
     </li>

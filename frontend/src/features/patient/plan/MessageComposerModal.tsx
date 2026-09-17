@@ -1,5 +1,5 @@
 import { Paperclip, Send, Sparkles } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { MessageTone } from '../../../api/plan'
 import {
   firstNameOf,
@@ -10,11 +10,11 @@ import {
 import { useMessagePatient } from '../../../api/queries'
 import type { MessagePatientResult } from '../../../api/types'
 import AIAttribution from '../../../components/AIAttribution'
+import Modal from '../../../components/Modal'
 import SegmentedControl from '../../../components/SegmentedControl'
 import { useToast } from '../../../components/Toast'
 import { PendingAttachments } from '../ThreadAttachments'
 import { useAttachmentPicker } from '../useAttachmentPicker'
-import PlanModal from './PlanModal'
 import { numberWarning, resolvePlaceholders, templatize } from './planCopy'
 
 const SOFT_LIMIT = 280
@@ -26,7 +26,13 @@ const TONES: { key: MessageTone; label: string }[] = [
 /** Compose a message to the patient: pinned templates fill the box with the
  *  placeholders resolved, the AI drafts from an intent and tone, and the
  *  send goes through the thread's own endpoint (a text when the patient has
- *  a phone, the app thread otherwise). */
+ *  a phone, the app thread otherwise).
+ *
+ *  App anatomy: gray template capsules (tinted when chosen, aria-pressed),
+ *  the ask-style capsule field for the AI draft with a round sparkle button,
+ *  the message box, and a pinned footer with a gray Attach and the filled
+ *  Send. Secondary text is `text-secondary`, which the Modal scopes to
+ *  --body (dark --muted on the overlay panel is 3.655:1; --body 4.955). */
 export default function MessageComposerModal({
   patientId,
   patientName,
@@ -66,6 +72,10 @@ export default function MessageComposerModal({
   const pinned = (templates.data?.templates ?? []).filter((t) => t.pinned && !t.archived)
   const warn = numberWarning(text)
   const over = text.length > SOFT_LIMIT
+  const uid = useId()
+  const intentId = `${uid}-intent`
+  const textId = `${uid}-text`
+  const toneId = `${uid}-tone`
 
   const runDraft = () =>
     draft.mutate(
@@ -118,107 +128,143 @@ export default function MessageComposerModal({
   }
 
   const footer = (
-    <div className="flex flex-wrap items-center gap-3">
-      <p className="text-label font-medium text-muted">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <p className="meta min-w-0 flex-1 basis-56">
         {phone ? `Texts ${phone} and shows in the app.` : `No phone on file — ${first} sees it in the app.`}
         {files.ids.length > 0 && ` Files open in the app, never in the text.`}
       </p>
       <input {...files.inputProps} />
-      <button
-        type="button"
-        className="qa-btn sm:ml-auto"
-        title="Attach a photo or file"
-        disabled={files.busy}
-        onClick={files.open}
-      >
-        <Paperclip size={13} />
-        {files.busy ? 'Uploading…' : 'Attach'}
-      </button>
-      <button
-        type="button"
-        className="btn-primary sm:w-auto"
-        disabled={(!text.trim() && files.ids.length === 0) || send.isPending || files.busy}
-        onClick={submit}
-      >
-        <Send size={13} />
-        {send.isPending ? 'Sending…' : phone ? 'Send text' : 'Send to app'}
-      </button>
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          className="btn-gray"
+          title="Attach a photo or file"
+          disabled={files.busy}
+          onClick={files.open}
+        >
+          <Paperclip aria-hidden size={16} />
+          {files.busy ? 'Uploading…' : 'Attach'}
+        </button>
+        <button
+          type="button"
+          className="btn-filled"
+          disabled={(!text.trim() && files.ids.length === 0) || send.isPending || files.busy}
+          onClick={submit}
+        >
+          <Send aria-hidden size={16} />
+          {send.isPending ? 'Sending…' : phone ? 'Send text' : 'Send to app'}
+        </button>
+      </div>
     </div>
   )
 
   return (
-    <PlanModal size="lg" title={`Message ${first}`} onClose={onClose} footer={footer}>
-      <div className="space-y-4">
+    <Modal size="lg" title={`Message ${first}`} onClose={onClose} footer={footer} initialFocus="textarea">
+      <div className="space-y-5 pt-1">
         {pinned.length > 0 && (
-          <section>
-            <p className="mb-1.5 text-label font-medium text-muted">Templates</p>
+          <section aria-labelledby={`${uid}-templates`}>
+            <h3 id={`${uid}-templates`} className="mb-2 text-label font-medium tracking-label text-secondary">
+              Templates
+            </h3>
             <div className="flex flex-wrap gap-1.5">
-              {pinned.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => {
-                    setText(resolvePlaceholders(t.body, ctx))
-                    setTemplateId(t.id)
-                  }}
-                  aria-pressed={templateId === t.id}
-                  title={t.body}
-                  className={`chip cursor-pointer border transition-colors duration-150 ${
-                    templateId === t.id
-                      ? 'border-brand bg-brand-tint text-on-brand-tint'
-                      : 'border-line bg-panel text-body hover:border-brand hover:bg-brand-tint hover:text-on-brand-tint'
-                  }`}
-                >
-                  {t.title}
-                </button>
-              ))}
+              {pinned.map((t) => {
+                const on = templateId === t.id
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setText(resolvePlaceholders(t.body, ctx))
+                      setTemplateId(t.id)
+                    }}
+                    aria-pressed={on}
+                    title={t.body}
+                    className={`${on ? 'btn-tinted' : 'btn-gray'} btn-sm`}
+                  >
+                    {t.title}
+                  </button>
+                )
+              })}
             </div>
           </section>
         )}
 
-        <section className="rounded-surface bg-soft p-2.5">
-          <div className="flex flex-wrap items-center gap-2">
+        {/* The ask field: the app's capsule with a sparkle at the left and a
+            round draft button at the right; the tone sits under it. */}
+        <section aria-label="Draft with AI">
+          <form
+            className="relative"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!draft.isPending) runDraft()
+            }}
+          >
+            <label htmlFor={intentId} className="sr-only">
+              What should the message say?
+            </label>
+            <Sparkles
+              aria-hidden
+              size={18}
+              className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cat-teal-ink ${
+                draft.isPending ? 'motion-safe:animate-pulse' : ''
+              }`}
+            />
             <input
-              className="field min-w-[160px] flex-1"
-              placeholder="What should it say? e.g. ask about swelling and sleep"
+              id={intentId}
+              className="field field-pill"
+              placeholder="Ask AI to draft, e.g. check on swelling and sleep"
               value={intent}
               onChange={(e) => setIntent(e.target.value)}
-              aria-label="Message intent"
             />
+            {/* Wrapped: the press scale sets `transform`, which would undo a
+                translate on the button itself. */}
+            <span className="absolute right-2 top-1/2 flex -translate-y-1/2">
+              <button
+                type="submit"
+                className="btn-send"
+                disabled={draft.isPending}
+                aria-label={draft.isPending ? 'Drafting…' : 'Draft with AI'}
+                title="Draft with AI — the words land in the box below for review"
+              >
+                <Sparkles aria-hidden size={16} className={draft.isPending ? 'motion-safe:animate-spin' : undefined} />
+              </button>
+            </span>
+          </form>
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 px-1">
+            <span id={toneId} className="text-label font-medium tracking-label text-secondary">
+              Tone
+            </span>
             <SegmentedControl<MessageTone>
               options={TONES}
               value={tone}
               onChange={setTone}
-              aria-label="Tone"
+              size="sm"
+              role="radiogroup"
+              aria-labelledby={toneId}
               className="flex-none"
             />
-            <button type="button" className="qa-btn" disabled={draft.isPending} onClick={runDraft}>
-              <Sparkles size={13} className={draft.isPending ? 'animate-spin' : undefined} />
-              {draft.isPending ? 'Drafting…' : 'Draft with AI'}
-            </button>
+            {provider && <AIAttribution kind="message draft" provider={provider} className="ml-auto" />}
           </div>
-          {provider && (
-            <div className="mt-2">
-              <AIAttribution kind="message draft" provider={provider} />
-            </div>
-          )}
         </section>
 
         <section>
-          <div className="mb-1 flex items-baseline justify-between">
-            <label htmlFor="composer-text" className="block text-label font-medium text-muted">
+          <div className="mb-1.5 flex items-baseline justify-between px-1">
+            <label htmlFor={textId} className="text-label font-medium tracking-label text-secondary">
               Message
             </label>
             <span
-              className={`text-label tabular-nums ${over ? 'text-risk-med-ink' : 'text-muted'}`}
+              aria-live="polite"
+              className={`text-label tabular-nums ${over ? 'font-medium text-risk-med-ink' : 'text-secondary'}`}
             >
               {text.length}/{SOFT_LIMIT}
             </span>
           </div>
           <textarea
-            id="composer-text"
+            id={textId}
             rows={5}
-            className={`field ${draft.isPending ? 'shimmer text-transparent' : ''}`}
+            className={`field resize-y rounded-surface px-4 py-3 text-copy-lg ${
+              draft.isPending ? 'shimmer text-transparent' : ''
+            }`}
             placeholder={`e.g. Hi ${first} — how did last night go? Reply here or in the app.`}
             value={text}
             disabled={draft.isPending}
@@ -227,19 +273,19 @@ export default function MessageComposerModal({
             onDragOver={(e) => e.preventDefault()}
           />
           <PendingAttachments items={files.pending} onRemove={files.remove} busy={files.busy} />
-          {warn && <p className="mt-1 text-label font-medium text-risk-med-ink">{warn}</p>}
+          {warn && <p className="mt-1.5 px-1 text-label font-medium text-risk-med-ink">{warn}</p>}
           {over && !warn && (
-            <p className="mt-1 text-label font-medium text-muted">
+            <p className="meta mt-1.5 px-1">
               Long texts split into several messages — shorter reads better on a phone.
             </p>
           )}
         </section>
 
-        <section className="flex flex-wrap items-center gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-label font-medium text-body">
+        <section className="flex flex-wrap items-center gap-3 px-1">
+          <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-copy text-ink">
             <input
               type="checkbox"
-              className="h-3.5 w-3.5 accent-brand"
+              className="h-4 w-4 accent-brand"
               checked={saveAs}
               onChange={(e) => setSaveAs(e.target.checked)}
             />
@@ -256,11 +302,11 @@ export default function MessageComposerModal({
           )}
         </section>
 
-        <p className="text-label font-medium text-muted">
+        <p className="meta px-1">
           AI drafts are editable — nothing sends without your review. Keep it number-free: the
           patient never sees scores or percentages.
         </p>
       </div>
-    </PlanModal>
+    </Modal>
   )
 }

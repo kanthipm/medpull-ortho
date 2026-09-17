@@ -28,6 +28,10 @@ struct CheckinView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var questions: [Question] { task.questions }
+
+    /// The reached-dot fill: `MP.stateFill` (Medical Blue on light, 3.64:1 on
+    /// `track`; `brandInk` on dark, 5.05:1, where the anchor is only 2.78:1).
+    private var reachedDot: Color { MP.stateFill }
     private var isReview: Bool { step >= questions.count }
     private var current: Question? { isReview ? nil : questions[step] }
     private var answered: Int { answers.count }
@@ -57,9 +61,14 @@ struct CheckinView: View {
             }
         }
         .screen()
+        .navigationTitle("Daily check-in")
         .navigationBarTitleDisplayMode(.inline)
         .animation(stepMotion, value: step)
         .animation(doneMotion, value: done)
+        // Haptics: a tick per step, success when sent, a buzz on failure.
+        .mpSelectionFeedback(step)
+        .mpCompletionFeedback(done)
+        .mpErrorFeedback(error)
     }
 
     // MARK: motion
@@ -80,13 +89,14 @@ struct CheckinView: View {
     /// which is the honest and the useful thing to say about a check-in.
     private var progress: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // The screen's name is the inline navigation title now; this
+            // line only says where the patient is.
             HStack(alignment: .firstTextBaseline) {
-                Text("Daily check-in")
-                    .font(.subheadMedium).foregroundStyle(MP.ink)
+                Text(isReview ? "Review" : "Question \(step + 1) of \(questions.count)")
+                    .font(.figures(MPSize.copy, weight: .medium))
+                    .foregroundStyle(MP.muted)
+                    .contentTransition(.numericText(countsDown: false))
                 Spacer()
-                Text(isReview ? "Review" : "\(step + 1) of \(questions.count)")
-                    .font(.copyMedium).foregroundStyle(MP.muted)
-                    .monospacedDigit()
             }
             // TWO states, both solid tokens. It was three, and the middle
             // one was `brand.opacity(0.45)` — an alpha wash whose real
@@ -100,11 +110,12 @@ struct CheckinView: View {
             // instead of showing N-1 filled and one half-filled.
             HStack(spacing: 6) {
                 ForEach(questions.indices, id: \.self) { i in
-                    MP.pillShape
-                        .fill(i <= step || isReview ? MP.brand : MP.track)
-                        .frame(height: 4)
+                    MP.capsuleShape
+                        .fill(i <= step || isReview ? reachedDot : MP.track)
+                        .frame(height: 6)
                 }
             }
+            .accessibilityHidden(true)
         }
         .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 14)
     }
@@ -159,10 +170,11 @@ struct CheckinView: View {
     private var review: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(answered == 0 ? "Nothing answered yet" : "Here's what goes to your care team")
-                .font(.subheadMedium).foregroundStyle(MP.ink)
+                .title(MPSize.displayS)
+                .accessibilityAddTraits(.isHeader)
             if answered == 0 {
                 Text("Tap any question to answer it, or send nothing and do it later.")
-                    .font(.copy).foregroundStyle(MP.muted)
+                    .mpFont(.copy).foregroundStyle(MP.muted)
             }
             Card(padding: 0) {
                 VStack(spacing: 0) {
@@ -171,7 +183,7 @@ struct CheckinView: View {
                             HStack(alignment: .top, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(q.prompt)
-                                        .font(.copy).foregroundStyle(MP.muted)
+                                        .mpFont(.copy).foregroundStyle(MP.muted)
                                         .multilineTextAlignment(.leading)
                                     // "Not answered" is TEXT, so the
                                     // unanswered state is `muted` (5.39:1 on
@@ -179,20 +191,22 @@ struct CheckinView: View {
                                     // unanswered row is the one a patient most
                                     // needs to be able to read.
                                     Text(spoken(q))
-                                        .font(.copyLargeMedium)
+                                        .mpFont(.copyLargeMedium)
                                         .foregroundStyle(answers[q.id] == nil ? MP.muted : MP.ink)
                                         .multilineTextAlignment(.leading)
                                 }
                                 Spacer(minLength: 8)
-                                Image(systemName: "pencil").font(.labelMedium)
+                                Image(systemName: "pencil").font(.copyMedium)
                                     .foregroundStyle(MP.brandInk)
+                                    .accessibilityHidden(true)
                             }
                             .padding(.horizontal, 16).padding(.vertical, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        if q.id != questions.last?.id { Divider().overlay(MP.line).padding(.leading, 16) }
+                        .buttonStyle(.mpRow)
+                        .accessibilityHint(Text("Edit this answer"))
+                        if q.id != questions.last?.id { InsetDivider(leading: 16) }
                     }
                 }
             }
@@ -224,10 +238,14 @@ struct CheckinView: View {
             PrimaryButton(title: isReview ? sendTitle : "Next", loading: sending) {
                 if isReview { submit() } else { withAnimation(stepMotion) { typing = false; step += 1 } }
             }
+            // Plain capsules in brandInk (5.75:1 light / 6.78:1 dark on
+            // panel), each a full 44pt target.
             HStack {
                 if step > 0 {
-                    Button("Back") { withAnimation(stepMotion) { typing = false; step -= 1 } }
-                        .font(.copyMedium).foregroundStyle(MP.muted)
+                    Button { withAnimation(stepMotion) { typing = false; step -= 1 } } label: {
+                        Label("Back", systemImage: "chevron.left").labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.mpPlain)
                 }
                 Spacer()
                 if !isReview {
@@ -238,13 +256,13 @@ struct CheckinView: View {
                         if let id = current?.id { answers.removeValue(forKey: id) }
                         withAnimation(stepMotion) { typing = false; step += 1 }
                     }
-                    .font(.copyMedium).foregroundStyle(MP.muted)
+                    .buttonStyle(.mpPlain)
                 }
             }
-            .frame(minHeight: 22)
+            .frame(minHeight: 44)
         }
-        .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 14)
-        .background(MP.panel.overlay(Divider().overlay(MP.line), alignment: .top))
+        .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
+        .background(MP.panel.overlay(alignment: .top) { InsetDivider(leading: 0) }.ignoresSafeArea(edges: .bottom))
     }
 
     private var sendTitle: String {
@@ -280,9 +298,10 @@ struct CheckinView: View {
 /// phone without shrinking below the tap minimum, and picking "4" from a grid
 /// is a search task. A slider is one gesture, and the number and the word
 /// under the thumb say what was chosen without needing to read the scale.
-private struct ScaleAnswer: View {
+struct ScaleAnswer: View {
     @Binding var value: AnswerValue?
     var painting: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var number: Int { value?.intValue ?? 0 }
 
@@ -294,33 +313,21 @@ private struct ScaleAnswer: View {
             ZStack {
                 if value == nil {
                     Text("Drag to answer")
-                        .font(.copyLargeMedium).foregroundStyle(MP.muted)
+                        .mpFont(.copyLargeMedium).foregroundStyle(MP.muted)
                 } else {
                     VStack(spacing: 0) {
-                        // A DELIBERATE SYSTEM-FACE ESCAPE, now named as
-                        // one: `monoDisplay(MPSize.displayXL)` is the
-                        // display-band monospace rung, so the readout reads as
-                        // intentional rather than as a leak. Three things
-                        // changed and none of them is the escape itself. 58 ->
-                        // 54, which is the `displayXL` rung. `.rounded` ->
-                        // `.monospaced`, because SF Rounded was a third
-                        // typeface mid-screen and because a readout that
-                        // changes on every drag needs equal digit advances or
-                        // it shifts under the thumb. `.semibold` -> the 500
-                        // ceiling, which `Font.figures` clamps: `.system(weight:)`
-                        // is the one path that can still draw a real San
-                        // Francisco Semibold, since MPFont.name(for:) only
-                        // protects `.mp`. It stays fixed-size rather than
-                        // fluid: `.system(size:)` has no `relativeTo`, and a
-                        // tabular readout that grows is a readout that clips.
+                        // The UI face with tabular digits, on the display
+                        // curve: it now follows Dynamic Type, so it is held
+                        // to one line and may shrink rather than clip.
                         Text("\(number)")
                             .font(.figuresDisplay(MPSize.displayXL))
-                            .monospacedDigit()
                             .foregroundStyle(readoutInk)
-                            .contentTransition(.numericText())
+                            .contentTransition(.numericText(value: Double(number)))
+                            .animation(MPMotion.gated(MPMotion.state, reduceMotion: reduceMotion), value: number)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                         Text(painting ? Pain.word(number) : "out of 10")
-                            .font(.copyMedium).foregroundStyle(MP.muted)
+                            .mpFont(.copyMedium).foregroundStyle(MP.muted)
                     }
                 }
             }
@@ -332,11 +339,17 @@ private struct ScaleAnswer: View {
                 in: 0...10, step: 1
             )
             .tint(sliderTint)
+            .accessibilityValue(Text(value == nil ? "Not answered"
+                                     : painting ? "\(number), \(Pain.word(number))" : "\(number)"))
+            // Up a notch or down a notch, felt as well as seen.
+            .sensoryFeedback(trigger: number) { old, new in
+                new > old ? .increase : .decrease
+            }
 
             HStack {
-                Text(painting ? "No pain" : "0").font(.label).foregroundStyle(MP.muted)
+                Text(painting ? "No pain" : "0").mpFont(.label).foregroundStyle(MP.muted)
                 Spacer()
-                Text(painting ? "Worst imaginable" : "10").font(.label).foregroundStyle(MP.muted)
+                Text(painting ? "Worst imaginable" : "10").mpFont(.label).foregroundStyle(MP.muted)
             }
         }
     }
@@ -380,6 +393,7 @@ private struct ScaleAnswer: View {
 private struct ChoiceAnswer: View {
     let options: [String]
     @Binding var value: AnswerValue?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let labels: [String: String] = [
         "yes": "Yes", "no": "No", "well": "Well", "rough": "Rough night",
@@ -402,8 +416,10 @@ private struct ChoiceAnswer: View {
                         Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                             .font(.subhead)
                             .foregroundStyle(selected ? MP.brandInk : MP.lineStrong)
+                            .contentTransition(.symbolEffect(.replace))
+                            .accessibilityHidden(true)
                         Text(Self.labels[opt] ?? opt.capitalized)
-                            .font(.copyLargeMedium)
+                            .mpFont(.copyLargeMedium)
                             .foregroundStyle(MP.ink)
                         Spacer()
                     }
@@ -417,11 +433,27 @@ private struct ChoiceAnswer: View {
                     // second edge and never a shadow.
                     .background(MP.controlShape.fill(selected ? MP.brandTint : MP.panel))
                     .overlay(MP.controlShape
-                        .strokeBorder(selected ? MP.brand : MP.lineStrong, lineWidth: 1))
+                        .strokeBorder(selected ? MP.brand : MP.lineStrong, lineWidth: selected ? 1.5 : 1))
+                    .contentShape(MP.controlShape)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChoiceRowPress())
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
+        .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion), value: value)
+        .mpSelectionFeedback(value)
+    }
+}
+
+/// The gated 0.97 press scale for a choice row (none under Reduce Motion).
+private struct ChoiceRowPress: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(MPMotion.pressScale(configuration.isPressed, reduceMotion: reduceMotion))
+            .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion),
+                       value: configuration.isPressed)
     }
 }
 
@@ -441,24 +473,51 @@ private enum Pain {
 }
 
 private struct CheckinDoneView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sealHidden = true
+    @State private var landed = false
+
     var body: some View {
         VStack(spacing: 14) {
             Spacer()
-            // 54pt on the DISPLAY curve, not the UI curve: the old 54 literal scaled
-            // from `.body` (2.81x at AX5 = 152pt, which takes the screen with
-            // it); `displayXL` scales from `.largeTitle` (1.69x = 91pt).
-            Image(systemName: "checkmark.seal.fill")
-                .font(.displayXL).foregroundStyle(MP.riskLow)
+            // 54pt on the DISPLAY curve (1.69x at AX5), not the UI curve.
+            seal
             Text("Sent to your care team")
-                .font(.subheadMedium).foregroundStyle(MP.ink)
+                .title(MPSize.displayS)
+                .multilineTextAlignment(.center)
             Text("That's today done. They'll see it with their next review.")
-                .font(.copy).foregroundStyle(MP.muted)
+                .mpFont(.copyLarge).foregroundStyle(MP.muted)
                 .multilineTextAlignment(.center)
             Spacer()
         }
         .padding(.horizontal, 32)
         .frame(maxWidth: .infinity)
         .transition(.opacity)
+        .accessibilityElement(children: .combine)
+        .task {
+            try? await Task.sleep(for: .milliseconds(150))
+            sealHidden = false
+            landed = true
+        }
+    }
+
+    @ViewBuilder
+    private var seal: some View {
+        let base = Image(systemName: "checkmark.seal.fill")
+            .symbolRenderingMode(.hierarchical)
+            .font(.displayXL)
+            .foregroundStyle(MP.riskLow)
+            .accessibilityHidden(true)
+        if #available(iOS 26, *) {
+            // Indefinite draw-on: active = drawn off; clearing it draws in.
+            base
+                .symbolEffect(.drawOn, isActive: sealHidden && !reduceMotion)
+                .symbolEffectsRemoved(reduceMotion)
+        } else {
+            base
+                .symbolEffect(.bounce, value: landed)
+                .symbolEffectsRemoved(reduceMotion)
+        }
     }
 }
 

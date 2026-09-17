@@ -1,6 +1,7 @@
 import type {
   DraftTask,
   KindInfo,
+  NextStep,
   ParamField,
   PlanTask,
   RecordStatus,
@@ -10,6 +11,17 @@ import type {
 } from '../../../api/plan'
 import { PHASES, SCHEDULES } from '../../../api/plan'
 import type { TaskStatus } from '../../../api/types'
+import type { TileFamily } from '../../../components/Tile'
+import {
+  Bandage,
+  BedDouble,
+  Dumbbell,
+  Footprints,
+  ListChecks,
+  MessageCircle,
+  Pill,
+  type LucideIcon,
+} from 'lucide-react'
 
 /** Copy and lookup helpers for the care-plan UI. Kept out of the component
  *  modules so fast-refresh keeps working, and so Tailwind sees every class
@@ -39,19 +51,39 @@ export const TASK_STATUS = {
   skipped: { label: 'Skipped', pill: 'bg-risk-missing-tint text-risk-missing-ink' },
 } as const satisfies Record<TaskStatus, unknown>
 
-/** One day of the 14-day strip. Verified is the brand fill, self-attested a
- *  solid --line-strong, missed a hollow ring in the same step, pending a flat
- *  line, none invisible. Self-attested used to be `bg-brand/35`, which is
- *  1.617:1 on light --panel and 1.508:1 on dark --panel — half the 3:1 that
- *  1.4.11 asks of a mark carrying clinical state, and an alpha wash over a
- *  ground that flips. --line-strong is 3.834:1 light / 5.671:1 dark, solid.
- *  The legend in TasksSection names the colours, so it moved with this. */
+/** One day of the 14-day strip. Each state is its own SHAPE, so hue is never
+ *  the only carrier (R20), matching components/AdherenceDots:
+ *    verified       filled brand dot
+ *    self-attested  brand ring (2px)
+ *    missed         hollow --line-strong square
+ *    pending        flat --line dash
+ *    none           invisible (keeps the 14 cells aligned)
+ *  #1976D2 as a graphic is 4.602:1 on light --panel and 3.736:1 on dark
+ *  --panel; --line-strong is 3.834 / 5.671. All clear 1.4.11's 3:1. The
+ *  legend in TasksSection draws these same classes. */
 export const RECORD_DOT: Record<RecordStatus, { cls: string; label: string }> = {
   verified: { cls: 'h-2 w-2 rounded-pill bg-brand', label: 'Verified by data' },
-  self_attested: { cls: 'h-2 w-2 rounded-pill bg-line-strong', label: 'Self-reported' },
-  missed: { cls: 'h-2 w-2 rounded-pill border border-line-strong bg-transparent', label: 'Missed' },
+  self_attested: { cls: 'h-2 w-2 rounded-pill border-2 border-brand', label: 'Self-reported' },
+  missed: { cls: 'h-2 w-2 rounded-[2px] border border-line-strong', label: 'Missed' },
   pending: { cls: 'h-[2px] w-2 rounded-pill bg-line', label: 'Pending' },
   none: { cls: 'h-2 w-2 opacity-0', label: 'Not scheduled' },
+}
+
+/** The leading tile for a task, by their task kind — the same mapping as the
+ *  app's TaskListRow (ios/.../TasksView.swift): movement is teal, meds and
+ *  wounds violet, sleep indigo, check-ins and everything else blue. */
+export const TASK_KIND_TILE: Record<string, { icon: LucideIcon; family: TileFamily }> = {
+  checkin: { icon: MessageCircle, family: 'blue' },
+  exercise: { icon: Dumbbell, family: 'teal' },
+  walk: { icon: Footprints, family: 'teal' },
+  medication: { icon: Pill, family: 'violet' },
+  wound_check: { icon: Bandage, family: 'violet' },
+  sleep: { icon: BedDouble, family: 'indigo' },
+  custom: { icon: ListChecks, family: 'blue' },
+}
+
+export function taskKindTile(kind: string | null | undefined) {
+  return TASK_KIND_TILE[kind ?? 'custom'] ?? TASK_KIND_TILE.custom
 }
 
 export const USE_CASE_LABEL: Record<string, string> = {
@@ -337,4 +369,18 @@ function tokens(s: string): Set<string> {
       .split(/[\s-]+/)
       .filter((w) => w.length >= 4 && !STOP.has(w)),
   )
+}
+
+/** The step's own title as a capsule label (R4: on the worklist the button
+ *  IS the next step). The planner writes imperatives ("Call the patient
+ *  today", "Nudge the device sync"); the capsule drops the filler so it
+ *  reads "Call today", "Nudge device sync". A call with no dial link keeps
+ *  "Log call", because that is what the button then does. */
+export function shortStepLabel(step: NextStep, canText: boolean): string {
+  const type = step.action.type
+  if (type === 'send_checkin' && !canText) return 'Open check-in link'
+  return step.title
+    .replace(/\s+the patient\b/i, '')
+    .replace(/^(\S+)\s+the\s+/i, '$1 ')
+    .trim()
 }

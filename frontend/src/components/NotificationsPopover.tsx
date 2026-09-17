@@ -1,5 +1,5 @@
-import { Bell } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Bell, BellRing } from 'lucide-react'
+import { useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   useMarkAllNotificationsRead,
@@ -7,14 +7,20 @@ import {
   useNotifications,
 } from '../api/queries'
 import { relativeTime } from '../lib/format'
+import ListRow, { ListGroup } from './ListRow'
+import { Popover } from './Menu'
+import Tile from './Tile'
 
-/** The popover panel is a genuinely floating surface, so it is `.overlay`:
- *  the ambient shadow, dark's own 1px hairline and the forced-colors border,
- *  and no `border border-line shadow-card` double edge.
+/** The bell in the app bar and its popover.
  *
- *  Every secondary line inside it is --body, not --muted. Dark's overlay panel
- *  is --n-700 #2A333D, where --muted #7F8A98 measures 3.655:1 — an AA failure.
- *  --body #98A2AF is 4.955:1 there and 7.222:1 on the light overlay panel. */
+ *  The trigger is an ink `.btn-icon` (the bar carries ink only, R2). The
+ *  unread badge is a risk-ink dot with a --panel ring; the count is in the
+ *  accessible name, so the dot is never the only carrier.
+ *
+ *  The panel is a top-layer `Popover` (R5): 20px `.overlay`, soft layered
+ *  shadow, opaque. Rows are ListRows with a blue Bell tile; every secondary
+ *  line inside is --body (the overlay scope), because dark --muted on the
+ *  overlay panel is 3.655:1 and --body is 4.955:1 (7.222 light). */
 export default function NotificationsPopover() {
   const [open, setOpen] = useState(false)
   const { data } = useNotifications()
@@ -22,24 +28,14 @@ export default function NotificationsPopover() {
   const markAll = useMarkAllNotificationsRead()
   const navigate = useNavigate()
   const triggerRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open])
+  const panelId = useId()
+  const headingId = useId()
 
   const notifications = data?.notifications ?? []
   const unread = notifications.filter((n) => n.status === 'unread').length
 
   return (
-    <div className="relative">
+    <>
       <button
         ref={triggerRef}
         type="button"
@@ -47,71 +43,79 @@ export default function NotificationsPopover() {
         aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className="relative grid h-10 w-10 cursor-pointer place-items-center rounded-control text-body transition-colors duration-150 hover:bg-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+        aria-controls={open ? panelId : undefined}
+        className="btn-icon relative"
       >
-        <Bell size={20} />
+        <Bell aria-hidden size={20} />
         {unread > 0 && (
-          <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-pill bg-risk-high-ink ring-2 ring-panel" />
+          <span
+            aria-hidden
+            className="absolute right-[7px] top-[7px] h-2.5 w-2.5 rounded-pill bg-risk-high-ink ring-2 ring-panel"
+          />
         )}
       </button>
-      {open && (
-        <>
-          <div aria-hidden className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div
-            role="dialog"
-            aria-label="Notifications"
-            className="overlay absolute right-0 z-40 mt-seam w-96 animate-modalIn overflow-hidden"
-          >
-            <div className="flex items-center justify-between border-b border-line px-4 py-3">
-              {/* Sentence case. An overlay opens over a page that has already
-                  spent its one all-caps element, so the popover header does not
-                  take the eyebrow recipe. */}
-              <span className="text-label font-medium text-body">Notifications</span>
-              {unread > 0 && (
-                <button
-                  type="button"
-                  onClick={() => markAll.mutate()}
-                  className="cursor-pointer text-label font-medium text-brand-ink hover:underline"
-                >
-                  Mark all read
-                </button>
-              )}
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={triggerRef}
+        placement="bottom-end"
+        id={panelId}
+        aria-labelledby={headingId}
+        className="w-[min(24rem,calc(100vw-16px))] overflow-hidden"
+      >
+        <div className="flex min-h-[52px] items-center justify-between gap-3 px-5 pb-1 pt-3">
+          <h2 id={headingId} className="text-copy-lg font-semibold text-ink">
+            Notifications
+          </h2>
+          {unread > 0 && (
+            <button type="button" onClick={() => markAll.mutate()} className="btn-plain btn-sm -mr-2">
+              Mark all read
+            </button>
+          )}
+        </div>
+        <div className="max-h-[min(28rem,70vh)] overflow-y-auto pb-2">
+          {notifications.length === 0 ? (
+            <div className="flex flex-col items-center px-6 pb-6 pt-4 text-center">
+              <Tile family="blue" size="lg" icon={<BellRing />} />
+              <p className="mt-3 text-copy font-medium text-ink">You're all caught up</p>
+              <p className="mt-1 max-w-[28ch] text-copy text-secondary">
+                Anything that needs your attention will show up here.
+              </p>
             </div>
-            <div className="max-h-96 overflow-y-auto">
-              {notifications.length === 0 && (
-                <p className="px-4 py-8 text-center text-copy text-body">
-                  Nothing needs your attention right now.
-                </p>
-              )}
-              {notifications.map((n) => (
-                <button
-                  key={n.id}
-                  type="button"
-                  onClick={() => {
-                    if (n.status === 'unread') markRead.mutate(n.id)
-                    setOpen(false)
-                    navigate(`/patients/${n.patient_id}`)
-                  }}
-                  className="flex w-full cursor-pointer items-start gap-tight border-b border-line px-4 py-3 text-left transition-colors duration-150 last:border-0 hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
-                >
-                  <span
-                    className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-pill ${
-                      n.status === 'unread' ? 'bg-risk-high-ink' : 'bg-faint'
-                    }`}
+          ) : (
+            <ListGroup embedded inset="tile" aria-label="Recent notifications">
+              {notifications.map((n) => {
+                const isUnread = n.status === 'unread'
+                return (
+                  <ListRow
+                    key={n.id}
+                    compact
+                    leading={<Tile family="blue" icon={<Bell />} />}
+                    title={n.title}
+                    linkLabel={`${isUnread ? 'Unread: ' : ''}${n.title}`}
+                    subtitle={n.body}
+                    meta={<span className="tabular-nums">{relativeTime(n.created_at)}</span>}
+                    onClick={() => {
+                      if (isUnread) markRead.mutate(n.id)
+                      setOpen(false)
+                      navigate(`/patients/${n.patient_id}`)
+                    }}
+                    trailing={
+                      isUnread ? (
+                        <span
+                          aria-hidden
+                          className="pointer-events-none h-2 w-2 rounded-pill bg-brand"
+                        />
+                      ) : undefined
+                    }
+                    subtitleLines={2}
                   />
-                  <span>
-                    <span className="block text-copy font-medium text-ink">{n.title}</span>
-                    <span className="block text-copy text-body">{n.body}</span>
-                    <span className="mt-el block tabular-nums text-label text-body">
-                      {relativeTime(n.created_at)}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
+                )
+              })}
+            </ListGroup>
+          )}
+        </div>
+      </Popover>
+    </>
   )
 }

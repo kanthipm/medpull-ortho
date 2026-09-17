@@ -1,8 +1,10 @@
 import { FileText, ImageOff, Paperclip, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { attachmentSrc, fileSize } from '../../api/attachments'
 import { useWithdrawAttachment } from '../../api/queries'
 import type { MessageAttachment } from '../../api/types'
+import Tile from '../../components/Tile'
 import { useToast } from '../../components/Toast'
 
 /**
@@ -59,7 +61,7 @@ export default function ThreadAttachments({
     <div className={`mt-1.5 flex flex-col gap-1.5 ${align === 'end' ? 'items-end' : 'items-start'}`}>
       {items.map((a) =>
         a.withdrawn ? (
-          <p key={a.id} className="text-label font-medium text-muted">
+          <p key={a.id} className="text-label font-medium text-secondary">
             {a.kind === 'image' ? 'Photo' : 'File'} taken back
           </p>
         ) : (
@@ -88,7 +90,7 @@ function Withdraw({ patientId, a }: { patientId: string; a: MessageAttachment })
       title="Take this file back"
       aria-label="Take this file back"
       disabled={withdraw.isPending}
-      className="mb-1 cursor-pointer rounded-control p-1 text-muted transition-colors duration-150 hover:bg-risk-high-tint hover:text-risk-high-ink"
+      className="btn-icon btn-sm hover:bg-risk-high-tint hover:text-risk-high-ink"
       onClick={() => {
         if (!window.confirm('Take this file back? The patient will see that it was removed.')) return
         withdraw.mutate(a.id, {
@@ -97,7 +99,7 @@ function Withdraw({ patientId, a }: { patientId: string; a: MessageAttachment })
         })
       }}
     >
-      <Trash2 size={12} />
+      <Trash2 size={14} aria-hidden />
     </button>
   )
 }
@@ -106,14 +108,26 @@ function Thumb({ patientId, a }: { patientId: string; a: MessageAttachment }) {
   const { src, failed } = useImage(patientId, a)
   const [open, setOpen] = useState(false)
 
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setOpen(false)
+      }
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [open])
+
   if (failed) {
     // An Apple photo that reached us untranscoded is the one case with a
     // real answer, and "could not be loaded" sent people looking for a
     // network fault instead.
     const heic = a.content_type === 'image/heic' || a.content_type === 'image/heif'
     return (
-      <span className="flex items-center gap-1.5 rounded-surface border border-line bg-soft px-2 py-1.5 text-label font-medium text-muted">
-        <ImageOff size={12} />
+      <span className="flex max-w-[260px] items-center gap-2 rounded-control bg-soft px-3 py-2 text-label font-medium text-body">
+        <ImageOff size={14} aria-hidden className="shrink-0" />
         {heic
           ? 'This photo is in Apple’s HEIC format, which this browser cannot show'
           : 'That photo could not be loaded'}
@@ -126,7 +140,8 @@ function Thumb({ patientId, a }: { patientId: string; a: MessageAttachment }) {
         type="button"
         onClick={() => src && setOpen(true)}
         title="Open full size"
-        className="block cursor-pointer overflow-hidden rounded-surface border border-line bg-soft transition-opacity duration-150 hover:opacity-90"
+        aria-label={`Open ${a.filename ?? 'photo'} full size`}
+        className="block cursor-zoom-in overflow-hidden rounded-[18px] border border-line bg-soft transition-[opacity,transform] duration-state ease-apple hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-press motion-reduce:active:scale-100"
       >
         {src ? (
           <img
@@ -135,10 +150,12 @@ function Thumb({ patientId, a }: { patientId: string; a: MessageAttachment }) {
             className="max-h-44 max-w-[220px] object-cover"
           />
         ) : (
-          <span className="block h-24 w-36 animate-pulse bg-soft" />
+          <span className="block h-24 w-36 animate-pulse bg-soft motion-reduce:animate-none" />
         )}
       </button>
-      {open && src && (
+      {/* Portalled to the top layer (R5): the thread lives inside a clipped
+          card, and a fixed layer under a transformed ancestor is contained. */}
+      {open && src && createPortal(
         <div
           role="dialog"
           aria-modal="true"
@@ -156,17 +173,18 @@ function Thumb({ patientId, a }: { patientId: string; a: MessageAttachment }) {
           <img
             src={src}
             alt={a.filename ?? 'Photo from the thread'}
-            className="pointer-events-none relative max-h-full max-w-full rounded-surface"
+            className="pointer-events-none relative max-h-full max-w-full rounded-surface shadow-overlay"
           />
           <button
             type="button"
             aria-label="Close"
-            className="absolute right-4 top-4 cursor-pointer rounded-control bg-panel p-1.5 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+            className="btn-icon absolute right-4 top-4 bg-panel text-ink shadow-float hover:bg-soft"
             onClick={() => setOpen(false)}
           >
-            <X size={16} />
+            <X size={18} aria-hidden />
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   )
@@ -200,13 +218,13 @@ function FileRow({ patientId, a }: { patientId: string; a: MessageAttachment }) 
         : fileSize(a.byte_size)
 
   const shell =
-    'flex max-w-[260px] items-center gap-2 rounded-surface border border-line bg-panel px-2.5 py-1.5 text-left transition-colors duration-150 hover:border-brand hover:bg-brand-tint'
+    'flex max-w-[260px] items-center gap-2.5 rounded-control border border-line bg-panel py-2 pl-2 pr-3 text-left transition-colors duration-state ease-apple hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus'
   const inner = (
     <>
-      <FileText size={14} className="shrink-0 text-brand-ink" />
+      <Tile family="blue" icon={<FileText />} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-copy font-medium text-ink">{name}</span>
-        <span className="block text-label font-medium text-muted">
+        <span className="block text-label tabular-nums text-secondary">
           {state === 'blocked' ? 'Click to open' : label}
         </span>
       </span>
@@ -243,24 +261,28 @@ export function PendingAttachments({
       {items.map((a) => (
         <span
           key={a.id}
-          className="flex items-center gap-1.5 rounded-control border border-line bg-soft px-2 py-1 text-label font-medium text-body"
+          className="flex min-h-7 items-center gap-1.5 rounded-pill bg-soft py-0.5 pl-2.5 pr-1 text-label font-medium text-ink"
         >
-          <Paperclip size={11} className="text-brand-ink" />
+          <Paperclip size={12} aria-hidden className="shrink-0 text-body" />
           <span className="max-w-[140px] truncate">
             {a.filename ?? (a.kind === 'image' ? 'Photo' : 'File')}
           </span>
-          <span className="text-muted">{fileSize(a.byte_size)}</span>
+          <span className="font-normal tabular-nums text-body">{fileSize(a.byte_size)}</span>
           <button
             type="button"
-            aria-label="Remove"
-            className="cursor-pointer text-muted transition-colors duration-150 hover:text-risk-high-ink"
+            aria-label={`Remove ${a.filename ?? (a.kind === 'image' ? 'photo' : 'file')}`}
+            className="grid h-6 w-6 cursor-pointer place-items-center rounded-pill text-body transition-colors duration-state ease-apple hover:bg-panel hover:text-risk-high-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             onClick={() => onRemove(a.id)}
           >
-            <X size={11} />
+            <X size={12} aria-hidden />
           </button>
         </span>
       ))}
-      {busy && <span className="text-label font-medium text-muted">Uploading…</span>}
+      {busy && (
+        <span role="status" className="text-label font-medium text-secondary">
+          Uploading…
+        </span>
+      )}
     </div>
   )
 }

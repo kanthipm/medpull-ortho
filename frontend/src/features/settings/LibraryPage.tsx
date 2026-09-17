@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Plus, Star } from 'lucide-react'
+import { Archive, ArchiveRestore, Check, ClipboardList, MessageSquare, Plus, Star } from 'lucide-react'
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { DraftTask, MessageTemplate, MessageTone, TaskTemplate } from '../../api/plan'
@@ -11,6 +11,7 @@ import {
   useUpdateTaskTemplate,
 } from '../../api/plan'
 import EmptyState from '../../components/EmptyState'
+import { Tooltip } from '../../components/Menu'
 import SectionCard from '../../components/SectionCard'
 import SegmentedControl from '../../components/SegmentedControl'
 import { SkeletonCard } from '../../components/Skeleton'
@@ -27,6 +28,7 @@ import {
   ucLabel,
 } from '../patient/plan/planCopy'
 import SettingsNav from './SettingsNav'
+import Switch, { GroupFooter, GroupHeader, SettingsHeading } from './Switch'
 
 type Tab = 'tasks' | 'messages'
 const TABS: { key: Tab; label: string }[] = [
@@ -51,17 +53,17 @@ export default function LibraryPage() {
   const [creating, setCreating] = useState(false)
 
   return (
-    <div>
+    <div className="pb-10">
       <div className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
-        <SettingsNav className="mb-4" />
-        <h1 className="text-title font-normal text-ink">Library</h1>
-        <p className="mt-el text-copy text-muted">
-          Care-plan tasks and patient messages the team reuses. Pinned ones show first as quick picks.
-        </p>
+        <SettingsNav className="mb-6" />
+        <SettingsHeading title="Library">
+          Care-plan tasks and patient messages the team reuses. Pinned ones show first as quick
+          picks.
+        </SettingsHeading>
       </div>
 
       <div
-        className="rise mt-6 flex flex-wrap items-center gap-tight"
+        className="rise mt-8 flex flex-wrap items-center gap-x-4 gap-y-3"
         style={{ '--rise-delay': '60ms' } as CSSProperties}
       >
         <SegmentedControl<Tab>
@@ -73,32 +75,38 @@ export default function LibraryPage() {
           }}
           aria-label="Library section"
         />
-        <label className="inline-flex cursor-pointer items-center gap-seam text-label font-medium text-muted">
-          <input
-            type="checkbox"
-            className="h-3.5 w-3.5 accent-[rgb(var(--brand))]"
+        <span className="inline-flex items-center gap-2">
+          <Switch
+            id="library-show-archived"
             checked={showArchived}
-            onChange={(e) => setShowArchived(e.target.checked)}
+            onChange={setShowArchived}
+            aria-labelledby="library-show-archived-label"
           />
-          Show archived
-        </label>
-        <button type="button" className="qa-btn ml-auto" onClick={() => setCreating((c) => !c)}>
-          <Plus size={13} /> New template
+          <label
+            id="library-show-archived-label"
+            htmlFor="library-show-archived"
+            className="cursor-pointer text-copy font-medium text-body"
+          >
+            Show archived
+          </label>
+        </span>
+        <button
+          type="button"
+          className="btn-tinted ml-auto"
+          aria-expanded={creating}
+          onClick={() => setCreating((c) => !c)}
+        >
+          <Plus size={16} /> New template
         </button>
       </div>
 
-      <div className="rise mt-snug" style={{ '--rise-delay': '100ms' } as CSSProperties}>
+      <div className="rise mt-6" style={{ '--rise-delay': '100ms' } as CSSProperties}>
         {tab === 'tasks' ? (
           <TaskLibrary showArchived={showArchived} creating={creating} onDone={() => setCreating(false)} />
         ) : (
           <MessageLibrary showArchived={showArchived} creating={creating} onDone={() => setCreating(false)} />
         )}
       </div>
-
-      <p className="mt-snug border-t border-line pt-seam text-label font-medium text-muted">
-        Titles, reasons and message bodies are what patients see — keep them plain and number-free.
-        Clinical targets stay with the care team.
-      </p>
     </div>
   )
 }
@@ -162,134 +170,125 @@ function TaskLibrary({
       { onError: () => toast('Could not update the template — try again', 'warning') },
     )
 
-  if (library.isLoading) return <SkeletonCard lines={5} />
-  if (library.isError) return <EmptyState title="The task library couldn't be loaded." />
+  if (library.isLoading) return <SkeletonCard rows={5} />
+  if (library.isError)
+    return (
+      <EmptyState title="The task library couldn't be loaded." icon={<ClipboardList />}>
+        Refresh the page to try again.
+      </EmptyState>
+    )
 
   return (
-    <div className="space-y-tight">
+    <div className="space-y-8">
       {creating && (
         <SectionCard title="New task template">
-          <div className="space-y-3">
+          <div className="space-y-5">
             <DraftRowEditor value={draft} kinds={kinds} onChange={setDraft} libraryToggles={false} />
-            <div>
-              <p className="mb-el text-label font-medium text-muted">
-                Pathways (none = every pathway)
-              </p>
-              <div className="flex flex-wrap gap-el">
+            <fieldset>
+              <legend className="mb-2 text-copy font-medium text-body">
+                Pathways <span className="font-normal text-secondary">(none selected means every pathway)</span>
+              </legend>
+              <div className="flex flex-wrap gap-2">
                 {PATHWAY_KEYS.map((key) => {
                   const on = pathways.includes(key)
                   return (
-                    <button
+                    <ToggleCapsule
                       key={key}
-                      type="button"
-                      aria-pressed={on}
+                      on={on}
                       onClick={() =>
                         setPathways((p) => (on ? p.filter((k) => k !== key) : [...p, key]))
                       }
-                      className={`chip cursor-pointer border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
-                        on
-                          ? 'border-brand bg-brand-tint-strong text-on-brand-tint'
-                          : 'border-line bg-panel text-body hover:bg-soft'
-                      }`}
                     >
                       {pathwayName(key)}
-                    </button>
+                    </ToggleCapsule>
                   )
                 })}
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-tight">
-              <label className="inline-flex cursor-pointer items-center gap-seam text-label font-medium text-body">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 accent-[rgb(var(--brand))]"
-                  checked={pinned}
-                  onChange={(e) => setPinned(e.target.checked)}
-                />
-                Pin as quick pick
-              </label>
-              <button type="button" className="qa-btn ml-auto" onClick={onDone}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-primary w-auto"
-                disabled={!draft.title.trim() || create.isPending}
-                onClick={save}
-              >
-                {create.isPending ? 'Saving…' : 'Save template'}
-              </button>
-            </div>
+            </fieldset>
+            <FormFooter
+              pinId="task-pin"
+              pinLabel="Pin as a quick pick"
+              pinned={pinned}
+              onPinned={setPinned}
+              onCancel={onDone}
+              onSave={save}
+              canSave={!!draft.title.trim()}
+              saving={create.isPending}
+            />
           </div>
         </SectionCard>
       )}
 
-      <SectionCard
+      <LibraryGroup
+        id="task-templates"
         title="Task templates"
-        aside={
-          <span className="text-label font-medium tabular-nums text-muted">{rows.length}</span>
+        count={rows.length}
+        empty={
+          <EmptyState
+            variant="inline"
+            title="No task templates yet"
+            icon={<ClipboardList />}
+            family="violet"
+          >
+            Save one from a patient's plan, or use New template.
+          </EmptyState>
         }
       >
-        {rows.length === 0 ? (
-          <p className="text-label font-medium text-muted">No task templates yet.</p>
-        ) : (
-          <div className="-mx-4 overflow-x-auto px-4">
-            <table className="w-full min-w-[720px] text-left text-label">
-              <thead>
-                <tr className="border-b border-line text-label font-medium tracking-ui text-muted">
-                  <Th>Title</Th>
-                  <Th>Verified by</Th>
-                  <Th>Phase</Th>
-                  <Th>Pathways</Th>
-                  <Th className="text-right">Used</Th>
-                  <Th className="text-center">Pinned</Th>
-                  <Th className="text-right">Archive</Th>
+        {rows.length > 0 && (
+          <table className="w-full min-w-[760px] text-left text-copy">
+            <thead>
+              <tr className="border-b border-hairline">
+                <Th>Title</Th>
+                <Th>Verified by</Th>
+                <Th>Phase</Th>
+                <Th className="text-right">Used</Th>
+                <Th className="w-[88px] text-right">
+                  <span className="sr-only">Actions</span>
+                </Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline">
+              {rows.map((t) => (
+                <tr key={t.id} className={rowClass(t.archived)}>
+                  <Td className="max-w-[380px]">
+                    <TitleCell title={t.title} pinned={t.pinned} archived={t.archived} />
+                    {t.why && <span className="mt-0.5 block text-copy text-secondary">{t.why}</span>}
+                    <span className="meta mt-1 block">
+                      {[
+                        ucLabel(t.use_case),
+                        t.clinical_target,
+                        t.pathways.length === 0
+                          ? 'All pathways'
+                          : t.pathways.map(pathwayName).join(', '),
+                        t.source !== 'library' ? titleCase(t.source) : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </Td>
+                  <Td>
+                    <span className="block font-medium text-ink">{kindLabel(kinds, t.verify_kind)}</span>
+                    <span className="meta block">
+                      {t.verified_by ?? kindInfo(kinds, t.verify_kind)?.verified_by ?? 'self-report'}
+                    </span>
+                  </Td>
+                  <Td className="text-body">{phaseLabel(t.phase)}</Td>
+                  <Td className="text-right tabular-nums text-body">{t.usage_count}</Td>
+                  <Td className="text-right">
+                    <RowActions
+                      title={t.title}
+                      pinned={t.pinned}
+                      archived={t.archived}
+                      onPin={() => toggle(t, { pinned: !t.pinned })}
+                      onArchive={() => toggle(t, { archived: !t.archived })}
+                    />
+                  </Td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {rows.map((t) => (
-                  <tr key={t.id} className={t.archived ? 'bg-soft' : ''}>
-                    <td className="max-w-[320px] py-seam pr-tight align-top">
-                      <span className="block font-medium text-ink">{t.title}</span>
-                      <span className="mt-0.5 block text-label font-medium text-muted">{t.why}</span>
-                      <span className="mt-0.5 block text-label font-medium text-muted">
-                        {ucLabel(t.use_case)}
-                        {t.clinical_target && <> · {t.clinical_target}</>}
-                        {t.source !== 'library' && <> · {titleCase(t.source)}</>}
-                      </span>
-                    </td>
-                    <td className="py-seam pr-tight align-top">
-                      <span className="block font-medium text-body">{kindLabel(kinds, t.verify_kind)}</span>
-                      <span className="block text-label font-medium text-muted">
-                        {t.verified_by ?? kindInfo(kinds, t.verify_kind)?.verified_by ?? 'self-report'}
-                      </span>
-                    </td>
-                    <td className="py-seam pr-tight align-top font-medium text-body">{phaseLabel(t.phase)}</td>
-                    <td className="py-seam pr-tight align-top">
-                      <span className="flex flex-wrap gap-el">
-                        {t.pathways.length === 0 ? (
-                          <span className="chip bg-soft text-muted">All</span>
-                        ) : (
-                          t.pathways.map((p) => (
-                            <span key={p} className="chip bg-soft text-muted">{pathwayName(p)}</span>
-                          ))
-                        )}
-                      </span>
-                    </td>
-                    <td className="py-seam pr-tight text-right align-top tabular-nums text-muted">{t.usage_count}</td>
-                    <td className="py-seam text-center align-top">
-                      <PinButton pinned={t.pinned} onClick={() => toggle(t, { pinned: !t.pinned })} />
-                    </td>
-                    <td className="py-seam text-right align-top">
-                      <ArchiveButton archived={t.archived} onClick={() => toggle(t, { archived: !t.archived })} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         )}
-      </SectionCard>
+      </LibraryGroup>
     </div>
   )
 }
@@ -343,23 +342,37 @@ function MessageLibrary({
       { onError: () => toast('Could not update the template — try again', 'warning') },
     )
 
-  if (library.isLoading) return <SkeletonCard lines={5} />
-  if (library.isError) return <EmptyState title="The message library couldn't be loaded." />
+  if (library.isLoading) return <SkeletonCard rows={5} />
+  if (library.isError)
+    return (
+      <EmptyState title="The message library couldn't be loaded." icon={<MessageSquare />}>
+        Refresh the page to try again.
+      </EmptyState>
+    )
 
   return (
-    <div className="space-y-tight">
+    <div className="space-y-8">
       {creating && (
         <SectionCard title="New message template">
-          <div className="space-y-3">
+          <div className="space-y-5">
             <div>
-              <label htmlFor="mt-title" className="mb-el block text-label font-medium text-muted">
+              <label htmlFor="mt-title" className="mb-2 block text-copy font-medium text-body">
                 Title
               </label>
-              <input id="mt-title" className="field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Check on swelling" />
+              <input
+                id="mt-title"
+                className="field"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Check on swelling"
+              />
             </div>
             <div>
-              <label htmlFor="mt-body" className="mb-el block text-label font-medium text-muted">
-                Body — use {'{first}'} and {'{surgeon}'}
+              <label htmlFor="mt-body" className="mb-2 block text-copy font-medium text-body">
+                Message{' '}
+                <span className="font-normal text-secondary">
+                  use {'{first}'} and {'{surgeon}'}
+                </span>
               </label>
               <textarea
                 id="mt-body"
@@ -367,123 +380,284 @@ function MessageLibrary({
                 className="field"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                placeholder="Hi {first} — {surgeon}'s team here. How is the swelling today? Reply here or in the app."
+                aria-describedby={warn ? 'mt-body-warn' : undefined}
+                placeholder="Hi {first}, {surgeon}'s team here. How is the swelling today? Reply here or in the app."
               />
-              {warn && <p className="mt-el text-label font-medium text-risk-med-ink">{warn}</p>}
+              {warn && (
+                <p id="mt-body-warn" className="mt-2 text-copy font-medium text-risk-med-ink">
+                  {warn}
+                </p>
+              )}
             </div>
-            <div className="flex flex-wrap items-center gap-tight">
-              <SegmentedControl<MessageTone> options={TONES} value={tone} onChange={setTone} aria-label="Tone" />
-              <label className="inline-flex cursor-pointer items-center gap-seam text-label font-medium text-body">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 accent-[rgb(var(--brand))]"
-                  checked={pinned}
-                  onChange={(e) => setPinned(e.target.checked)}
-                />
-                Pin in the composer
-              </label>
-              <button type="button" className="qa-btn ml-auto" onClick={onDone}>Cancel</button>
-              <button
-                type="button"
-                className="btn-primary w-auto"
-                disabled={!title.trim() || !body.trim() || create.isPending}
-                onClick={save}
-              >
-                {create.isPending ? 'Saving…' : 'Save template'}
-              </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <span id="mt-tone-label" className="text-copy font-medium text-body">
+                Tone
+              </span>
+              <SegmentedControl<MessageTone>
+                options={TONES}
+                value={tone}
+                onChange={setTone}
+                size="sm"
+                role="radiogroup"
+                aria-labelledby="mt-tone-label"
+              />
             </div>
+            <FormFooter
+              pinId="message-pin"
+              pinLabel="Pin in the composer"
+              pinned={pinned}
+              onPinned={setPinned}
+              onCancel={onDone}
+              onSave={save}
+              canSave={!!title.trim() && !!body.trim()}
+              saving={create.isPending}
+            />
           </div>
         </SectionCard>
       )}
 
-      <SectionCard
+      <LibraryGroup
+        id="message-templates"
         title="Message templates"
-        aside={
-          <span className="text-label font-medium tabular-nums text-muted">{rows.length}</span>
+        count={rows.length}
+        empty={
+          <EmptyState
+            variant="inline"
+            title="No message templates yet"
+            icon={<MessageSquare />}
+            family="blue"
+          >
+            Save one from the composer, or use New template.
+          </EmptyState>
         }
       >
-        {rows.length === 0 ? (
-          <p className="text-label font-medium text-muted">No message templates yet.</p>
-        ) : (
-          <div className="-mx-4 overflow-x-auto px-4">
-            <table className="w-full min-w-[640px] text-left text-label">
-              <thead>
-                <tr className="border-b border-line text-label font-medium tracking-ui text-muted">
-                  <Th>Title</Th>
-                  <Th>Tone</Th>
-                  <Th>Tags</Th>
-                  <Th className="text-right">Used</Th>
-                  <Th className="text-center">Pinned</Th>
-                  <Th className="text-right">Archive</Th>
+        {rows.length > 0 && (
+          <table className="w-full min-w-[640px] text-left text-copy">
+            <thead>
+              <tr className="border-b border-hairline">
+                <Th>Message</Th>
+                <Th>Tone</Th>
+                <Th className="text-right">Used</Th>
+                <Th className="w-[88px] text-right">
+                  <span className="sr-only">Actions</span>
+                </Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline">
+              {rows.map((t) => (
+                <tr key={t.id} className={rowClass(t.archived)}>
+                  <Td className="max-w-[480px]">
+                    <TitleCell title={t.title} pinned={t.pinned} archived={t.archived} />
+                    <span className="mt-0.5 block text-copy text-secondary">{t.body}</span>
+                    {(t.tags ?? []).length > 0 && (
+                      <span className="meta mt-1 block">{(t.tags ?? []).join(' · ')}</span>
+                    )}
+                  </Td>
+                  <Td className="text-body">{titleCase(t.tone)}</Td>
+                  <Td className="text-right tabular-nums text-body">{t.usage_count}</Td>
+                  <Td className="text-right">
+                    <RowActions
+                      title={t.title}
+                      pinned={t.pinned}
+                      archived={t.archived}
+                      onPin={() => toggle(t, { pinned: !t.pinned })}
+                      onArchive={() => toggle(t, { archived: !t.archived })}
+                    />
+                  </Td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {rows.map((t) => (
-                  <tr key={t.id} className={t.archived ? 'bg-soft' : ''}>
-                    <td className="max-w-[420px] py-seam pr-tight align-top">
-                      <span className="block font-medium text-ink">{t.title}</span>
-                      <span className="mt-0.5 block text-label font-medium text-muted">{t.body}</span>
-                    </td>
-                    <td className="py-seam pr-tight align-top font-medium text-body">{titleCase(t.tone)}</td>
-                    <td className="py-seam pr-tight align-top">
-                      <span className="flex flex-wrap gap-el">
-                        {(t.tags ?? []).map((tag) => (
-                          <span key={tag} className="chip bg-soft text-muted">{tag}</span>
-                        ))}
-                      </span>
-                    </td>
-                    <td className="py-seam pr-tight text-right align-top tabular-nums text-muted">{t.usage_count}</td>
-                    <td className="py-seam text-center align-top">
-                      <PinButton pinned={t.pinned} onClick={() => toggle(t, { pinned: !t.pinned })} />
-                    </td>
-                    <td className="py-seam text-right align-top">
-                      <ArchiveButton archived={t.archived} onClick={() => toggle(t, { archived: !t.archived })} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         )}
-      </SectionCard>
+      </LibraryGroup>
     </div>
   )
 }
 
 // --- bits ----------------------------------------------------------------------
 
-function Th({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <th className={`py-seam pr-tight font-medium ${className}`}>{children}</th>
+/** Archived rows sit on --soft. Dark --muted on --soft is below 4.5, so the
+ *  row's secondary text switches to --body (the R8 scope). The "Archived"
+ *  chip in the title cell says it in words too. */
+function rowClass(archived: boolean) {
+  return archived ? 'bg-soft [--text-secondary:var(--body)]' : ''
 }
 
-function PinButton({ pinned, onClick }: { pinned: boolean; onClick: () => void }) {
+/** A grouped section: sentence-case header with a count, then the table in a
+ *  rounded, clipped group that scrolls sideways on narrow screens. */
+function LibraryGroup({
+  id,
+  title,
+  count,
+  empty,
+  children,
+}: {
+  id: string
+  title: string
+  count: number
+  empty: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section aria-labelledby={id}>
+      <GroupHeader
+        id={id}
+        aside={
+          <span className="meta tabular-nums">
+            {count} {count === 1 ? 'template' : 'templates'}
+          </span>
+        }
+      >
+        {title}
+      </GroupHeader>
+      <div className="card-group">
+        {count === 0 ? (
+          <div className="px-4 py-6">{empty}</div>
+        ) : (
+          <div className="overflow-x-auto" tabIndex={0} role="region" aria-labelledby={id}>
+            {children}
+          </div>
+        )}
+      </div>
+      <GroupFooter>
+        Titles, reasons and messages are what patients see, so keep them plain and free of
+        numbers. Clinical targets stay with the care team.
+      </GroupFooter>
+    </section>
+  )
+}
+
+function Th({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <th
+      scope="col"
+      className={`px-2 py-2.5 text-label font-medium tracking-label text-secondary first:pl-4 last:pr-4 ${className}`}
+    >
+      {children}
+    </th>
+  )
+}
+
+function Td({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <td className={`px-2 py-3 align-top first:pl-4 last:pr-3 ${className}`}>{children}</td>
+}
+
+function TitleCell({ title, pinned, archived }: { title: string; pinned: boolean; archived: boolean }) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="font-medium text-ink">{title}</span>
+      {pinned && (
+        <span className="chip bg-brand-tint text-on-brand-tint">
+          <Star size={12} fill="currentColor" aria-hidden /> Quick pick
+        </span>
+      )}
+      {archived && <span className="chip bg-risk-missing-tint text-risk-missing-ink">Archived</span>}
+    </span>
+  )
+}
+
+/** Gray capsule that toggles; pressed = brand tint plus a check mark, so the
+ *  state is never colour alone. */
+function ToggleCapsule({
+  on,
+  onClick,
+  children,
+}: {
+  on: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
   return (
     <button
       type="button"
+      aria-pressed={on}
       onClick={onClick}
-      aria-pressed={pinned}
-      aria-label={pinned ? 'Unpin' : 'Pin'}
-      title={pinned ? 'Unpin' : 'Pin as a quick pick'}
-      className={`grid h-7 w-7 cursor-pointer place-items-center rounded-control transition-colors duration-150 hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
-        pinned ? 'text-brand-ink' : 'text-muted hover:text-ink'
+      className={`btn-gray btn-sm ${
+        on ? 'bg-brand-tint text-on-brand-tint hover:bg-brand-tint-strong' : ''
       }`}
     >
-      <Star size={14} fill={pinned ? 'currentColor' : 'none'} />
+      {on && <Check aria-hidden />}
+      {children}
     </button>
   )
 }
 
-function ArchiveButton({ archived, onClick }: { archived: boolean; onClick: () => void }) {
-  const Icon = archived ? ArchiveRestore : Archive
+function FormFooter({
+  pinId,
+  pinLabel,
+  pinned,
+  onPinned,
+  onCancel,
+  onSave,
+  canSave,
+  saving,
+}: {
+  pinId: string
+  pinLabel: string
+  pinned: boolean
+  onPinned: (v: boolean) => void
+  onCancel: () => void
+  onSave: () => void
+  canSave: boolean
+  saving: boolean
+}) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={archived ? 'Restore' : 'Archive'}
-      title={archived ? 'Restore to the library' : 'Archive'}
-      className="grid h-7 w-7 cursor-pointer place-items-center rounded-control text-muted transition-colors duration-150 hover:bg-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-    >
-      <Icon size={14} />
-    </button>
+    <div className="flex flex-wrap items-center gap-3 pt-1">
+      <span className="inline-flex items-center gap-2">
+        <Switch id={pinId} checked={pinned} onChange={onPinned} aria-labelledby={`${pinId}-label`} />
+        <label id={`${pinId}-label`} htmlFor={pinId} className="cursor-pointer text-copy font-medium text-body">
+          {pinLabel}
+        </label>
+      </span>
+      <span className="ml-auto flex items-center gap-2">
+        <button type="button" className="btn-gray" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="btn-filled" disabled={!canSave || saving} onClick={onSave}>
+          {saving ? 'Saving…' : 'Save template'}
+        </button>
+      </span>
+    </div>
+  )
+}
+
+function RowActions({
+  title,
+  pinned,
+  archived,
+  onPin,
+  onArchive,
+}: {
+  title: string
+  pinned: boolean
+  archived: boolean
+  onPin: () => void
+  onArchive: () => void
+}) {
+  const ArchiveIcon = archived ? ArchiveRestore : Archive
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Tooltip content={pinned ? 'Remove from quick picks' : 'Pin as a quick pick'}>
+        <button
+          type="button"
+          onClick={onPin}
+          aria-pressed={pinned}
+          aria-label={`Pin ${title}`}
+          className={`btn-icon btn-sm ${pinned ? 'text-brand-ink hover:text-brand-ink' : ''}`}
+        >
+          <Star fill={pinned ? 'currentColor' : 'none'} />
+        </button>
+      </Tooltip>
+      <Tooltip content={archived ? 'Restore to the library' : 'Archive'}>
+        <button
+          type="button"
+          onClick={onArchive}
+          aria-label={archived ? `Restore ${title}` : `Archive ${title}`}
+          className="btn-icon btn-sm"
+        >
+          <ArchiveIcon />
+        </button>
+      </Tooltip>
+    </span>
   )
 }

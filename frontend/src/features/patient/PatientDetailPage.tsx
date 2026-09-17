@@ -1,21 +1,21 @@
-import { ArrowLeft } from 'lucide-react'
-import { useCallback, useState } from 'react'
-import type { CSSProperties } from 'react'
+import { ChevronLeft, Sigma, Sparkles } from 'lucide-react'
+import { Fragment, useCallback, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useCareMetrics } from '../../api/care'
 import { usePatientDelivery } from '../../api/plan'
 import { usePatient, useRecompute } from '../../api/queries'
-import AIAttribution from '../../components/AIAttribution'
-import ConfidenceChip from '../../components/ConfidenceChip'
+import Avatar from '../../components/Avatar'
 import EmptyState from '../../components/EmptyState'
 import GuardrailFootnote from '../../components/GuardrailFootnote'
-import MetricCluster from '../../components/MetricCluster'
+import type { ReadoutTone } from '../../components/MetricCluster'
 import PriorityBadge from '../../components/PriorityBadge'
 import SectionCard from '../../components/SectionCard'
-import { RefreshOverlay, SkeletonCard } from '../../components/Skeleton'
+import { RefreshOverlay, SkeletonCard, SkeletonLine } from '../../components/Skeleton'
+import Tile from '../../components/Tile'
 import { useToast } from '../../components/Toast'
 import { relativeTime, signedPct } from '../../lib/format'
-import { PRIORITY, TRAJECTORY_LABEL } from '../../lib/risk'
+import { CONFIDENCE_LABEL, TRAJECTORY_LABEL } from '../../lib/risk'
 import ActionBar from './ActionBar'
 import CheckinHistory from './CheckinHistory'
 import ContactCard from './ContactCard'
@@ -27,8 +27,81 @@ import TasksSection from './plan/TasksSection'
 import RecoveryTimeline from './RecoveryTimeline'
 import WearableConnectionCard from './WearableConnectionCard'
 
-function rise(index: number) {
-  return { className: 'rise', style: { '--rise-delay': `${index * 55}ms` } as CSSProperties }
+/* Layout (R3, spec W3). AppShell already caps the page at 1240px and adds the
+ * gutter, so nothing here sets a width or horizontal padding.
+ *
+ *   header      on the ambient wash: 56px avatar, name 26/600, the ONE risk
+ *               pill (R7), a facts line, reachability, then the action
+ *               capsules. Text on the wash is ink / body / brand-ink only
+ *               (body 6.371 worst, btn-plain 5.069 worst — see ContactCard).
+ *   >= 1200px   grid [main 1fr | side 360px], gap 20.
+ *               main: recovery, next steps, check-ins, tasks, messages
+ *               side: headline metrics, timeline, wearables
+ *   <  1200px   one column. The two column wrappers become `display:
+ *               contents` so every card is a direct flex child and `order-*`
+ *               interleaves them in reading priority (metrics right after
+ *               the next steps, not after the message thread).
+ *   Full stats  spans the width under the grid: its metric cards need room.
+ */
+
+const ANCHOR = 'scroll-mt-[calc(var(--bar-height)+16px)]'
+const COLUMN = 'contents min-[1200px]:flex min-[1200px]:min-w-0 min-[1200px]:flex-col min-[1200px]:gap-stack'
+
+function Block({
+  index,
+  order,
+  id,
+  children,
+}: {
+  index: number
+  order: string
+  id?: string
+  children: ReactNode
+}) {
+  return (
+    <div
+      id={id}
+      className={`rise min-w-0 ${order} ${id ? ANCHOR : ''}`}
+      style={{ '--rise-delay': `${index * 55}ms` } as CSSProperties}
+    >
+      {children}
+    </div>
+  )
+}
+
+/** Recovery-card stats: label over a 26/500 figure on the opaque brand tint.
+ *  Ink 15.871 / 14.255; risk-med-ink 5.022 / 7.993; risk-low-ink 4.637 /
+ *  7.491 (26px). A tinted figure always carries a word ("Behind"), so the
+ *  state is never colour alone. Labels are --body on the tint (R8). */
+const STAT_TONE: Record<ReadoutTone, string> = {
+  high: 'text-risk-high-ink',
+  med: 'text-risk-med-ink',
+  low: 'text-risk-low-ink',
+  missing: 'text-risk-missing-ink',
+}
+
+function Stats({
+  items,
+}: {
+  items: { key: string; label: string; value: string; tone?: ReadoutTone; hint?: string }[]
+}) {
+  return (
+    <dl className="mt-5 flex flex-wrap gap-x-10 gap-y-4">
+      {items.map((s) => (
+        <div key={s.key} className="flex min-w-0 flex-col">
+          <dt className="text-copy text-secondary">{s.label}</dt>
+          <dd className="mt-0.5 flex items-baseline gap-1.5">
+            <span
+              className={`text-title font-medium tabular-nums ${s.tone ? STAT_TONE[s.tone] : 'text-ink'}`}
+            >
+              {s.value}
+            </span>
+            {s.hint && <span className="text-copy text-secondary">{s.hint}</span>}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
 }
 
 export default function PatientDetailPage() {
@@ -71,19 +144,39 @@ export default function PatientDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <SkeletonCard lines={2} />
-        <SkeletonCard lines={4} />
-        <SkeletonCard lines={3} />
+      <div className="pt-6" role="status" aria-label="Loading patient">
+        <div className="flex items-center gap-4">
+          <span className="h-14 w-14 shrink-0 animate-pulse rounded-pill bg-soft" />
+          <div className="w-full max-w-sm space-y-2">
+            <SkeletonLine className="h-6 w-2/3" />
+            <SkeletonLine className="w-full" />
+          </div>
+        </div>
+        <div className="mt-8 grid gap-stack min-[1200px]:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-stack">
+            <SkeletonCard lines={4} />
+            <SkeletonCard rows={3} />
+          </div>
+          <div className="space-y-stack">
+            <SkeletonCard lines={3} />
+            <SkeletonCard lines={4} />
+          </div>
+        </div>
       </div>
     )
   }
   if (isError || !p) {
     return (
-      <EmptyState title="This patient couldn't be loaded.">
-        <Link to="/" className="font-medium text-brand-ink hover:underline">
-          Back to the worklist
-        </Link>
+      <EmptyState
+        title="This patient couldn't be loaded"
+        className="mt-6"
+        action={
+          <Link to="/" className="btn-tinted">
+            <ChevronLeft aria-hidden size={16} /> Back to the worklist
+          </Link>
+        }
+      >
+        Check the link, or pick the patient from the worklist again.
       </EmptyState>
     )
   }
@@ -97,91 +190,60 @@ export default function PatientDetailPage() {
     })
   }
 
+  const general = p.mode === 'general'
   const trajValue =
     p.trajectory.pct != null && p.trajectory.state !== 'on'
       ? signedPct(p.trajectory.pct)
       : p.trajectory.state === 'on'
         ? 'On curve'
         : '—'
+  const rulesBased = p.summary.provider === 'fallback'
+
+  // The facts line. Every part is plain body text on the wash; confidence is
+  // said in words only when it is reduced (R7: no chip beside the risk pill).
+  const facts = [
+    `${p.age} ${p.sex}`,
+    general ? 'No surgery on file' : p.procedure_display,
+    p.surgeon,
+    p.device?.model,
+    care.data?.pathway?.name ? `Pathway: ${care.data.pathway.name}` : null,
+    p.data_confidence.level !== 'high' ? CONFIDENCE_LABEL[p.data_confidence.level] : null,
+  ].filter(Boolean) as string[]
 
   return (
-    <div>
-      <div {...rise(0)}>
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1 text-copy font-medium text-brand-ink hover:underline"
-        >
-          <ArrowLeft size={16} /> Worklist
+    <div className="pb-4">
+      {/* ── Header, on the ambient wash ─────────────────────────────────── */}
+      <header className="rise pt-3" style={{ '--rise-delay': '0ms' } as CSSProperties}>
+        <Link to="/" className="btn-plain btn-sm -ml-3">
+          <ChevronLeft aria-hidden size={16} /> Worklist
         </Link>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <span
-            aria-hidden
-            className={`grid h-12 w-12 place-items-center rounded-pill tabular-nums text-copy font-medium ${
-              p.risk.level === 'high' ? 'bg-risk-high-ink text-panel' : 'bg-brand text-on-brand'
-            }`}
-          >
-            {p.initials}
-          </span>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="text-title font-normal text-ink">{p.name}</h1>
+        <div className="mt-3 flex flex-wrap items-start gap-x-4 gap-y-4">
+          <Avatar name={p.name} tier={p.risk.level} size="xl" className="shrink-0" />
+          <div className="min-w-0 flex-1 basis-[240px]">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <h1 className="text-title font-semibold text-ink">{p.name}</h1>
               <PriorityBadge priority={p.risk.level} />
-              <ConfidenceChip level={p.data_confidence.level} />
             </div>
-            <p className="mt-1 text-copy text-muted">
-              {p.age} {p.sex} · {p.procedure_display} · {p.surgeon}
-              {p.device && <> · {p.device.model}</>}
+            <p className="mt-1 text-copy text-body">
+              {facts.map((f, i) => (
+                <Fragment key={i}>
+                  {i > 0 && <span aria-hidden> · </span>}
+                  <span className="whitespace-nowrap">{f}</span>
+                </Fragment>
+              ))}
             </p>
-            {p.mode === 'general' && (
-              <p className="mt-0.5 text-copy text-muted">
-                No surgery on file · followed on everyday signals
-              </p>
-            )}
-            {care.data?.pathway?.name && (
-              <p className="mt-0.5 text-copy text-muted">
-                Pathway · {care.data.pathway.name}
-              </p>
-            )}
+            <ContactCard
+              className="mt-1.5"
+              patientId={p.id}
+              patientName={p.name}
+              phone={p.phone}
+              app={p.app}
+              smsConfigured={p.sms_configured}
+            />
           </div>
-        </div>
-
-        <MetricCluster
-          className="mt-4"
-          items={[
-            // A general patient never had an operation: "Post-op day D6" is
-            // simply false about them, and the backend already says which
-            // kind of chart this is.
-            p.mode === 'general'
-              ? { key: 'day', label: 'Days monitored', value: `${p.postop_day ?? 0}` }
-              : { key: 'day', label: 'Post-op day', value: `D${p.postop_day}` },
-            {
-              key: 'traj',
-              label: p.mode === 'general' ? 'Vs. baseline' : 'Trajectory',
-              value: trajValue,
-              tone:
-                p.trajectory.state === 'behind'
-                  ? 'med'
-                  : p.trajectory.state === 'on' || p.trajectory.state === 'ahead'
-                    ? 'low'
-                    : undefined,
-              hint:
-                p.trajectory.state !== 'on' && p.trajectory.state !== 'unknown'
-                  ? TRAJECTORY_LABEL[p.trajectory.state].replace(/ expected curve| of expected curve/i, '')
-                  : undefined,
-            },
-            {
-              key: 'checkin',
-              label: 'Last check-in',
-              value: p.last_checkin_at ? relativeTime(p.last_checkin_at) : 'None yet',
-            },
-          ]}
-        />
-      </div>
-
-      <div {...rise(1)}>
-        <div className="mt-5">
           <ActionBar
+            className="min-[900px]:ml-auto min-[900px]:justify-end min-[900px]:pt-1"
             patientId={p.id}
             patientName={p.name}
             surgeon={p.surgeon}
@@ -192,94 +254,134 @@ export default function PatientDetailPage() {
             refreshing={refreshing}
           />
         </div>
-        <div className="mt-3">
-          <ContactCard
-            patientId={p.id}
-            patientName={p.name}
-            phone={p.phone}
-            app={p.app}
-            smsConfigured={p.sms_configured}
-          />
+      </header>
+
+      {/* ── Two-column body ─────────────────────────────────────────────── */}
+      <div className="mt-8 flex flex-col gap-stack min-[1200px]:grid min-[1200px]:grid-cols-[minmax(0,1fr)_360px] min-[1200px]:items-start">
+        <div className={COLUMN}>
+          <Block index={1} order="order-1">
+            <SectionCard
+              sum
+              title="Recovery summary"
+              icon={
+                <Tile
+                  size="sm"
+                  family={rulesBased ? 'indigo' : 'teal'}
+                  icon={rulesBased ? <Sigma /> : <Sparkles />}
+                />
+              }
+              aside={
+                <span className="meta tabular-nums">
+                  {rulesBased ? 'Rules-based' : 'Written by AI'}
+                  {p.summary.generated_at && (
+                    <>
+                      <span aria-hidden className="px-1">·</span>
+                      {relativeTime(p.summary.generated_at)}
+                    </>
+                  )}
+                </span>
+              }
+            >
+              <RefreshOverlay show={refreshing} />
+              <p className="max-w-[68ch] text-copy-lg text-ink">{p.summary.text}</p>
+              <Stats
+                items={[
+                  // A general patient never had an operation: "Post-op day D6"
+                  // is simply false about them.
+                  general
+                    ? { key: 'day', label: 'Days monitored', value: `${p.postop_day ?? 0}` }
+                    : { key: 'day', label: 'Post-op day', value: `D${p.postop_day}` },
+                  {
+                    key: 'traj',
+                    label: general ? 'Vs. baseline' : 'Vs. expected',
+                    value: trajValue,
+                    tone:
+                      p.trajectory.state === 'behind'
+                        ? 'med'
+                        : p.trajectory.state === 'on' || p.trajectory.state === 'ahead'
+                          ? 'low'
+                          : undefined,
+                    hint:
+                      p.trajectory.state !== 'on' && p.trajectory.state !== 'unknown'
+                        ? TRAJECTORY_LABEL[p.trajectory.state].replace(
+                            / expected curve| of expected curve/i,
+                            '',
+                          )
+                        : undefined,
+                  },
+                  {
+                    key: 'checkin',
+                    label: 'Last check-in',
+                    value: p.last_checkin_at ? relativeTime(p.last_checkin_at) : 'None yet',
+                  },
+                ]}
+              />
+            </SectionCard>
+          </Block>
+
+          <Block index={2} order="order-2">
+            <NextSteps
+              patientId={p.id}
+              patientName={p.name}
+              surgeon={p.surgeon}
+              phone={delivery.phone}
+              canText={delivery.smsAvailable}
+              aiActions={p.actions}
+              refreshing={refreshing}
+              onOpen={openTarget}
+            />
+          </Block>
+
+          <Block index={4} order="order-4">
+            <CheckinHistory patientId={p.id} refreshing={refreshing} />
+          </Block>
+
+          <Block index={6} order="order-6" id="care-plan">
+            <TasksSection
+              patientId={p.id}
+              patientName={p.name}
+              pathway={care.data?.pathway}
+              phone={delivery.phone}
+              smsAvailable={delivery.smsAvailable}
+              refreshing={refreshing}
+            />
+          </Block>
+
+          <Block index={7} order="order-7" id="messages">
+            <MessagesSection
+              patientId={p.id}
+              patientName={p.name}
+              surgeon={p.surgeon}
+              phone={delivery.phone}
+              refreshing={refreshing}
+            />
+          </Block>
+        </div>
+
+        <div className={COLUMN}>
+          <Block index={3} order="order-3">
+            <HeadlineMetrics patientId={p.id} refreshing={refreshing} onOpen={openMetric} />
+          </Block>
+
+          <Block index={5} order="order-5">
+            <RecoveryTimeline patientId={p.id} trajectory={p.trajectory} refreshing={refreshing} />
+          </Block>
+
+          <Block index={8} order="order-8" id="wearables">
+            <WearableConnectionCard patientId={p.id} patientName={p.name} refreshing={refreshing} />
+          </Block>
         </div>
       </div>
 
-      <div className="mt-6 space-y-4">
-        <SectionCard
-          sum
-          spine={PRIORITY[p.risk.level].spine}
-          {...rise(2)}
-          eyebrow={
-            <AIAttribution
-              kind="recovery summary"
-              generatedAt={p.summary.generated_at}
-              provider={p.summary.provider}
-            />
-          }
-        >
-          <RefreshOverlay show={refreshing} />
-          <p className="text-copy-lg text-body">{p.summary.text}</p>
-        </SectionCard>
-
-        <div {...rise(3)}>
-          <NextSteps
-            patientId={p.id}
-            patientName={p.name}
-            surgeon={p.surgeon}
-            phone={delivery.phone}
-            canText={delivery.smsAvailable}
-            aiActions={p.actions}
-            refreshing={refreshing}
-            onOpen={openTarget}
-          />
-        </div>
-
-        <div {...rise(5)}>
-          <RecoveryTimeline patientId={p.id} trajectory={p.trajectory} refreshing={refreshing} />
-        </div>
-
-        <div {...rise(6)}>
-          <CheckinHistory patientId={p.id} refreshing={refreshing} />
-        </div>
-
-        <div {...rise(7)}>
-          <HeadlineMetrics patientId={p.id} refreshing={refreshing} onOpen={openMetric} />
-        </div>
-
-        <div {...rise(8)}>
-          <FullStats
-            patientId={p.id}
-            refreshing={refreshing}
-            open={fullStatsOpen}
-            onOpenChange={setFullStatsOpen}
-            focusMetricId={focusMetricId}
-            onFocusHandled={clearFocus}
-          />
-        </div>
-
-        <div id="care-plan" {...rise(9)}>
-          <TasksSection
-            patientId={p.id}
-            patientName={p.name}
-            pathway={care.data?.pathway}
-            phone={delivery.phone}
-            smsAvailable={delivery.smsAvailable}
-            refreshing={refreshing}
-          />
-        </div>
-
-        <div id="messages" {...rise(10)}>
-          <MessagesSection
-            patientId={p.id}
-            patientName={p.name}
-            surgeon={p.surgeon}
-            phone={delivery.phone}
-            refreshing={refreshing}
-          />
-        </div>
-
-        <div id="wearables" {...rise(11)}>
-          <WearableConnectionCard patientId={p.id} patientName={p.name} refreshing={refreshing} />
-        </div>
+      <div className={`rise mt-stack ${ANCHOR}`} id="full-stats" style={{ '--rise-delay': '495ms' } as CSSProperties}>
+        <FullStats
+          patientId={p.id}
+          refreshing={refreshing}
+          open={fullStatsOpen}
+          onOpenChange={setFullStatsOpen}
+          focusMetricId={focusMetricId}
+          onFocusHandled={clearFocus}
+        />
       </div>
 
       <GuardrailFootnote className="mt-8" />

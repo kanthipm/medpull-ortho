@@ -3,14 +3,19 @@
 @tailwind utilities;
 
 /* ══════════════════════════════════════════════════════════════════════════
-   TYPEFACE — Instrument Sans (SIL OFL 1.1), self-hosted, weights 400/500 only.
-   No 600 and no 700 file is shipped, so no 600/700 face is declared: declaring
-   one would make the browser synthesise bold. tailwind.config.js no longer
-   clamps the heavier weight utilities either — it REPLACES Tailwind's weight
-   scale with `normal` (400) and `medium` (500), so there is no utility above
-   500 to write. Nothing in src/ names one; the count was 79 when the clamp
-   went in and is 0 now (verified with a live-code scan, not a grep that
-   counts prose).
+   TYPEFACE — Instrument Sans (SIL OFL 1.1), self-hosted, weights 400/500/600.
+   400 is body and meta, 500 is row titles and labels, 600 is TITLES ONLY
+   (h1, patient name, the active app-bar tab). 700 is not shipped and not
+   declared, so nothing can synthesise it: tailwind.config.js REPLACES the
+   weight scale with normal/medium/semibold and there is no `font-bold`.
+   Why 600 exists now: in the variable source the stems are 82/106/130 units
+   at 400/500/600, so the 400->500 step is 0.3px at 12px and cannot carry a
+   title on its own. WCAG ratios do not depend on weight, every 600 use is
+   --ink (17.124 light / 18.377 dark on canvas), and 600 is never counted as
+   "bold" for the 3:1 large-text allowance.
+   The 600 file is a static wght=600, wdth=100 instance of the same variable
+   source, subset with the same pyftsubset recipe and the same 209-codepoint
+   cmap as the 400/500 files (tnum and zero kept, hinting kept).
    Files come from frontend/public/fonts/ and therefore serve from the site root.
    ══════════════════════════════════════════════════════════════════════════ */
 
@@ -26,6 +31,14 @@
   font-family: 'Instrument Sans';
   src: url('/fonts/InstrumentSans-Medium.woff2') format('woff2');
   font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Instrument Sans';
+  src: url('/fonts/InstrumentSans-SemiBold.woff2') format('woff2');
+  font-weight: 600;
   font-style: normal;
   font-display: swap;
 }
@@ -76,11 +89,13 @@
      Helvetica carries U+2010/U+2011 and is metric-identical to Arial — avg
      lowercase advance 0.48954em in both — so one set of overrides serves both.
 
-   DECLARED AT 400 AND 500, and that is measured rather than assumed: with the
+   DECLARED AT 400, 500 AND 600, and that is measured rather than assumed: with the
    scoped face declared at 400 only, a weight-500 element matched the full-range
    Medium face, found no glyph and fell out of the family altogether — ± came
    back 54.883px at 100px (raw, unadjusted) instead of 58.840px. With both
-   weights declared it is 58.840px at 400 AND at 500.
+   weights declared it is 58.840px at 400 AND at 500. The 600 block follows the
+   same rule now that a SemiBold face exists: without it a 600 title containing
+   "±" or "·" would fall out of the family for that glyph.
 
    The metrics are the Arial-fallback numbers computed for the swap block above,
    so a substituted glyph sits on the same baseline at the same apparent size:
@@ -113,10 +128,22 @@
   unicode-range: U+00B1, U+00B2, U+00B3, U+00B5, U+00B7, U+00B9, U+00BC, U+00BD, U+2020,
     U+2032, U+2033, U+2044, U+2215;
 }
+@font-face {
+  font-family: 'Instrument Sans';
+  src: local('Arial'), local('Liberation Sans'), local('Helvetica'), local('Arial Unicode MS');
+  font-weight: 600;
+  font-style: normal;
+  size-adjust: 107.22%;
+  ascent-override: 90.47%;
+  descent-override: 23.32%;
+  line-gap-override: 0%;
+  unicode-range: U+00B1, U+00B2, U+00B3, U+00B5, U+00B7, U+00B9, U+00BC, U+00BD, U+2020,
+    U+2032, U+2033, U+2044, U+2215;
+}
 /* The two hyphens Arial does not have. Helvetica first here for that reason.
-   No bold file is named in either src: weight 500 points at the SAME regular
-   file, so nothing is synthesised — the 400/500 ceiling holds for substituted
-   glyphs too. */
+   No bold file is named in any src: weights 500 and 600 point at the SAME
+   regular local file, so nothing is synthesised for a substituted glyph (the
+   substitute is drawn at regular weight, which at one glyph reads as intended). */
 @font-face {
   font-family: 'Instrument Sans';
   src: local('Helvetica'), local('Arial Unicode MS'), local('Liberation Sans'), local('Segoe UI');
@@ -132,6 +159,17 @@
   font-family: 'Instrument Sans';
   src: local('Helvetica'), local('Arial Unicode MS'), local('Liberation Sans'), local('Segoe UI');
   font-weight: 500;
+  font-style: normal;
+  size-adjust: 107.22%;
+  ascent-override: 90.47%;
+  descent-override: 23.32%;
+  line-gap-override: 0%;
+  unicode-range: U+2010, U+2011;
+}
+@font-face {
+  font-family: 'Instrument Sans';
+  src: local('Helvetica'), local('Arial Unicode MS'), local('Liberation Sans'), local('Segoe UI');
+  font-weight: 600;
   font-style: normal;
   size-adjust: 107.22%;
   ascent-override: 90.47%;
@@ -194,10 +232,19 @@
   --step-hero: max(56px, 2.91667vw);
 
   /* Tracking is a per-face correction, retuned for Instrument Sans (measured
-     avg lowercase advance 0.5249em) rather than copied from a wider face. */
-  --track-ui: -0.02em;
-  --track-title: -0.02em;
-  --track-display: -0.03em;
+     avg lowercase advance 0.5249em) rather than copied from a wider face.
+     PER RUNG now, on Apple's optical-size model: small text opens up, large
+     text closes. (SF Display's positive tracking at large sizes is NOT copied:
+     it compensates for SF's narrower advances, not this face's.) Each rung is
+     bound to its size in tailwind.config.js, so `text-copy` carries its own
+     tracking; the `tracking-*` utilities exist for off-ladder text. */
+  --track-label: 0em; /* 11-12px */
+  --track-copy: -0.011em; /* 14px */
+  --track-copy-lg: -0.02em; /* 16px */
+  --track-lede: -0.026em; /* 18px */
+  --track-title: -0.022em; /* 20-26px */
+  --track-display: -0.028em; /* 32-44px */
+  --track-hero: -0.03em; /* 56px */
   --track-eyebrow: 0.06em;
 
   --lead-body: 1.45; /* reading leading, 11-18px */
@@ -205,8 +252,9 @@
   --lead-display: 0.95; /* 44-56px */
   --lead-label: 0.9; /* single-line controls ONLY, always with a min-height */
 
-  --weight-body: 400;
-  --weight-emphasis: 500; /* ceiling — no file exists above this */
+  --weight-body: 400; /* body, meta */
+  --weight-emphasis: 500; /* row titles and labels; titles use --weight-strong */
+  --weight-strong: 600; /* titles ONLY; the ceiling, no file exists above this */
 
   /* ── SPACING / LAYOUT — one primitive, one 1920 anchor ─────────────────── */
   --space-1: 4px;
@@ -215,18 +263,103 @@
   --space-4: max(16px, 0.83333vw);
   --space-5: max(20px, 1.04167vw);
   --space-6: max(28px, 1.45833vw);
-  --container-max: max(1440px, 75vw);
-  --page-gutter: max(12px, 0.625vw);
+  --container-max: max(1320px, 68.75vw);
+  --page-gutter: max(24px, 2.5vw); /* 36px at 1440; 16px on phones (below) */
+  /* R3 — content is capped PER PAGE and centred; the ambient wash and the
+     app bar stay full-bleed. Use the `.page` recipe with one of the
+     `.page-*` modifiers, or `max-w-page-*` directly. */
+  --page-worklist: 1080px;
+  --page-patient: 1240px;
+  --page-settings: 960px; /* settings, integrations, library */
+  /* The one gap between cards and blocks on every page (`mt-stack`,
+     `gap-stack`, `space-y-stack`). The app uses 14pt at phone distance. */
+  --space-stack: 20px;
 
-  /* ── RADII — role is readable from shape alone (control <= surface) ────── */
-  --r-surface: 0px;
-  --r-control: 3px;
-  --r-pill: 999px;
+  /* ── RADII — the app's shapes. Role still reads from shape alone:
+     tile < compact control < control < surface < capsule. ─────────────────
+     A 20px circular corner matches a 20pt .continuous corner to within about
+     1 device px at the 45-degree point (continuous 20pt insets 5.65pt there;
+     a circle does that at 19.3px). The @supports block further down swaps in
+     a true squircle where the engine has one. */
+  --r-surface: 20px; /* cards, grouped lists, overlays */
+  --r-control: 12px; /* fields, segmented track, menus, grey metric tiles */
+  --r-control-sm: 10px; /* compact 32px controls, segmented thumb (12 - 2px pad) */
+  --r-tile: 8px; /* 28px category tile (ratio .29; Apple Health is ~.22) */
+  --r-pill: 999px; /* EVERY button and every .chip */
 
-  /* ── GLASS — the console gets exactly one blurred surface: the modal scrim.
-     Never on a clinical number, never on /checkin or /t, never glass-on-glass.
+  /* ── GLASS — two blurred surfaces, never more per viewport: the modal scrim
+     and the scrolled app bar. Never on a clinical number, risk pill, card or
+     popover; never on /checkin or /t; never glass-on-glass.
      2px is a scrim, not a frosted pane: it separates without hiding. ────────── */
   --blur-scrim: 2px;
+  /* R2 — the app bar. Only INK content sits on it (idle tab ink 400, active
+     tab ink 600 + the 2px rule, icon buttons ink); --body, --muted and every
+     brand text are banned there. The alpha is the LOWEST value that keeps
+     ink >= 7:1 with NO blur credit, over the worst content each mode can put
+     under it (8-bit sRGB composite):
+       light  #FFF @ a over solid #000   .72 -> 9.264  (ink passes easily)
+       dark   #141C24 @ a over solid #FFF .72 -> 6.776 FAIL
+                                          .73 -> 7.090 PASS  <- the floor
+       at .73: light ink 9.469, dark ink 7.090.
+     For the record, at .73 the banned tiers measure: light body 3.721,
+     muted 2.779, brand-ink 2.961; dark body 2.742, muted 2.023. That is why
+     they are banned, not a reason to raise the alpha.
+     The 2px active rule and focus rings on the bar sit on an opaque --panel
+     halo (see .nav-rule and .appbar :focus-visible), because #1976D2 against
+     the worst composite is 2.371 light and #63A4FF is 2.797 dark; on the halo
+     they are 4.602 and 6.783. */
+  --bar-alpha: 0.73;
+  --bar-blur: 24px;
+  --bar-saturate: 160%;
+  --bar-height: 56px;
+
+  /* ── MOTION — springs without overshoot. ─────────────────────────────────
+     --ease-apple  colour and background changes.
+     --ease-bar    the app bar material turning on/off at the scroll edge.
+     --ease-spring positional moves (segmented thumb, nav rule, row reorder):
+                   a critically damped spring sampled into linear(), 0%
+                   overshoot. The cubic fallback is the nearest non-overshooting
+                   curve for engines without linear().
+     --press-scale buttons shrink to .97 while pressed.
+     prefers-reduced-motion collapses all of this (end of file). */
+  --ease-apple: cubic-bezier(0.32, 0.08, 0.24, 1);
+  --dur-state: 200ms;
+  --ease-bar: cubic-bezier(0.4, 0, 0.6, 1);
+  --dur-bar: 240ms;
+  --ease-spring: cubic-bezier(0.24, 0.3, 0.12, 1);
+  --dur-spring: 440ms;
+  --press-scale: 0.97;
+  --dur-press: 120ms;
+
+  /* The ambient wash: two soft blobs at the top of the canvas. Peak alpha is
+     the CEILING computed for header text on it (see the role maps). */
+  --ambient-height: 420px;
+}
+
+@media (max-width: 479.98px) {
+  :root {
+    --page-gutter: 16px;
+  }
+}
+
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --ease-spring: linear(
+      0,
+      0.14 8.3%,
+      0.376 16.7%,
+      0.584 25%,
+      0.736 33.3%,
+      0.838 41.7%,
+      0.903 50%,
+      0.943 58.3%,
+      0.967 66.7%,
+      0.981 75%,
+      0.989 83.3%,
+      0.994 91.7%,
+      1
+    );
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -317,8 +450,12 @@
      --shadow-hairline is DELETED. It was a 6%/8% alpha ring that measured
      1.216:1 light and 1.138:1 dark, and it was the only edge every card had.
      Its one consumer was .panel, which now takes a real 1px --line border. */
-  --shadow-overlay: 0 4rem 7.5rem -1.25rem rgb(0 0 0 / 0.08);
+  --shadow-overlay: 0 11px 34px rgb(0 0 0 / 0.16);
   --shadow-knob: 0 1px 2px rgb(0 0 0 / 0.18);
+  /* The scrolled app bar and the ask field on focus. Never a card. */
+  --shadow-float: 0 1px 2px rgb(14 21 28 / 0.04), 0 8px 24px rgb(14 21 28 / 0.08);
+  /* The brand-filled segmented thumb lifting off its --soft track. */
+  --shadow-thumb: 0 1px 2px rgb(13 71 161 / 0.2), 0 3px 8px rgb(25 118 210 / 0.24);
 
   /* STATE */
   --disabled-fill: var(--n-100);
@@ -355,29 +492,62 @@
   --shimmer-a: var(--n-100);
   --shimmer-b: var(--n-50);
 
-  /* ── SURVIVING ALIASES — six, all for ONE component ──────────────────────
-     Everything else the redesign retired has been deleted (see the git diff
-     for the list). These six are the last, and they exist for exactly one
-     call site: components/ConfidenceChip.tsx:4-6, whose STYLES map is still
-     `bg-risk-low-bg text-risk-low` / `bg-risk-med-bg text-risk-med` /
-     `bg-risk-missing-bg text-risk-missing`. Migrating that map to the
-     `-tint`/`-ink` pairs is a three-line edit, and these six declarations
-     plus the eight Tailwind `risk.*` alias keys go with it.
-     --risk-high / --risk-high-bg are already gone: nothing consumed them.
-     DO NOT ADD TO THIS BLOCK. */
-  --risk-med: var(--risk-med-ink);
-  --risk-med-bg: var(--risk-med-tint);
-  --risk-low: var(--risk-low-ink);
-  --risk-low-bg: var(--risk-low-tint);
-  --risk-missing: var(--risk-missing-ink);
-  --risk-missing-bg: var(--risk-missing-tint);
+  /* ── APPLE LAYER (light) ─────────────────────────────────────────────── */
+
+  /* FOCUS — one ring colour for every recipe (replaces outline-brand).
+     #1976D2: 4.602 panel / 4.288 canvas / 4.057 soft / 3.974 brand-tint /
+     3.957 risk-high-tint / 4.095 teal-tint / 3.635 hairline. All >= 3:1. */
+  --focus: var(--brand);
+  /* The 2px active-tab rule (top nav and in-page tabs). 4.602 on panel;
+     on the glass bar it sits on a panel halo, see --bar-alpha. */
+  --rule-active: 25 118 210; /* #1976D2 */
+  /* Filled-button hover/pressed. White on it 8.631. */
+  --brand-hover: var(--brand-deep);
+  /* Danger hover. risk-high-ink on it 4.585 (brightness(.95) on the tint was
+     4.321 and failed). 1.226 on panel. */
+  --risk-high-tint-strong: 249 227 227; /* #F9E3E3 */
+
+  /* SECONDARY TEXT (R8). `text-secondary` and `.meta` read this. It is --muted
+     on panel/canvas/soft and flips to --body inside any `.on-tint` scope,
+     because muted on a tint fails in dark (4.067 on brand-tint, 3.698 on
+     risk-high-tint). Light --body on every tint: brand 6.237, teal 6.427,
+     risk-high 6.211, risk-med 6.415, risk-low 6.364, missing 6.367, indigo
+     6.145, violet 6.150. */
+  --text-secondary: var(--muted);
+  --on-tint-secondary: var(--body);
+
+  /* CATEGORY TILES — four hues with NO risk meaning. Red, amber and green are
+     never category hues. ink = glyph, tint = tile fill; the glyph is a graphic
+     but every pair clears 4.5 anyway:
+       blue    #1565C0 on #E3F0FC 4.963   (communication, check-ins)
+       teal    #00707D on #DFF6F9 5.171   (activity, mobility)
+       indigo  #3F3DB8 on #ECEBFD 6.950   (sleep, trajectory)
+       violet  #7B2FA8 on #F4E9FA 6.354   (vitals, medication, wound, care plan)
+     inks on panel: 5.746 / 5.811 / 8.168 / 7.462. */
+  --cat-blue-ink: var(--brand-ink);
+  --cat-blue-tint: var(--brand-tint);
+  --cat-teal-ink: var(--teal-ink);
+  --cat-teal-tint: var(--teal-tint);
+  --cat-indigo-ink: 63 61 184; /* #3F3DB8 */
+  --cat-indigo-tint: 236 235 253; /* #ECEBFD */
+  --cat-violet-ink: 123 47 168; /* #7B2FA8 */
+  --cat-violet-tint: 244 233 250; /* #F4E9FA */
+
+  /* AMBIENT WASH — composited over --canvas at peak alpha .70:
+       blue blob #E8F2FB: muted 4.758, body 6.371, ink 16.212, brand-ink 5.069
+       teal blob #E6F6F9: muted 4.858, body 6.505, ink 16.553, teal-ink 5.234
+     Only the date line, the h1 and the patient header sit on it. */
+  --ambient-blue: var(--brand-tint);
+  --ambient-teal: var(--teal-tint);
+  --ambient-a: 0.7;
+
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
    DARK ROLE MAP — the same ramp, re-indexed. Seven steps do double duty
    across the two modes, which is what makes them read as one product.
    Against panel #141C24 / canvas #0E151C / soft #1A222B:
-     hairline #1A222B   1.071 / 1.144 / 1.000   decorative seams only
+     hairline #2A333D   1.342 / 1.435 / 1.254   decorative inset dividers only
      line     #6B7480   3.631 / 3.881 / 3.392   THE structural card edge
      faint    #6B7480   3.631 / 3.881 / 3.392   same step: on dark this is the
                                                 3:1 non-text floor, so one hex
@@ -396,7 +566,9 @@
   --canvas: var(--n-950);
   --panel: var(--n-900);
   --soft: var(--n-800);
-  --hairline: var(--n-800);
+  /* n-800 was 1.071 on panel, i.e. invisible. n-700 is 1.342: still a
+     decorative inset divider, never a boundary. */
+  --hairline: var(--n-700);
   --line: var(--n-475);
   --line-strong: var(--n-425);
   --faint: var(--n-475);
@@ -448,7 +620,9 @@
   --overlay-panel: var(--n-700);
   --overlay-border: var(--n-425);
 
-  --shadow-overlay: 0 4rem 7.5rem -1.25rem rgb(0 0 0 / 0.45);
+  --shadow-overlay: 0 11px 34px rgb(0 0 0 / 0.65);
+  --shadow-float: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 8px 24px rgb(0 0 0 / 0.5);
+  --shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.4), 0 3px 8px rgb(0 0 0 / 0.35);
   /* 0.18 black is lost against a dark page; the knob still sits on a lit track
      (brand or --line-strong), so the contact shadow needs more density to read. */
   --shadow-knob: 0 1px 3px rgb(0 0 0 / 0.5);
@@ -476,14 +650,47 @@
   --shimmer-a: var(--n-800);
   --shimmer-b: var(--n-700);
 
-  /* The six surviving aliases — see the light block. ConfidenceChip.tsx:4-6
-     is the only consumer of all six. */
-  --risk-med: var(--risk-med-ink);
-  --risk-med-bg: var(--risk-med-tint);
-  --risk-low: var(--risk-low-ink);
-  --risk-low-bg: var(--risk-low-tint);
-  --risk-missing: var(--risk-missing-ink);
-  --risk-missing-bg: var(--risk-missing-tint);
+  /* ── APPLE LAYER (dark) — see the light block for roles ─────────────── */
+
+  /* #63A4FF: 6.783 panel / 7.250 canvas / 6.336 soft / 5.624 brand-tint /
+     5.113 risk-high-tint / 5.102 teal-tint. (#1976D2 was 3.736 on panel.) */
+  --focus: var(--brand-ink);
+  /* #63A4FF: 6.783 on panel. #1976D2 would be 3.736 on panel and 1.541 on
+     the worst bar composite. */
+  --rule-active: 99 164 255;
+  /* --brand-deep is #1976D2 on dark, i.e. the SAME as the fill, so hover
+     needs its own step: #1565C0, white on it 5.746. */
+  --brand-hover: 21 101 192;
+  /* risk-high-ink #FF8A87 on it 5.054; 1.128 on the resting tint. */
+  --risk-high-tint-strong: 69 53 60; /* #45353C */
+
+  /* --body on every dark tint: brand 5.513, teal 5.002, risk-high 5.013,
+     risk-med 4.753, risk-low 4.773, missing 5.093, indigo 5.695,
+     violet 5.531. (--muted: 4.067 / 3.690 / 3.698 / 3.506 ... all fail.) */
+  --text-secondary: var(--muted);
+  --on-tint-secondary: var(--body);
+
+  /* Category tiles, dark:
+       blue    #63A4FF on #152C43 5.624
+       teal    #5DDEF4 on #103640 8.142
+       indigo  #A9A6FF on #24244A 6.721
+       violet  #D7A3F5 on #33224A 7.114
+     inks on panel: 6.783 / 10.825 / 7.848 / 8.554. */
+  --cat-blue-ink: var(--brand-ink);
+  --cat-blue-tint: var(--brand-tint);
+  --cat-teal-ink: var(--teal-ink);
+  --cat-teal-tint: var(--teal-tint);
+  --cat-indigo-ink: 169 166 255; /* #A9A6FF */
+  --cat-indigo-tint: 36 36 74; /* #24244A */
+  --cat-violet-ink: 215 163 245; /* #D7A3F5 */
+  --cat-violet-tint: 51 34 74; /* #33224A */
+
+  /* Ambient, dark, composited over --canvas at peak alpha .40 (the CEILING:
+     .45 gives muted 4.577 on the teal blob, .50 gives 4.481):
+       blue blob #111E2C: muted 4.809, body 6.519, brand-ink 6.650
+       teal blob #0F222A: muted 4.671, body 6.333, teal-ink 10.308 */
+  --ambient-a: 0.4;
+
 }
 
 /* Text selection is a system-drawn surface that otherwise ignores the tokens,
@@ -517,15 +724,17 @@
 body {
   @apply min-h-screen font-sans text-copy-lg text-ink antialiased;
   font-weight: var(--weight-body);
-  letter-spacing: var(--track-ui);
+  letter-spacing: var(--track-copy-lg);
   line-height: var(--lead-body);
   background: rgb(var(--canvas));
-  transition: background-color 0.2s ease, color 0.15s ease;
+  transition:
+    background-color var(--dur-state) var(--ease-apple),
+    color 0.15s ease;
 }
 
-/* Clinical figures: tabular widths so columns line up. 'zero' is declared for
-   Roboto Mono, which has the feature; Instrument Sans does not ship one, so
-   never expect a slashed zero from --font-ui. */
+/* `font-mono` is for identifiers and code only (patient ids, endpoints,
+   template keys); clinical figures stay in the UI face with tabular digits
+   (R19). 'zero' applies where the resolved monospace face has it. */
 .font-mono {
   font-feature-settings: 'zero', 'tnum';
 }
@@ -533,52 +742,303 @@ body {
 @layer components {
   /* ════════════════════════════════════════════════════════════════════════
      RECIPES. Token colours only, the frozen 12/14/16/18/20 ladder, weights
-     400/500 only, radius tokens, hairline-or-fill separation. No recipe
-     carries a colour that a call site is expected to override except .chip,
-     which is deliberately colourless (see below).
+     400/500 (600 for titles), radius tokens. No recipe carries a colour that
+     a call site is expected to override except .chip, which is deliberately
+     colourless (see below).
      Tailwind DROPS any rule in this layer whose class never appears in the
      scanned content, so the recipe names are safelisted in tailwind.config.js.
      ════════════════════════════════════════════════════════════════════════ */
 
+  /* ── PAGE FRAME (R3) ─────────────────────────────────────────────────── */
+
+  /* Centred, capped content. The gutter is inside the cap so the text column
+     is exactly --page-* wide at desktop and never touches the edge on a
+     phone. Pick one modifier; `.page` alone uses --container-max. */
+  .page {
+    width: 100%;
+    max-width: calc(var(--page-max, var(--container-max)) + 2 * var(--page-gutter));
+    margin-inline: auto;
+    padding-inline: var(--page-gutter);
+  }
+  .page-worklist {
+    --page-max: var(--page-worklist);
+  }
+  .page-patient {
+    --page-max: var(--page-patient);
+  }
+  .page-settings {
+    --page-max: var(--page-settings);
+  }
+
+  /* The ambient wash (applied ONCE, in AppShell). The host is the full-bleed
+     shell wrapper that also contains the sticky bar, so the wash runs under
+     the bar (R2). `isolation` gives the -1 layer something to sit in without
+     going behind the body background. Cards stay opaque --panel, so no
+     clinical number ever sits on the wash. */
+  .ambient-host {
+    position: relative;
+    isolation: isolate;
+  }
+  .ambient {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: var(--ambient-height);
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        60rem 22rem at 12% -4rem,
+        rgb(var(--ambient-blue) / var(--ambient-a)),
+        rgb(var(--ambient-blue) / 0) 70%
+      ),
+      radial-gradient(
+        48rem 20rem at 88% -6rem,
+        rgb(var(--ambient-teal) / var(--ambient-a)),
+        rgb(var(--ambient-teal) / 0) 70%
+      );
+  }
+
+  /* ── APP BAR (R2) ────────────────────────────────────────────────────── */
+
+  /* Sticky; transparent at scroll 0 so the wash shows through with no edge;
+     the material turns on once content scrolls under it. `data-scrolled` is
+     set on the element by the scroll-edge sentinel (lib/useScrollEdge.ts).
+     ONLY ink content inside (see --bar-alpha for the numbers). */
+  .appbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    min-height: var(--bar-height);
+    color: rgb(var(--ink));
+    background-color: rgb(var(--panel) / 0);
+    border-bottom: 1px solid transparent;
+    transition:
+      background-color var(--dur-bar) var(--ease-bar),
+      border-color var(--dur-bar) var(--ease-bar),
+      box-shadow var(--dur-bar) var(--ease-bar);
+  }
+  .appbar[data-scrolled] {
+    background-color: rgb(var(--panel) / var(--bar-alpha));
+    -webkit-backdrop-filter: blur(var(--bar-blur)) saturate(var(--bar-saturate));
+    backdrop-filter: blur(var(--bar-blur)) saturate(var(--bar-saturate));
+    border-bottom-color: rgb(var(--line));
+    box-shadow: var(--shadow-float);
+  }
+  /* Focus rings on the bar get an opaque --panel halo under them, so the ring
+     is measured against --panel (4.602 light / 6.783 dark), never against
+     whatever is scrolling underneath. */
+  .appbar :focus-visible {
+    box-shadow: 0 0 0 6px rgb(var(--panel));
+  }
+
+  /* A top-nav tab. Ink at 400 idle, ink at 600 when current. The hidden
+     ::before reserves the 600 width so the row does not jitter when the
+     weight changes: put the label in `data-label` as well as in the text. */
+  .appbar-link {
+    @apply relative inline-flex min-h-9 cursor-pointer flex-col items-center justify-center rounded-pill px-2 text-copy sm:px-3;
+    color: rgb(var(--ink));
+    font-weight: var(--weight-body);
+    transition: background-color var(--dur-state) var(--ease-apple);
+  }
+  .appbar-link::before {
+    content: attr(data-label);
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    font-weight: var(--weight-strong);
+    pointer-events: none;
+    user-select: none;
+  }
+  .appbar-link:hover {
+    background-color: rgb(var(--soft));
+  }
+  .appbar-link[aria-current='page'],
+  .appbar-link.on {
+    font-weight: var(--weight-strong);
+  }
+  .appbar-link:focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+  }
+
+  /* The 2px Medical Blue active rule (top nav and in-page tabs). Position it
+     with left/width (or a transform) from useSlidingIndicator; it moves on the
+     spring. The 1px --panel halo is what it is measured against on the glass
+     bar: 4.602 light, 6.783 dark. */
+  .nav-rule {
+    position: absolute;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 1px;
+    pointer-events: none;
+    background-color: rgb(var(--rule-active));
+    box-shadow: 0 0 0 1px rgb(var(--panel));
+    transition:
+      transform var(--dur-spring) var(--ease-spring),
+      left var(--dur-spring) var(--ease-spring),
+      width var(--dur-spring) var(--ease-spring);
+  }
+
   /* ── SURFACES ─────────────────────────────────────────────────────────── */
 
-  /* The shared card surface: a fill and a real 1px --line border, no shadow.
-     (It used to be a 6%/8% alpha ring, measured at 1.216:1 light / 1.138:1
-     dark — effectively no edge at all.) --line is 1.553:1 on panel light
-     (1.447:1 on canvas) and 3.631:1 on panel dark (3.881:1 on canvas).
+  /* The shared card surface: 20px corners, a fill and a real 1px --line
+     border, no shadow, no spine. --line is 1.553:1 on panel light (1.447:1
+     on canvas) and 3.631:1 on panel dark (3.881:1 on canvas).
 
-     THE RULE, stated honestly. A card is a CONTAINER, not a control. WCAG
-     1.4.11 (3:1) binds the visual information needed to IDENTIFY a user
-     interface component or its state, and a static card identifies nothing,
-     so light --line under 3:1 is a legitimate structural hairline, not a
-     failure. The rule changes the moment the surface is interactive:
-       Any INTERACTIVE element whose boundary is its only identification
-       (a text field, an unlabelled-looking outlined button, a clickable card
-       with no other affordance) takes --line-strong — 3.834:1 light, 5.671:1
-       dark — never --line.
-     .field and .qa-btn below follow it. .segment's --line rule is the tab
-     STRIP's container edge, not any tab's boundary: a tab is identified by
-     its label and its state by the 2px --brand rule (4.602:1 light, 3.736:1
-     dark on panel), so --line is correct there.
-     A .panel used as a button must add `border-line-strong` at the call site.
-     Use .panel alone otherwise — never `panel border border-line`. */
+     THE RULE. A card is a CONTAINER, not a control. WCAG 1.4.11 (3:1) binds
+     the visual information needed to IDENTIFY a user interface component or
+     its state, and a static card identifies nothing, so light --line under
+     3:1 is a legitimate structural edge. Controls:
+       - BUTTONS are identified by their visible label (Apple's filled /
+         tinted / gray / plain ladder). A tinted fill is only 1.158:1 on the
+         panel, and that is fine for the same reason the app's "Details" is.
+       - FIELDS are the exception: an empty field's boundary is its ONLY
+         identification, so .field keeps a 1px --line-strong border (3.834
+         light / 5.671 dark).
+       - A .panel used as a button must add `border-line-strong` at the call
+         site.
+     .panel does NOT clip its children (a chart tooltip or menu inside one
+     would be cut off until it is portalled, R5). Add `.clip-surface` — or use
+     .card-group, which clips — when a row tint or table must follow the
+     curve. */
   .panel {
     @apply rounded-surface border border-line bg-panel;
   }
+  .clip-surface {
+    overflow: clip;
+    overflow-clip-margin: 0px;
+  }
 
-  /* The floating surface: modal, popover, toast. The ONLY places the ambient
-     wash is allowed. Light separates with the fill (white on a 0.62 scrim);
-     dark separates with a hairline, because the dark overlay panel is only
-     1.584:1 on its own scrim — hence the .dark rule rather than a border in
-     both modes, which would be a hairline AND a fill. */
+  /* Grouped list (R14 — never `.group`, which is Tailwind's group-hover
+     marker). A rounded card whose rows are separated by INSET hairlines, like
+     an iOS inset-grouped list. Clips, so tinted rows follow the corners.
+     Rows: direct children that are <li> or .card-row. Set --row-inset on the
+     group or the row to where the text column starts (default 16px; a row
+     with a 28px leading tile and a 12px gap is 16 + 28 + 12 = 56px). */
+  .card-group {
+    @apply rounded-surface border border-line bg-panel;
+    display: block;
+    overflow: clip;
+    overflow-clip-margin: 0px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .card-group > :where(li, .card-row) {
+    position: relative;
+  }
+  .card-group > :where(li, .card-row) + :where(li, .card-row)::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: var(--row-inset, 16px);
+    right: 0;
+    height: 1px;
+    background-color: rgb(var(--hairline));
+    pointer-events: none;
+    transform-origin: top;
+  }
+  @media (min-resolution: 2dppx) {
+    .card-group > :where(li, .card-row) + :where(li, .card-row)::before {
+      transform: scaleY(0.5);
+    }
+  }
+  /* A hairline between two tinted rows (or next to one) is not needed: the
+     tint change is the separation. */
+  .card-group > :where(.on-tint, .row-risk-high) + :where(li, .card-row)::before,
+  .card-group > :where(li, .card-row) + :where(.on-tint, .row-risk-high)::before {
+    display: none;
+  }
+
+  /* A list row (16px sides, 12px vertical, 60px minimum). Layout inside is
+     the call site's grid. Interactive rows get hover/active fills; the row is
+     a <div>/<li> and the ONE link inside it carries .stretched-link (R4). */
+  .card-row {
+    position: relative;
+    min-height: 60px;
+    padding: 12px 16px;
+    transition: background-color var(--dur-state) var(--ease-apple);
+  }
+  .card-row:where(.is-interactive, :has(.stretched-link)):hover {
+    background-color: rgb(var(--soft));
+  }
+  .card-row:where(.is-interactive, :has(.stretched-link)):active {
+    background-color: rgb(var(--hairline));
+  }
+  /* High-risk row tint (R1/R8): the tint plus the on-tint text scope. Its
+     action capsules use .btn-on-tint / .btn-danger-on-tint, never the tint. */
+  .row-risk-high {
+    background-color: rgb(var(--risk-high-tint));
+    --text-secondary: var(--on-tint-secondary);
+  }
+  .row-risk-high:where(:has(.stretched-link)):hover {
+    background-color: rgb(var(--risk-high-tint-strong));
+  }
+
+  /* Stretched link (R4): the patient name is the only <a>; its ::after
+     covers the row. Everything else interactive in the row takes
+     .above-stretch so it sits above the overlay. Never nest controls in <a>. */
+  .stretched-link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+  }
+  .stretched-link:focus-visible {
+    outline: none;
+  }
+  .stretched-link:focus-visible::after {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: -2px;
+    border-radius: inherit;
+  }
+  .above-stretch {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* R8 — any tinted surface: secondary text flips from --muted to --body.
+     `.meta` and `text-secondary` follow automatically. */
+  .on-tint {
+    --text-secondary: var(--on-tint-secondary);
+  }
+  /* The brand-tint summary card (briefing, recovery summary). Ink prose on it
+     is 15.871 light / 14.255 dark. */
+  .card-tint {
+    @apply rounded-surface border border-line bg-brand-tint;
+    --text-secondary: var(--on-tint-secondary);
+  }
+
+  /* The floating surface: modal, popover, toast, chart tooltip. Light
+     separates with the fill and the shadow; dark separates with a hairline,
+     because the dark overlay panel is only 1.584:1 on its own scrim.
+     Popovers and tooltips opened from inside a clipped card must render in
+     the top layer (portal to document.body, or the `popover` attribute) — R5. */
   .overlay {
     @apply rounded-surface bg-overlay-panel shadow-overlay;
   }
   .dark .overlay {
     @apply border border-overlay-border;
   }
+  /* Dark --muted (#7F8A98) is only 3.655:1 on the dark overlay panel
+     (#2A333D), so inside an overlay every secondary tier steps up to n-400:
+     4.955 on the overlay panel, 6.211 on --soft, 5.513 on --brand-tint.
+     All three are set here, not just --muted: a custom property holding
+     var() is substituted where it is declared, so --text-secondary and
+     --disabled-ink inherit the root value unless restated. Light needs
+     nothing: --muted on the white overlay is 5.393. */
+  .dark .overlay {
+    --muted: var(--n-400);
+    --text-secondary: var(--n-400);
+    --disabled-ink: var(--n-400);
+  }
+  /* A menu is an overlay with control corners. */
+  .overlay-menu {
+    @apply rounded-control;
+  }
 
-  /* ── THE ONE BLURRED SURFACE ON THE WEB ───────────────────────────────── */
+  /* ── THE TWO BLURRED SURFACES ON THE WEB: the scrim and the app bar ───── */
 
   /* The modal scrim. This is a COMPONENT CLASS, not a variable: a modal must
      carry className="scrim" or nothing is emitted for it at all.
@@ -607,65 +1067,377 @@ body {
       backdrop-filter: none;
     }
   }
-  /* Forced colours: the UA repaints everything from the system palette, so the
-     scrim becomes an opaque Canvas sheet and the dialog edge has to come from
-     CanvasText — a box-shadow is not painted at all in this mode. */
-  @media (forced-colors: active) {
-    .scrim {
-      background-color: Canvas;
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
-    .overlay,
-    .dark .overlay {
-      border: 1px solid CanvasText;
-      box-shadow: none;
-    }
+
+  /* ── BUTTONS — Apple's ladder, all capsules ──────────────────────────────
+     Every button is identified by its visible label (see .panel). Ratios,
+     rest / hover, light | dark:
+       .btn-filled          white on brand       4.602 / 8.631 | 4.602 / 5.746
+       .btn-tinted          on-brand-tint/tint   7.454 / 6.365 | 5.624 / 4.954
+       .btn-gray            ink on soft         16.202 /14.517 |16.060 /12.810
+       .btn-plain           brand-ink            5.746 / 5.066 | 6.783 / 6.336
+       .btn-plain-muted     body                 7.222 / 6.367 | 6.650 / 6.211
+       .btn-danger          risk-high on tint    4.835 / 4.585 | 5.701 / 5.054
+       .btn-on-tint (R1)    brand-ink on panel   5.746 / 5.066 | 6.783 / 6.336
+       .btn-danger-on-tint  risk-high on panel   5.622 / 4.956 | 7.563 / 7.064
+       .btn-icon            body, hover soft     7.222 / 6.367 | 6.650 / 6.211
+       disabled             token pair           4.755         | 4.582
+     Sizes: default 36px; .btn-sm 32px; .btn-lg 44px (patient web pages). The border is transparent so forced-colors mode draws it.
+     Focus is a solid 2px --focus ring, 3px out.
+     The shared block uses :is(), not :where(): preflight's `button { padding:
+     0; font: inherit; color: inherit }` is (0,0,1) and would beat a
+     zero-specificity base. At (0,1,0) the base wins over preflight, the
+     variants and size modifiers below win on source order, and call-site
+     utilities still win because they are emitted later. */
+  :is(
+      .btn-filled,
+      .btn-tinted,
+      .btn-gray,
+      .btn-plain,
+      .btn-plain-muted,
+      .btn-danger,
+      .btn-on-tint,
+      .btn-danger-on-tint,
+      .btn-icon,
+      .btn-send
+    ) {
+    @apply inline-flex cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-pill text-copy font-medium;
+    min-height: 36px;
+    padding-inline: 16px;
+    border: 1px solid transparent;
+    transition:
+      background-color var(--dur-state) var(--ease-apple),
+      color var(--dur-state) var(--ease-apple),
+      border-color var(--dur-state) var(--ease-apple),
+      transform var(--dur-press) var(--ease-apple);
+  }
+  :is(
+      .btn-filled,
+      .btn-tinted,
+      .btn-gray,
+      .btn-plain,
+      .btn-plain-muted,
+      .btn-danger,
+      .btn-on-tint,
+      .btn-danger-on-tint,
+      .btn-icon,
+      .btn-send
+    ):active:not(:disabled, [aria-disabled='true']) {
+    transform: scale(var(--press-scale));
+  }
+  :is(
+      .btn-filled,
+      .btn-tinted,
+      .btn-gray,
+      .btn-plain,
+      .btn-plain-muted,
+      .btn-danger,
+      .btn-on-tint,
+      .btn-danger-on-tint,
+      .btn-icon,
+      .btn-send
+    ):focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 3px;
+  }
+  :is(
+      .btn-filled,
+      .btn-tinted,
+      .btn-gray,
+      .btn-plain,
+      .btn-plain-muted,
+      .btn-danger,
+      .btn-on-tint,
+      .btn-danger-on-tint,
+      .btn-icon,
+      .btn-send
+    )
+    svg {
+    flex-shrink: 0;
+  }
+  /* A lucide icon with no size prop renders width="24"; in a 36px capsule
+     that is too big, so the default is brought to 16px. An explicit size
+     (any other width attribute) is left alone. .btn-sm forces 14px below. */
+  :is(
+      .btn-filled,
+      .btn-tinted,
+      .btn-gray,
+      .btn-plain,
+      .btn-plain-muted,
+      .btn-danger,
+      .btn-on-tint,
+      .btn-danger-on-tint,
+      .btn-icon,
+      .btn-send
+    )
+    svg[width='24'] {
+    width: 16px;
+    height: 16px;
   }
 
-  /* ── CONTROLS ─────────────────────────────────────────────────────────── */
-
-  /* Outlined button — 1px line, brand-ink label (5.746:1 on panel; #1976D2
-     itself is a fill at 4.602:1 and is never a label). Hover borrows the solid
-     brand as a STROKE (4.602:1, clears 1.4.11); the old brand/40 was 1.5:1.
-     Disabled is the token pair, not opacity: --disabled-ink on --disabled-fill
-     is 4.755:1, where opacity-40 on the label was about 1.6:1.
-     Rest border is --line-strong (3.834:1 light, 5.671:1 dark): the outline is
-     what makes this read as a button on a white card, so 1.4.11 binds it.
-     Disabled keeps --line — inactive components are exempt. */
-  .qa-btn {
-    @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-el whitespace-nowrap rounded-control border border-line-strong bg-panel px-4 py-2 text-copy font-medium text-brand-ink transition-[border-color,color,background-color] duration-150 hover:border-brand hover:bg-brand-tint active:bg-brand-tint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:border-line disabled:bg-disabled-fill disabled:text-disabled-ink;
+  /* Filled — the one saturated action per view. */
+  .btn-filled {
+    background-color: rgb(var(--brand));
+    color: rgb(var(--on-brand));
+  }
+  .btn-filled:hover {
+    background-color: rgb(var(--brand-hover));
+  }
+  /* Tinted — the default action. */
+  .btn-tinted {
+    background-color: rgb(var(--brand-tint));
+    color: rgb(var(--on-brand-tint));
+  }
+  .btn-tinted:hover {
+    background-color: rgb(var(--brand-tint-strong));
   }
 
-  /* Filled button — white on --brand is 4.602:1 with zero headroom, so the
-     hover/pressed fill steps DOWN to --brand-deep (white on it 8.631:1).
-     `w-full` is inherited from the shipped recipe: override it with `w-auto`
-     at the call site rather than editing this. */
-  .btn-primary {
-    @apply inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-control bg-brand px-6 py-2.5 text-copy font-medium text-on-brand transition-[background-color] duration-150 hover:bg-brand-deep active:bg-brand-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:bg-disabled-fill disabled:text-disabled-ink;
+  /* Gray — suggestions, secondary choices. */
+  .btn-gray {
+    background-color: rgb(var(--soft));
+    color: rgb(var(--ink));
+  }
+  .btn-gray:hover {
+    background-color: rgb(var(--hairline));
+  }
+
+  /* Plain — text only, no fill, no border (R4's "Send now", back links,
+     card-header actions). Tighter padding so the label aligns optically. */
+  .btn-plain,
+  .btn-plain-muted {
+    background-color: transparent;
+    padding-inline: 10px;
+    color: rgb(var(--brand-ink));
+  }
+  .btn-plain-muted {
+    color: rgb(var(--body));
+  }
+  .btn-plain:hover,
+  .btn-plain-muted:hover {
+    background-color: rgb(var(--soft));
+  }
+
+  /* Danger — escalate. */
+  .btn-danger {
+    background-color: rgb(var(--risk-high-tint));
+    color: rgb(var(--risk-high-ink));
+  }
+  .btn-danger:hover {
+    background-color: rgb(var(--risk-high-tint-strong));
+  }
+
+  /* R1 — controls inside a risk-tinted (or any tinted) row never share the
+     row's tint: they are panel-filled capsules with the ink. */
+  .btn-on-tint {
+    background-color: rgb(var(--panel));
+    color: rgb(var(--brand-ink));
+  }
+  .btn-danger-on-tint {
+    background-color: rgb(var(--panel));
+    color: rgb(var(--risk-high-ink));
+  }
+  .btn-on-tint:hover,
+  .btn-danger-on-tint:hover {
+    background-color: rgb(var(--soft));
+  }
+
+  /* Icon-only — REQUIRES aria-label. 36px round; `.btn-sm` makes it 32. */
+  .btn-icon {
+    width: 36px;
+    height: 36px;
+    min-height: 0;
+    padding: 0;
+    background-color: transparent;
+    color: rgb(var(--body));
+  }
+  .btn-icon:hover {
+    background-color: rgb(var(--soft));
+    color: rgb(var(--ink));
+  }
+  /* On the glass bar, icon buttons are ink (R2). */
+  .appbar .btn-icon {
+    color: rgb(var(--ink));
+  }
+
+  /* The ask field's round send button (16px ArrowUp inside). */
+  .btn-send {
+    width: 36px;
+    height: 36px;
+    min-height: 0;
+    padding: 0;
+    background-color: rgb(var(--brand));
+    color: rgb(var(--on-brand));
+  }
+  .btn-send:hover {
+    background-color: rgb(var(--brand-hover));
+  }
+
+  /* Disabled — the token pair, not opacity (4.755 light / 4.582 dark).
+     Declared AFTER the variants so it wins on source order. */
+  :is(
+      .btn-filled,
+      .btn-tinted,
+      .btn-gray,
+      .btn-plain,
+      .btn-plain-muted,
+      .btn-danger,
+      .btn-on-tint,
+      .btn-danger-on-tint,
+      .btn-icon,
+      .btn-send
+    ):is(:disabled, [aria-disabled='true']) {
+    pointer-events: none;
+    cursor: default;
+    background-color: rgb(var(--disabled-fill));
+    color: rgb(var(--disabled-ink));
+  }
+  :is(
+      .btn-plain,
+      .btn-plain-muted,
+      .btn-icon
+    ):is(:disabled, [aria-disabled='true']) {
+    background-color: transparent;
+  }
+  /* Size modifiers — declared after every variant so they win on order. */
+  .btn-sm {
+    min-height: 32px;
+    padding-inline: 12px;
+  }
+  .btn-sm:where(.btn-plain, .btn-plain-muted) {
+    padding-inline: 10px;
+  }
+  .btn-sm:where(.btn-icon, .btn-send) {
+    width: 32px;
+    height: 32px;
+    min-height: 0;
+    padding: 0;
+  }
+  .btn-sm svg {
+    width: 14px;
+    height: 14px;
+  }
+  .btn-lg {
+    min-height: 44px;
+    padding-inline: 24px;
+  }
+  .btn-lg:where(.btn-icon, .btn-send) {
+    width: 44px;
+    height: 44px;
+    min-height: 0;
+    padding: 0;
   }
 
   /* Outlined text field. The focus indicator is an `outline`, not a
-     box-shadow: `outline-2 outline-brand` is set at rest with NO
+     box-shadow: the outline width and colour are set at rest with NO
      outline-style, and :focus flips the style to solid. A `box-shadow: none`
-     reset elsewhere therefore cannot kill the WCAG 2.4.7 indicator for 44
-     controls, and no component may re-add `focus:outline-none`.
-     Placeholders are --muted (5.393:1 on panel, 4.755:1 on --soft). --faint
-     would be 2.279:1 on --soft and placeholders are text, not decoration.
+     reset elsewhere therefore cannot kill the WCAG 2.4.7 indicator, and no
+     component may re-add `focus:outline-none`.
+     Placeholders are --muted (5.393:1 on panel, 4.755:1 on --soft).
      Rest border is --line-strong (3.834:1 light, 5.671:1 dark): an empty
      field's boundary is its ONLY identification, so 1.4.11's 3:1 binds it.
-     Focus steps to --brand (4.602:1 light, 3.736:1 dark) plus the outline. */
+     Focus steps the border to --focus plus the outline. */
   .field {
-    @apply w-full rounded-control border border-line-strong bg-panel px-3.5 py-2.5 text-copy font-normal text-ink outline-2 outline-offset-0 outline-brand transition-[border-color,outline-color] duration-150 placeholder:text-muted focus:border-brand focus:outline disabled:cursor-not-allowed disabled:border-line disabled:bg-disabled-fill disabled:text-disabled-ink;
+    @apply w-full rounded-control border border-line-strong bg-panel px-3.5 py-2.5 text-copy font-normal text-ink placeholder:text-muted focus:outline disabled:cursor-not-allowed disabled:border-line disabled:bg-disabled-fill disabled:text-disabled-ink;
+    outline-width: 2px;
+    outline-offset: 0;
+    outline-color: rgb(var(--focus));
+    transition:
+      border-color var(--dur-state) var(--ease-apple),
+      outline-color var(--dur-state) var(--ease-apple),
+      box-shadow var(--dur-state) var(--ease-apple);
+  }
+  .field:focus {
+    border-color: rgb(var(--focus));
+  }
+  /* The ask field: a 52px capsule with room for a leading 20px glyph at
+     left 16px and a trailing .btn-send at right 8px. Lifts on focus. */
+  .field-pill {
+    @apply rounded-pill;
+    min-height: 52px;
+    padding-left: 48px;
+    padding-right: 52px;
+  }
+  .field-pill:focus {
+    box-shadow: var(--shadow-float);
   }
 
-  /* Assist chip — control radius, 12px label, NO uppercase (the one uppercase
-     element per screen is .micro). Deliberately colourless: the call site adds
-     the state pair, e.g. `chip bg-risk-high-tint text-risk-high-ink`. Never a
-     bare tint with no ink, and never --faint as the label.
+  /* State pill — capsule, 24px, 12/500, NO uppercase. Deliberately
+     colourless: the call site adds the state pair, e.g.
+     `chip bg-risk-high-tint text-risk-high-ink`. ONLY for state (risk tier,
+     urgency, "Reported worse", connection status); neutral metadata is a
+     `.meta` line, not a chip. Risk pills sit on opaque tints only.
      leading-label is 0.9, so the min-height is mandatory and is on the recipe. */
   .chip {
-    @apply inline-flex min-h-5 items-center gap-el whitespace-nowrap rounded-control px-2.5 py-el text-label font-medium leading-label;
+    @apply inline-flex min-h-6 items-center gap-el whitespace-nowrap rounded-pill px-2.5 text-label font-medium leading-label tracking-label;
+  }
+
+  /* Metadata line — 12/400 secondary. Muted on panel (5.393 / 4.906), body
+     inside any .on-tint scope (R8). Join items with the separator-dot
+     component. */
+  .meta {
+    @apply text-label font-normal tracking-label;
+    color: rgb(var(--text-secondary));
+  }
+
+  /* ── CATEGORY TILES + AVATARS ────────────────────────────────────────── */
+
+  /* 28px rounded tile with a 16px glyph (stroke 2). aria-hidden: the row
+     title carries the meaning, and hue is never the only carrier. Pick one
+     family. `.tile-lg` is 40px with a 20px glyph. */
+  .tile {
+    @apply inline-grid shrink-0 place-items-center rounded-tile;
+    width: 28px;
+    height: 28px;
+  }
+  .tile svg {
+    width: 16px;
+    height: 16px;
+  }
+  .tile-lg {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--r-control-sm);
+  }
+  .tile-lg svg {
+    width: 20px;
+    height: 20px;
+  }
+  .tile-blue {
+    background-color: rgb(var(--cat-blue-tint));
+    color: rgb(var(--cat-blue-ink));
+  }
+  .tile-teal {
+    background-color: rgb(var(--cat-teal-tint));
+    color: rgb(var(--cat-teal-ink));
+  }
+  .tile-indigo {
+    background-color: rgb(var(--cat-indigo-tint));
+    color: rgb(var(--cat-indigo-ink));
+  }
+  .tile-violet {
+    background-color: rgb(var(--cat-violet-tint));
+    color: rgb(var(--cat-violet-ink));
+  }
+  /* The only non-category tile: escalate. Risk tint + TriangleAlert glyph. */
+  .tile-risk-high {
+    background-color: rgb(var(--risk-high-tint));
+    color: rgb(var(--risk-high-ink));
+  }
+
+  /* Initials disc. Default: brand-tint pair (7.454 / 5.624).
+     `.avatar-risk` (R1): a white-on-risk-ink disc was computed and REJECTED —
+     5.622 light but 2.273 dark (#FFF on #FF8A87) — so the high-risk avatar
+     is a PANEL disc with risk-high-ink initials: 5.622 light / 7.563 dark.
+     It sits on the risk-tinted row, so it never shares the row's fill. */
+  .avatar {
+    @apply inline-grid shrink-0 select-none place-items-center rounded-pill text-label font-medium tracking-label;
+    width: 32px;
+    height: 32px;
+    background-color: rgb(var(--brand-tint));
+    color: rgb(var(--on-brand-tint));
+  }
+  .avatar-risk {
+    background-color: rgb(var(--panel));
+    color: rgb(var(--risk-high-ink));
   }
 
   /* ── LABELS ───────────────────────────────────────────────────────────── */
@@ -676,38 +1448,57 @@ body {
     @apply text-label font-medium uppercase tracking-eyebrow text-muted;
   }
 
-  /* Section divider label + its hairline. Sentence case on purpose: it used to
-     be uppercase and competed with .micro for the one uppercase slot, so the
-     text-transform is gone (the copy itself is untouched) and the tracking
-     drops from the eyebrow value to the UI value, which is what lowercase
-     wants. */
-  .zone-label {
-    @apply flex items-center gap-2.5 text-label font-medium tracking-ui text-muted;
+  /* ── SEGMENTED CONTROL (the Apple one) ───────────────────────────────────
+     Track: --soft, 12px corners, 2px padding. Thumb: a BRAND-FILLED capsule
+     (4.057 on the light track, 3.490 dark; clears 1.4.11 with no edge),
+     positioned by useSlidingIndicator and moved on the spring.
+     Items: idle ink 400 (16.202 light) / body 400 (6.211 dark); selected
+     white 500 on the thumb (4.602).
+     FOCUS (R9): every item gets a 2px --focus ring 2px OUTSIDE it (it lands
+     beyond the track: --focus on panel 4.602 / 6.783). The SELECTED item also
+     gets a 2px white inset ring on the brand thumb (4.602), so the ring stays
+     visible where the brand thumb would otherwise swallow it. */
+  .seg-track {
+    @apply relative inline-flex rounded-control bg-soft;
+    padding: 2px;
   }
-  .zone-label::after {
-    content: '';
-    @apply h-px flex-1 bg-line;
+  .seg-thumb {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    border-radius: var(--r-control-sm);
+    background-color: rgb(var(--brand));
+    box-shadow: var(--shadow-thumb);
+    pointer-events: none;
+    transition:
+      transform var(--dur-spring) var(--ease-spring),
+      left var(--dur-spring) var(--ease-spring),
+      width var(--dur-spring) var(--ease-spring);
   }
-
-  /* ── TABS ─────────────────────────────────────────────────────────────── */
-
-  /* The strip's bottom rule is a container edge (see .panel), so --line. */
-  .segment {
-    @apply relative inline-flex border-b border-line;
+  .seg-item {
+    @apply relative z-10 inline-flex min-h-8 cursor-pointer items-center justify-center whitespace-nowrap px-4 text-copy font-normal;
+    border-radius: var(--r-control-sm);
+    color: rgb(var(--ink));
+    transition: color var(--dur-state) var(--ease-apple);
   }
-  .segment button {
-    @apply relative z-10 flex-1 cursor-pointer whitespace-nowrap px-4 py-3 text-copy font-medium text-muted transition-colors duration-200 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand;
+  .dark .seg-item {
+    color: rgb(var(--body));
   }
-  /* Decision 2: the active tab is a 2px MEDICAL BLUE rule, drawn as a
-     pseudo-element rather than an inset box-shadow so a shadow reset cannot
-     erase the only indicator of which tab is selected. It sits ON the
-     container hairline (-bottom-px), replacing it rather than stacking. */
-  .segment button.on {
-    @apply text-ink;
+  .dark .seg-item:hover,
+  .seg-item:hover {
+    color: rgb(var(--ink));
   }
-  .segment button.on::after {
-    content: '';
-    @apply pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-brand;
+  .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on),
+  .dark .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on) {
+    color: rgb(var(--on-brand));
+    font-weight: var(--weight-emphasis);
+  }
+  .seg-item:focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+  }
+  .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on):focus-visible {
+    box-shadow: inset 0 0 0 2px rgb(var(--on-brand));
   }
 
   /* ── MOTION ───────────────────────────────────────────────────────────── */
@@ -727,44 +1518,206 @@ body {
     @apply animate-rise;
     animation-delay: var(--rise-delay, 0ms);
   }
+
+  /* Spring-positioned things (row reorder, custom indicators). */
+  .spring-move {
+    transition:
+      transform var(--dur-spring) var(--ease-spring),
+      left var(--dur-spring) var(--ease-spring),
+      top var(--dur-spring) var(--ease-spring),
+      width var(--dur-spring) var(--ease-spring),
+      height var(--dur-spring) var(--ease-spring);
+  }
 }
 
-/* Increase Contrast / forced high contrast. The card edge, the table rules and
-   the chart grid are the surfaces that are never glass, so they are the ones
-   that need this: --line steps up to --line-strong (light 1.553 -> 3.834:1 on
-   panel; dark 3.631 -> 5.671:1). */
+/* ══════════════════════════════════════════════════════════════════════════
+   CONTINUOUS CORNERS — progressive enhancement (Chromium only today).
+   corner-shape: squircle is superellipse(2), exponent 4: its 45-degree point
+   insets 0.159r, against 0.293r for a circle. A 20pt .continuous corner insets
+   5.65pt there, so the squircle radius is 5.65 / 0.159 = ~36px. Surfaces
+   only. Tune by eye against the iOS home screenshot; delete if it drifts.
+   ══════════════════════════════════════════════════════════════════════════ */
+@supports (corner-shape: squircle) {
+  .panel,
+  .overlay:not(.overlay-menu),
+  .card-group,
+  .card-tint {
+    border-radius: 36px;
+    corner-shape: squircle;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   INCREASE CONTRAST. The card edge, the table rules and the chart grid step
+   up (light --line 1.553 -> 3.834:1 on panel; dark 3.631 -> 5.671:1);
+   hairlines become --line; the ambient wash goes; the bar goes opaque with a
+   --line-strong edge at rest and when scrolled; fill-only buttons get a
+   --line-strong edge so the boundary no longer relies on a 1.1:1 fill.
+   ══════════════════════════════════════════════════════════════════════════ */
 @media (prefers-contrast: more) {
   :root {
     --hairline: var(--n-300); /* 1.266 -> 1.553:1 on panel */
     --line: var(--n-460); /* 1.553 -> 3.834:1 */
     --chart-grid: var(--n-460); /* 1.266 -> 3.834:1 */
     --faint: var(--n-500); /* 2.585 -> 5.393:1 */
+    --bar-alpha: 1;
   }
   .dark {
-    --hairline: var(--n-475); /* 1.071 -> 3.631:1 on panel */
+    --hairline: var(--n-475); /* 1.342 -> 3.631:1 on panel */
     --line: var(--n-425); /* 3.631 -> 5.671:1 */
     --chart-grid: var(--n-425); /* 1.342 -> 5.671:1 */
     --faint: var(--n-425); /* 3.631 -> 5.671:1 */
   }
+  .ambient {
+    display: none;
+  }
+  .appbar,
+  .appbar[data-scrolled] {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-bottom-color: rgb(var(--line-strong));
+  }
+  .appbar[data-scrolled] {
+    background-color: rgb(var(--panel));
+  }
+  :is(
+      .btn-tinted,
+      .btn-gray,
+      .btn-danger,
+      .btn-on-tint,
+      .btn-danger-on-tint
+    ):not(:disabled, [aria-disabled='true']) {
+    border-color: rgb(var(--line-strong));
+  }
+  .seg-track {
+    box-shadow: inset 0 0 0 1px rgb(var(--line-strong));
+  }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   FORCED COLOURS. The UA repaints from the system palette: box-shadows are not
+   painted, backgrounds become Canvas. Every edge has to come from a real
+   border or outline in a system colour.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (forced-colors: active) {
+  .scrim {
+    background-color: Canvas;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .overlay,
+  .dark .overlay {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+  .ambient {
+    display: none;
+  }
+  .appbar,
+  .appbar[data-scrolled] {
+    background-color: Canvas;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-bottom: 1px solid CanvasText;
+  }
+  .nav-rule {
+    forced-color-adjust: none;
+    background-color: Highlight;
+    box-shadow: none;
+  }
+  :is(
+      .btn-filled,
+      .btn-tinted,
+      .btn-gray,
+      .btn-danger,
+      .btn-on-tint,
+      .btn-danger-on-tint,
+      .btn-send
+    ) {
+    border-color: ButtonText;
+  }
+  :is(
+      .btn-filled,
+      .btn-tinted,
+      .btn-gray,
+      .btn-plain,
+      .btn-plain-muted,
+      .btn-danger,
+      .btn-on-tint,
+      .btn-danger-on-tint,
+      .btn-icon,
+      .btn-send,
+      .seg-item,
+      .appbar-link,
+      .field
+    ):focus-visible {
+    outline-color: Highlight;
+  }
+  .seg-track {
+    border: 1px solid CanvasText;
+  }
+  .seg-thumb {
+    forced-color-adjust: none;
+    background-color: Highlight;
+    box-shadow: none;
+  }
+  .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on) {
+    forced-color-adjust: none;
+    color: HighlightText;
+  }
+  .tile,
+  .avatar,
+  .chip {
+    border: 1px solid CanvasText;
+  }
+  .card-group > :where(li, .card-row) + :where(li, .card-row)::before {
+    background-color: CanvasText;
+    display: block;
+  }
+  .stretched-link:focus-visible::after {
+    outline-color: Highlight;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   REDUCED MOTION. No press scale, no translate, every duration <= 150ms, and
+   springs become a plain ease (a positional move then reads as a quick
+   settle; components that can should crossfade instead).
+   ══════════════════════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --press-scale: 1;
+    --dur-state: 120ms;
+    --dur-bar: 120ms;
+    --dur-spring: 150ms;
+    --dur-press: 0ms;
+    --ease-spring: ease-out;
+  }
   .animate-spin,
   .animate-pulse,
   .shimmer,
   .rise,
   .animate-rise,
   .animate-toastIn,
-  .animate-modalIn,
-  .animate-fadeIn,
-  .animate-toastOut,
-  .animate-modalOut,
-  .animate-fadeOut {
+  .animate-toastOut {
     animation: none;
   }
   .rise {
     opacity: 1;
     transform: none;
+  }
+  /* Modal enter/exit keep an opacity-only crossfade (no translate, no scale). */
+  .animate-modalIn {
+    animation: fadeIn 150ms linear both;
+  }
+  .animate-modalOut {
+    animation: fadeOut 120ms linear both;
+  }
+  .animate-fadeIn {
+    animation-duration: 150ms;
+  }
+  .animate-fadeOut {
+    animation-duration: 120ms;
   }
   /* The FullStats arrival pulse is an imperative box-shadow paired with
      `transition-shadow duration-500` on MetricCard; kill the transition so the
@@ -778,15 +1731,18 @@ body {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   GLASS ESCAPE HATCH — `document.documentElement.dataset.glass = 'off'`, or
-   <html data-glass="off">, kills every backdrop-filter in the document.
-   Why it exists: prefers-reduced-transparency is Chromium-only, so a clinician
-   who has turned Reduce Transparency on in iPadOS or macOS Safari still gets
-   the blur. This is the switch that respects them.
+   GLASS KILL SWITCH (R18) — <html data-glass="off">, set by lib/theme.tsx
+   from the Settings row (and pre-paint from localStorage 'medpull-glass' in
+   index.html). It kills every backdrop-filter in the document and makes the
+   bar opaque. prefers-reduced-transparency and engines without
+   backdrop-filter get the same result.
    It sits at the END of the file, outside @layer, and is !important because
    `backdrop-blur-*` utilities are emitted in the utilities layer and would
    otherwise win on equal specificity.
    ══════════════════════════════════════════════════════════════════════════ */
+[data-glass='off'] {
+  --bar-alpha: 1;
+}
 [data-glass='off'],
 [data-glass='off'] * {
   -webkit-backdrop-filter: none !important;
@@ -798,10 +1754,19 @@ body {
   --scrim-alpha: 0.88;
 }
 
-/* The same kill for the one platform that does report the preference, applied
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --bar-alpha: 1;
+  }
+}
+
+/* The same kill for the platforms that report the preference, applied
    document-wide rather than only to .scrim, so a blurred surface introduced
    anywhere else degrades too. */
 @media (prefers-reduced-transparency: reduce) {
+  :root {
+    --bar-alpha: 1;
+  }
   *,
   *::before,
   *::after {

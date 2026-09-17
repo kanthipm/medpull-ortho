@@ -1,18 +1,30 @@
 import { Link2, Pencil, Smartphone, SmartphoneNfc } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { useAppLinkCandidates, useLinkApp, useUpdateContact } from '../../api/queries'
 import type { AppEnrollment, AppLinkCandidate } from '../../api/types'
+import { ListGroup } from '../../components/ListRow'
+import ListRow from '../../components/ListRow'
+import { Popover } from '../../components/Menu'
 import { useToast } from '../../components/Toast'
 import { relativeTime } from '../../lib/format'
 
 /**
- * "Phone & app" — the one place the console shows whether it can actually
- * reach this person: the number texts go to, and whether the patient app is
- * signed in on this chart. Both are editable here, because a chart with no
- * phone silently stores every message for an app nobody opened, and a
- * patient who signed up in the app under a second record never sees what
- * the console sends. Linking folds that second record into this one.
+ * Reachability, as one line of header meta: the number texts go to and
+ * whether the patient app is signed in on this chart. Both stay editable —
+ * a chart with no phone silently stores every message for an app nobody
+ * opened, and a patient who signed up in the app under a second record never
+ * sees what the console sends. Linking folds that second record into this one.
+ *
+ * The editors open in top-layer popovers (R5), so the header stays one line.
+ * The window.confirm steps are unchanged on purpose.
+ *
+ * Text sits on the header's ambient wash; every colour used here was measured
+ * against its worst point (canvas, blue wash, teal wash):
+ *   body 6.371 / 6.333, ink 16.212 / 16.374, risk-med-ink 5.130 / 9.181,
+ *   risk-low-ink 4.736 / 8.604, brand-ink (btn-plain) 5.069 / 6.460.
+ * In the popovers (overlay panel): body 4.955 dark, low 6.731, brand 5.054,
+ * risk-high 5.635 — secondary text there is --body (OVERLAY_SCOPE).
  */
 export default function ContactCard({
   patientId,
@@ -20,12 +32,14 @@ export default function ContactCard({
   phone,
   app,
   smsConfigured,
+  className = '',
 }: {
   patientId: string
   patientName: string
   phone: string | null
   app: AppEnrollment
   smsConfigured: boolean
+  className?: string
 }) {
   const toast = useToast()
   const first = patientName.split(' ')[0]
@@ -35,6 +49,11 @@ export default function ContactCard({
   const [draft, setDraft] = useState(phone ?? '')
   const [linking, setLinking] = useState(false)
   const candidates = useAppLinkCandidates(patientId, linking)
+  const phoneBtn = useRef<HTMLButtonElement>(null)
+  const linkBtn = useRef<HTMLButtonElement>(null)
+  const phoneId = useId()
+  const linkId = useId()
+  const fieldId = useId()
 
   const savePhone = (force = false) => {
     const value = draft.trim()
@@ -96,161 +115,193 @@ export default function ContactCard({
   }
 
   const reach = !phone
-    ? { label: 'No phone on file', tone: 'text-risk-med-ink' }
+    ? { label: 'No phone on file', tone: 'text-risk-med-ink font-medium' }
     : !smsConfigured
-      ? { label: 'Texting is not configured on this server', tone: 'text-muted' }
-      : { label: 'Texts reach this number', tone: 'text-risk-low-ink' }
+      ? { label: 'texting is not configured on this server', tone: 'text-body' }
+      : { label: 'texts reach this number', tone: 'text-body' }
 
   return (
-    <div className="panel px-3.5 py-3">
-      <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
-        <div className="min-w-[220px] flex-1">
-          <p className="flex items-center gap-1.5 text-label font-medium text-muted">
-            <Smartphone size={11} /> Phone
-          </p>
-          {editing ? (
-            <div className="mt-1.5 flex gap-2">
-              <input
-                className="field"
-                autoFocus
-                inputMode="tel"
-                placeholder="+1 512 555 0100"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') savePhone()
-                  if (e.key === 'Escape') setEditing(false)
-                }}
-              />
-              <button
-                type="button"
-                className="qa-btn shrink-0"
-                disabled={update.isPending}
-                onClick={() => savePhone()}
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                className="qa-btn shrink-0"
-                onClick={() => {
-                  setDraft(phone ?? '')
-                  setEditing(false)
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span className="tabular-nums text-copy font-medium text-ink">{phone ?? '—'}</span>
-              <span className={`text-label font-medium ${reach.tone}`}>{reach.label}</span>
-              <button
-                type="button"
-                className="inline-flex cursor-pointer items-center gap-1 rounded-control px-1.5 py-0.5 text-label font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint"
-                onClick={() => {
-                  setDraft(phone ?? '')
-                  setEditing(true)
-                }}
-              >
-                <Pencil size={11} /> {phone ? 'Change' : 'Add number'}
-              </button>
-            </div>
-          )}
-        </div>
+    <div className={`flex flex-wrap items-center gap-x-5 gap-y-1 text-copy ${className}`}>
+      {/* Phone */}
+      <span className="inline-flex min-h-8 flex-wrap items-center gap-x-1.5">
+        <Smartphone size={14} aria-hidden className="shrink-0 text-body" />
+        <span className="sr-only">Phone:</span>
+        {phone && <span className="font-medium tabular-nums text-ink">{phone}</span>}
+        {phone && <span aria-hidden className="text-body">·</span>}
+        <span className={reach.tone}>{reach.label}</span>
+        <button
+          ref={phoneBtn}
+          type="button"
+          className="btn-plain btn-sm"
+          aria-haspopup="dialog"
+          aria-expanded={editing}
+          aria-controls={editing ? phoneId : undefined}
+          onClick={() => {
+            setDraft(phone ?? '')
+            setEditing((v) => !v)
+          }}
+        >
+          <Pencil aria-hidden /> {phone ? 'Change' : 'Add number'}
+        </button>
+      </span>
 
-        <div className="min-w-[220px] flex-1">
-          <p className="flex items-center gap-1.5 text-label font-medium text-muted">
-            <SmartphoneNfc size={11} /> Patient app
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            {app.enrolled ? (
-              <>
-                <span className="chip bg-risk-low-tint text-risk-low-ink">Signed in</span>
-                <span className="text-label font-medium text-muted">
-                  {app.device_name ?? 'iPhone'}
-                  {app.last_seen_at && <> · seen {relativeTime(app.last_seen_at)}</>}
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="chip bg-soft text-muted">
-                  {app.ever_enrolled ? 'Signed out' : 'Not enrolled'}
-                </span>
-                <span className="text-label font-medium text-muted">
-                  Messages and tasks reach {first} by text only
-                </span>
-                <button
-                  type="button"
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-control px-1.5 py-0.5 text-label font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint"
-                  onClick={() => setLinking((v) => !v)}
-                >
-                  <Link2 size={11} /> {linking ? 'Close' : 'Link an app sign-up'}
-                </button>
-              </>
-            )}
+      {/* Patient app */}
+      <span className="inline-flex min-h-8 flex-wrap items-center gap-x-1.5">
+        <SmartphoneNfc size={14} aria-hidden className="shrink-0 text-body" />
+        {app.enrolled ? (
+          <>
+            <span className="font-medium text-risk-low-ink">App signed in</span>
+            <span className="text-body">
+              <span aria-hidden>· </span>
+              {app.device_name ?? 'iPhone'}
+              {app.last_seen_at && <> · seen {relativeTime(app.last_seen_at)}</>}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="font-medium text-ink">
+              {app.ever_enrolled ? 'App signed out' : 'App not enrolled'}
+            </span>
+            {/* The dot is its own item so a wrap leaves it trailing, never
+                leading the next line. */}
+            <span aria-hidden className="text-body">·</span>
+            <span className="text-body">{first} gets messages and tasks by text only</span>
+            <button
+              ref={linkBtn}
+              type="button"
+              className="btn-plain btn-sm"
+              aria-haspopup="dialog"
+              aria-expanded={linking}
+              aria-controls={linking ? linkId : undefined}
+              onClick={() => setLinking((v) => !v)}
+            >
+              <Link2 aria-hidden /> Link an app sign-up
+            </button>
+          </>
+        )}
+      </span>
+
+      <Popover
+        open={editing}
+        onClose={() => setEditing(false)}
+        anchorRef={phoneBtn}
+        placement="bottom-start"
+        id={phoneId}
+        aria-label={`${first}'s phone number`}
+        className="w-[min(360px,calc(100vw-32px))] p-4"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            savePhone()
+          }}
+        >
+          <label htmlFor={fieldId} className="text-copy font-medium text-ink">
+            Number for texts
+          </label>
+          <p className="meta mt-0.5">Messages and tasks for {first} go to this number.</p>
+          <input
+            id={fieldId}
+            className="field mt-3"
+            inputMode="tel"
+            autoComplete="off"
+            placeholder="+1 512 555 0100"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" className="btn-gray btn-sm" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-filled btn-sm" disabled={update.isPending}>
+              {update.isPending ? 'Saving…' : 'Save'}
+            </button>
           </div>
-        </div>
-      </div>
+        </form>
+      </Popover>
 
-      {linking && !app.enrolled && (
-        <div className="mt-3 border-t border-line pt-3">
-          <p className="text-label font-medium text-muted">
+      <Popover
+        open={linking && !app.enrolled}
+        onClose={() => setLinking(false)}
+        anchorRef={linkBtn}
+        placement="bottom-start"
+        id={linkId}
+        aria-label="Link an app sign-up"
+        className="w-[min(460px,calc(100vw-32px))] overflow-hidden"
+      >
+        <div className="px-4 pb-2 pt-4">
+          <p className="text-copy font-medium text-ink">Link an app sign-up</p>
+          <p className="meta mt-0.5">
             If {first} signed up in the app as a separate record, pick it here to fold it into this
             chart. Their phone, messages, tasks and health data move; the other record is removed.
           </p>
-          {candidates.isLoading && <p className="mt-2 text-label text-muted">Looking…</p>}
-          {candidates.data && candidates.data.candidates.length === 0 && (
-            <p className="mt-2 text-label font-medium text-muted">
-              No other record has signed in on the app or has a phone yet.
-            </p>
-          )}
-          {candidates.data && candidates.data.candidates.length > 0 && (
-            <ul className="mt-2 divide-y divide-line">
-              {candidates.data.candidates.slice(0, 8).map((c) => (
-                <li key={c.patient_id} className="flex items-center gap-3 py-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-copy font-medium text-ink">
-                      {c.name}{' '}
-                      <span className="font-mono text-label font-medium text-muted">{c.patient_id}</span>
-                    </p>
-                    <p className="text-label font-medium text-muted">
-                      {c.mode === 'general' ? 'General patient' : c.procedure_display}
-                      {c.phone_masked && <> · {c.phone_masked}</>}
-                      {c.app.enrolled ? (
-                        <>
-                          {' '}
-                          · app signed in{c.app.last_seen_at && <>, seen {relativeTime(c.app.last_seen_at)}</>}
-                        </>
-                      ) : (
-                        <> · app not signed in</>
-                      )}
-                      {c.phone_match && <span className="text-risk-low-ink"> · same number</span>}
-                      {c.name_match && !c.phone_match && <span className="text-brand-ink"> · name matches</span>}
-                      {c.observations > 0 && <> · {c.observations} readings</>}
-                      {c.checkins > 0 && <> · {c.checkins} check-ins</>}
-                    </p>
-                    {c.refusal && (
-                      <p className="mt-0.5 text-label font-medium text-risk-high-ink">
-                        Cannot link: {c.refusal}
-                      </p>
+        </div>
+        {candidates.isLoading && <p className="meta px-4 pb-4" role="status">Looking…</p>}
+        {candidates.data && candidates.data.candidates.length === 0 && (
+          <p className="px-4 pb-4 text-copy text-secondary">
+            No other record has signed in on the app or has a phone yet.
+          </p>
+        )}
+        {candidates.data && candidates.data.candidates.length > 0 && (
+          <ListGroup
+            embedded
+            inset="none"
+            aria-label="Records that can be linked"
+            className="max-h-[min(360px,60vh)] overflow-y-auto pb-1"
+          >
+            {candidates.data.candidates.slice(0, 8).map((c) => (
+              <ListRow
+                key={c.patient_id}
+                compact
+                title={
+                  <>
+                    {c.name}{' '}
+                    <span className="font-mono text-label font-normal text-secondary">{c.patient_id}</span>
+                  </>
+                }
+                subtitleLines={3}
+                subtitle={
+                  <>
+                    {c.mode === 'general' ? 'General patient' : c.procedure_display}
+                    {c.phone_masked && <> · {c.phone_masked}</>}
+                    {c.app.enrolled ? (
+                      <>
+                        {' '}
+                        · app signed in{c.app.last_seen_at && <>, seen {relativeTime(c.app.last_seen_at)}</>}
+                      </>
+                    ) : (
+                      <> · app not signed in</>
                     )}
-                  </div>
+                    {c.phone_match && <span className="font-medium text-risk-low-ink"> · same number</span>}
+                    {c.name_match && !c.phone_match && (
+                      <span className="font-medium text-brand-ink"> · name matches</span>
+                    )}
+                    {c.observations > 0 && <> · {c.observations} readings</>}
+                    {c.checkins > 0 && <> · {c.checkins} check-ins</>}
+                  </>
+                }
+                meta={
+                  c.refusal ? (
+                    <span className="font-medium text-risk-high-ink">Cannot link: {c.refusal}</span>
+                  ) : undefined
+                }
+                trailing={
                   <button
                     type="button"
-                    className="qa-btn shrink-0"
+                    className="btn-tinted btn-sm"
                     disabled={link.isPending || Boolean(c.refusal)}
                     title={c.refusal ?? `Fold ${c.name} into this chart`}
+                    aria-label={`Link ${c.name}`}
                     onClick={() => doLink(c)}
                   >
-                    <Link2 size={13} /> Link
+                    <Link2 aria-hidden /> Link
                   </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+                }
+              />
+            ))}
+          </ListGroup>
+        )}
+      </Popover>
     </div>
   )
 }

@@ -51,19 +51,23 @@ targets:
         # sit in MedPull/Resources/Fonts and are picked up as resources by
         # the `sources: - path: MedPull` rule above.
         #
-        # Instrument Sans (SIL OFL 1.1) at 400 and 500 only — the same two
-        # cuts the console loads as woff2, so the app and the provider console
-        # are one face. 500 is the weight ceiling; MPFont maps .semibold and
-        # .bold down to it rather than naming a file that does not exist,
-        # because Font.custom falls back to San Francisco silently.
-        # The names here are filenames; UI/Theme.swift asks for the PostScript
-        # names InstrumentSans-Regular and InstrumentSans-Medium, which the
-        # two files carry. The four EBGaramond-*.ttf files are still on disk
+        # Instrument Sans (SIL OFL 1.1) at 400, 500 and 600 — the cuts the
+        # console loads as woff2, so the app and the provider console are one
+        # face — plus 700, which ships ONLY as the Bold Text substitute for
+        # 600 (MPFont.name(for:bold:)). SemiBold and Bold are static
+        # wght=600/700, wdth=100 instances of the variable master, built with
+        # fontTools.varLib.instancer. MPFont maps any heavier weight down to a
+        # file that exists, because Font.custom falls back to San Francisco
+        # silently. The names here are filenames; UI/Theme.swift asks for the
+        # PostScript names InstrumentSans-Regular / -Medium / -SemiBold /
+        # -Bold, which the four files carry (read back with fontTools). The four EBGaramond-*.ttf files are still on disk
         # but no longer ship: they are excluded from `sources` above, so
         # nothing registers them and nothing copies them either.
         UIAppFonts:
           - InstrumentSans-Regular.ttf
           - InstrumentSans-Medium.ttf
+          - InstrumentSans-SemiBold.ttf
+          - InstrumentSans-Bold.ttf
         CFBundleURLTypes:
           - CFBundleURLName: com.medpull.recovery
             CFBundleURLSchemes: [medpull]

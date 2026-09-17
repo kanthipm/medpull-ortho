@@ -17,42 +17,44 @@ struct MessagesView: View {
     @State private var pending: [ChatAttachment] = []
     @State private var photoPicks: [PhotosPickerItem] = []
     @State private var uploading = false
-    @State private var picking = false
     @State private var choosingPhotos = false
     @State private var choosingFile = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 10) {
-                            header
-                            if app.messages.isEmpty {
-                                EmptyRow(icon: "bubble.left.and.bubble.right", title: "No messages yet",
-                                         detail: "Anything you write here goes to your care team. Task texts show up here too.")
-                            }
-                            ForEach(app.messages) { m in
-                                Bubble(message: m).id(m.id)
-                            }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        header
+                        if app.messages.isEmpty {
+                            EmptyRow(icon: "bubble.left.and.bubble.right", title: "No messages yet",
+                                     detail: "Anything you write here goes to your care team. Task texts show up here too.")
                         }
-                        .padding(.horizontal, 16).padding(.bottom, 12)
+                        ForEach(app.messages) { m in
+                            Bubble(message: m).id(m.id)
+                        }
                     }
-                    .onChange(of: app.messages.count, initial: true) { _, _ in
-                        guard let last = app.messages.last else { return }
-                        withAnimation(MPMotion.gated(MPMotion.enter, reduceMotion: reduceMotion)) {
-                            proxy.scrollTo(last.id, anchor: .bottom)
-                        }
+                    .padding(.horizontal, 16).padding(.bottom, 12)
+                }
+                .defaultScrollAnchor(.bottom)
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: app.messages.count, initial: true) { _, _ in
+                    guard let last = app.messages.last else { return }
+                    withAnimation(MPMotion.gated(MPMotion.enter, reduceMotion: reduceMotion)) {
+                        proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }
-                composer
+                // The composer rides in the bottom safe area: on iOS 26 as a
+                // `safeAreaBar`, so the conversation scrolls under it with the
+                // system's scroll-edge effect; before that as a plain inset on
+                // an opaque canvas strip. Everything drawn IN the bar is
+                // opaque either way — the field is `panel`, the chips are
+                // `soft` — so no text ever reads against moving content.
+                .mpComposerBar { composer }
             }
             .screen()
-            .confirmationDialog("Attach", isPresented: $picking, titleVisibility: .visible) {
-                Button("Photo library") { choosingPhotos = true }
-                Button("Choose a file") { choosingFile = true }
-                Button("Cancel", role: .cancel) {}
-            }
+            .navigationTitle("Messages")
+            .navigationBarTitleDisplayMode(.inline)
             .photosPicker(isPresented: $choosingPhotos, selection: $photoPicks,
                           maxSelectionCount: 4, matching: .images)
             .fileImporter(isPresented: $choosingFile,
@@ -64,7 +66,12 @@ struct MessagesView: View {
                 guard !picks.isEmpty else { return }
                 attach(photos: picks)
             }
-            .toolbar(.hidden, for: .navigationBar)
+            // A light tap when a message lands — sent or received — but not
+            // for the first load, which goes 0 -> N in one step.
+            .sensoryFeedback(.impact(weight: .light), trigger: app.messages.count) { old, new in
+                old > 0 && new > old
+            }
+            .mpErrorFeedback(error)
             .task {
                 await app.refreshMessages()
                 await app.markMessagesRead()
@@ -79,71 +86,73 @@ struct MessagesView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Messages").title(MPSize.displayS)
-            if let team = app.me?.patient.careTeam, !team.isEmpty {
-                Text("Your care team: " + team.map(\.name).joined(separator: ", "))
-                    .font(.copy).foregroundStyle(MP.muted)
+    /// The conversation header, the way Messages heads a group thread: the
+    /// people first, then their names. The screen title lives in the
+    /// navigation bar now, so this is only about WHO is on the other end.
+    @ViewBuilder private var header: some View {
+        if let team = app.me?.patient.careTeam, !team.isEmpty {
+            VStack(spacing: 8) {
+                HStack(spacing: -10) {
+                    ForEach(Array(team.prefix(3).enumerated()), id: \.offset) { _, member in
+                        // Soft discs (brandInk on brandTint, 4.96 / 5.62)
+                        // with a canvas ring so the overlap reads as three
+                        // people rather than one blob.
+                        Initials(text: Self.initials(member.name), size: 40, style: .soft)
+                            .padding(2)
+                            .background(Circle().fill(MP.canvas))
+                    }
+                }
+                .accessibilityHidden(true)
+                VStack(spacing: 2) {
+                    Text("Your care team").mpFont(.copyMedium).foregroundStyle(MP.ink)
+                    // `muted` on canvas: 5.03:1 light / 5.24:1 dark.
+                    Text(team.map(\.name).joined(separator: ", "))
+                        .mpFont(.label).foregroundStyle(MP.muted)
+                        .multilineTextAlignment(.center)
+                }
+                .accessibilityElement(children: .combine)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 12).padding(.bottom, 10)
         }
-        .padding(.top, 8).padding(.bottom, 6)
+    }
+
+    static func initials(_ name: String) -> String {
+        // "Dr. Priya Shah" -> "PS": honorifics end in a period and are not
+        // what the patient calls them.
+        let words = name.split(separator: " ").filter { !$0.hasSuffix(".") }
+        let letters = [words.first, words.count > 1 ? words.last : nil].compactMap { $0?.first }
+        return String(letters).uppercased()
     }
 
     private var composer: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             if let error { ErrorBanner(text: error) }
             if !pending.isEmpty || uploading { pendingStrip }
             HStack(alignment: .bottom, spacing: 8) {
-                Button {
-                    picking = true
+                // A Menu on the attach button, not a confirmation dialog: the
+                // two choices appear where the finger already is.
+                Menu {
+                    Button { choosingPhotos = true } label: {
+                        Label("Photo library", systemImage: "photo.on.rectangle")
+                    }
+                    Button { choosingFile = true } label: {
+                        Label("Choose a file", systemImage: "doc")
+                    }
                 } label: {
-                    Image(systemName: "paperclip").font(.copyLargeMedium)
-                        // `brandInk`, not `brand`: a glyph set with
-                        // `foregroundStyle` is a foreground, and #1976D2 as a
-                        // foreground is 3.74:1 on dark panel. `brandInk` is
-                        // 5.75:1 light / 6.78:1 dark.
-                        .foregroundStyle(MP.brandInk)
-                        .frame(width: 40, height: 44)
+                    ComposerRoundButton(systemName: "plus")
                 }
                 .disabled(uploading || pending.count >= 4)
                 .accessibilityLabel("Attach a photo or file")
-                // The prompt is set explicitly because SwiftUI's own
-                // placeholder colour is not a token and does not pass: it
-                // renders #C5C5C7 on white (1.72:1) and #545A62 on dark panel
-                // (2.47:1), both WCAG 1.4.3 failures on text a patient reads.
-                // `muted` is the placeholder tier (5.39:1 light / 4.91:1
-                // dark); `faint` is not. FieldStyle cannot reach this —
-                // SwiftUI gives no hook — so it belongs at the call site.
-                TextField("Message your care team", text: $draft,
-                          prompt: Text("Message your care team").foregroundStyle(MP.muted),
-                          axis: .vertical)
-                    .lineLimit(1...5)
-                    .textFieldStyle(FieldStyle())
-                    .focused($focused)
-                Button {
-                    send()
-                } label: {
-                    // Disabled is the token pair, not a `faint` disc: a white
-                    // arrow on `faint` was 2.60:1 and read as an enabled button
-                    // drawn badly. `disabledInk` on `disabledFill` is 4.75:1
-                    // light / 4.58:1 dark, and because that fill is only 1.06:1
-                    // against the panel behind it the disabled disc takes the
-                    // `lineStrong` edge to keep its shape — the same treatment
-                    // PrimaryButton uses.
-                    Image(systemName: "arrow.up").font(.copyLargeMedium)
-                        .foregroundStyle(canSend ? MP.onBrand : MP.disabledInk)
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(canSend ? MP.brand : MP.disabledFill))
-                        .overlay {
-                            if !canSend { Circle().strokeBorder(MP.lineStrong, lineWidth: 1) }
-                        }
-                }
-                .disabled(!canSend || sending)
+                ComposerField(placeholder: "Message your care team",
+                              text: $draft,
+                              canSend: canSend,
+                              busy: sending,
+                              multiline: true,
+                              focused: $focused,
+                              send: send)
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(MP.panel.overlay(Divider().overlay(MP.line), alignment: .top))
     }
 
     /// A photo can be the whole message, so words are not required — only
@@ -191,6 +200,11 @@ struct MessagesView: View {
                             .foregroundStyle(MP.muted)
                     }
                     .padding(.horizontal, 9).padding(.vertical, 6)
+                    // Opaque: the strip rides over the scrolling thread on
+                    // iOS 26, and `muted` is only measured on `soft` (4.76 /
+                    // 4.58).
+                    .background(MP.pillShape.fill(MP.soft))
+                    .overlay(MP.pillShape.strokeBorder(MP.lineStrong, lineWidth: 1))
                 }
             }
         }
@@ -304,13 +318,13 @@ struct Bubble: View {
                     .font(.copyLarge)
                     .foregroundStyle(mine ? MP.onBrand : MP.ink)
                     .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(MP.surfaceShape
+                    .background(BubbleShape(mine: mine)
                         .fill(mine ? MP.brand : (message.sender == "care_team" ? MP.brandTint : MP.panel)))
                     // ONE edge, and only where the fill does not separate:
                     // `brand` and `brandTint` are their own boundary, `panel`
                     // is 1.13:1 on canvas light and 1.07:1 dark and needs the
                     // hairline. No shadow — this is not a floating overlay.
-                    .overlay(MP.surfaceShape
+                    .overlay(BubbleShape(mine: mine)
                         .strokeBorder(mine || message.sender == "care_team" ? .clear : MP.line, lineWidth: 1))
             }
             AttachmentStrip(attachments: message.files, mine: mine)
@@ -356,16 +370,174 @@ struct Bubble: View {
             // arrives; without this the button lands on an empty list.
             Task { await app.refreshTasks() }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.right.circle.fill").font(.copyMedium)
-                Text(label).font(.copyMedium)
-            }
-            .foregroundStyle(MP.onBrand)
-            .padding(.horizontal, 16).frame(minHeight: 40)
-            // A control, so `controlShape` (10pt) rather than a 12pt literal.
-            .background(MP.controlShape.fill(MP.brand))
+            Label(label, systemImage: "arrow.right.circle.fill")
         }
-        .buttonStyle(.plain)
+        // The shared filled capsule: #1976D2 as a FILL with white (4.60:1),
+        // pressed scale gated on Reduce Motion, 44pt tall.
+        .buttonStyle(.mpFilled)
         .padding(.top, 2)
+    }
+}
+
+// MARK: - Shared conversation pieces (Messages and Talk)
+
+/// A message bubble: 20pt continuous corners with a tighter 6pt corner at
+/// the bottom on the speaker's side — the tail, drawn as geometry rather
+/// than a glyph so it scales and strokes like the rest of the shape.
+struct BubbleShape: InsettableShape {
+    let mine: Bool
+    var inset: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        let big = max(MP.radiusSurface - inset, 0)
+        let tail = max(6 - inset, 0)
+        return UnevenRoundedRectangle(
+            topLeadingRadius: big,
+            bottomLeadingRadius: mine ? big : tail,
+            bottomTrailingRadius: mine ? tail : big,
+            topTrailingRadius: big,
+            style: .continuous
+        )
+        .path(in: rect.insetBy(dx: inset, dy: inset))
+    }
+
+    func inset(by amount: CGFloat) -> BubbleShape {
+        BubbleShape(mine: mine, inset: inset + amount)
+    }
+}
+
+/// The 44pt round button beside a composer field (attach). An opaque
+/// `panel` disc with a `lineStrong` edge (3.83:1 light / 5.67:1 dark) and a
+/// `brandInk` glyph (5.75 / 6.78 on panel): it floats over the thread on
+/// iOS 26, so it cannot borrow its ground.
+struct ComposerRoundButton: View {
+    let systemName: String
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.systemGlyphs(17, weight: .semibold))
+            .foregroundStyle(isEnabled ? MP.brandInk : MP.disabledInk)
+            .frame(width: 44, height: 44)
+            .background(Circle().fill(isEnabled ? MP.panel : MP.disabledFill))
+            .overlay(Circle().strokeBorder(MP.lineStrong, lineWidth: 1))
+            .contentShape(Circle())
+    }
+}
+
+/// The composer: a capsule field with the send button inside it, bottom-
+/// trailing, the way Messages does it. The field keeps its `lineStrong`
+/// border — an empty field's edge is its only cue (1.4.11).
+struct ComposerField: View {
+    let placeholder: String
+    @Binding var text: String
+    let canSend: Bool
+    var busy = false
+    var multiline = false
+    var focused: FocusState<Bool>.Binding
+    let send: () -> Void
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 4) {
+            // The prompt is set explicitly because SwiftUI's own placeholder
+            // colour is not a token and does not pass: #C5C5C7 on white is
+            // 1.72:1. `muted` on `panel` is 5.39:1 light / 4.91:1 dark.
+            Group {
+                if multiline {
+                    TextField(placeholder, text: $text,
+                              prompt: Text(placeholder).foregroundStyle(MP.muted),
+                              axis: .vertical)
+                        .lineLimit(1...5)
+                } else {
+                    TextField(placeholder, text: $text,
+                              prompt: Text(placeholder).foregroundStyle(MP.muted))
+                        .submitLabel(.send)
+                        .onSubmit { if canSend && !busy { send() } }
+                }
+            }
+            .font(.copyLarge)
+            .foregroundStyle(MP.ink)
+            .focused(focused)
+            .padding(.leading, 16)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+
+            Button(action: send) {
+                ZStack {
+                    if busy {
+                        ProgressView().tint(MP.onBrand).controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.up")
+                            .font(.systemGlyphs(15, weight: .semibold))
+                            // Disabled is the token pair, not a faded disc:
+                            // `disabledInk` on `disabledFill` is 4.75 / 4.58,
+                            // with the `lineStrong` edge because that fill is
+                            // 1.06:1 against the panel it sits in.
+                            .foregroundStyle(canSend ? MP.onBrand : MP.disabledInk)
+                    }
+                }
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(canSend || busy ? MP.brand : MP.disabledFill))
+                .overlay {
+                    if !canSend && !busy { Circle().strokeBorder(MP.lineStrong, lineWidth: 1) }
+                }
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+            }
+            .buttonStyle(ComposerSendStyle())
+            .disabled(!canSend || busy)
+            .accessibilityLabel(busy ? "Sending" : "Send")
+            .padding(.trailing, 2)
+        }
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(MP.panel))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .strokeBorder(MP.lineStrong, lineWidth: 1))
+    }
+}
+
+private struct ComposerSendStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.88 : 1))
+            .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion),
+                       value: configuration.isPressed)
+    }
+}
+
+private struct MPComposerBar<Bar: View>: ViewModifier {
+    @ViewBuilder let bar: () -> Bar
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26, *), !MPGlass.legacyOverride {
+            // No fill of our own: the system's scroll-edge effect sits behind
+            // the bar, and every element in it is opaque.
+            content.safeAreaBar(edge: .bottom) {
+                bar()
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
+                    .padding(.bottom, 8)
+            }
+        } else {
+            content.safeAreaInset(edge: .bottom, spacing: 0) {
+                bar()
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+                    .background(MP.canvas.overlay(alignment: .top) {
+                        Rectangle().fill(MP.hairline).frame(height: 1)
+                    })
+            }
+        }
+    }
+}
+
+extension View {
+    /// A conversation composer pinned to the bottom safe area (Messages and
+    /// Talk). iOS 26: `safeAreaBar` over the thread. Earlier: an opaque
+    /// canvas strip with a hairline.
+    func mpComposerBar<Bar: View>(@ViewBuilder _ bar: @escaping () -> Bar) -> some View {
+        modifier(MPComposerBar(bar: bar))
     }
 }

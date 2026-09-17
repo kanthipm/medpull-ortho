@@ -1,10 +1,10 @@
-import { Search, Sparkles, X } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowUp, LoaderCircle, Sigma, Sparkles, X } from 'lucide-react'
+import { useId, useState } from 'react'
 import { useAsk, type AskResult } from '../../api/queries'
-import AIAttribution from '../../components/AIAttribution'
-import SentenceCase from './SentenceCase'
 import SectionCard from '../../components/SectionCard'
 import { SkeletonLine } from '../../components/Skeleton'
+import Tile from '../../components/Tile'
+import { relativeTime } from '../../lib/format'
 
 const SUGGESTIONS = [
   'Who reported fever this week?',
@@ -12,7 +12,13 @@ const SUGGESTIONS = [
   'Anyone not wearing their device?',
 ]
 
-/** Natural-language questions over the roster — answer both explains and filters. */
+/** Natural-language questions over the roster; the answer both explains and
+ *  filters the list below.
+ *
+ *  The field is the app's rounded ask field: a 52px capsule (`.field-pill`,
+ *  1px --line-strong edge, which is its only boundary) with a leading teal
+ *  sparkle (5.811 light / 10.825 dark on panel) and a filled round send
+ *  button inside it on the right. Suggestions are gray capsules. */
 export default function AskBar({
   result,
   onResult,
@@ -24,101 +30,134 @@ export default function AskBar({
 }) {
   const [question, setQuestion] = useState('')
   const ask = useAsk()
+  const inputId = useId()
+  const pending = ask.isPending
+  const canSend = question.trim().length >= 3 && !pending
+  const showClear = Boolean(question || result)
 
   const submit = (q: string) => {
     const trimmed = q.trim()
-    if (trimmed.length < 3 || ask.isPending) return
+    if (trimmed.length < 3 || pending) return
     setQuestion(trimmed)
     ask.mutate(trimmed, { onSuccess: onResult })
   }
 
+  const clear = () => {
+    setQuestion('')
+    ask.reset()
+    onClear()
+  }
+
+  const matches = result?.patient_ids.length ?? 0
+  const rulesBased = result?.provider === 'fallback'
+
   return (
     <div>
       <form
+        role="search"
         onSubmit={(e) => {
           e.preventDefault()
           submit(question)
         }}
-        className="flex items-center gap-seam rounded-control border border-line-strong bg-panel py-el pl-seam pr-el outline-2 outline-offset-0 outline-brand transition-[border-color,outline-color] duration-150 focus-within:border-brand focus-within:outline"
+        className="relative"
       >
-        <span className="grid h-10 w-10 shrink-0 place-items-center text-brand-ink" aria-hidden>
-          <Sparkles size={18} />
-        </span>
+        <label htmlFor={inputId} className="sr-only">
+          Ask about your patients
+        </label>
+        <Sparkles
+          aria-hidden
+          size={20}
+          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cat-teal-ink"
+        />
         <input
+          id={inputId}
+          type="text"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Ask about your patients — symptoms, progress, adherence, data gaps…"
-          aria-label="Ask about your patients"
-          className="min-w-0 flex-1 bg-transparent text-copy-lg text-ink placeholder:text-muted focus:outline-none"
+          placeholder="Ask anything about your patients…"
+          autoComplete="off"
+          enterKeyHint="send"
+          className={`field field-pill text-copy-lg ${showClear ? '!pr-[92px]' : ''}`}
         />
-        {(question || result) && (
+        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+          {showClear && (
+            <button type="button" aria-label="Clear question" onClick={clear} className="btn-icon btn-sm">
+              <X />
+            </button>
+          )}
           <button
-            type="button"
-            aria-label="Clear question"
-            onClick={() => {
-              setQuestion('')
-              onClear()
-            }}
-            className="grid h-9 w-9 cursor-pointer place-items-center rounded-control text-muted transition-colors duration-150 hover:bg-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            type="submit"
+            aria-label={pending ? 'Asking…' : 'Ask'}
+            disabled={!canSend}
+            className="btn-send"
           >
-            <X size={16} />
+            {pending ? (
+              <LoaderCircle size={16} aria-hidden className="animate-spin motion-reduce:animate-none" />
+            ) : (
+              <ArrowUp size={16} aria-hidden />
+            )}
           </button>
-        )}
-        <button
-          type="submit"
-          disabled={question.trim().length < 3 || ask.isPending}
-          className="qa-btn !flex-none"
-        >
-          <Search size={15} />
-          {ask.isPending ? 'Thinking…' : 'Ask'}
-        </button>
+        </div>
       </form>
 
-      {!result && !ask.isPending && (
-        <div className="mt-seam flex flex-wrap items-center gap-seam px-1">
+      {!result && !pending && (
+        <ul className="mt-3 flex flex-wrap items-center gap-2" aria-label="Suggested questions">
           {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => submit(s)}
-              className="qa-btn"
-            >
-              {s}
-            </button>
+            <li key={s}>
+              <button type="button" onClick={() => submit(s)} className="btn-gray btn-sm font-normal">
+                {s}
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
-      {ask.isPending && (
-        <div className="mt-tight animate-fadeIn space-y-seam rounded-surface border border-line bg-panel p-block">
-          <SkeletonLine className="h-3 w-1/5" />
-          <SkeletonLine className="h-3.5 w-full" />
-          <SkeletonLine className="h-3.5 w-3/4" />
-        </div>
-      )}
+      <div aria-live="polite" aria-busy={pending}>
+        {pending && (
+          <div className="panel mt-3 animate-fadeIn space-y-2.5 p-5" role="status" aria-label="Finding an answer">
+            <SkeletonLine className="h-3 w-1/5" />
+            <SkeletonLine className="h-3.5 w-full" />
+            <SkeletonLine className="h-3.5 w-3/4" />
+          </div>
+        )}
 
-      {result && !ask.isPending && (
-        <SectionCard
-          sum
-          spine="bg-brand"
-          className="rise mt-3"
-          eyebrow={(
-            <SentenceCase>
-              <AIAttribution kind="answer" generatedAt={result.generated_at} provider={result.provider} />
-            </SentenceCase>
-          )}
-          aside={
-            result.patient_ids.length > 0 ? (
-              <span className="chip bg-brand-tint text-on-brand-tint">
-                Showing {result.patient_ids.length} match
-                {result.patient_ids.length === 1 ? '' : 'es'}
+        {result && !pending && (
+          <SectionCard
+            sum
+            className="rise mt-3"
+            title="Answer"
+            icon={
+              <Tile
+                size="sm"
+                family={rulesBased ? 'indigo' : 'teal'}
+                icon={rulesBased ? <Sigma /> : <Sparkles />}
+              />
+            }
+            aside={
+              <span className="meta tabular-nums">
+                {rulesBased ? 'Rules-based' : 'AI'}
+                <span aria-hidden> · </span>
+                <span className="sr-only">, </span>
+                {relativeTime(result.generated_at)}
+                {matches > 0 && (
+                  <>
+                    <span aria-hidden> · </span>
+                    <span className="sr-only">, </span>
+                    Showing {matches} {matches === 1 ? 'match' : 'matches'}
+                  </>
+                )}
               </span>
-            ) : undefined
-          }
-        >
-          <p className="text-copy-lg text-body">{result.answer}</p>
-        </SectionCard>
-      )}
+            }
+            action={
+              <button type="button" onClick={clear} className="btn-plain btn-sm">
+                Show everyone
+              </button>
+            }
+          >
+            <p className="max-w-[64ch] text-copy-lg text-ink">{result.answer}</p>
+          </SectionCard>
+        )}
+      </div>
     </div>
   )
 }

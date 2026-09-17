@@ -1,5 +1,5 @@
-import { Plus, Search, Sparkles, Star, Wand2, Zap } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { ClipboardList, Plus, Search, Sparkles, Star, Wand2, Zap } from 'lucide-react'
+import { useId, useMemo, useState, type ReactNode } from 'react'
 import type { CarePathway } from '../../../api/care'
 import type { DraftTask, TaskPhase, TaskTemplate } from '../../../api/plan'
 import {
@@ -13,15 +13,19 @@ import {
 } from '../../../api/plan'
 import AIAttribution from '../../../components/AIAttribution'
 import Disclosure from '../../../components/Disclosure'
+import EmptyState from '../../../components/EmptyState'
+import ListRow, { ListGroup } from '../../../components/ListRow'
+import Modal from '../../../components/Modal'
 import SegmentedControl from '../../../components/SegmentedControl'
+import Tile from '../../../components/Tile'
 import { useToast } from '../../../components/Toast'
 import DraftRowEditor from './DraftRowEditor'
-import PlanModal from './PlanModal'
 import {
   blankDraft,
   draftFromTemplate,
   normalizeDraft,
   phaseLabel,
+  taskKindTile,
   templateFitsPathway,
   toPlanItem,
   ucLabel,
@@ -38,7 +42,13 @@ const PHASE_FILTERS: { key: PhaseFilter; label: string }[] = [
 
 /** The care-plan builder: quick picks, a free-text plan the AI structures,
  *  the library grouped by use case for this pathway, and the editable draft
- *  list that becomes N of their tasks (plus one summary text) on Assign. */
+ *  list that becomes N of their tasks (plus one summary text) on Assign.
+ *
+ *  App anatomy: plain sentence-case section labels (no rules), a tinted
+ *  one-press check-in card, gray quick-pick capsules, the library as an
+ *  inset-hairline list with the app's task-kind tiles, and an EmptyState for
+ *  an empty draft list. Secondary text is `text-secondary` (--body inside the
+ *  Modal; dark --muted and --disabled-ink both fail on the overlay panel). */
 export default function TaskBuilderModal({
   patientId,
   patientName,
@@ -76,6 +86,7 @@ export default function TaskBuilderModal({
   const [query, setQuery] = useState('')
   const [phase, setPhase] = useState<PhaseFilter>('all')
   const canText = smsAvailable && !!phone
+  const uid = useId()
   const [notify, setNotify] = useState(canText)
 
   const suggest = useSuggestPlan(patientId)
@@ -180,26 +191,30 @@ export default function TaskBuilderModal({
       : `Sends one text summarising the plan to ${first}`
 
   const footer = (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      {/* Disabled text stays --body: --disabled-ink is 3.655:1 on the dark
+          overlay panel, and the reason it is off is information. */}
       <label
         title={textHint}
-        className={`inline-flex items-center gap-2 text-label font-medium ${
-          canText ? 'cursor-pointer text-body' : 'cursor-not-allowed text-disabled-ink'
+        className={`inline-flex min-h-9 items-center gap-2 text-copy ${
+          canText ? 'cursor-pointer text-ink' : 'cursor-not-allowed text-secondary'
         }`}
       >
         <input
           type="checkbox"
-          className="h-3.5 w-3.5 accent-brand"
+          className="h-4 w-4 accent-brand disabled:cursor-not-allowed"
           checked={notify && canText}
           disabled={!canText}
           onChange={(e) => setNotify(e.target.checked)}
         />
-        Text {first} the plan
-        {!canText && <span className="text-label text-disabled-ink">· {textHint}</span>}
+        <span>
+          Text {first} the plan
+          {!canText && <span className="meta ml-1.5">· {textHint}</span>}
+        </span>
       </label>
       <button
         type="button"
-        className="btn-primary sm:ml-auto sm:w-auto"
+        className="btn-filled ml-auto"
         disabled={!ready || assign.isPending}
         onClick={submit}
       >
@@ -210,35 +225,34 @@ export default function TaskBuilderModal({
     </div>
   )
 
+  const onPin = (t: TaskTemplate) => pin.mutate({ id: t.id, pinned: !t.pinned })
+
   return (
-    <PlanModal
+    <Modal
       size="xl"
       title={`Build ${first}'s care plan`}
-      eyebrow={
-        pathway?.name ? (
-          <span className="mb-0.5 block text-label font-medium text-muted">Pathway · {pathway.name}</span>
-        ) : undefined
-      }
+      eyebrow={pathway?.name ? <p className="meta mb-0.5">Pathway · {pathway.name}</p> : undefined}
       onClose={onClose}
       footer={footer}
     >
-      <div className="space-y-5">
+      <div className="space-y-6 pt-1">
         {/* 1. Quick picks */}
-        <section>
-          <p className="zone-label mb-2">Quick picks</p>
+        <Section id={`${uid}-quick`} label="Quick picks">
           <button
             type="button"
             onClick={sendCheckin}
             disabled={checkin.isPending}
             title={`Sends ${first} today's check-in now — in the app, and by text if they have a number`}
-            className="mb-2 flex w-full cursor-pointer items-center gap-2 rounded-surface bg-brand-tint px-3 py-2.5 text-left transition-colors duration-150 hover:bg-brand-tint-strong disabled:bg-disabled-fill"
+            className="on-tint mb-3 flex w-full cursor-pointer items-center gap-3 rounded-surface bg-brand-tint px-4 py-3 text-left transition-[background-color,transform] duration-state ease-apple hover:bg-brand-tint-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-press disabled:cursor-not-allowed disabled:bg-disabled-fill"
           >
-            <Zap size={15} className={`shrink-0 text-on-brand-tint ${checkin.isPending ? 'animate-pulse' : ''}`} />
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-control bg-brand text-on-brand">
+              <Zap aria-hidden size={20} className={checkin.isPending ? 'motion-safe:animate-pulse' : undefined} />
+            </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-copy font-medium text-on-brand-tint">
+              <span className="block text-copy-lg font-medium text-on-brand-tint">
                 {checkin.isPending ? 'Sending…' : 'Send daily check-in'}
               </span>
-              <span className="block text-label text-on-brand-tint">
+              <span className="block text-copy text-on-brand-tint">
                 Goes straight to {first} — no draft list, nothing else to confirm
               </span>
             </span>
@@ -250,89 +264,103 @@ export default function TaskBuilderModal({
                 type="button"
                 onClick={() => addTemplate(t)}
                 title={t.clinical_target || t.why}
-                className="chip cursor-pointer border border-line-strong bg-panel text-body transition-colors duration-150 hover:border-brand hover:bg-brand-tint hover:text-on-brand-tint"
+                className="btn-gray btn-sm"
               >
-                <Plus size={10} /> {t.title}
+                <Plus aria-hidden /> {t.title}
               </button>
             ))}
-            {library.isLoading && <span className="text-label text-muted">Loading the library…</span>}
-            {library.isError && (
-              <span className="text-label text-muted">The library is not available yet.</span>
-            )}
+            {library.isLoading && <span className="meta">Loading the library…</span>}
+            {library.isError && <span className="meta">The library is not available yet.</span>}
             {!library.isLoading && !library.isError && pinned.length === 0 && (
-              <span className="text-label text-muted">Pin templates in the library to see them here.</span>
+              <span className="meta">Pin templates in the library to see them here.</span>
             )}
             <button
               type="button"
               onClick={runSuggest}
               disabled={suggest.isPending}
-              className="qa-btn ml-auto"
+              className="btn-tinted btn-sm ml-auto"
             >
-              <Sparkles size={13} className={suggest.isPending ? 'animate-spin' : undefined} />
+              <Sparkles aria-hidden className={suggest.isPending ? 'motion-safe:animate-spin' : undefined} />
               {suggest.isPending ? 'Thinking…' : `Suggest for ${first}`}
             </button>
           </div>
-        </section>
+        </Section>
 
         {/* 2. Describe the plan */}
-        <section>
-          <div className="mb-2 flex items-baseline justify-between gap-3">
-            <p className="zone-label flex-1">Describe the plan</p>
-            {provider && <AIAttribution kind="task builder" provider={provider} />}
+        <Section
+          id={`${uid}-describe`}
+          label="Describe the plan"
+          aside={provider ? <AIAttribution kind="task builder" provider={provider} /> : undefined}
+        >
+          <div className="relative">
+            <Wand2
+              aria-hidden
+              size={18}
+              className={`pointer-events-none absolute left-4 top-3.5 text-cat-teal-ink ${
+                build.isPending ? 'motion-safe:animate-pulse' : ''
+              }`}
+            />
+            <textarea
+              rows={3}
+              aria-labelledby={`${uid}-describe`}
+              className={`field resize-y rounded-surface py-3 pl-11 pr-4 text-copy-lg ${
+                build.isPending ? 'shimmer text-transparent' : ''
+              }`}
+              placeholder="e.g. Three short walks a day, log knee pain morning and evening, one flight of stairs by next week"
+              value={describe}
+              disabled={build.isPending}
+              onChange={(e) => setDescribe(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) runBuild()
+              }}
+            />
           </div>
-          <textarea
-            rows={3}
-            className={`field ${build.isPending ? 'shimmer text-transparent' : ''}`}
-            placeholder="e.g. Three short walks a day, log knee pain morning and evening, one flight of stairs by next week"
-            value={describe}
-            disabled={build.isPending}
-            onChange={(e) => setDescribe(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) runBuild()
-            }}
-          />
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <p className="text-label font-medium text-muted">
-              Drafts are editable — nothing is assigned until you confirm.
-            </p>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <p className="meta px-1">Drafts are editable — nothing is assigned until you confirm.</p>
             <button
               type="button"
-              className="qa-btn"
+              className="btn-tinted btn-sm"
               disabled={!describe.trim() || build.isPending}
               onClick={runBuild}
             >
-              <Wand2 size={13} />
+              <Wand2 aria-hidden />
               {build.isPending ? 'Building…' : 'Build with AI'}
             </button>
           </div>
-        </section>
+        </Section>
 
         {/* 3. Library */}
-        <section>
-          <p className="zone-label mb-2">Library</p>
+        <Section id={`${uid}-library`} label="Library">
           <div className="flex flex-wrap items-center gap-2">
             <label className="relative min-w-[180px] flex-1">
-              <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+              <span className="sr-only">Search the task library</span>
+              <Search
+                aria-hidden
+                size={16}
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-secondary"
+              />
               <input
-                className="field pl-8"
+                type="search"
+                className="field rounded-pill pl-10"
                 placeholder="Search tasks"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                aria-label="Search the task library"
               />
             </label>
             <SegmentedControl<PhaseFilter>
               options={PHASE_FILTERS}
               value={phase}
               onChange={setPhase}
+              size="sm"
+              role="radiogroup"
               aria-label="Phase"
               className="flex-none"
             />
           </div>
 
-          <div className="mt-2.5 max-h-72 space-y-3 overflow-y-auto rounded-surface border border-line p-2.5">
+          <div className="mt-3 max-h-80 overflow-y-auto rounded-surface border border-line">
             {groups.length === 0 && elsewhere.length === 0 && (
-              <p className="px-1 py-2 text-label font-medium text-muted">
+              <p className="meta px-4 py-4">
                 {library.isLoading
                   ? 'Loading…'
                   : library.isError
@@ -341,74 +369,120 @@ export default function TaskBuilderModal({
               </p>
             )}
             {groups.map((g) => (
-              <div key={g.key}>
-                <p className="mb-1 px-1 text-label font-medium text-muted">{g.label}</p>
-                <ul className="divide-y divide-line">
+              <div key={g.key} className="pt-2">
+                <h4
+                  id={`${uid}-uc-${g.key}`}
+                  className="px-4 text-label font-medium tracking-label text-secondary"
+                >
+                  {g.label}
+                </h4>
+                <ListGroup embedded inset="tile" aria-labelledby={`${uid}-uc-${g.key}`}>
                   {g.items.map((t) => (
-                    <LibraryRow
-                      key={t.id}
-                      t={t}
-                      onAdd={() => addTemplate(t)}
-                      onPin={() => pin.mutate({ id: t.id, pinned: !t.pinned })}
-                    />
+                    <LibraryRow key={t.id} t={t} onAdd={() => addTemplate(t)} onPin={() => onPin(t)} />
                   ))}
-                </ul>
+                </ListGroup>
               </div>
             ))}
             {elsewhere.length > 0 && (
-              <Disclosure label="Other pathways" hint={`${elsewhere.length}`}>
-                <ul className="divide-y divide-line">
-                  {elsewhere.map((t) => (
-                    <LibraryRow
-                      key={t.id}
-                      t={t}
-                      showUseCase
-                      onAdd={() => addTemplate(t)}
-                      onPin={() => pin.mutate({ id: t.id, pinned: !t.pinned })}
-                    />
-                  ))}
-                </ul>
-              </Disclosure>
+              <div className="px-4 py-2">
+                <Disclosure label="Other pathways" hint={`${elsewhere.length}`}>
+                  <ListGroup embedded inset="tile" aria-label="Other pathways" className="-mx-4">
+                    {elsewhere.map((t) => (
+                      <LibraryRow
+                        key={t.id}
+                        t={t}
+                        showUseCase
+                        onAdd={() => addTemplate(t)}
+                        onPin={() => onPin(t)}
+                      />
+                    ))}
+                  </ListGroup>
+                </Disclosure>
+              </div>
             )}
           </div>
-        </section>
+        </Section>
 
         {/* 4. Draft list */}
-        <section>
-          <div className="mb-2 flex items-baseline justify-between gap-3">
-            <p className="zone-label flex-1">
+        <Section
+          id={`${uid}-drafts`}
+          label={
+            <>
               Draft list
-              <span className="tabular-nums">{drafts.length}</span>
-            </p>
+              {drafts.length > 0 && (
+                <span className="ml-1.5 tabular-nums">· {drafts.length}</span>
+              )}
+            </>
+          }
+          aside={
             <button
               type="button"
-              className="cursor-pointer rounded-control px-2 py-1 text-label font-medium text-brand-ink transition-colors duration-150 hover:bg-brand-tint"
+              className="btn-plain btn-sm -mr-2"
               onClick={() => append([blankDraft(kinds)])}
             >
-              + Custom task
+              <Plus aria-hidden /> Custom task
             </button>
-          </div>
+          }
+        >
           {drafts.length === 0 ? (
-            <p className="rounded-surface border border-dashed border-line px-3 py-4 text-center text-label font-medium text-muted">
-              Nothing drafted yet — pick a quick pick, describe the plan, or add from the library.
-            </p>
+            <EmptyState
+              variant="inline"
+              family="violet"
+              icon={<ClipboardList />}
+              title="Nothing drafted yet"
+              className="rounded-surface bg-soft !py-6"
+            >
+              Pick a quick pick, describe the plan, or add from the library.
+            </EmptyState>
           ) : (
-            <div className="space-y-2.5">
+            <ol className="space-y-3" aria-labelledby={`${uid}-drafts`}>
               {drafts.map((d, i) => (
-                <DraftRowEditor
-                  key={i}
-                  index={i}
-                  value={d}
-                  kinds={kinds}
-                  onChange={(next) => update(i, next)}
-                  onRemove={() => remove(i)}
-                />
+                <li key={i}>
+                  <DraftRowEditor
+                    index={i}
+                    value={d}
+                    kinds={kinds}
+                    onChange={(next) => update(i, next)}
+                    onRemove={() => remove(i)}
+                  />
+                </li>
               ))}
-            </div>
+            </ol>
           )}
-        </section>
+          {drafts.length > MAX_ITEMS && (
+            <p className="mt-2 px-1 text-label font-medium text-risk-med-ink">
+              One assignment takes at most {MAX_ITEMS} tasks — remove {drafts.length - MAX_ITEMS}.
+            </p>
+          )}
+        </Section>
       </div>
-    </PlanModal>
+    </Modal>
+  )
+}
+
+/** A builder section: a plain sentence-case label (no rule under it, the
+ *  app's grouped-list header) with an optional right-hand slot. */
+function Section({
+  id,
+  label,
+  aside,
+  children,
+}: {
+  id: string
+  label: ReactNode
+  aside?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section aria-labelledby={id}>
+      <div className="mb-2 flex min-h-8 items-center justify-between gap-3 px-1">
+        <h3 id={id} className="text-copy font-medium text-secondary">
+          {label}
+        </h3>
+        {aside}
+      </div>
+      {children}
+    </section>
   )
 }
 
@@ -441,36 +515,39 @@ function LibraryRow({
   onAdd: () => void
   onPin: () => void
 }) {
+  const kind = taskKindTile(t.task_kind)
+  const Icon = kind.icon
+  const meta = [
+    showUseCase ? ucLabel(t.use_case) : null,
+    phaseLabel(t.phase),
+    t.verified_by || 'self-report',
+    t.clinical_target || null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  // The title is the row's one stretched button (it adds the template); the
+  // pin is the only other control and sits above it.
   return (
-    <li className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0">
-      <button
-        type="button"
-        onClick={onAdd}
-        title={t.clinical_target || t.why}
-        className="group min-w-0 flex-1 cursor-pointer rounded-control px-1.5 py-1 text-left transition-colors duration-150 hover:bg-soft"
-      >
-        <span className="flex items-center gap-1.5">
-          <Plus size={12} className="shrink-0 text-muted transition-colors duration-150 group-hover:text-brand-ink" />
-          <span className="truncate text-copy font-medium text-ink">{t.title}</span>
-        </span>
-        <span className="mt-0.5 block truncate pl-[18px] text-label font-medium text-muted">
-          {showUseCase && <>{ucLabel(t.use_case)} · </>}
-          {phaseLabel(t.phase)} · {t.verified_by || 'self-report'}
-          {t.clinical_target && <> · {t.clinical_target}</>}
-        </span>
-      </button>
-      <button
-        type="button"
-        onClick={onPin}
-        aria-pressed={t.pinned}
-        aria-label={t.pinned ? 'Unpin' : 'Pin as quick pick'}
-        title={t.pinned ? 'Unpin from quick picks' : 'Pin as a quick pick'}
-        className={`grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-control transition-colors duration-150 hover:bg-soft ${
-          t.pinned ? 'text-brand-ink' : 'text-muted hover:text-ink'
-        }`}
-      >
-        <Star size={13} fill={t.pinned ? 'currentColor' : 'none'} />
-      </button>
-    </li>
+    <ListRow
+      compact
+      leading={<Tile family={kind.family} icon={<Icon />} />}
+      title={t.title}
+      onClick={onAdd}
+      linkLabel={`Add ${t.title}`}
+      subtitle={<span title={t.clinical_target || t.why}>{meta}</span>}
+      aside={<Plus aria-hidden size={16} className="text-brand-ink" />}
+      trailing={
+        <button
+          type="button"
+          onClick={onPin}
+          aria-pressed={t.pinned}
+          aria-label={t.pinned ? `Unpin ${t.title}` : `Pin ${t.title} as a quick pick`}
+          title={t.pinned ? 'Unpin from quick picks' : 'Pin as a quick pick'}
+          className={`btn-icon btn-sm ${t.pinned ? '!text-brand-ink' : ''}`}
+        >
+          <Star aria-hidden fill={t.pinned ? 'currentColor' : 'none'} />
+        </button>
+      }
+    />
   )
 }

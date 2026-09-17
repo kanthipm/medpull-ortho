@@ -21,59 +21,101 @@ import type { JunctionLink, PatientWearables, WearableDevice } from '../../api/t
 import Modal from '../../components/Modal'
 import SectionCard from '../../components/SectionCard'
 import { RefreshOverlay, SkeletonCard } from '../../components/Skeleton'
+import Tile from '../../components/Tile'
 import { useToast } from '../../components/Toast'
 import { relativeTime } from '../../lib/format'
 
+/** Connection state, in words, on its own opaque tint (pairs measured in
+ *  lib/risk.ts: low 4.731 / 6.484, med 5.165 / 6.890, high 4.835 / 5.701,
+ *  missing 6.367 / 5.093; "Not linked" is body on soft 6.367 / 6.211). */
 function StatusChip({ data }: { data: PatientWearables }) {
   const c = data.connection
   if (!data.aggregator.configured && (!c || c.status === 'disconnected')) {
     return <span className="chip bg-risk-missing-tint text-risk-missing-ink">Demo source</span>
   }
   if (!c || c.status === 'disconnected') {
-    return <span className="chip bg-soft text-muted">Not linked</span>
+    return <span className="chip bg-soft text-body">Not linked</span>
   }
   if (c.status === 'linked') {
     return (
-      <span className="chip bg-risk-low-tint text-risk-low-ink">
-        <CircleCheck size={11} /> Linked
+      <span className="chip gap-1 bg-risk-low-tint text-risk-low-ink">
+        <CircleCheck size={12} aria-hidden /> Linked
       </span>
     )
   }
   if (c.status === 'error') {
     return (
-      <span className="chip bg-risk-high-tint text-risk-high-ink">
-        <TriangleAlert size={11} /> Needs attention
+      <span className="chip gap-1 bg-risk-high-tint text-risk-high-ink">
+        <TriangleAlert size={12} aria-hidden /> Needs attention
       </span>
     )
   }
   return <span className="chip bg-risk-med-tint text-risk-med-ink">Awaiting patient</span>
 }
 
+const DEVICE_STATUS: Record<string, { word: string; dot: string; ink: string }> = {
+  connected: { word: 'Connected', dot: 'bg-risk-low-ink', ink: 'text-risk-low-ink' },
+  error: { word: 'Error', dot: 'bg-risk-high-ink', ink: 'text-risk-high-ink' },
+}
+
+/** One device: model over "status · synced …". The status is a dot AND a
+ *  word, so it never rests on colour (low ink on panel 5.4 / 9.4, high 5.6 /
+ *  7.6). */
 function DeviceRow({ d }: { d: WearableDevice }) {
-  const tone =
-    d.status === 'connected'
-      ? 'text-risk-low-ink'
-      : d.status === 'error'
-        ? 'text-risk-high-ink'
-        : 'text-muted'
+  const st = DEVICE_STATUS[d.status] ?? {
+    word: d.status.replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase()),
+    dot: 'bg-line-strong',
+    ink: 'text-secondary',
+  }
   return (
-    <li className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 text-copy">
-      <Watch size={15} className="relative top-[2px] shrink-0 text-faint" />
-      <span className="text-ink">{d.model}</span>
-      <span className={`font-mono text-label ${tone}`}>{d.status}</span>
-      <span className="text-muted">
-        {d.last_sync_at ? `synced ${relativeTime(d.last_sync_at)}` : 'no sync yet'}
-      </span>
+    <li className="flex items-center gap-3 py-2.5">
+      <Tile size="sm" family="teal" icon={<Watch />} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-copy font-medium text-ink">{d.model}</p>
+        <p className="meta flex flex-wrap items-center gap-x-1.5">
+          <span className={`inline-flex items-center gap-1 font-medium ${st.ink}`}>
+            <span aria-hidden className={`h-1.5 w-1.5 rounded-pill ${st.dot}`} />
+            {st.word}
+          </span>
+          <span aria-hidden>·</span>
+          <span className="tabular-nums">
+            {d.last_sync_at ? `synced ${relativeTime(d.last_sync_at)}` : 'no sync yet'}
+          </span>
+        </p>
+      </div>
     </li>
   )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+/** Label over value, like the app's portfolio tiles, on an opaque soft fill
+ *  (ink 16.202 / 16.060, body 6.367 / 6.211). */
+function Field({
+  label,
+  children,
+  className = '',
+}: {
+  label: string
+  children: ReactNode
+  className?: string
+}) {
   return (
-    <div className="min-w-0">
-      <p className="text-label font-medium text-muted">{label}</p>
-      <p className="mt-0.5 truncate text-copy-lg font-medium text-ink">{children}</p>
+    <div className={`min-w-0 rounded-control bg-soft px-3 py-2.5 ${className}`}>
+      <dt className="text-label text-body">{label}</dt>
+      <dd className="mt-0.5 truncate text-copy font-medium tabular-nums text-ink">{children}</dd>
     </div>
+  )
+}
+
+/** An inline notice on its own opaque tint, icon + words (never colour
+ *  alone). med 5.165 / 6.890, high 4.835 / 5.701. */
+function Notice({ tone, children }: { tone: 'med' | 'high'; children: ReactNode }) {
+  const cls =
+    tone === 'high' ? 'bg-risk-high-tint text-risk-high-ink' : 'bg-risk-med-tint text-risk-med-ink'
+  return (
+    <p className={`mt-3 flex items-start gap-2 rounded-control px-3.5 py-2.5 text-copy font-medium ${cls}`}>
+      <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0" />
+      <span>{children}</span>
+    </p>
   )
 }
 
@@ -101,38 +143,42 @@ function LinkModal({
     ? new Date(link.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : null
   return (
-    <Modal title={`Connect ${firstName}'s wearable`} onClose={onClose}>
+    <Modal
+      title={`Connect ${firstName}'s wearable`}
+      onClose={onClose}
+      footer={
+        <>
+          <a
+            href={link.link_url}
+            target="_blank"
+            rel="noreferrer"
+            className="btn-tinted"
+            title="Opens Junction's page in a new tab — hand the device to the patient to sign in"
+          >
+            <ExternalLink size={16} aria-hidden /> Open here
+          </a>
+          <button type="button" onClick={copy} className="btn-filled">
+            <Copy size={16} aria-hidden /> {copied ? 'Copied' : 'Copy link'}
+          </button>
+        </>
+      }
+    >
       <p className="text-copy text-body">
         Share this link with {firstName}. They sign in to their device's account (Oura, Fitbit,
         Garmin, WHOOP, Withings, Polar or Dexcom) on Junction's page — nothing is typed into this
         console. Data starts flowing within minutes and the pre-op history back-fills on its own.
       </p>
       <label className="mt-4 block">
-        <span className="text-label font-medium text-muted">
-          One-time link{expiry ? ` · expires ${expiry}` : ''}
-        </span>
+        <span className="text-copy font-medium text-ink">One-time link</span>
+        {expiry && <span className="meta ml-1.5">expires {expiry}</span>}
         <input
           readOnly
           value={link.link_url}
           onFocus={(e) => e.currentTarget.select()}
-          className="field mt-1.5 bg-soft font-mono"
+          className="field mt-1.5 font-mono"
         />
       </label>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" onClick={copy} className="btn-primary w-auto">
-          <Copy size={16} /> {copied ? 'Copied' : 'Copy link'}
-        </button>
-        <a
-          href={link.link_url}
-          target="_blank"
-          rel="noreferrer"
-          className="qa-btn"
-          title="Opens Junction's page in a new tab — hand the device to the patient to sign in"
-        >
-          <ExternalLink size={16} /> Open here
-        </a>
-      </div>
-      <p className="mt-3 text-label text-muted">
+      <p className="meta mt-3">
         The link is single-use. Issue a new one if it expires before {firstName} gets to it.
       </p>
     </Modal>
@@ -161,8 +207,8 @@ export default function WearableConnectionCard({
   if (isLoading) return <SkeletonCard lines={2} />
   if (isError || !data) {
     return (
-      <SectionCard title="Wearable connection">
-        <p className="text-copy text-muted">The connection state couldn't be loaded.</p>
+      <SectionCard title="Wearables" icon={<Tile size="sm" family="teal" icon={<Watch />} />}>
+        <p className="text-copy text-secondary">The connection state couldn't be loaded.</p>
       </SectionCard>
     )
   }
@@ -229,12 +275,12 @@ export default function WearableConnectionCard({
 
   return (
     <SectionCard
-      title="Wearable connection"
-      spine={active && !wrongEnvironment && c?.status === 'linked' ? 'bg-risk-low-ink' : undefined}
+      title="Wearables"
+      icon={<Tile size="sm" family="teal" icon={<Watch />} />}
       aside={
         wrongEnvironment ? (
-          <span className="chip bg-risk-med-tint text-risk-med-ink">
-            <TriangleAlert size={11} /> Other environment
+          <span className="chip gap-1 bg-risk-med-tint text-risk-med-ink">
+            <TriangleAlert size={12} aria-hidden /> Other environment
           </span>
         ) : (
           <StatusChip data={data} />
@@ -259,13 +305,13 @@ export default function WearableConnectionCard({
       )}
 
       {c && active && (
-        <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Devices via Junction">
-            {c.providers.length === 0
-              ? c.status === 'pending_link'
-                ? 'None yet'
-                : '—'
-              : c.providers.map((p) => `${p.name}${p.status === 'error' ? ' (error)' : ''}`).join(', ')}
+        <dl className="grid grid-cols-2 gap-2">
+          <Field label="Devices via Junction" className="col-span-2">
+              {c.providers.length === 0
+                ? c.status === 'pending_link'
+                  ? 'None yet'
+                  : '—'
+                : c.providers.map((p) => `${p.name}${p.status === 'error' ? ' (error)' : ''}`).join(', ')}
           </Field>
           <Field label="Last reading">{c.last_data_at ? relativeTime(c.last_data_at) : 'None yet'}</Field>
           <Field label="Last back-fill">
@@ -274,42 +320,36 @@ export default function WearableConnectionCard({
           <Field label="Link issued">
             {c.last_link_issued_at ? relativeTime(c.last_link_issued_at) : '—'}
           </Field>
-        </div>
+        </dl>
       )}
 
       {c && active && c.status === 'pending_link' && (
-        <p className="mt-3 text-copy text-muted">
+        <p className="mt-3 text-copy text-body">
           Waiting for {firstName} to open the link and sign in. Links are single-use and expire
           within the hour — issue a fresh one if needed.
         </p>
       )}
 
       {c && wrongEnvironment && (
-        <p className="mt-3 flex items-start gap-2 rounded-surface bg-risk-med-tint px-3.5 py-2.5 text-copy font-medium text-risk-med-ink">
-          <TriangleAlert size={14} className="mt-0.5 shrink-0" />
-          <span>
-            This account lives on Junction's {c.environment} host and this deployment is
-            configured for {data.aggregator.environment}. Disconnect it and issue a new link.
-          </span>
-        </p>
+        <Notice tone="med">
+          This account lives on Junction's {c.environment} host and this deployment is configured
+          for {data.aggregator.environment}. Disconnect it and issue a new link.
+        </Notice>
       )}
 
       {/* The provider-error copy is tied to the error *state*, not to the
           presence of a message: a retired connection can carry a note about
           what Junction did not delete, which is shown as-is. */}
       {c && c.last_error && (c.status === 'error' || c.status === 'disconnected') && (
-        <p className="mt-3 flex items-start gap-2 rounded-surface bg-risk-high-tint px-3.5 py-2.5 text-copy font-medium text-risk-high-ink">
-          <TriangleAlert size={14} className="mt-0.5 shrink-0" />
-          <span>
-            {c.status === 'error'
-              ? `Junction reports a provider error: ${c.last_error}. A new link lets ${firstName} sign in again.`
-              : c.last_error}
-          </span>
-        </p>
+        <Notice tone="high">
+          {c.status === 'error'
+            ? `Junction reports a provider error: ${c.last_error}. A new link lets ${firstName} sign in again.`
+            : c.last_error}
+        </Notice>
       )}
 
       {data.devices.length > 0 && (
-        <ul className="mt-3 divide-y divide-line border-t border-line">
+        <ul className="mt-3 divide-y divide-hairline" aria-label="Devices">
           {data.devices.map((d) => (
             <DeviceRow key={d.id} d={d} />
           ))}
@@ -320,7 +360,7 @@ export default function WearableConnectionCard({
         {/* A disabled button takes no pointer events, so the reason lives on
             the wrapping span (the Integrations page does the same). */}
         <span
-          className="inline-block"
+          className="inline-flex"
           title={
             !configured
               ? 'Configure Junction on the Integrations page first'
@@ -333,9 +373,9 @@ export default function WearableConnectionCard({
             type="button"
             onClick={issueLink}
             disabled={!configured || busy || wrongEnvironment}
-            className={active ? 'qa-btn' : 'btn-primary w-auto'}
+            className={active ? 'btn-tinted btn-sm' : 'btn-filled'}
           >
-            <Link2 size={16} /> {active ? 'New link' : 'Connect wearable'}
+            <Link2 size={16} aria-hidden /> {active ? 'New link' : 'Connect wearable'}
           </button>
         </span>
         {active && (
@@ -344,16 +384,21 @@ export default function WearableConnectionCard({
               type="button"
               onClick={runBackfill}
               disabled={busy || wrongEnvironment || c?.status === 'pending_link'}
-              className="qa-btn"
+              className="btn-gray btn-sm"
               title="Ask Junction to re-sync every linked device, then pull the whole ingestible window"
             >
-              <RefreshCw size={16} className={backfill.isPending ? 'animate-spin' : ''} /> Back-fill
+              <RefreshCw
+                size={14}
+                aria-hidden
+                className={backfill.isPending ? 'animate-spin' : ''}
+              />{' '}
+              Back-fill
             </button>
             <button
               type="button"
               onClick={runRefresh}
               disabled={busy || wrongEnvironment}
-              className="qa-btn"
+              className="btn-gray btn-sm"
             >
               Refresh status
             </button>
@@ -361,9 +406,9 @@ export default function WearableConnectionCard({
               type="button"
               onClick={() => setConfirmDisconnect(true)}
               disabled={busy}
-              className="qa-btn text-risk-high-ink hover:border-risk-high-ink"
+              className="btn-danger btn-sm"
             >
-              <Unplug size={16} /> Disconnect
+              <Unplug size={14} aria-hidden /> Disconnect
             </button>
           </>
         )}
@@ -372,19 +417,25 @@ export default function WearableConnectionCard({
       {link && <LinkModal link={link} firstName={firstName} onClose={() => setLink(null)} />}
 
       {confirmDisconnect && (
-        <Modal title="Disconnect wearable" onClose={() => setConfirmDisconnect(false)}>
+        <Modal
+          title="Disconnect wearable?"
+          size="sm"
+          onClose={() => setConfirmDisconnect(false)}
+          footer={
+            <>
+              <button type="button" onClick={() => setConfirmDisconnect(false)} className="btn-gray">
+                Keep connected
+              </button>
+              <button type="button" onClick={runDisconnect} disabled={busy} className="btn-danger">
+                <Unplug size={16} aria-hidden /> Disconnect
+              </button>
+            </>
+          }
+        >
           <p className="text-copy text-body">
             This retires {firstName}'s Junction account and stops new readings. Everything already
             on the chart stays. Reconnecting later means issuing a new link.
           </p>
-          <div className="mt-4 flex gap-2">
-            <button type="button" onClick={runDisconnect} disabled={busy} className="btn-primary w-auto">
-              Disconnect
-            </button>
-            <button type="button" onClick={() => setConfirmDisconnect(false)} className="qa-btn">
-              Keep connected
-            </button>
-          </div>
         </Modal>
       )}
     </SectionCard>

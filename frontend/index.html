@@ -12,10 +12,12 @@
     <meta name="theme-color" content="#ffffff" />
     <link rel="icon" type="image/svg+xml" href="/medpull-logo.svg" />
 
-    <!-- Self-hosted UI face. Both files are ~16KB, so preloading the pair costs
-         ~32KB and lets index.css use `font-display: swap` without ever showing
-         Arial: the metric-matched fallback face makes the swap reflow nothing,
-         and the preload makes it happen in the first frame on a warm cache. -->
+    <!-- Self-hosted UI face. All three files are ~16-17KB, so preloading them
+         costs ~50KB and lets index.css use `font-display: swap` without ever
+         showing Arial: the metric-matched fallback face makes the swap reflow
+         nothing, and the preload makes it happen in the first frame on a warm
+         cache. SemiBold (600) carries every page title, which is above the
+         fold on every console route. -->
     <link
       rel="preload"
       href="/fonts/InstrumentSans-Regular.woff2"
@@ -26,6 +28,13 @@
     <link
       rel="preload"
       href="/fonts/InstrumentSans-Medium.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/InstrumentSans-SemiBold.woff2"
       as="font"
       type="font/woff2"
       crossorigin
@@ -42,7 +51,11 @@
     />
     <!-- Apply stored/system theme before paint to avoid a light flash.
          The two background hexes shadow --canvas: #F5F7FA (n-50) light and
-         #0E151C (n-950) dark. src/lib/theme.tsx carries the same pair. -->
+         #0E151C (n-950) dark. src/lib/theme.tsx carries the same pair.
+         The glass kill switch (R18) is applied here too, so a clinician who
+         turned the translucent bar off never sees one frame of blur:
+         localStorage 'medpull-glass' === 'off' -> <html data-glass="off">.
+         src/lib/theme.tsx owns that key and keeps the attribute in sync. -->
     <script>
       (function () {
         try {
@@ -55,6 +68,9 @@
           var meta = document.querySelector('meta[name="theme-color"]')
           if (meta) meta.setAttribute('content', t === 'dark' ? '#141c24' : '#ffffff')
           document.documentElement.style.background = t === 'dark' ? '#0e151c' : '#f5f7fa'
+          if (localStorage.getItem('medpull-glass') === 'off') {
+            document.documentElement.setAttribute('data-glass', 'off')
+          }
         } catch (e) {}
       })()
     </script>

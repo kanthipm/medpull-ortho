@@ -8,6 +8,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useRef } from 'react'
+import { CHART_TOOLTIP_WRAPPER, ChangeLabel, ChartTooltip, lineDomain, markerSide } from './Sparkline'
 
 interface Props {
   actual: { day: number; v: number }[]
@@ -56,6 +58,11 @@ function endLabel(text: string, fill: string, atIndex: number) {
 
 /** Functional recovery index vs the expected band for this procedure.
  *
+ *  Sits on an opaque --panel (a SectionCard body), which is where every ratio
+ *  below was measured. The tooltip renders in the top layer (ChartTooltip).
+ *  Y-domain: a line/band chart, so it follows the data rather than pinning
+ *  zero; the "Expected" label and the band keep the gap readable.
+ *
  *  TWO categorical series, which is the cap: `actual` is s1 solid, `expected`
  *  (the band's midline) is s2 on a 4-2 dash with a direct end-of-line label.
  *  The lo..hi band behind them is not a third series — it is a --chart-grid
@@ -69,6 +76,7 @@ function endLabel(text: string, fill: string, atIndex: number) {
  *  4.906:1 dark) at the 11px chart-axis rung, which is the one place 11px is
  *  allowed. */
 export default function TrajectoryChart({ actual, expected, changePointDay }: Props) {
+  const hostRef = useRef<HTMLDivElement>(null)
   const byDay = new Map<number, Record<string, number | number[] | null>>()
   for (const e of expected) {
     byDay.set(e.day, { day: e.day, band: [e.lo, e.hi], mid: e.mid, actual: null })
@@ -82,20 +90,32 @@ export default function TrajectoryChart({ actual, expected, changePointDay }: Pr
   // The label belongs on the last point that HAS a midline, not on the last
   // row: `connectNulls` draws across gaps but the dot renderer does not.
   const lastMid = data.reduce((last, r, i) => (r.mid != null ? i : last), -1)
+  // Line/band chart: the y-domain follows the data (HIG), it does not pin 0.
+  const domain = lineDomain([
+    ...actual.map((a) => a.v),
+    ...expected.flatMap((e) => [e.lo, e.hi]),
+  ])
+  const lastActual = actual.length ? actual[actual.length - 1] : null
+  const lastExpected = lastActual ? expected.find((e) => e.day === lastActual.day) : undefined
+  const summary = lastActual
+    ? `Recovery index: day ${lastActual.day}, actual ${Math.round(lastActual.v * 100)}%${
+        lastExpected ? `, expected ${Math.round(lastExpected.mid * 100)}%` : ''
+      }${changePointDay != null ? `, change at day ${changePointDay}` : ''}`
+    : 'Recovery index: no readings yet'
 
   return (
     <div>
       {/* Copy unchanged: the s2 line is identified at the line by its own end
           label, so it needs no legend row of its own and does not get one. */}
-      <div className="mb-2 flex items-center gap-4 text-label font-medium text-muted">
+      <div className="mb-2 flex items-center gap-4 text-label text-secondary">
         <span className="inline-flex items-center gap-el">
-          <span className="h-0.5 w-4 bg-chart-s1" /> Actual
+          <span aria-hidden className="h-0.5 w-4 rounded-pill bg-chart-s1" /> Actual
         </span>
         <span className="inline-flex items-center gap-el">
-          <span className="h-2.5 w-4 bg-chart-grid" /> Expected range
+          <span aria-hidden className="h-2.5 w-4 rounded-[3px] bg-chart-grid" /> Expected range
         </span>
       </div>
-      <div className="h-40">
+      <div ref={hostRef} className="h-40" role="img" aria-label={summary}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 16, right: 8, bottom: 0, left: 8 }}>
             <XAxis
@@ -106,7 +126,7 @@ export default function TrajectoryChart({ actual, expected, changePointDay }: Pr
               tickFormatter={(d: number) => `Day ${d}`}
               interval="preserveStartEnd"
             />
-            <YAxis hide domain={[0, (dataMax: number) => Math.min(1.1, dataMax * 1.2)]} />
+            <YAxis hide domain={domain} />
             <Area
               dataKey="band"
               stroke="none"
@@ -127,6 +147,7 @@ export default function TrajectoryChart({ actual, expected, changePointDay }: Pr
               dataKey="actual"
               stroke={S1}
               strokeWidth={2}
+              strokeLinecap="round"
               dot={false}
               isAnimationActive={false}
               connectNulls
@@ -136,43 +157,37 @@ export default function TrajectoryChart({ actual, expected, changePointDay }: Pr
                 x={changePointDay}
                 stroke={MARKER}
                 strokeDasharray="4 3"
-                label={{
-                  value: 'Change',
-                  position: 'top',
-                  fontSize: 11,
-                  fontWeight: 500,
-                  fill: MARKER,
-                }}
+                label={
+                  <ChangeLabel
+                    side={markerSide(
+                      changePointDay,
+                      data.map((r) => r.day as number),
+                    )}
+                  />
+                }
               />
             )}
             <Tooltip
+              wrapperStyle={CHART_TOOLTIP_WRAPPER}
+              isAnimationActive={false}
               cursor={{ stroke: GRID, strokeWidth: 1 }}
-              content={({ active, payload, label }) => {
+              content={({ active, payload, label, coordinate }) => {
                 if (!active || !payload?.length) return null
                 const row = payload[0].payload as { actual: number | null; mid: number | null }
                 return (
-                  // A tooltip is a floating overlay: `.overlay` is the one place
-                  // the ambient shadow is allowed. The retired lift-shadow
-                  // alias and the hairline that double-drew next to it are gone.
-                  // The `border-overlay-border` is the ONE separation: light
-                  // --overlay-panel is #FFFFFF, the same as light --panel, so the fill
-                  // gives 1.000:1 and --shadow-overlay is a soft wash offset downward,
-                  // not an edge. See Sparkline.tsx for the full note and the exit
-                  // condition. In dark, `.dark .overlay` already sets this, so it is
-                  // a no-op there.
-                  <div className="overlay border border-overlay-border px-2.5 py-1.5">
-                    <div className="text-label font-medium text-muted">Post-op day {label}</div>
+                  <ChartTooltip hostRef={hostRef} x={coordinate?.x} y={coordinate?.y}>
+                    <div className="text-label text-secondary">Post-op day {label}</div>
                     {row.actual != null && (
-                      <div className="text-label font-medium tabular-nums text-ink">
+                      <div className="text-copy font-medium tabular-nums text-ink">
                         Actual {Math.round(row.actual * 100)}%
                       </div>
                     )}
                     {row.mid != null && (
-                      <div className="text-label font-medium tabular-nums text-muted">
+                      <div className="text-label tabular-nums text-secondary">
                         Expected {Math.round(row.mid * 100)}%
                       </div>
                     )}
-                  </div>
+                  </ChartTooltip>
                 )
               }}
             />

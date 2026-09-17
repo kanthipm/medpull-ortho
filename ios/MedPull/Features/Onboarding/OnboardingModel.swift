@@ -4,15 +4,23 @@ import Observation
 @Observable
 @MainActor
 final class OnboardingModel {
-    enum Step: Int, CaseIterable {
+    enum Step: Int, CaseIterable, Hashable {
         case welcome, hospital, path, identity, join, verify, health, wearable, done
+
+        /// Steps after the session exists. Going back from these would land
+        /// on a form that has already done its job, so they hide the system
+        /// back button (which also turns off the edge swipe).
+        var isPastEnrollment: Bool { rawValue >= Step.health.rawValue }
     }
 
     /// How the person is joining: on the hospital's roster already (find the
     /// record), or new to it (create one — with or without a surgery).
     enum Path { case findRecord, joinGeneral, joinAfterSurgery }
 
-    var step: Step = .welcome
+    /// The NavigationStack path. Welcome is the root and never appears in
+    /// it; `step` is whatever is on top.
+    var route: [Step] = []
+    var step: Step { route.last ?? .welcome }
     var path: Path = .joinGeneral
 
     var hospitals: [Hospital] = []
@@ -46,16 +54,36 @@ final class OnboardingModel {
             && (path != .joinAfterSurgery || procedure != nil)
     }
 
+    /// Forward pushes; a step already on the stack pops back to it (so
+    /// "Different hospital" is a pop, and re-sending a code is a no-op).
     func go(_ next: Step) {
         error = nil
-        step = next
+        if next == .welcome {
+            route = []
+        } else if let i = route.firstIndex(of: next) {
+            route = Array(route[...i])
+        } else {
+            route.append(next)
+        }
     }
 
     func choose(_ path: Path) {
         self.path = path
         candidates = []
         selected = nil
-        go(path == .findRecord ? .identity : .join)
+        let next: Step = path == .findRecord ? .identity : .join
+        // Switching between the two record forms (a 409 on join sends the
+        // patient to find-my-record) replaces the form rather than stacking
+        // one on the other, so Back still means "how are you joining?".
+        if let last = route.last, last == .join || last == .identity, last != next {
+            error = nil
+            var r = route
+            r.removeLast()
+            r.append(next)
+            route = r
+        } else {
+            go(next)
+        }
     }
 
     func loadHospitals(api: APIClient) async {

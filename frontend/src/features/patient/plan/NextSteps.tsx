@@ -5,9 +5,11 @@ import {
   MessageSquare,
   Phone,
   Send,
+  Sparkles,
   TriangleAlert,
+  X,
 } from 'lucide-react'
-import { useState, type MouseEvent } from 'react'
+import { useId, useState, type MouseEvent, type ReactNode } from 'react'
 import type { NextStep, NextStepActionType } from '../../../api/plan'
 import {
   useCompleteNextStep,
@@ -16,24 +18,35 @@ import {
   useNextSteps,
 } from '../../../api/plan'
 import type { MessagePatientResult, SuggestedAction } from '../../../api/types'
+import ListRow, { ListGroup } from '../../../components/ListRow'
+import { Tooltip } from '../../../components/Menu'
 import SectionCard from '../../../components/SectionCard'
 import { RefreshOverlay, SkeletonLine } from '../../../components/Skeleton'
+import Tile, { type TileFamily } from '../../../components/Tile'
 import { useToast } from '../../../components/Toast'
 import { relativeTime } from '../../../lib/format'
-import { URGENCY } from '../../../lib/risk'
+import { URGENCY, type Urgency } from '../../../lib/risk'
 import { sourceLabel } from '../../../lib/sourceLabels'
 import MessageComposerModal from './MessageComposerModal'
-import { titlesOverlap } from './planCopy'
+import { shortStepLabel, titlesOverlap } from './planCopy'
 
+/** Verb label, leading tile and icon per action. Tile families follow
+ *  components/Tile: blue = communication, risk-high = escalate only,
+ *  violet = plan, indigo = rules-based review, teal = done/acknowledge. */
 const ACTION = {
-  message: { label: 'Message', icon: MessageSquare },
-  assign_tasks: { label: 'Assign', icon: ClipboardList },
-  send_checkin: { label: 'Send check-in', icon: Send },
-  escalate: { label: 'Escalate', icon: TriangleAlert },
-  call: { label: 'Log call', icon: Phone },
-  open: { label: 'Open', icon: ExternalLink },
-  acknowledge: { label: 'Mark reviewed', icon: CheckCheck },
-} as const satisfies Record<NextStepActionType, unknown>
+  message: { label: 'Message', icon: MessageSquare, family: 'blue' },
+  assign_tasks: { label: 'Assign', icon: ClipboardList, family: 'violet' },
+  send_checkin: { label: 'Send check-in', icon: Send, family: 'blue' },
+  escalate: { label: 'Escalate', icon: TriangleAlert, family: 'risk-high' },
+  call: { label: 'Log call', icon: Phone, family: 'blue' },
+  open: { label: 'Open', icon: ExternalLink, family: 'indigo' },
+  acknowledge: { label: 'Mark reviewed', icon: CheckCheck, family: 'teal' },
+} as const satisfies Record<
+  NextStepActionType,
+  { label: string; icon: typeof Phone; family: TileFamily }
+>
+
+const URGENCY_ORDER: Urgency[] = ['today', 'this_week', 'routine']
 
 function stepActionLabel(step: NextStep, canText: boolean): string {
   // "Open check-in link" is the honest label only when no text can carry it.
@@ -41,11 +54,12 @@ function stepActionLabel(step: NextStep, canText: boolean): string {
   return ACTION[step.action.type]?.label ?? 'Do it'
 }
 
-/** "Recommended next steps" — the rules-based planner's ranked list, each
- *  row executable in one click (two for a message: it opens the composer
- *  pre-filled, and the send is logged back as the step's completion). The
- *  AI's suggested-actions wording is shown only under a step whose title it
- *  overlaps; it never becomes a button of its own. */
+/** "Next steps" — the rules-based planner's ranked list, grouped under
+ *  "Today" / "This week" subheaders (dot + word, R7) instead of a pill per
+ *  row. Each row has ONE action capsule and an icon "Not now". A message
+ *  step opens the composer pre-filled, and the send is logged back as the
+ *  step's completion. The AI's suggested-actions wording is shown only under
+ *  a step whose title it overlaps; it never becomes a button of its own. */
 export default function NextSteps({
   patientId,
   patientName,
@@ -78,22 +92,20 @@ export default function NextSteps({
   const planner = !steps.isError
   if (!steps.isLoading && planner && list.length === 0 && aiActions.length === 0) return null
 
+  const grouped = groupByUrgency(list, (s) => s.urgency)
+  const aiGrouped = groupByUrgency(aiActions, (a) => a.urgency)
+
   return (
     <>
       <SectionCard
-        title="Recommended next steps"
-        aside={
-          steps.data?.generated_at ? (
-            <span className="text-label font-medium tabular-nums text-muted">
-              {relativeTime(steps.data.generated_at)}
-            </span>
-          ) : undefined
-        }
+        flush
+        title="Next steps"
+        aside={steps.data?.generated_at ? relativeTime(steps.data.generated_at) : undefined}
       >
         <RefreshOverlay show={refreshing} />
 
         {steps.isLoading && (
-          <div className="space-y-3">
+          <div className="space-y-3 px-4 pb-5 pt-1">
             <SkeletonLine className="h-4 w-2/3" />
             <SkeletonLine className="h-4 w-1/2" />
           </div>
@@ -102,107 +114,123 @@ export default function NextSteps({
         {!planner && (
           // The planner is not answering: keep the AI's suggestions visible
           // as text, clearly labelled as wording rather than actions.
-          <ul className="divide-y divide-line">
-            {aiActions.map((a, i) => (
-              <li key={i} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
-                <span className={`chip mt-0.5 shrink-0 ${URGENCY[a.urgency]?.pill ?? URGENCY.routine.pill}`}>
-                  {URGENCY[a.urgency]?.label ?? 'Routine'}
-                </span>
-                <span>
-                  <span className="block text-copy font-medium text-ink">{a.title}</span>
-                  {a.detail && (
-                    <span className="mt-0.5 block text-label font-medium text-muted">{a.detail}</span>
-                  )}
-                </span>
-              </li>
+          <div className="space-y-2">
+            {aiGrouped.map(({ urgency, items }) => (
+              <UrgencyGroup key={urgency} urgency={urgency}>
+                {items.map((a, i) => (
+                  <ListRow
+                    key={i}
+                    leading={<Tile family="teal" icon={<Sparkles />} />}
+                    title={a.title}
+                    wrapTitle
+                    subtitle={a.detail || undefined}
+                    subtitleLines={2}
+                  />
+                ))}
+              </UrgencyGroup>
             ))}
             {aiActions.length === 0 && (
-              <li className="text-label font-medium text-muted">No next steps are available yet.</li>
+              <p className="meta px-4 pb-4">No next steps are available yet.</p>
             )}
-          </ul>
+            {aiActions.length > 0 && (
+              <p className="meta px-4 pb-4 pt-2">
+                The planner is unavailable, so these are the AI's suggestions as wording only.
+              </p>
+            )}
+          </div>
         )}
 
         {planner && list.length > 0 && (
-          <ul className="divide-y divide-line">
-            {list.map((s) => {
-              const done = s.state.status !== 'open'
-              const wording = aiActions.find((a) => titlesOverlap(a.title, s.title))
-              return (
-                <li key={s.key} className="py-3 first:pt-0 last:pb-0">
-                  <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-                    <span className={`chip mt-0.5 shrink-0 ${URGENCY[s.urgency]?.pill ?? URGENCY.routine.pill}`}>
-                      {URGENCY[s.urgency]?.label ?? 'Routine'}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-copy font-medium text-ink">{s.title}</p>
-                      {s.detail && (
-                        <p className="mt-0.5 text-label font-medium text-muted">{s.detail}</p>
-                      )}
-                      {(s.source?.length > 0 || s.clicks) && (
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                          {s.source?.map((src) => (
-                            <span key={src} className="chip bg-soft text-muted" title={src}>
-                              {sourceLabel(src)}
-                            </span>
-                          ))}
-                          {s.clicks && (
-                            <span className="text-label font-medium text-muted">
-                              · {s.clicks === 1 ? 'one click' : 'two clicks'}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {wording && (
-                        <p className="mt-1 text-label font-medium text-muted">
-                          AI wording · {wording.title}
-                          {wording.detail ? ` — ${wording.detail}` : ''}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                      {done ? (
-                        <span className="text-label font-medium text-muted">
-                          {s.state.status === 'done' ? 'Done' : 'Dismissed'}
-                          {s.state.executed_at && <> · {relativeTime(s.state.executed_at)}</>}
-                        </span>
-                      ) : (
-                        <>
-                          <NextStepButton
-                            patientId={patientId}
-                            step={s}
-                            phone={phone}
-                            canText={canText}
-                            onMessage={setComposer}
-                            onOpen={onOpen}
-                          />
-                          <button
-                            type="button"
-                            className="cursor-pointer rounded-control px-2 py-1 text-label font-medium text-muted transition-colors duration-150 hover:bg-soft hover:text-ink disabled:text-disabled-ink"
-                            disabled={dismiss.isPending}
-                            onClick={() =>
-                              dismiss.mutate(s.key, {
-                                onSuccess: () => toast('Hidden for now', 'info'),
-                                onError: () => toast('Could not dismiss — try again', 'warning'),
-                              })
-                            }
-                          >
-                            Not now
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-
-        {planner && list.length > 0 && (
-          <p className="mt-2.5 border-t border-line pt-2 text-label font-medium text-muted">
-            Steps are rules-based — every button does exactly what it says. Executed steps stay
-            listed as done and are not re-suggested for a few days.
-          </p>
+          <div className="space-y-2">
+            {grouped.map(({ urgency, items }) => (
+              <UrgencyGroup key={urgency} urgency={urgency}>
+                {items.map((s, i) => {
+                  const done = s.state.status !== 'open'
+                  const wording = aiActions.find((a) => titlesOverlap(a.title, s.title))
+                  const meta = ACTION[s.action.type] ?? ACTION.acknowledge
+                  const Icon = meta.icon
+                  // Consecutive steps from one finding share a detail; say it once.
+                  const repeat = i > 0 && items[i - 1].detail === s.detail
+                  const sources = (s.source ?? []).map((src) => sourceLabel(src)).join(' · ')
+                  return (
+                    <ListRow
+                      key={s.key}
+                      leading={
+                        <Tile
+                          family={done ? 'teal' : meta.family}
+                          icon={done ? <CheckCheck /> : <Icon />}
+                        />
+                      }
+                      title={s.title}
+                      wrapTitle
+                      titleClassName={done ? '!text-secondary' : ''}
+                      subtitle={
+                        s.detail && !repeat ? (
+                          <span className="block max-w-[64ch]">{s.detail}</span>
+                        ) : undefined
+                      }
+                      subtitleLines={2}
+                      meta={
+                        sources || wording ? (
+                          <>
+                            {sources && <span className="block">{sources}</span>}
+                            {wording && (
+                              <span className="block">
+                                AI wording · {wording.title}
+                                {wording.detail ? ` — ${wording.detail}` : ''}
+                              </span>
+                            )}
+                          </>
+                        ) : undefined
+                      }
+                      aside={
+                        done ? (
+                          <>
+                            {s.state.status === 'done' ? 'Done' : 'Dismissed'}
+                            {s.state.executed_at && <> · {relativeTime(s.state.executed_at)}</>}
+                          </>
+                        ) : undefined
+                      }
+                      trailing={
+                        done ? undefined : (
+                          <>
+                            <NextStepButton
+                              patientId={patientId}
+                              step={s}
+                              phone={phone}
+                              canText={canText}
+                              onMessage={setComposer}
+                              onOpen={onOpen}
+                            />
+                            <Tooltip content="Not now">
+                              <button
+                                type="button"
+                                className="btn-icon btn-sm"
+                                aria-label={`Not now: ${s.title}`}
+                                disabled={dismiss.isPending}
+                                onClick={() =>
+                                  dismiss.mutate(s.key, {
+                                    onSuccess: () => toast('Hidden for now', 'info'),
+                                    onError: () => toast('Could not dismiss — try again', 'warning'),
+                                  })
+                                }
+                              >
+                                <X />
+                              </button>
+                            </Tooltip>
+                          </>
+                        )
+                      }
+                    />
+                  )
+                })}
+              </UrgencyGroup>
+            ))}
+            <p className="meta px-4 pb-4 pt-2">
+              Steps are rules-based, and every button does exactly what it says. Done steps stay
+              listed and are not suggested again for a few days.
+            </p>
+          </div>
         )}
       </SectionCard>
 
@@ -226,14 +254,61 @@ export default function NextSteps({
   )
 }
 
-/** The step's primary action. `compact` is the worklist row's variant: a
- *  small button that never lets the click reach the row's Link. */
+/** Buckets in Today → This week → Routine order; an unknown urgency is
+ *  routine. The planner's rank order is kept inside each bucket. */
+function groupByUrgency<T>(items: T[], key: (item: T) => Urgency | undefined) {
+  const bucket = (item: T): Urgency => {
+    const u = key(item)
+    return u && u in URGENCY ? u : 'routine'
+  }
+  return URGENCY_ORDER.map((urgency) => ({
+    urgency,
+    items: items.filter((item) => bucket(item) === urgency),
+  })).filter((g) => g.items.length > 0)
+}
+
+/** A subheader (dot + word; the word carries the meaning, R20) over an
+ *  embedded inset-hairline list. */
+function UrgencyGroup({ urgency, children }: { urgency: Urgency; children: ReactNode }) {
+  const u = URGENCY[urgency]
+  const id = useId()
+  return (
+    <div className="pt-1">
+      <h3
+        id={id}
+        className="flex items-center gap-2 px-4 pb-0.5 text-label font-medium tracking-label text-secondary"
+      >
+        <span aria-hidden className={`h-2 w-2 shrink-0 rounded-pill ${u.dot}`} />
+        {u.label}
+      </h3>
+      <ListGroup embedded inset="tile" aria-labelledby={id}>
+        {children}
+      </ListGroup>
+    </div>
+  )
+}
+
+/** The step's primary action: ONE capsule.
+ *
+ *  Patient page (default): a tinted capsule with the verb ("Message",
+ *  "Log call"); escalate is the danger capsule.
+ *
+ *  Worklist (`compact`): R4. Pass `labelFromStep` so the capsule's label IS
+ *  the step ("Nudge device sync", "Call today"), and `onTint` inside a
+ *  risk-tinted row so the capsule is panel-filled (R1). A drafted message
+ *  also gets "Send now" as a plain one-click text button — it stays in the
+ *  row; the clinical workflow does not change.
+ *
+ *  Every control carries `.above-stretch`, so it sits above a row's
+ *  stretched name link; none of them is ever nested inside that link. */
 export function NextStepButton({
   patientId,
   step,
   phone,
   canText,
   compact = false,
+  onTint = false,
+  labelFromStep = false,
   onMessage,
   onOpen,
 }: {
@@ -241,7 +316,12 @@ export function NextStepButton({
   step: NextStep
   phone: string | null
   canText?: boolean
+  /** The worklist row's variant: adds the one-click "Send now". */
   compact?: boolean
+  /** Inside a tinted row: panel-filled capsules (R1). */
+  onTint?: boolean
+  /** Label the capsule with the step itself (R4). */
+  labelFromStep?: boolean
   onMessage: (step: NextStep) => void
   onOpen: (target: string, step: NextStep) => void
 }) {
@@ -251,7 +331,10 @@ export function NextStepButton({
   const type = step.action.type
   const meta = ACTION[type] ?? ACTION.acknowledge
   const Icon = meta.icon
-  const label = stepActionLabel(step, canText ?? phone != null)
+  const textable = canText ?? phone != null
+  const tel = type === 'call' ? step.action.tel ?? phone : null
+  const verb = stepActionLabel(step, textable)
+  const stepLabel = shortStepLabel(step, textable)
   const busy = execute.isPending || complete.isPending
 
   const run = (e: MouseEvent) => {
@@ -292,31 +375,55 @@ export function NextStepButton({
     )
   }
 
-  const cls = compact
-    ? 'qa-btn !px-2 !py-1 text-label'
-    : 'qa-btn'
-  const tel = type === 'call' ? step.action.tel ?? phone : null
+  const capsule =
+    type === 'escalate'
+      ? onTint
+        ? 'btn-danger-on-tint'
+        : 'btn-danger'
+      : onTint
+        ? 'btn-on-tint'
+        : 'btn-tinted'
+  const cls = `${capsule} btn-sm above-stretch max-w-[16rem]`
+  const plain = 'btn-plain btn-sm above-stretch'
 
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      {tel && (
+  // With a dial link, the capsule dials and "Log call" is the plain
+  // follow-up; without one, the capsule logs the call.
+  if (tel) {
+    return (
+      <span className="inline-flex items-center gap-1">
         <a
           href={`tel:${tel}`}
           onClick={(e) => e.stopPropagation()}
           className={cls}
           title={`Call ${tel}`}
         >
-          <Phone size={compact ? 11 : 13} /> Call
+          <Phone aria-hidden />
+          <span className="truncate">{labelFromStep ? stepLabel : 'Call'}</span>
         </a>
-      )}
-      <button type="button" className={cls} disabled={busy} onClick={run} title={step.detail}>
-        <Icon size={compact ? 11 : 13} className={type === 'escalate' ? 'text-risk-high-ink' : undefined} />
-        {busy ? 'Working…' : label}
+        <button type="button" className={plain} disabled={busy} onClick={run} title={step.detail}>
+          {busy ? 'Working…' : 'Log call'}
+        </button>
+      </span>
+    )
+  }
+
+  const label = labelFromStep && type !== 'call' ? stepLabel : verb
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        className={cls}
+        disabled={busy}
+        onClick={run}
+        title={labelFromStep ? step.title : step.detail}
+      >
+        <Icon aria-hidden />
+        <span className="truncate">{busy ? 'Working…' : label}</span>
       </button>
       {compact && type === 'message' && step.action.prefill && (
         <button
           type="button"
-          className={`${cls} text-muted`}
+          className={plain}
           disabled={busy}
           onClick={sendNow}
           title="Send the drafted text as-is"

@@ -1,47 +1,102 @@
 import SwiftUI
 
+/// The first screen a patient sees, and the only one without a session.
+///
+/// A real `NavigationStack`: Welcome is the root, every step is pushed, and
+/// the system back button and edge swipe replace the old "Back" text
+/// buttons. The step dots ride in the bar's principal slot. Steps after
+/// enrolment hide the back button (a patient must not swipe back into a form
+/// that has already created their session).
+///
 /// Motion comes from `MPMotion` in Theme.swift. SwiftUI does NOT honour
 /// `accessibilityReduceMotion` for explicit animations, so every `.animation`
-/// here goes through `MPMotion.gated`.
+/// here goes through `MPMotion.gated`. Nothing repeats: the only moments are
+/// one-shot entrances on Welcome and Done.
+///
+/// CONTRAST (WCAG, 0.04045 threshold; scratchpad/i5contrast.py), light / dark.
+/// The steps sit on the ambient wash, whose densest point is (232,242,251) /
+/// (17,30,44):
+///   ink on wash 16.24 / 16.84 · body 6.38 / 6.51 · muted 4.77 / 4.81 ·
+///   brandInk 5.08 / 6.64 · white on the brand mark 4.60 (both)
+/// Everything else sits on `panel`: muted 5.39 / 4.91, lineStrong edge 3.83 /
+/// 5.67. Secondary text on the Health card (brandTint) is `body` via
+/// `.mpSecondary()` (6.24 / 5.51; R8).
 struct OnboardingFlow: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = OnboardingModel()
 
     var body: some View {
-        VStack(spacing: 0) {
-            if model.step != .welcome && model.step != .done {
-                StepDots(current: model.step)
-                    .padding(.top, 12)
-            }
-            Group {
-                switch model.step {
-                case .welcome: WelcomeStep(model: model)
-                case .hospital: HospitalStep(model: model)
-                case .path: PathStep(model: model)
-                case .identity: IdentityStep(model: model)
-                case .join: JoinStep(model: model)
-                case .verify: VerifyStep(model: model)
-                case .health: HealthStep(model: model)
-                case .wearable: WearableStep(model: model)
-                case .done: DoneStep(model: model)
+        @Bindable var model = model
+        NavigationStack(path: $model.route) {
+            WelcomeStep(model: model)
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: OnboardingModel.Step.self) { step in
+                    destination(step)
                 }
-            }
-            .transition(reduceMotion
-                ? AnyTransition.opacity
-                : AnyTransition.asymmetric(
-                    insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)))
-            .id(model.step)
         }
-        .animation(MPMotion.gated(MPMotion.enter, reduceMotion: reduceMotion), value: model.step)
-        // Every system control in the flow — both spinners, both DatePickers,
-        // the two Toggles, the quiet text buttons — takes this tint.
-        .tint(MP.brand)
-        .screen()
+        // R10: the flow's system controls include the back button now, which
+        // is text, so the tint is `brandInk`. The Toggles pass `MP.brand`
+        // themselves because their FILL must stay #1976D2.
+        .tint(MP.brandInk)
+    }
+
+    @ViewBuilder private func destination(_ step: OnboardingModel.Step) -> some View {
+        Group {
+            switch step {
+            case .welcome: WelcomeStep(model: model)
+            case .hospital: HospitalStep(model: model)
+            case .path: PathStep(model: model)
+            case .identity: IdentityStep(model: model)
+            case .join: JoinStep(model: model)
+            case .verify: VerifyStep(model: model)
+            case .health: HealthStep(model: model)
+            case .wearable: WearableStep(model: model)
+            case .done: DoneStep(model: model)
+            }
+        }
+        .ambientScreen()
+        .navigationTitle(Self.backTitle(step))
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(step.isPastEnrollment)
+        .toolbar { dotsItem(step) }
+    }
+
+    /// The dots in the principal slot. On iOS 26 the item opts out of the
+    /// shared glass capsule: the dots are their own shape, and a capsule
+    /// around them would read as a button.
+    @ToolbarContentBuilder private func dotsItem(_ step: OnboardingModel.Step) -> some ToolbarContent {
+        if step != .done {
+            if #available(iOS 26, *) {
+                ToolbarItem(placement: .principal) { StepDots(current: step) }
+                    .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .principal) { StepDots(current: step) }
+            }
+        }
+    }
+
+    /// The title is never drawn (the dots take the principal slot); it is
+    /// what the NEXT screen's back button says and what VoiceOver announces.
+    static func backTitle(_ step: OnboardingModel.Step) -> String {
+        switch step {
+        case .welcome: return "Welcome"
+        case .hospital: return "Hospital"
+        case .path: return "Joining"
+        case .identity: return "Your record"
+        case .join: return "About you"
+        case .verify: return "Code"
+        case .health: return "Health"
+        case .wearable: return "Wearables"
+        case .done: return "All set"
+        }
     }
 }
 
+/// Progress through the flow. Reached segments are `brand` FILL (4.29:1 light
+/// / 3.99:1 dark on canvas, a graphic); the rest are `lineStrong` (3.57 /
+/// 6.06), because an unreached dot still carries information. The current
+/// step is the long capsule. Hidden from VoiceOver: each screen's eyebrow
+/// ("Step 2 of 5") says the same thing in words.
 private struct StepDots: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let current: OnboardingModel.Step
@@ -50,24 +105,18 @@ private struct StepDots: View {
     var body: some View {
         HStack(spacing: 6) {
             ForEach(shown, id: \.rawValue) { s in
-                // `MP.pillShape`, not a bare `Capsule()`: one pill vocabulary.
-                // The unreached dots were `MP.track`, which is a slider
-                // trough and measures 1.18:1 on light canvas — six invisible
-                // dots, i.e. no step indicator at all in light mode. They
-                // carry information (how much of the flow is left), so they
-                // take the 3:1 graphic floor: `lineStrong` is 3.57:1 light
-                // and 6.06:1 dark on canvas. The reached dots stay `brand`
-                // as a FILL (4.29:1 light / 3.99:1 dark on canvas).
-                MP.pillShape
+                MP.capsuleShape
                     .fill(s.rawValue <= current.rawValue ? MP.brand : MP.lineStrong)
-                    .frame(width: s == current ? 22 : 8, height: 6)
+                    .frame(width: s == current ? 24 : 8, height: 8)
             }
         }
-        .animation(MPMotion.gated(MPMotion.state, reduceMotion: reduceMotion), value: current)
+        .animation(MPMotion.gated(MPMotion.layout, reduceMotion: reduceMotion), value: current)
         .accessibilityHidden(true)
     }
 }
 
+/// Every form step: eyebrow, a 600 display title, a lede, the content, and a
+/// footer pinned above the keyboard / home indicator.
 private struct StepScaffold<Content: View, Footer: View>: View {
     let eyebrow: String
     let title: String
@@ -76,58 +125,156 @@ private struct StepScaffold<Content: View, Footer: View>: View {
     @ViewBuilder var footer: () -> Footer
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(eyebrow).eyebrow()
-                    Text(title).title(MPSize.displayS)
-                    if let subtitle {
-                        // 16/400 on `body`, not 15 on `muted`: this is the
-                        // lede paragraph of the screen, so it takes the same
-                        // rung and the same tier as the Welcome and Done
-                        // paragraphs (6.73:1 light / 7.11:1 dark on canvas).
-                        Text(subtitle).font(.copyLarge).foregroundStyle(MP.body)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    content().padding(.top, 18)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(eyebrow).eyebrow()
+                Text(title).title(MPSize.displayS)
+                    .accessibilityAddTraits(.isHeader)
+                if let subtitle {
+                    // The lede: 16/400 on `body` (6.38 / 6.51 on the wash).
+                    Text(subtitle).mpFont(.copyLarge).foregroundStyle(MP.body)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.horizontal, 22)
-                .padding(.top, 28)
-                .padding(.bottom, 16)
+                content().padding(.top, 14)
             }
-            .scrollDismissesKeyboard(.interactively)
-            VStack(spacing: 10) { footer() }
-                .padding(.horizontal, 22)
-                .padding(.bottom, 18)
+            .padding(.horizontal, 22)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // A step with no footer (the hospital list, the path cards)
+            // gets no strip at all, so the list runs to the home indicator.
+            if Footer.self != EmptyView.self {
+                OnboardingFooter { footer() }
+            }
         }
     }
 }
 
-/// The quiet tertiary action — Back / Skip / Send a new code.
-///
-/// Components.swift has no recipe for this: `SecondaryButton` is a filled
-/// full-width control, and five of those stacked under a `PrimaryButton`
-/// would read as five commits. So it stays text, on `brandInk` (5.75:1 light
-/// / 6.78:1 dark on panel, 5.35 / 7.25 on canvas) at the 14/500 rung —
-/// never on `MP.brand`, which is 3.74:1 as text on dark panel.
-///
-/// The 44pt frame is the substance of it. These were bare `Button("Back")`
-/// labels roughly 17pt tall: under WCAG 2.5.8's 24x24 minimum and well under
-/// Apple's 44pt, on the screens where a patient is most likely to need to go
-/// back. The frame and `contentShape` are on the label, so the whole strip
-/// is the target rather than the glyphs.
+/// The pinned footer. The form scrolls UNDER it, and "Skip for now" is bare
+/// text, so the strip is opaque `canvas` (the wash only lives in the top
+/// 320pt) with a short canvas fade above it: nothing ever reads through the
+/// quiet action. The fade is decoration and carries no text.
+private struct OnboardingFooter<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 6) { content() }
+            .padding(.horizontal, 22)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+            .frame(maxWidth: .infinity)
+            .background(alignment: .top) {
+                MP.canvas
+                    .overlay(alignment: .top) {
+                        LinearGradient(colors: [MP.canvas.opacity(0), MP.canvas],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: 18)
+                            .offset(y: -18)
+                            .allowsHitTesting(false)
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                    .accessibilityHidden(true)
+            }
+    }
+}
+
+/// The quiet tertiary action — Skip / Send a new code. A full-width plain
+/// capsule: `brandInk` (5.08 / 6.64 on the wash) with a 44pt target and a
+/// soft press fill.
 private struct QuietAction: View {
     let title: String
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.copyMedium)
-                .foregroundStyle(MP.brandInk)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(Rectangle())
+        Button(title, action: action)
+            .buttonStyle(MPButtonStyle(kind: .plain, fullWidth: true))
+    }
+}
+
+/// A whole card as a button: the gated 0.97 press scale, nothing else.
+private struct CardPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        CardPressBody(configuration: configuration)
+    }
+}
+
+private struct CardPressBody: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        configuration.label
+            .scaleEffect(MPMotion.pressScale(configuration.isPressed, reduceMotion: reduceMotion))
+            .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion),
+                       value: configuration.isPressed)
+    }
+}
+
+/// A feature line in the Apple "welcome sheet" pattern: a category tile, a
+/// title and one sentence.
+private struct FeatureRow: View {
+    let icon: String
+    let family: MP.Category
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            IconTile(icon, family: family, size: 44)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                Text(detail).mpFont(.copy).foregroundStyle(MP.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
         }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// One-shot entrance: rise and fade in, staggered by `order`. Off under
+/// Reduce Motion (the content is simply there).
+private struct Entrance: ViewModifier {
+    let shown: Bool
+    let order: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let on = shown || reduceMotion
+        content
+            .opacity(on ? 1 : 0)
+            .offset(y: on ? 0 : 14)
+            .animation(MPMotion.gated(MPMotion.layout.delay(Double(order) * 0.07),
+                                      reduceMotion: reduceMotion),
+                       value: shown)
+    }
+}
+
+private extension View {
+    func entrance(_ shown: Bool, order: Int) -> some View {
+        modifier(Entrance(shown: shown, order: order))
+    }
+}
+
+/// The MedPull mark: the brand FILL with a white glyph (4.60:1 both modes).
+private struct BrandMark: View {
+    var side: CGFloat = 64
+    @ScaledMetric(relativeTo: .largeTitle) private var scale: CGFloat = 1
+
+    var body: some View {
+        let d = (side * min(scale, 1.4)).rounded()
+        RoundedRectangle(cornerRadius: d * 0.28, style: .continuous)
+            .fill(MP.brand)
+            .frame(width: d, height: d)
+            .overlay(
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: (d * 0.44).rounded(), weight: MPFont.systemWeight(for: .semibold)))
+                    .foregroundStyle(MP.onBrand)
+            )
+            .accessibilityHidden(true)
     }
 }
 
@@ -135,68 +282,71 @@ private struct QuietAction: View {
 
 private struct WelcomeStep: View {
     @Bindable var model: OnboardingModel
+    @State private var shown = false
 
     var body: some View {
-        // The Spacer/hero/Spacer/footer distribution is unchanged, but it now
-        // lives inside a ScrollView pinned to the viewport height, so it
-        // SCROLLS instead of clipping. At AX5 this screen used to push its
-        // own wordmark off the top and the disclaimer off the bottom, because
-        // 16pt body copy grows 2.81x on the `.body` curve and there was
-        // nowhere for it to go. `.basedOnSize` means no rubber-banding at the
-        // default size, so nothing changes until the content overflows.
+        // A ScrollView pinned to the viewport: nothing moves at the default
+        // size, and at AX5 the screen scrolls instead of clipping.
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Spacer(minLength: 24)
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(spacing: 10) {
-                            MP.controlShape
-                                .fill(MP.brand).frame(width: 38, height: 38)
-                                // `.white` was RIGHT here and the pixels do
-                                // not move: white on #1976D2 is 4.60:1 in
-                                // both modes and is the single sanctioned
-                                // white-on-brand pairing. Only the NAME
-                                // changes — `MP.onBrand` is #FFFFFF in both
-                                // modes — so a repalette of on-brand ink
-                                // reaches this glyph instead of skipping it.
-                                // It is emphatically not `brandInk`: that
-                                // would put 5.75:1 blue on a blue fill.
-                                .overlay(Image(systemName: "waveform.path.ecg")
-                                    .font(.ledeMedium)
-                                    .foregroundStyle(MP.onBrand))
-                            // 20/500 FROZEN, not `display(20)`: 20 is a UI
-                            // rung, and putting it on the fluid `.largeTitle`
-                            // curve made the wordmark a display element that
-                            // grew past the hero beside it.
-                            Text("MedPull").font(.subheadMedium).foregroundStyle(MP.ink)
+                    Spacer(minLength: 32)
+                    VStack(alignment: .leading, spacing: 18) {
+                        HStack(spacing: 12) {
+                            BrandMark(side: 56)
+                            // 20/500 frozen on the UI band: a wordmark, not a title.
+                            Text("MedPull").mpFont(.subheadSemibold).foregroundStyle(MP.ink)
                         }
-                        Text("Your health,\nin one place.").title(MPSize.displayM).lineSpacing(2)
-                        Text("Join your hospital, connect your watch, and your care team sees the whole picture — steps, sleep, heart, and how you're feeling. About two minutes to set up.")
-                            .font(.copyLarge).foregroundStyle(MP.body).lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
+                        .entrance(shown, order: 0)
+                        .accessibilityElement(children: .combine)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Hi there.\nLet's get you set up.")
+                                .title(MPSize.displayM)
+                                .accessibilityAddTraits(.isHeader)
+                            Text("Your hospital, your watch and your care team, together in one place. It takes about two minutes.")
+                                .mpFont(.lede).foregroundStyle(MP.body).lineSpacing(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .entrance(shown, order: 1)
+
+                        VStack(alignment: .leading, spacing: 18) {
+                            FeatureRow(icon: "figure.walk", family: .teal,
+                                       title: "Your everyday signals",
+                                       detail: "Steps, sleep and heart rate flow in from Apple Health or your wearable. No typing.")
+                                .entrance(shown, order: 2)
+                            FeatureRow(icon: "text.bubble.fill", family: .blue,
+                                       title: "Quick check-ins",
+                                       detail: "Answer a question by text or right here. A few taps, not a form.")
+                                .entrance(shown, order: 3)
+                            FeatureRow(icon: "person.2.fill", family: .indigo,
+                                       title: "A care team that sees it",
+                                       detail: "Your nurses and doctors see the same picture you do, and reach out when something changes.")
+                                .entrance(shown, order: 4)
+                        }
+                        .padding(.top, 10)
                     }
-                    .padding(.horizontal, 22)
-                    Spacer(minLength: 24)
-                    VStack(spacing: 10) {
+                    .padding(.horizontal, 24)
+                    Spacer(minLength: 28)
+                    VStack(spacing: 12) {
                         PrimaryButton(title: "Get started", icon: "arrow.right") { model.go(.hospital) }
-                        // THE DISCLAIMER. It was `MP.faint` at 2.409:1 on
-                        // canvas — a WCAG 1.4.3 failure on the one line of
-                        // legal copy in the app, and `faint` is non-text by
-                        // definition. `muted` is 5.03:1 light / 5.24:1 dark
-                        // on canvas. Centred because the frame it sits in is
-                        // full-width, so a wrapped second line used to hang
-                        // ragged under a centred first line.
+                        // THE DISCLAIMER: `muted` (4.77 / 4.81 at the wash's
+                        // densest; this line sits well below it, on canvas,
+                        // 5.03 / 5.24). Never `faint`.
                         Text("Monitoring signals for your care team — not a diagnosis.")
-                            .font(.label).foregroundStyle(MP.muted)
+                            .mpFont(.label).foregroundStyle(MP.muted)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
                     }
+                    .entrance(shown, order: 5)
                     .padding(.horizontal, 22).padding(.bottom, 18)
                 }
                 .frame(minWidth: proxy.size.width, minHeight: proxy.size.height, alignment: .leading)
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+        .ambientScreen(height: 420)
+        .onAppear { shown = true }
     }
 }
 
@@ -206,63 +356,146 @@ private struct HospitalStep: View {
 
     var body: some View {
         StepScaffold(eyebrow: "Step 1 of 5", title: "Which hospital are you with?",
-                     subtitle: "Your health portfolio is shared with this hospital's care team.") {
-            VStack(spacing: 12) {
-                // EVERY PLACEHOLDER ON THIS SCREEN CARRIES A `prompt:`.
-                // SwiftUI's default placeholder is `UIColor.placeholderText`,
-                // which I measured off the screenshot at #C5C5C7 on #FFFFFF
-                // = 1.72:1 — a 1.4.3 failure on the first thing a patient
-                // types into. `FieldStyle` has no hook for it (SwiftUI gives
-                // the style no access to the prompt), so the call site is
-                // where it has to be set, and `muted` is the placeholder tier
-                // (5.39:1 on panel light / 4.91:1 dark) — never `faint`.
-                TextField("Search hospitals", text: $model.hospitalQuery,
-                          prompt: Text("Search hospitals").foregroundColor(MP.muted))
-                    .textFieldStyle(FieldStyle())
-                    .autocorrectionDisabled()
+                     subtitle: "Your care team there will see what you share. You can pick by name, system or city.") {
+            VStack(spacing: 14) {
+                SearchCapsule(text: $model.hospitalQuery, placeholder: "Search hospitals")
                 if model.hospitals.isEmpty {
                     if let error = model.error { ErrorBanner(text: error) } else { ProgressView().frame(maxWidth: .infinity).padding() }
-                }
-                // `Card(padding: 0)` instead of a hand-rolled
-                // fill + `strokeBorder` on the deprecated `MP.cardRadius`:
-                // same geometry, one edge, and the surface radius comes from
-                // the token rather than from a name that now warns.
-                Card(padding: 0) {
-                    VStack(spacing: 0) {
-                        ForEach(model.filteredHospitals) { h in
-                            Button {
-                                model.hospital = h
-                                model.candidates = []
-                                model.selected = nil
-                                model.go(.path)
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "building.2.fill")
-                                        .font(.copyLarge)
-                                        .foregroundStyle(MP.brandInk)
-                                        .frame(width: 22)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(h.name).font(.copyLargeMedium).foregroundStyle(MP.ink)
-                                        Text([h.system, "\(h.city), \(h.state)"].compactMap { $0 }.joined(separator: MP.dot))
-                                            .font(.label).foregroundStyle(MP.muted)
+                } else if model.filteredHospitals.isEmpty {
+                    Card {
+                        EmptyRow(icon: "building.2", title: "No hospitals match",
+                                 detail: "Try the city, or just part of the name.")
+                    }
+                } else {
+                    Card(padding: 0) {
+                        VStack(spacing: 0) {
+                            ForEach(model.filteredHospitals) { h in
+                                Button {
+                                    model.hospital = h
+                                    model.candidates = []
+                                    model.selected = nil
+                                    model.go(.path)
+                                } label: {
+                                    HStack(spacing: 14) {
+                                        IconTile("building.2.fill", family: .blue)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(h.name).mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                                                .multilineTextAlignment(.leading)
+                                            Text([h.system, "\(h.city), \(h.state)"].compactMap { $0 }.joined(separator: MP.dot))
+                                                .mpFont(.label).foregroundStyle(MP.muted)
+                                                .multilineTextAlignment(.leading)
+                                        }
+                                        Spacer(minLength: 8)
+                                        Image(systemName: "chevron.right")
+                                            .font(.systemGlyphs(13, weight: .semibold))
+                                            .foregroundStyle(MP.muted)
+                                            .accessibilityHidden(true)
                                     }
-                                    Spacer()
-                                    Image(systemName: "chevron.right").font(.copyMedium).foregroundStyle(MP.muted)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
                                 }
-                                .padding(.vertical, 13)
-                                .contentShape(Rectangle())
+                                .buttonStyle(.mpRow)
+                                if h.id != model.filteredHospitals.last?.id { InsetDivider() }
                             }
-                            .buttonStyle(.plain)
-                            if h.id != model.filteredHospitals.last?.id { Divider().overlay(MP.line) }
                         }
                     }
-                    .padding(.horizontal, 14)
+                    .clipShape(MP.surfaceShape)
                 }
             }
         } footer: {
             EmptyView()
         }
         .task { await model.loadHospitals(api: app.api) }
+    }
+}
+
+/// A capsule search field. Not `.searchable`: the system search field's
+/// placeholder is `placeholderText`, about 1.7:1, and cannot be recoloured,
+/// so this draws the same shape with a `muted` prompt (5.39 / 4.91 on panel)
+/// and keeps the `lineStrong` edge an empty field needs (3.83 / 5.67).
+private struct SearchCapsule: View {
+    @Binding var text: String
+    let placeholder: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.systemGlyphs(15, weight: .medium))
+                .foregroundStyle(MP.muted)
+                .accessibilityHidden(true)
+            TextField(placeholder, text: $text,
+                      prompt: Text(placeholder).foregroundStyle(MP.muted))
+                .mpFont(.copyLarge)
+                .foregroundStyle(MP.ink)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.systemGlyphs(17, weight: .regular))
+                        .foregroundStyle(MP.muted)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Clear search")
+                .padding(.trailing, -12)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 48)
+        .background(MP.capsuleShape.fill(MP.panel))
+        .overlay(MP.capsuleShape.strokeBorder(MP.lineStrong, lineWidth: 1))
+    }
+}
+
+private struct PathStep: View {
+    @Bindable var model: OnboardingModel
+
+    var body: some View {
+        StepScaffold(eyebrow: "Step 2 of 5", title: "How are you joining?",
+                     subtitle: "\(model.hospital?.name ?? "Your hospital") looks after people with and without a surgery. Either way, what your care team sees is what you see here.") {
+            VStack(spacing: 12) {
+                pathCard(icon: "person.text.rectangle.fill", family: .blue,
+                         title: "My care team set me up",
+                         detail: "The clinic already has a record for you, or you've used MedPull before. We'll find it so their messages reach this phone.") {
+                    model.choose(.findRecord)
+                }
+                pathCard(icon: "sparkles", family: .violet,
+                         title: "I'm new here",
+                         detail: "Start a record now, with or without a surgery. Your activity, sleep and vitals build a picture your care team can see.") {
+                    model.choose(.joinGeneral)
+                }
+            }
+        } footer: {
+            EmptyView()
+        }
+    }
+
+    private func pathCard(icon: String, family: MP.Category, title: String, detail: String,
+                          action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Card {
+                HStack(alignment: .top, spacing: 14) {
+                    IconTile(icon, family: family, size: 44)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title).mpFont(.lede.weight(.semibold)).foregroundStyle(MP.ink)
+                        Text(detail).mpFont(.copy).mpSecondary().lineSpacing(2)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.systemGlyphs(13, weight: .semibold))
+                        .foregroundStyle(MP.muted)
+                        .padding(.top, 14)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(MP.surfaceShape)
+        }
+        .buttonStyle(CardPressStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -273,9 +506,11 @@ private struct IdentityStep: View {
     enum Field { case name, phone }
 
     var body: some View {
-        StepScaffold(eyebrow: "Step 3 of 5", title: "Find your record",
-                     subtitle: "Your name as it's on file at \(model.hospital?.name ?? "the hospital"), and the mobile number we can text. A number the clinic already has finds you on its own.") {
+        StepScaffold(eyebrow: "Step 3 of 5", title: "Let's find your record",
+                     subtitle: "Your name as it's on file at \(model.hospital?.name ?? "the hospital"), and a mobile number we can text. If the clinic already has your number, that finds you on its own.") {
             VStack(spacing: 14) {
+                // Every placeholder carries a `muted` prompt: SwiftUI's own
+                // placeholder colour is 1.72:1.
                 TextField("Full name", text: $model.name,
                           prompt: Text("Full name").foregroundColor(MP.muted))
                     .textFieldStyle(FieldStyle())
@@ -291,73 +526,24 @@ private struct IdentityStep: View {
 
                 if model.canSearch {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            // Demoted from `.eyebrow()`: the uppercase
-                            // budget is ONE element per screen and the
-                            // scaffold's "Step 3 of 5" is spending it. Same
-                            // rung and tier as an eyebrow, sentence case.
+                        HStack(spacing: 8) {
+                            // Sentence case: "Step 3 of 5" spends the
+                            // screen's one uppercase element.
                             Text(model.searching ? "Looking you up…" : model.candidates.isEmpty ? "No match yet" : "Is this you?")
-                                .font(.labelMedium).foregroundStyle(MP.muted)
+                                .mpFont(.labelMedium).foregroundStyle(MP.muted)
                             if model.searching { ProgressView().controlSize(.small) }
                         }
                         ForEach(model.candidates) { c in
-                            Button { model.selected = c } label: {
-                                HStack(spacing: 12) {
-                                    // Unselected is `lineStrong`, not
-                                    // `faint`: an empty radio is the only cue
-                                    // the control exists, so 1.4.11's 3:1
-                                    // applies and `faint` is 2.59:1 on panel.
-                                    // 3.83:1 light / 5.67:1 dark. Selected is
-                                    // `brandInk` (4.96:1 light / 5.62:1 dark
-                                    // on the tint it then sits on), never
-                                    // `brand`, which is 3.10:1 there.
-                                    Image(systemName: model.selected?.id == c.id ? "checkmark.circle.fill" : "circle")
-                                        .font(.subhead)
-                                        .foregroundStyle(model.selected?.id == c.id ? MP.brandInk : MP.lineStrong)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(c.displayName).font(.copyLargeMedium).foregroundStyle(MP.ink)
-                                        // `body`, not `muted`: when this row
-                                        // is selected the ground becomes
-                                        // `brandTint`, where `muted` measures
-                                        // 4.07:1 dark — an AA failure that
-                                        // only appears in one state of one
-                                        // mode. `body` is 6.24:1 light /
-                                        // 5.51:1 dark on the tint and
-                                        // 7.22 / 6.65 on panel.
-                                        Text("\(c.procedureDisplay)\(MP.dot)\(c.surgeryMonth)").font(.label).foregroundStyle(MP.body)
-                                    }
-                                    Spacer()
-                                    if c.phoneMatch { StatusPill(text: "Number matches", tone: .low) }
-                                }
-                                .padding(14)
-                                // Selection changes the FILL as well as the
-                                // stroke, so it is never colour alone, and
-                                // the stroke stays 1pt in both states — the
-                                // 1.5pt selected border moved the row's
-                                // content by half a point as it was chosen.
-                                .background(MP.surfaceShape.fill(model.selected?.id == c.id ? MP.brandTint : MP.panel))
-                                .overlay(MP.surfaceShape
-                                    .strokeBorder(model.selected?.id == c.id ? MP.brand : MP.line, lineWidth: 1))
-                            }
-                            .buttonStyle(.plain)
+                            candidateRow(c)
                         }
                         if !model.searching && model.candidates.isEmpty {
-                            Text("Check the spelling, or ask the clinic which name they enrolled you under. If they have your number, typing it above finds you too.")
-                                .font(.copy).foregroundStyle(MP.muted)
+                            Text("Check the spelling, or ask the clinic which name they used. If they have your number, typing it above finds you too.")
+                                .mpFont(.copy).foregroundStyle(MP.body)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Button {
+                            Button("Not on the list? Join as a new patient") {
                                 model.choose(.joinGeneral)
-                            } label: {
-                                // The inline twin of `QuietAction`, left
-                                // leading-aligned because it sits in a
-                                // leading column rather than a footer. Same
-                                // rung, same `brandInk`, same 44pt target.
-                                Text("Not on the list? Join as a new patient instead")
-                                    .font(.copyMedium)
-                                    .foregroundStyle(MP.brandInk)
-                                    .frame(minHeight: 44, alignment: .leading)
-                                    .contentShape(Rectangle())
                             }
+                            .buttonStyle(MPButtonStyle(kind: .plain, bare: true))
                         }
                     }
                     .padding(.top, 6)
@@ -369,7 +555,6 @@ private struct IdentityStep: View {
                           loading: model.loading, disabled: !model.canEnroll) {
                 Task { await model.enroll(api: app.api, app: app) }
             }
-            QuietAction(title: "Back") { model.go(.path) }
         }
         .task(id: "\(model.name)|\(model.phone)") {
             try? await Task.sleep(for: .milliseconds(350))
@@ -377,6 +562,40 @@ private struct IdentityStep: View {
             await model.search(api: app.api)
         }
         .onAppear { focus = .name }
+        .mpErrorFeedback(model.error)
+    }
+
+    private func candidateRow(_ c: Candidate) -> some View {
+        let isSelected = model.selected?.id == c.id
+        return Button { model.selected = c } label: {
+            HStack(spacing: 12) {
+                // Unselected: `lineStrong` ring (3.83 / 5.67 on panel), the
+                // only cue the control exists. Selected: `brandInk` on the
+                // tint it then sits on (4.96 / 5.62).
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.systemGlyphs(22, weight: .regular))
+                    .foregroundStyle(isSelected ? MP.brandInk : MP.lineStrong)
+                    .contentTransition(.symbolEffect(.replace))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(c.displayName).mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                    // `body`: the ground becomes `brandTint` when selected,
+                    // where `muted` is 4.07 dark (R8). 6.24 / 5.51 there.
+                    Text("\(c.procedureDisplay)\(MP.dot)\(c.surgeryMonth)")
+                        .mpFont(.label).foregroundStyle(MP.body)
+                }
+                Spacer(minLength: 8)
+                if c.phoneMatch { StatusPill(text: "Number matches", tone: .low) }
+            }
+            .padding(14)
+            // Selection changes the fill AND the stroke colour, never colour
+            // alone (the glyph changes too), at a constant 1pt width.
+            .background(MP.surfaceShape.fill(isSelected ? MP.brandTint : MP.panel))
+            .overlay(MP.surfaceShape.strokeBorder(isSelected ? MP.brand : MP.line, lineWidth: 1))
+            .contentShape(MP.surfaceShape)
+        }
+        .buttonStyle(CardPressStyle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .sensoryFeedback(.selection, trigger: isSelected) { _, new in new }
     }
 }
 
@@ -386,26 +605,15 @@ private struct VerifyStep: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        StepScaffold(eyebrow: "Step 4 of 5", title: "Enter the code we texted",
-                     subtitle: "Sent to \(model.phoneMasked ?? "your number"). It expires in 10 minutes.") {
+        StepScaffold(eyebrow: "Step 4 of 5", title: "Check your texts",
+                     subtitle: "We sent a code to \(model.phoneMasked ?? "your number"). It's good for 10 minutes.") {
             VStack(spacing: 14) {
+                // `FieldStyle` sets the font on the configuration, so a
+                // monospaced override here would be inert.
                 TextField("6-digit code", text: $model.code,
                           prompt: Text("6-digit code").foregroundColor(MP.muted))
                     .textFieldStyle(FieldStyle())
                     .keyboardType(.numberPad).textContentType(.oneTimeCode)
-                    // THE MONOSPACE ESCAPE IS GONE FROM HERE BECAUSE IT WAS
-                    // INERT, NOT BECAUSE A CODE DOESN'T WANT ONE. This line
-                    // was `.font(.system(size: 24, weight: .semibold, design:
-                    // .monospaced))` — off the ladder and above the weight
-                    // ceiling — and it never drew: `FieldStyle` applies
-                    // `.font(.copyLarge)` directly to the configuration,
-                    // which beats any font inherited from outside the style.
-                    // Measured on the screenshot with the code prefilled,
-                    // glyph advances came out 8.67 / 6.33 / 9.33 / 9.67 /
-                    // 10.33pt — proportional Instrument Sans 16, not a
-                    // monospace column. Keeping a dead `.font(.figuresSubhead)`
-                    // here would just be the same lie in newer words; the
-                    // hook has to come from Components.swift (see `handoff`).
                     .focused($focused)
                 if let error = model.error { ErrorBanner(text: error) }
             }
@@ -416,6 +624,7 @@ private struct VerifyStep: View {
             QuietAction(title: "Send a new code") { Task { await model.resend(api: app.api, app: app) } }
         }
         .onAppear { focused = true }
+        .mpErrorFeedback(model.error)
     }
 }
 
@@ -425,40 +634,42 @@ private struct HealthStep: View {
     @State private var working = false
     @State private var failure: String?
 
+    private let reads: [(icon: String, family: MP.Category, text: String)] = [
+        ("figure.walk", .teal, "Steps, distance and stairs"),
+        ("bed.double.fill", .indigo, "Sleep and resting heart rate"),
+        ("figure.walk.motion", .blue, "Walking speed, step length and steadiness"),
+        ("flame.fill", .violet, "Workouts and exercise minutes"),
+    ]
+
     var body: some View {
         StepScaffold(eyebrow: "Step 5 of 5", title: "Connect Apple Health",
-                     subtitle: "One tap. Your steps, sleep, heart rate and walking data flow into your portfolio automatically — no typing anything in.") {
+                     subtitle: "One tap, and your activity, sleep and heart data fill in on their own. Nothing to type.") {
             VStack(spacing: 12) {
-                Card(tint: true) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        // Split so the glyph can be `brandInk` while the
-                        // words stay `ink`: a single `foregroundStyle` on a
-                        // `Label` paints both, and a solid black square
-                        // outweighed every checkmark under it.
-                        Label {
-                            Text("What we read").foregroundStyle(MP.ink)
-                        } icon: {
-                            Image(systemName: "heart.text.square.fill").foregroundStyle(MP.brandInk)
-                        }
-                        .font(.copyMedium)
-                        ForEach(["Steps, distance and stairs", "Sleep and resting heart rate", "Walking speed, step length and steadiness", "Workouts and exercise minutes"], id: \.self) { line in
-                            HStack(alignment: .top, spacing: 8) {
-                                // `brandInk` on the tint: 4.96:1 light /
-                                // 5.62:1 dark, where `brand` itself is
-                                // 3.10:1 dark. `.bold` was a weight above
-                                // the 500 ceiling that only rendered because
-                                // `MPFont.name(for:)` clamps it.
-                                Image(systemName: "checkmark").font(.labelMedium).foregroundStyle(MP.brandInk).padding(.top, 3)
-                                Text(line).font(.copy).foregroundStyle(MP.body)
+                Card(padding: 0, tint: true) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        CardHeader("What we read")
+                        ForEach(Array(reads.enumerated()), id: \.offset) { i, r in
+                            HStack(spacing: 14) {
+                                // On the brand tint a blue tile would vanish,
+                                // so the tiles sit on a panel chip here.
+                                IconTile(r.icon, family: r.family)
+                                    .background(MP.tileShape.fill(MP.panel).padding(-2))
+                                Text(r.text).mpFont(.copy).foregroundStyle(MP.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 9)
+                            .accessibilityElement(children: .combine)
+                            if i < reads.count - 1 { InsetDivider() }
                         }
-                        // `body` at the 12 rung, not `muted`: this sits on
-                        // `brandTint` (Card(tint: true)), where `muted` is
-                        // 4.07:1 in dark. Size carries the demotion instead
-                        // of colour — 6.24:1 light / 5.51:1 dark.
+                        // `.mpSecondary()` is `body` on this tint (R8).
                         Text("We never write to Health. Turn any type off on the next screen and we simply won't read it.")
-                            .font(.label).foregroundStyle(MP.body).padding(.top, 4)
+                            .mpFont(.label).mpSecondary()
                             .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            .padding(.bottom, 16)
                     }
                 }
                 if !(app.me?.features.appleHealth ?? true) {
@@ -466,10 +677,16 @@ private struct HealthStep: View {
                 }
                 if let failure { ErrorBanner(text: failure) }
                 if app.health.state == .connected {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.seal.fill").font(.copyLarge).foregroundStyle(MP.riskLow)
-                        Text("Connected — first sync is running").font(.copyMedium).foregroundStyle(MP.ink)
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.systemGlyphs(20, weight: .semibold))
+                            .foregroundStyle(MP.riskLow)
+                            .accessibilityHidden(true)
+                        Text("Connected. Your first sync is running.")
+                            .mpFont(.copyMedium).foregroundStyle(MP.ink)
                     }
+                    .padding(.top, 4)
+                    .transition(.opacity)
                 }
             }
         } footer: {
@@ -492,6 +709,8 @@ private struct HealthStep: View {
                 QuietAction(title: "Skip for now") { model.go(.wearable) }
             }
         }
+        .mpCompletionFeedback(app.health.state == .connected)
+        .mpErrorFeedback(failure)
     }
 }
 
@@ -502,24 +721,24 @@ private struct WearableStep: View {
     @State private var working = false
     @State private var failure: String?
 
+    private let brands = ["Oura", "Garmin", "WHOOP", "Fitbit", "Withings", "Polar"]
+
     var body: some View {
         StepScaffold(eyebrow: "Almost done", title: "Wear something else?",
-                     subtitle: "Oura, Garmin, WHOOP, Fitbit, Withings, Polar — sign in once and it syncs on its own. Apple Watch is already covered by Health.") {
-            VStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    ForEach(["Oura", "Garmin", "WHOOP", "Fitbit", "Withings"], id: \.self) { b in
-                        // A non-interactive tag: 12/500 on `body` (6.37:1
-                        // light / 6.21:1 dark on `soft`), `MP.pillShape`
-                        // rather than a bare `Capsule()`, and a `line`
-                        // hairline so the pill is still a pill on light
-                        // canvas, where `soft` is only 1.13:1 against it.
-                        // One edge, no shadow.
-                        Text(b).font(.labelMedium).foregroundStyle(MP.body)
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(MP.pillShape.fill(MP.soft))
-                            .overlay(MP.pillShape.strokeBorder(MP.line, lineWidth: 1))
+                     subtitle: "Sign in once and it syncs on its own. Apple Watch is already covered by Health.") {
+            VStack(alignment: .leading, spacing: 12) {
+                // Non-interactive tags: 14/500 `body` on `panel` (7.22 /
+                // 6.65) with a `line` edge, so they read as labels, not chips.
+                BrandFlow(spacing: 8) {
+                    ForEach(brands, id: \.self) { b in
+                        Text(b).mpFont(.copyMedium).foregroundStyle(MP.body)
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(MP.capsuleShape.fill(MP.panel))
+                            .overlay(MP.capsuleShape.strokeBorder(MP.line, lineWidth: 1))
                     }
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Works with \(brands.joined(separator: ", "))")
                 if let failure { ErrorBanner(text: failure) }
             }
         } footer: {
@@ -545,84 +764,135 @@ private struct WearableStep: View {
                 model.go(.done)
             }
         }
+        .mpErrorFeedback(failure)
+    }
+}
+
+/// A wrapping row of tags (iOS 16 `Layout`), so six brand names never
+/// overflow a narrow or AX-sized screen.
+private struct BrandFlow: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        let width = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for i in row.indices {
+                let size = subviews[i].sizeThatFits(.init(width: bounds.width, height: nil))
+                subviews[i].place(at: CGPoint(x: x, y: y), proposal: .init(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = [Row()]
+        for i in subviews.indices {
+            let size = subviews[i].sizeThatFits(.init(width: width, height: nil))
+            let needed = rows[rows.count - 1].indices.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
+            if needed > width, !rows[rows.count - 1].indices.isEmpty {
+                rows.append(Row())
+            }
+            var r = rows[rows.count - 1]
+            r.width = r.indices.isEmpty ? size.width : r.width + spacing + size.width
+            r.height = max(r.height, size.height)
+            r.indices.append(i)
+            rows[rows.count - 1] = r
+        }
+        return rows
     }
 }
 
 private struct DoneStep: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var model: OnboardingModel
+    @State private var shown = false
+    @ScaledMetric(relativeTo: .largeTitle) private var discSide: CGFloat = 88
 
     var body: some View {
-        // Same viewport-pinned ScrollView as Welcome, for the same reason:
-        // this screen is Spacer/content/Spacer with no scroll region, and at
-        // AX5 the paragraph alone is taller than the phone.
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer(minLength: 24)
-                    VStack(alignment: .leading, spacing: 14) {
-                        // 44 is a display rung, so it goes on the display
-                        // band's curve (1.69x at AX5) rather than the UI
-                        // band's 2.81x.
-                        Image(systemName: "checkmark.circle.fill").font(.displayL).foregroundStyle(MP.riskLow)
-                        Text("You're set, \(app.me?.patient.firstName ?? "there").").title(MPSize.displayM)
-                        Text(app.me?.patient.isRecovery == true
-                             ? "When a task is ready we'll text you. Do it right there in Messages, or open the app — either way your care team sees it."
-                             : "Your portfolio fills in as your data arrives. When your care team asks for something we'll text you, and you can answer right there or in the app.")
-                            .font(.copyLarge).foregroundStyle(MP.body).lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 18) {
+                        // The brand disc with a white check (4.60:1): a
+                        // celebration, not a risk state, so no risk green. It
+                        // bounces ONCE on arrival (off under Reduce Motion).
+                        let d = min(discSide, 132)
+                        Circle()
+                            .fill(MP.brand)
+                            .frame(width: d, height: d)
+                            .overlay(
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: (d * 0.42).rounded(), weight: MPFont.systemWeight(for: .semibold)))
+                                    .foregroundStyle(MP.onBrand)
+                                    .symbolEffect(.bounce, options: .nonRepeating, value: reduceMotion ? false : shown)
+                            )
+                            .scaleEffect(shown || reduceMotion ? 1 : 0.6)
+                            .opacity(shown || reduceMotion ? 1 : 0)
+                            .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion), value: shown)
+                            .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("You're all set, \(app.me?.patient.firstName ?? "there").")
+                                .title(MPSize.displayM)
+                                .accessibilityAddTraits(.isHeader)
+                            Text("Welcome to MedPull. Here's what happens next.")
+                                .mpFont(.lede).foregroundStyle(MP.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .entrance(shown, order: 1)
+
+                        VStack(alignment: .leading, spacing: 18) {
+                            if app.me?.patient.isRecovery == true {
+                                FeatureRow(icon: "message.fill", family: .blue,
+                                           title: "We'll text you",
+                                           detail: "When a task is ready, answer right in Messages or open the app. Either way your care team sees it.")
+                                    .entrance(shown, order: 2)
+                                FeatureRow(icon: "checklist", family: .teal,
+                                           title: "Small steps each day",
+                                           detail: "Exercises, walks and quick check-ins, sized for where you are in your recovery.")
+                                    .entrance(shown, order: 3)
+                            } else {
+                                FeatureRow(icon: "chart.line.uptrend.xyaxis", family: .teal,
+                                           title: "Your picture fills in",
+                                           detail: "Your portfolio grows as your data arrives. Give it a day or two.")
+                                    .entrance(shown, order: 2)
+                                FeatureRow(icon: "message.fill", family: .blue,
+                                           title: "We'll text you",
+                                           detail: "When your care team asks for something, answer by text or right here in the app.")
+                                    .entrance(shown, order: 3)
+                            }
+                            FeatureRow(icon: "waveform", family: .indigo,
+                                       title: "Talk any time",
+                                       detail: "Tell MedPull how you're doing in your own words. Anything important goes to your care team.")
+                                .entrance(shown, order: 4)
+                        }
+                        .padding(.top, 6)
                     }
-                    .padding(.horizontal, 22)
-                    Spacer(minLength: 24)
+                    .padding(.horizontal, 24)
+                    Spacer(minLength: 28)
                     PrimaryButton(title: "Open MedPull", icon: "arrow.right") { app.enterHome() }
                         .padding(.horizontal, 22).padding(.bottom, 18)
+                        .entrance(shown, order: 5)
                 }
                 .frame(minWidth: proxy.size.width, minHeight: proxy.size.height, alignment: .leading)
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-    }
-}
-
-private struct PathStep: View {
-    @Bindable var model: OnboardingModel
-
-    var body: some View {
-        StepScaffold(eyebrow: "Step 2 of 5", title: "How are you joining?",
-                     subtitle: "\(model.hospital?.name ?? "Your hospital") follows patients with and without a surgery. Either way, one record: what your care team sees is what you see here.") {
-            VStack(spacing: 12) {
-                pathCard(icon: "person.text.rectangle", title: "My care team set me up",
-                         detail: "The clinic already has a record for you (or you've used MedPull before). Find it so their messages and tasks reach this phone.") {
-                    model.choose(.findRecord)
-                }
-                pathCard(icon: "person.crop.circle.badge.plus", title: "I'm new here",
-                         detail: "Create your record now — with or without a surgery. Your activity, sleep and vitals build a portfolio your care team can see.") {
-                    model.choose(.joinGeneral)
-                }
-            }
-        } footer: {
-            QuietAction(title: "Different hospital") { model.go(.hospital) }
-        }
-    }
-
-    private func pathCard(icon: String, title: String, detail: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Card {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: icon).font(.subheadMedium).foregroundStyle(MP.brandInk)
-                        .frame(width: 40, height: 40)
-                        .background(MP.controlShape.fill(MP.brandTint))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title).font(.copyLargeMedium).foregroundStyle(MP.ink)
-                        Text(detail).font(.copy).foregroundStyle(MP.muted).lineSpacing(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.copyMedium).foregroundStyle(MP.muted).padding(.top, 10)
-                }
-            }
-        }
-        .buttonStyle(.plain)
+        .onAppear { shown = true }
+        .sensoryFeedback(.success, trigger: shown) { old, new in !old && new }
     }
 }
 
@@ -639,8 +909,8 @@ private struct JoinStep: View {
     }
 
     var body: some View {
-        StepScaffold(eyebrow: "Step 3 of 5", title: "About you",
-                     subtitle: "This creates your record at \(model.hospital?.name ?? "the hospital"). If you had an operation, add it and we follow your recovery; otherwise we follow your everyday signals.") {
+        StepScaffold(eyebrow: "Step 3 of 5", title: "Tell us about you",
+                     subtitle: "This starts your record at \(model.hospital?.name ?? "the hospital"). Had an operation? Add it and we'll follow your recovery. If not, we'll follow your everyday signals.") {
             VStack(spacing: 14) {
                 TextField("Full name", text: $model.name,
                           prompt: Text("Full name").foregroundColor(MP.muted))
@@ -648,31 +918,48 @@ private struct JoinStep: View {
                 TextField("Mobile number", text: $model.phone,
                           prompt: Text("Mobile number").foregroundColor(MP.muted))
                     .textFieldStyle(FieldStyle()).textContentType(.telephoneNumber).keyboardType(.phonePad)
-                Toggle(isOn: $hasDOB) {
-                    Text("Add date of birth").font(.copyLargeMedium).foregroundStyle(MP.ink)
+
+                // The two switches share one grouped card, the Settings way.
+                Card(padding: 0) {
+                    VStack(spacing: 0) {
+                        Toggle(isOn: $hasDOB) {
+                            Label {
+                                Text("Add date of birth").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                            } icon: {
+                                IconTile("calendar", family: .indigo)
+                            }
+                            .labelStyle(TileLabelStyle())
+                        }
+                        .tint(MP.brand)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .onChange(of: hasDOB) { _, on in model.dateOfBirth = on ? dob : nil }
+                        if hasDOB {
+                            InsetDivider()
+                            // The value chip is UIKit-drawn and stays system.
+                            DatePicker("Date of birth", selection: $dob, in: ...Date(), displayedComponents: .date)
+                                .datePickerStyle(.compact)
+                                .mpFont(.copyLarge)
+                                .foregroundStyle(MP.ink)
+                                .padding(.leading, 60).padding(.trailing, 16).padding(.vertical, 6)
+                                .onChange(of: dob) { _, d in model.dateOfBirth = d }
+                        }
+                        InsetDivider()
+                        Toggle(isOn: surgicalBinding) {
+                            Label {
+                                Text("I'm recovering from an operation").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                            } icon: {
+                                IconTile("cross.case.fill", family: .violet)
+                            }
+                            .labelStyle(TileLabelStyle())
+                        }
+                        .tint(MP.brand)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                    }
                 }
-                .tint(MP.brand)
-                .onChange(of: hasDOB) { _, on in model.dateOfBirth = on ? dob : nil }
-                if hasDOB {
-                    // This picker carried no font at all, so its label drew
-                    // in San Francisco 17 next to Instrument Sans 16. The
-                    // value chip is UIKit-drawn and stays system — see
-                    // `problems`.
-                    DatePicker("Date of birth", selection: $dob, in: ...Date(), displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                        .font(.copyLargeMedium)
-                        .onChange(of: dob) { _, d in model.dateOfBirth = d }
-                }
-                Toggle(isOn: surgicalBinding) {
-                    Text("I'm recovering from an operation").font(.copyLargeMedium).foregroundStyle(MP.ink)
-                }
-                .tint(MP.brand)
                 if surgical {
-                    VStack(alignment: .leading, spacing: 8) {
-                        // Demoted from `.eyebrow()` — same budget, same
-                        // reason as IdentityStep: "Step 3 of 5" above it is
-                        // this screen's one uppercase element.
-                        Text("Operation").font(.labelMedium).foregroundStyle(MP.muted)
+                    VStack(alignment: .leading, spacing: 10) {
+                        // Sentence case, same uppercase budget as IdentityStep.
+                        Text("Which operation?").mpFont(.labelMedium).foregroundStyle(MP.muted)
                         if model.procedures.isEmpty {
                             ProgressView().controlSize(.small)
                         } else {
@@ -680,9 +967,12 @@ private struct JoinStep: View {
                         }
                         DatePicker("Surgery date", selection: $model.surgeryDate, in: ...Date(), displayedComponents: .date)
                             .datePickerStyle(.compact)
-                            .font(.copyLargeMedium)
+                            .mpFont(.copyLargeMedium)
+                            .foregroundStyle(MP.ink)
+                            .padding(.top, 4)
                     }
                     .padding(.top, 4)
+                    .transition(.opacity)
                 }
                 if let error = model.error { ErrorBanner(text: error) }
             }
@@ -691,18 +981,32 @@ private struct JoinStep: View {
                           loading: model.loading, disabled: !model.canJoin) {
                 Task { await model.join(api: app.api, app: app) }
             }
-            QuietAction(title: "Back") { model.go(.path) }
         }
         .task(id: surgical) { if surgical { await model.loadProcedures(api: app.api) } }
+        .mpErrorFeedback(model.error)
+    }
+}
+
+/// Tile + title, vertically centred, 14pt apart (the InsetDivider indent).
+private struct TileLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 14) {
+            configuration.icon
+            configuration.title
+        }
     }
 }
 
 private struct FlowProcedures: View {
     let procedures: [Procedure]
     @Binding var selected: Procedure?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+        let columns = dynamicTypeSize.isAccessibilitySize
+            ? [GridItem(.flexible())]
+            : [GridItem(.flexible()), GridItem(.flexible())]
+        LazyVGrid(columns: columns, spacing: 8) {
             ForEach(procedures) { p in
                 Chip(label: p.label, selected: selected?.id == p.id) {
                     selected = (selected?.id == p.id) ? nil : p

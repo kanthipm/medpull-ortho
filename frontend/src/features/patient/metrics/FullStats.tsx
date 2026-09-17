@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { CareMetric, CareMetricsResponse } from '../../../api/care'
 import { useCareMetrics } from '../../../api/care'
@@ -8,7 +8,8 @@ import Disclosure from '../../../components/Disclosure'
 import SectionCard from '../../../components/SectionCard'
 import SegmentedControl from '../../../components/SegmentedControl'
 import { RefreshOverlay, SkeletonCard } from '../../../components/Skeleton'
-import MetricCard from './MetricCard'
+import Tile from '../../../components/Tile'
+import MetricCard, { familyTile } from './MetricCard'
 import RawDataTable from './RawDataTable'
 import SignalsBody from './SignalsBody'
 
@@ -54,31 +55,34 @@ function templatesOf(metrics: CareMetric[]): string[] {
 function MetricsTab({ data, refreshing }: { data: CareMetricsResponse; refreshing: boolean }) {
   const { families, notApplicable } = groupMetrics(data)
   return (
-    <div className="space-y-3.5">
-      {families.map((f) => (
-        <SectionCard
-          key={f.key}
-          title={f.name}
-          aside={
-            f.templates.length > 0 ? (
-              <span className="flex flex-wrap justify-end gap-1">
-                {f.templates.map((t) => (
-                  <span key={t} className="chip bg-soft font-mono text-muted">
-                    {t}
-                  </span>
-                ))}
-              </span>
-            ) : undefined
-          }
-        >
-          <RefreshOverlay show={refreshing} />
-          <div className="grid gap-3 sm:grid-cols-2">
-            {f.metrics.map((m) => (
-              <MetricCard key={m.id} m={m} />
-            ))}
-          </div>
-        </SectionCard>
-      ))}
+    <div className="space-y-stack">
+      {families.map((f) => {
+        const tile = familyTile(f.key)
+        const flagged = f.metrics.filter((m) => m.status === 'flag').length
+        // Templates are neutral metadata: a .meta line, not chips.
+        const aside = [
+          `${f.metrics.length} metric${f.metrics.length === 1 ? '' : 's'}`,
+          flagged > 0 ? `${flagged} flagged` : null,
+          ...f.templates,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+        return (
+          <SectionCard
+            key={f.key}
+            title={f.name}
+            icon={<Tile size="sm" family={tile.family} icon={tile.icon} />}
+            aside={aside}
+          >
+            <RefreshOverlay show={refreshing} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {f.metrics.map((m) => (
+                <MetricCard key={m.id} m={m} />
+              ))}
+            </div>
+          </SectionCard>
+        )
+      })}
 
       {notApplicable.length > 0 && (
         <SectionCard>
@@ -86,19 +90,20 @@ function MetricsTab({ data, refreshing }: { data: CareMetricsResponse; refreshin
             label="Not used on this pathway"
             hint={`${notApplicable.length} metric${notApplicable.length === 1 ? '' : 's'}`}
           >
-            <ul className="divide-y divide-line">
+            <ul className="card-group mt-1 bg-soft" style={{ '--row-inset': '16px' } as CSSProperties}>
               {notApplicable.map((m) => (
                 <li
                   key={m.id}
                   id={`metric-${m.id}`}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 first:pt-0 last:pb-0"
+                  className="scroll-mt-24 px-4 py-2.5 transition-shadow duration-300"
                 >
-                  <span className="chip bg-soft font-mono tabular-nums text-muted">{m.id}</span>
-                  <span className="text-copy font-medium text-body">{m.name}</span>
-                  <span className="text-label font-medium text-muted">
+                  <p className="text-copy font-medium text-ink">
+                    {m.name} <span className="meta tabular-nums">{m.id}</span>
+                  </p>
+                  <p className="meta">
                     {m.status_text || 'Not used on this pathway'}
                     {m.domains.length > 0 && <> · {m.domains.join(', ')}</>}
-                  </span>
+                  </p>
                 </li>
               ))}
             </ul>
@@ -146,7 +151,7 @@ export default function FullStats({
     const el = document.getElementById(`metric-${focusMetricId}`)
     if (!el) return
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    el.style.boxShadow = '0 0 0 3px rgb(var(--brand) / 0.35)'
+    el.style.boxShadow = '0 0 0 3px rgb(var(--focus))'
     window.setTimeout(() => {
       el.style.boxShadow = ''
     }, 1800)
@@ -155,11 +160,10 @@ export default function FullStats({
 
   const applicable = care.data?.metrics.filter((m) => m.applicable !== false) ?? []
   const flagged = applicable.filter((m) => m.status === 'flag').length
-  const hint = open
-    ? 'full detail'
-    : care.data
-      ? `${applicable.length} metrics · ${flagged} flagged · raw data`
-      : 'metrics · signals · raw data'
+  const regionId = useId()
+  const hint = care.data
+    ? `${applicable.length} metrics · ${flagged} flagged · signals · raw data`
+    : 'Metrics · signals · raw data'
 
   return (
     <div>
@@ -167,31 +171,33 @@ export default function FullStats({
         type="button"
         onClick={() => onOpenChange(!open)}
         aria-expanded={open}
-        className="zone-label group w-full cursor-pointer rounded-control px-1 py-2 text-left transition-colors duration-150 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+        aria-controls={open ? regionId : undefined}
+        className="-mx-2 flex min-h-11 w-[calc(100%+1rem)] cursor-pointer items-center gap-2.5 rounded-control px-2 text-left transition-colors duration-state ease-apple hover:bg-panel focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >
+        <span className="text-lede font-semibold text-ink">Full stats</span>
+        <span className="meta min-w-0 flex-1 truncate">{hint}</span>
         <ChevronRight
-          size={15}
-          className={`shrink-0 text-muted transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+          aria-hidden
+          size={18}
+          className={`shrink-0 text-secondary transition-transform duration-state ease-apple motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
         />
-        Full stats
-        <span className="text-label font-medium text-muted">{hint}</span>
       </button>
 
       {open && (
-        <div className="rise mt-2" style={{ '--rise-delay': '0ms' } as CSSProperties}>
+        <div id={regionId} className="rise mt-2" style={{ '--rise-delay': '0ms' } as CSSProperties}>
           <SegmentedControl<Tab>
             options={TABS}
             value={tab}
             onChange={setTab}
             aria-label="Full stats view"
-            className="mb-3"
+            className="mb-stack"
           />
 
           {tab === 'metrics' && (
             <>
               {care.isLoading && <SkeletonCard lines={4} />}
               {care.isError && (
-                <p className="text-label font-medium text-muted">
+                <p className="text-copy text-secondary">
                   Care metrics are not available for this patient yet.
                 </p>
               )}
@@ -205,7 +211,7 @@ export default function FullStats({
             <>
               {signals.isLoading && <SkeletonCard lines={4} />}
               {signals.isError && (
-                <p className="text-label font-medium text-muted">Signals could not be loaded.</p>
+                <p className="text-copy text-secondary">Signals could not be loaded.</p>
               )}
               {signals.data && <SignalsBody data={signals.data} refreshing={refreshing} />}
             </>

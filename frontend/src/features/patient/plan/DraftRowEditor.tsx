@@ -1,7 +1,12 @@
-import { X } from 'lucide-react'
+import { Sparkles, X } from 'lucide-react'
 import type { DraftTask, KindInfo, ParamField, TaskPhase, TaskSchedule, TheirTaskKind } from '../../../api/plan'
 import { PHASES, SCHEDULES, THEIR_KINDS } from '../../../api/plan'
 import { defaultParams, kindInfo, numberWarning, titleCase } from './planCopy'
+
+/** Field label: 12/500 secondary. The row sits on --soft. Inside the Modal
+ *  secondary is --body (6.367 light / 6.211 dark on --soft); on the settings
+ *  page it is --muted (4.755 / 4.582 on --soft). Both pass AA. */
+const LABEL = 'mb-1 block px-1 text-label font-medium tracking-label text-secondary'
 
 /** One editable draft row — the builder's draft list and the library's
  *  "New template" form share it. Verify kind drives the params fields (from
@@ -39,32 +44,41 @@ export default function DraftRowEditor({
   const id = `draft-${index ?? 'row'}`
 
   return (
-    <div className="rounded-surface bg-soft p-3">
-      <div className="mb-2.5 flex items-center gap-2">
+    <div className="rounded-surface bg-soft p-4">
+      <div className="mb-3 flex items-center gap-3">
         {index != null && (
-          <span className="chip bg-panel tabular-nums text-muted">{index + 1}</span>
+          <span
+            aria-hidden
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-pill bg-panel text-label font-medium tabular-nums text-ink"
+          >
+            {index + 1}
+          </span>
         )}
-        <span className="text-label font-medium text-muted">
-          {info?.label ?? titleCase(value.verify_kind)}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-copy font-medium text-ink">
+            {index != null && <span className="sr-only">Task {index + 1}: </span>}
+            {info?.label ?? titleCase(value.verify_kind)}
+          </span>
           {value.source_template_key && (
-            <span className="ml-1.5 font-mono text-label text-muted">· {value.source_template_key}</span>
+            <span className="meta block truncate font-mono">{value.source_template_key}</span>
           )}
         </span>
         {onRemove && (
           <button
             type="button"
             onClick={onRemove}
-            aria-label="Remove task"
-            className="ml-auto grid h-6 w-6 cursor-pointer place-items-center rounded-control text-muted transition-colors duration-150 hover:bg-panel hover:text-ink"
+            aria-label={`Remove ${value.title.trim() || `task ${index != null ? index + 1 : ''}`.trim()}`}
+            title="Remove from the draft list"
+            className="btn-icon btn-sm -mr-1 shrink-0 hover:!bg-panel"
           >
-            <X size={13} />
+            <X aria-hidden />
           </button>
         )}
       </div>
 
-      <div className="grid gap-2.5 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <label htmlFor={`${id}-title`} className="mb-1 block text-label font-medium text-muted">
+          <label htmlFor={`${id}-title`} className={LABEL}>
             Title (patient sees this)
           </label>
           <input
@@ -77,7 +91,7 @@ export default function DraftRowEditor({
           {titleWarn && <Hint>{titleWarn}</Hint>}
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor={`${id}-why`} className="mb-1 block text-label font-medium text-muted">
+          <label htmlFor={`${id}-why`} className={LABEL}>
             Why (patient sees this)
           </label>
           <input
@@ -90,7 +104,7 @@ export default function DraftRowEditor({
           {whyWarn && <Hint>{whyWarn}</Hint>}
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor={`${id}-target`} className="mb-1 block text-label font-medium text-muted">
+          <label htmlFor={`${id}-target`} className={LABEL}>
             Clinical target (care team only)
           </label>
           <input
@@ -147,11 +161,14 @@ export default function DraftRowEditor({
       </div>
 
       {value.rationale && (
-        <p className="mt-2.5 text-label font-medium text-muted">{value.rationale}</p>
+        <p className="mt-3 flex items-start gap-1.5 px-1 text-label tracking-label text-secondary">
+          <Sparkles aria-hidden size={12} className="mt-px shrink-0 text-cat-teal-ink" />
+          <span>{value.rationale}</span>
+        </p>
       )}
 
       {libraryToggles && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-4">
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 px-1">
           <Check
             id={`${id}-save`}
             label="Save to library"
@@ -172,7 +189,7 @@ export default function DraftRowEditor({
 }
 
 function Hint({ children }: { children: string }) {
-  return <p className="mt-1 text-label font-medium text-risk-med-ink">{children}</p>
+  return <p className="mt-1 px-1 text-label font-medium text-risk-med-ink">{children}</p>
 }
 
 function Select({
@@ -190,7 +207,7 @@ function Select({
 }) {
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-label font-medium text-muted">
+      <label htmlFor={id} className={LABEL}>
         {label}
       </label>
       <select id={id} className="field cursor-pointer" value={value} onChange={(e) => onChange(e.target.value)}>
@@ -218,7 +235,7 @@ function ParamInput({
   const label = field.label || titleCase(field.name)
   if (field.type === 'bool') {
     return (
-      <div className="flex items-end pb-2">
+      <div className="flex items-end">
         <Check id={id} label={label} checked={Boolean(value)} onChange={onChange} />
       </div>
     )
@@ -238,7 +255,7 @@ function ParamInput({
     const items = Array.isArray(value) ? value.map(String) : []
     return (
       <div>
-        <label htmlFor={id} className="mb-1 block text-label font-medium text-muted">
+        <label htmlFor={id} className={LABEL}>
           {label} (comma-separated)
         </label>
         <input
@@ -261,7 +278,7 @@ function ParamInput({
   const numeric = field.type === 'int' || field.type === 'float'
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-label font-medium text-muted">
+      <label htmlFor={id} className={LABEL}>
         {label}
       </label>
       <input
@@ -301,14 +318,14 @@ function Check({
   return (
     <label
       htmlFor={id}
-      className={`inline-flex items-center gap-2 text-label font-medium ${
-        disabled ? 'cursor-not-allowed text-disabled-ink' : 'cursor-pointer text-body'
+      className={`inline-flex min-h-9 items-center gap-2 text-copy ${
+        disabled ? 'cursor-not-allowed text-secondary' : 'cursor-pointer text-ink'
       }`}
     >
       <input
         id={id}
         type="checkbox"
-        className="h-3.5 w-3.5 cursor-pointer accent-brand disabled:cursor-not-allowed"
+        className="h-4 w-4 cursor-pointer accent-brand disabled:cursor-not-allowed"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
