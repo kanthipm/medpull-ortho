@@ -8,6 +8,11 @@ struct HealthView: View {
     @State private var linking = false
     @State private var link: URL?
     @State private var error: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Accessibility text sizes stack every tile-title-pill row, so a title
+    /// is never broken by character and a pill never splits.
+    private var stacked: Bool { dynamicTypeSize.isAccessibilitySize }
 
     var body: some View {
         NavigationStack {
@@ -49,16 +54,29 @@ struct HealthView: View {
     private var junctionReady: Bool { app.me?.features.appleHealth ?? false }
 
     /// A card's title row: tile, 16/500 ink title, optional trailing view.
+    /// At accessibility sizes: tile, then title, then the trailing view, each
+    /// on its own line at the card's leading edge.
+    @ViewBuilder
     private func cardTitle<Trailing: View>(_ title: String, symbol: String, family: MP.Category,
                                            @ViewBuilder trailing: () -> Trailing) -> some View {
-        HStack(spacing: 14) {
-            IconTile(symbol, family: family)
-            Text(title)
-                .mpFont(.copyLargeMedium)
-                .foregroundStyle(MP.ink)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 8)
-            trailing()
+        let titleText = Text(title)
+            .mpFont(.copyLargeMedium)
+            .foregroundStyle(MP.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+        if stacked {
+            VStack(alignment: .leading, spacing: 8) {
+                IconTile(symbol, family: family)
+                titleText
+                trailing()
+            }
+        } else {
+            HStack(spacing: 14) {
+                IconTile(symbol, family: family)
+                titleText
+                Spacer(minLength: 8)
+                trailing()
+            }
         }
     }
 
@@ -137,6 +155,8 @@ struct HealthView: View {
                 cardTitle("Wearables", symbol: "applewatch", family: .blue) {
                     if !devices.isEmpty {
                         Text("\(devices.count) linked").mpFont(.label).mpSecondary()
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                 }
                 .padding(16)
@@ -147,24 +167,10 @@ struct HealthView: View {
                         .padding(.bottom, 14)
                 } else {
                     ForEach(devices) { d in
-                        InsetDivider()
-                        HStack(spacing: 14) {
-                            IconTile("dot.radiowaves.left.and.right", family: .blue)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(d.model).mpFont(.copyMedium).foregroundStyle(MP.ink)
-                                Text(d.lastSyncAt.map { "Synced \(Dates.relative($0))" } ?? "Waiting for first sync")
-                                    .mpFont(.label).mpSecondary()
-                            }
-                            Spacer(minLength: 8)
-                            StatusPill(text: d.status.capitalized,
-                                       tone: d.status == "connected" ? .low : d.status == "error" ? .high : .missing)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .frame(minHeight: 44)
-                        .accessibilityElement(children: .combine)
+                        rowDivider
+                        deviceRow(d)
                     }
-                    InsetDivider(leading: 16)
+                    rowDivider
                 }
                 SecondaryButton(title: devices.isEmpty ? "Add a wearable" : "Add another", icon: "link", loading: linking) {
                     linking = true
@@ -180,25 +186,70 @@ struct HealthView: View {
         }
     }
 
+    /// Every divider in the Wearables card starts at the same place as the
+    /// row text: past the tile normally, at the card inset when stacked.
+    private var rowDivider: some View {
+        InsetDivider(leading: stacked ? 16 : nil)
+    }
+
+    @ViewBuilder
+    private func deviceRow(_ d: WearableDevice) -> some View {
+        let tile = IconTile("dot.radiowaves.left.and.right", family: .blue)
+        let text = VStack(alignment: .leading, spacing: 2) {
+            Text(d.model).mpFont(.copyMedium).foregroundStyle(MP.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(d.lastSyncAt.map { "Synced \(Dates.relative($0))" } ?? "Waiting for first sync")
+                .mpFont(.label).mpSecondary()
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        let pill = StatusPill(text: d.status.capitalized,
+                              tone: d.status == "connected" ? .low : d.status == "error" ? .high : .missing)
+        Group {
+            if stacked {
+                VStack(alignment: .leading, spacing: 8) {
+                    tile
+                    text
+                    pill
+                }
+            } else {
+                HStack(spacing: 14) {
+                    tile
+                    text
+                    Spacer(minLength: 8)
+                    pill
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+    }
+
     /// Apple Health's "Highlights" shape: a section title above the cards,
     /// then one card per signal, each led by its category tile.
     private var portfolioSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Your portfolio")
-                    .mpFont(.subheadSemibold)
-                    .foregroundStyle(MP.ink)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 8)
-                Text(app.portfolio.isEmpty ? "Last two weeks"
-                     : "\(app.portfolio.count) signals\(MP.dot)two weeks")
-                    .mpFont(.labelMedium)
-                    // `body`, not `muted`: this line can sit on the ambient
-                    // brand wash, where dark `muted` drops to ~4.07:1.
-                    .foregroundStyle(MP.body)
+            // The same quiet header Home uses for this section (CardHeader:
+            // 12/500, 16pt text inset), so "Your portfolio" reads as one
+            // thing on both tabs. `body`, not `muted`: this line sits on the
+            // ambient brand wash, where dark `muted` drops to ~4.07:1.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    portfolioTitle
+                    Spacer(minLength: 8)
+                    portfolioMeta
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    portfolioTitle
+                    portfolioMeta
+                }
             }
+            .mpFont(.labelMedium)
+            .foregroundStyle(MP.body)
             .padding(.top, 10)
-            .padding(.horizontal, 2)
+            .padding(.horizontal, 16)
 
             if app.portfolio.isEmpty {
                 Card {
@@ -211,6 +262,18 @@ struct HealthView: View {
                 }
             }
         }
+    }
+
+    private var portfolioTitle: some View {
+        Text("Your portfolio")
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var portfolioMeta: some View {
+        Text(app.portfolio.isEmpty ? "Last two weeks"
+             : "\(app.portfolio.count) signals\(MP.dot)two weeks")
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -259,6 +322,7 @@ struct MetricChart: View {
     let metric: PortfolioMetric
     @State private var picked: Date?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// A bar's end cap. Mark geometry, not a surface radius: every radius
     /// token is wider than a 14-day bar, and a bar capped at one would stop
@@ -286,19 +350,7 @@ struct MetricChart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                IconTile(metric.tileSymbol, family: metric.tileFamily)
-                Text(metric.label)
-                    .mpFont(.copyMedium)
-                    .foregroundStyle(MP.ink)
-                    .lineLimit(2)
-                Spacer(minLength: 8)
-                Text(dayCaption)
-                    .mpFont(.label)
-                    .foregroundStyle(MP.muted)
-                    .monospacedDigit()
-                    .lineLimit(1)
-            }
+            header
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(metric.text(for: shown.value))
@@ -319,6 +371,39 @@ struct MetricChart: View {
             .accessibilityValue(Text(metric.spokenText(for: shown.value)))
 
             chart
+        }
+    }
+
+    /// Tile, name and day on one row; stacked at accessibility sizes so the
+    /// name wraps by word and the day is never truncated.
+    @ViewBuilder
+    private var header: some View {
+        let tile = IconTile(metric.tileSymbol, family: metric.tileFamily)
+        // `body`, not `muted`: the date is the one label here that carries
+        // data, and `body` gives it headroom (7.22 / 7.11 on panel).
+        let caption = Text(dayCaption)
+            .mpFont(.label)
+            .foregroundStyle(MP.body)
+            .monospacedDigit()
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                tile
+                Text(metric.label)
+                    .mpFont(.copyMedium)
+                    .foregroundStyle(MP.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                caption.fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            HStack(spacing: 12) {
+                tile
+                Text(metric.label)
+                    .mpFont(.copyMedium)
+                    .foregroundStyle(MP.ink)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                caption.lineLimit(1)
+            }
         }
     }
 

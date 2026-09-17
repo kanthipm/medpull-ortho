@@ -235,6 +235,7 @@ def test_m2_flags_a_steep_dose_response_and_names_the_symptom():
     m = REGISTRY["M2"](ctx)
     assert m.status is MetricStatus.FLAG and m.status_text == "Irritability rising"
     assert m.name == "Pain–load sensitivity" and m.unit == "pts / 1k steps"
+    assert m.coverage_text.endswith("in the last 21 days")
     assert m.chart is not None and m.chart.kind == "scatter" and m.chart.fit
     _assert_clean(m)
     # COPD pairs breathlessness with load
@@ -250,6 +251,18 @@ def test_m2_nodata_says_what_unlocks_it():
     m = REGISTRY["M2"](_healthy_ctx())
     assert m.status is MetricStatus.NODATA
     assert "Log pain AM & PM" in (m.unlock or "")
+
+
+def test_m2_short_of_pairs_counts_them_in_words():
+    postop_day = 25
+    days = list(range(0, postop_day + 1))
+    steps = pd.Series([3000.0] * len(days), index=days)
+    pain = {postop_day: 3.0}  # one next-day score, paired with yesterday's steps
+    m = REGISTRY["M2"](make_ctx(postop_day, series={str(M.STEPS): steps},
+                                pain=_symptom_frame(pain, "am")))
+    assert m.status_text == "Needs more pairs"
+    assert m.coverage_text == "1 paired day of steps and next-day pain in the last 21 days"
+    assert m.finding.startswith("Only one day pairs a")
 
 
 def test_m3_flags_an_elevated_plateau_and_falls_back_to_double_support():

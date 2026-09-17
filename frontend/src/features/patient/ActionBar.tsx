@@ -15,7 +15,12 @@ import TaskBuilderModal from './plan/TaskBuilderModal'
  *    Refresh        .btn-icon     labelled "Refresh analysis"; spins while busy
  *
  *  Assign tasks and Message open the same modals the sections below open.
- *  Escalate and Refresh behave exactly as before. */
+ *  Escalate and Refresh behave exactly as before.
+ *
+ *  NARROW (< 640px): Message, the primary, takes the whole first row and the
+ *  other three share the second, instead of wrapping 2 + 2 with Escalate
+ *  stranded under Message. Every capsule is opaque, so the bar may sit in the
+ *  sky window's decor zone. */
 export default function ActionBar({
   patientId,
   patientName,
@@ -55,15 +60,23 @@ export default function ActionBar({
         aria-label={`Actions for ${patientName}`}
         className={`flex flex-wrap items-center gap-2 ${className}`}
       >
-        <button type="button" className="btn-filled" onClick={() => setModal('message')}>
+        <button
+          type="button"
+          className="btn-filled max-sm:basis-full"
+          onClick={() => setModal('message')}
+        >
           <MessageSquare size={16} aria-hidden /> Message
         </button>
-        <button type="button" className="btn-tinted" onClick={() => setModal('assign')}>
+        <button
+          type="button"
+          className="btn-tinted max-sm:flex-1"
+          onClick={() => setModal('assign')}
+        >
           <ClipboardList size={16} aria-hidden /> Assign tasks
         </button>
         <button
           type="button"
-          className="btn-danger"
+          className="btn-danger max-sm:flex-1"
           onClick={fireEscalate}
           disabled={escalate.isPending}
         >

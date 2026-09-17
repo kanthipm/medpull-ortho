@@ -10,8 +10,9 @@ import { RefreshOverlay } from '../../../components/Skeleton'
 import Tile from '../../../components/Tile'
 import { shortDate } from '../../../lib/format'
 import { METRIC_STATUS } from '../../../lib/risk'
-import { GUARDED_NOTE } from './labels'
-import { MetaDots, signalTile, tileChipClass } from './MetricCard'
+import DotLine from '../DotLine'
+import { GUARDED_NOTE, tileChipClass } from './labels'
+import { signalTile } from './metricTiles'
 
 /** The Signals tab of Full stats: trajectory, multi-signal deviation, the
  *  wearable trends and adherence. Its data comes from the lazy
@@ -81,8 +82,9 @@ function SignalTile({ m, index }: { m: MetricInsight; index: number }) {
         </p>
       )}
 
-      <MetaDots
-        className="mt-auto pt-3"
+      <DotLine
+        as="p"
+        className="meta mt-auto pt-3"
         parts={[
           m.coverage_text,
           m.confidence !== 'high' && <ConfidenceChip level={m.confidence} variant="meta" />,

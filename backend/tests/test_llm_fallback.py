@@ -456,3 +456,47 @@ def test_an_empty_ollama_completion_also_cools_down(monkeypatch):
     with pytest.raises(LLMError):
         ollama_mod.complete_json("system", "user")
     assert provider_mod._cooling_down("ollama")
+
+
+def _roster(*levels):
+    return [{"name": f"P{i}", "priority": lv, "reason": "r"} for i, lv in enumerate(levels)]
+
+
+@pytest.mark.parametrize(
+    ("levels", "expected"),
+    [
+        (("high", "low"), "The other patient is recovering as expected."),
+        (("high", "low", "low"), "The other 2 patients are recovering as expected."),
+        (("low",), "The one patient on the roster is recovering as expected."),
+        (("low", "low", "low"), "All 3 patients are recovering as expected."),
+    ],
+)
+def test_briefing_counts_the_stable_patients_in_words(levels, expected):
+    from app.llm import fallback
+
+    text = fallback.daily_briefing(_roster(*levels))["briefing"]
+    assert text.endswith(expected)
+    assert "remaining" not in text
+
+
+def test_zero_coverage_reads_as_no_device_data():
+    from app.engine.risk import coverage_reason
+    from app.llm import fallback
+
+    assert coverage_reason(0) == "No device data yet"
+    assert coverage_reason(0, has_history=True) == "No device data this week"
+    assert coverage_reason(29) == "Device data on only 29% of recent days"
+
+    legacy = {"risk": {"reasons": [
+        {"code": "LOW_COVERAGE", "text": "Only 0% of recent days reporting data"}]}}
+    assert fallback.worklist_reason(legacy)["reason"] == "No device data yet"
+    legacy["risk"]["reasons"][0]["text"] = "Only 14% of recent days reporting data"
+    assert fallback.worklist_reason(legacy)["reason"] == "Device data on only 14% of recent days"
+
+    summary = fallback.patient_summary(
+        {"name": "Ada Park"},
+        {"postop_day": 3, "risk": {"level": "missing_data", "reasons": []},
+         "confidence": {"score": 0.0}},
+    )["summary"]
+    assert "0%" not in summary
+    assert "no recent device data" in summary

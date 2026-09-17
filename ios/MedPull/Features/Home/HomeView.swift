@@ -14,7 +14,9 @@ struct HomeView: View {
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
         let part = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
-        return "\(part), \(app.me?.patient.firstName ?? "there")."
+        // Always two lines, broken after the comma (R6): "Good afternoon," /
+        // "Marcus.". A literal newline, so no width ever joins them.
+        return "\(part),\n\(app.me?.patient.firstName ?? "there")."
     }
 
     var body: some View {
@@ -56,6 +58,7 @@ struct HomeView: View {
                         .opacity(greetingGone ? 1 : 0)
                         .accessibilityHidden(!greetingGone)
                 }
+                brandItem
                 avatarItem
             }
             .animation(MPMotion.gated(MPMotion.state, reduceMotion: reduceMotion), value: greetingGone)
@@ -75,6 +78,40 @@ struct HomeView: View {
         } else {
             ToolbarItem(placement: .topBarTrailing) { avatarButton }
         }
+    }
+
+    /// The MedPull lockup on the leading side of the same row as the avatar,
+    /// so the bar reads as one row (mark, wordmark ... avatar) instead of a
+    /// lone disc over empty space. The mark is the web bar's vector logo;
+    /// its fills clear 3:1 on canvas and panel in both modes (3.11 / 5.50
+    /// for the lightest, #4a90d9). The wordmark is `ink` (18.38 / 17.19).
+    @ToolbarContentBuilder private var brandItem: some ToolbarContent {
+        if #available(iOS 26, *) {
+            ToolbarItem(placement: .topBarLeading) { brandLockup }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .topBarLeading) { brandLockup }
+        }
+    }
+
+    private var brandLockup: some View {
+        HStack(spacing: 7) {
+            Image("MedPullMark")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 26, height: 24)
+            Text("MedPull")
+                .font(.mp(17, weight: .semibold, relativeTo: .headline))
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                .foregroundStyle(MP.ink)
+                .fixedSize()
+        }
+        // The principal "Home" takes over once the greeting is gone; the
+        // wordmark steps aside so the two never crowd each other.
+        .opacity(greetingGone ? 0 : 1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("MedPull")
+        .accessibilityHidden(greetingGone)
     }
 
     private var avatarButton: some View {

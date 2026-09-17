@@ -137,6 +137,7 @@ struct TaskDestination: View {
 /// trailing chevron (open) or state glyph (done / skipped).
 struct TaskListRow: View {
     let task: RecoveryTask
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var isDone: Bool { task.status == "done" }
 
@@ -162,18 +163,33 @@ struct TaskListRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            IconTile(icon, family: family)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(task.title)
-                    .mpFont(.copyLargeMedium)
-                    .foregroundStyle(MP.ink)
-                    .strikethrough(isDone, color: MP.muted)
-                    .multilineTextAlignment(.leading)
-                meta
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // AX sizes: the tile and the state glyph share a top row, and
+                // the title and meta get the full card width underneath, so a
+                // title is never one word per line and the status wraps.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .center) {
+                        IconTile(icon, family: family)
+                        Spacer(minLength: 8)
+                        trailing
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        titleText
+                        meta
+                    }
+                }
+            } else {
+                HStack(spacing: 14) {
+                    IconTile(icon, family: family)
+                    VStack(alignment: .leading, spacing: 2) {
+                        titleText
+                        meta
+                    }
+                    Spacer(minLength: 8)
+                    trailing
+                }
             }
-            Spacer(minLength: 8)
-            trailing
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -182,22 +198,40 @@ struct TaskListRow: View {
         .accessibilityValue(Text(isDone ? "Done" : task.isOpen ? "" : "Skipped"))
     }
 
+    private var titleText: some View {
+        Text(task.title)
+            .mpFont(.copyLargeMedium)
+            .foregroundStyle(MP.ink)
+            .strikethrough(isDone, color: MP.muted)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The state after the kind, or nil. riskMed on "in progress by text":
+    /// the words carry the state, not the hue.
+    private var status: (String, Color)? {
+        if isDone, let via = task.completedVia { return ("done by \(via)", MP.muted) }
+        if task.inSmsConversation { return ("in progress by text", MP.riskMed) }
+        if let due = task.dueAt { return ("due \(Dates.relative(due))", MP.muted) }
+        if let schedule = task.scheduleLabel { return (schedule, MP.muted) }
+        return nil
+    }
+
+    /// One Text (interpolated, not an HStack), so the line wraps as prose
+    /// instead of truncating each piece to "Che… · du…". Two lines at the
+    /// standard sizes, unlimited at accessibility sizes.
     private var meta: some View {
-        HStack(spacing: 0) {
-            Text(task.kindLabel).foregroundStyle(MP.muted)
-            if isDone, let via = task.completedVia {
-                Text("\(MP.dot)done by \(via)").foregroundStyle(MP.muted)
-            } else if task.inSmsConversation {
-                // riskMed as text: the words carry the state, not the hue.
-                Text("\(MP.dot)in progress by text").foregroundStyle(MP.riskMed)
-            } else if let due = task.dueAt {
-                Text("\(MP.dot)due \(Dates.relative(due))").foregroundStyle(MP.muted)
-            } else if let schedule = task.scheduleLabel {
-                Text("\(MP.dot)\(schedule)").foregroundStyle(MP.muted)
-            }
+        let kind = Text(task.kindLabel).foregroundStyle(MP.muted)
+        let line: Text
+        if let status {
+            line = Text("\(kind)\(Text(MP.dot).foregroundStyle(MP.muted))\(Text(status.0).foregroundStyle(status.1))")
+        } else {
+            line = kind
         }
-        .mpFont(.label)
-        .lineLimit(1)
+        return line
+            .mpFont(.label)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
@@ -231,6 +265,7 @@ struct TaskDetailView: View {
     /// (iOS 26); older systems bounce it instead.
     @State private var sealHidden = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var answered: Bool { !answers.isEmpty }
 
@@ -327,33 +362,75 @@ struct TaskDetailView: View {
     /// is 3.44:1 on the light reduce-transparency ground, so it is never used
     /// for words). The commit is the prominent glass capsule on iOS 26 — tinted
     /// Medical Blue with a white label — and the filled capsule before it.
+    ///
+    /// One row when it fits. At accessibility sizes (and whenever the row
+    /// does not fit) it stacks: a full-width commit above a full-width
+    /// "Skip this one", and the bar's outline becomes a rounded rectangle
+    /// (Glass.swift), so it never balloons into a circle over the questions.
+    @ViewBuilder
     private var actionBarContent: some View {
-        HStack(spacing: 12) {
-            Button("Skip this one") { skip() }
-                .mpFont(.copy)
-                .foregroundStyle(.primary)
+        if dynamicTypeSize.isAccessibilitySize {
+            stackedActions
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    skipButton
+                    Spacer(minLength: 8)
+                    commitButton(fullWidth: false)
+                }
+                stackedActions
+            }
+        }
+    }
+
+    private var stackedActions: some View {
+        VStack(spacing: 2) {
+            commitButton(fullWidth: true)
+            skipButton.frame(maxWidth: .infinity)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var skipButton: some View {
+        Button { skip() } label: {
+            Text("Skip this one")
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(minHeight: 44)
                 .padding(.horizontal, 6)
                 .contentShape(Rectangle())
-                .buttonStyle(.plain)
-                .disabled(sending)
-            Spacer(minLength: 8)
-            Button { submit() } label: {
-                HStack(spacing: 6) {
-                    if sending {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "checkmark")
-                    }
-                    Text(task.kind == "checkin" ? "Send to my care team" : "Mark done")
-                }
-                .mpFont(.copyLargeMedium)
-            }
-            .mpGlassButton(prominent: true)
-            .controlSize(.large)
-            .disabled(sending || (task.kind == "checkin" && !answered))
-            .accessibilityValue(sending ? Text("Working") : Text(""))
         }
+        .mpFont(.copy)
+        .foregroundStyle(.primary)
+        .buttonStyle(.plain)
+        .disabled(sending)
+    }
+
+    /// The visible word is short ("Send"), so it never wraps at any size;
+    /// VoiceOver and Voice Control still hear the full "Send to my care team".
+    private func commitButton(fullWidth: Bool) -> some View {
+        let spoken = task.kind == "checkin" ? "Send to my care team" : "Mark done"
+        let shown = task.kind == "checkin" ? "Send" : "Mark done"
+        return Button { submit() } label: {
+            HStack(spacing: 6) {
+                if sending {
+                    ProgressView()
+                } else {
+                    Image(systemName: "checkmark")
+                }
+                Text(shown)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .mpFont(.copyLargeMedium)
+            .frame(maxWidth: fullWidth ? .infinity : nil)
+        }
+        .mpGlassButton(prominent: true)
+        .controlSize(.large)
+        .disabled(sending || (task.kind == "checkin" && !answered))
+        .accessibilityLabel(Text(spoken))
+        .accessibilityInputLabels([Text(spoken), Text(shown)])
+        .accessibilityValue(sending ? Text("Working") : Text(""))
     }
 
     private func binding(for id: String) -> Binding<AnswerValue?> {

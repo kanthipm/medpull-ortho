@@ -4,8 +4,8 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { shouldRetry } from './api/client'
 import App from './App'
-import { ToastProvider } from './components/Toast'
-import { ThemeProvider } from './lib/theme'
+import { ToastProvider } from './components/ToastProvider'
+import { ThemeProvider } from './lib/ThemeProvider'
 import './index.css'
 
 const queryClient = new QueryClient({

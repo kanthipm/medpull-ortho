@@ -1,30 +1,15 @@
 import { ChevronRight, LayoutGrid } from 'lucide-react'
-import type { ReactNode } from 'react'
 import type { CareMetric } from '../../../api/care'
 import { useCareMetrics } from '../../../api/care'
 import ConfidenceChip from '../../../components/ConfidenceChip'
 import SectionCard from '../../../components/SectionCard'
 import { RefreshOverlay, SkeletonCard } from '../../../components/Skeleton'
 import Tile from '../../../components/Tile'
-import { MiniChart, latestLabel } from './CareChart'
-import { GUARDED_NOTE, statusChipText } from './labels'
-import { careMetricTile, tileChipClass } from './MetricCard'
-
-/** Inline (span-only) twin of MetaDots, since the tile is a <button>. */
-function MetaLine({ parts }: { parts: ReactNode[] }) {
-  const kept = parts.filter((p) => p != null && p !== false && p !== '')
-  if (kept.length === 0) return null
-  return (
-    <span className="meta flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-      {kept.map((p, i) => (
-        <span key={i} className="contents">
-          {i > 0 && <span aria-hidden>·</span>}
-          <span>{p}</span>
-        </span>
-      ))}
-    </span>
-  )
-}
+import DotLine from '../DotLine'
+import { MiniChart } from './CareChart'
+import { latestLabel } from './chartText'
+import { GUARDED_NOTE, statusChipText, tileChipClass } from './labels'
+import { careMetricTile } from './metricTiles'
 
 /** The headline metrics — the pathway's priority picks (the API has already
  *  chosen applicable ones), drawn like the app's "Your portfolio" card: one
@@ -63,15 +48,11 @@ function HeadlineTile({ m, onOpen }: { m: CareMetric; onOpen: (metricId: string)
         <span className="text-title font-medium tabular-nums text-ink">{m.value ?? '—'}</span>
         {m.unit && <span className="text-copy text-secondary">{m.unit}</span>}
       </span>
-      {(m.value_label || when) && (
-        <span className="meta mt-0.5 block">
-          {[m.value_label, when].filter(Boolean).join(' · ')}
-        </span>
-      )}
-      {m.delta_text && <span className="meta block">{m.delta_text}</span>}
+      <DotLine className="meta mt-0.5 block" parts={[m.value_label, when]} />
+      <DotLine className="meta block" parts={[m.delta_text]} />
 
       <span className="mt-2.5 block rounded-control-sm bg-panel px-1.5">
-        <MiniChart spec={m.chart} />
+        <MiniChart spec={m.chart} sigma={m.unit === 'σ' ? m.value_num : null} />
       </span>
 
       <span className="mt-2.5 line-clamp-3 text-copy text-body">
@@ -79,7 +60,8 @@ function HeadlineTile({ m, onOpen }: { m: CareMetric; onOpen: (metricId: string)
       </span>
 
       <span className="mt-auto block pt-2.5">
-        <MetaLine
+        <DotLine
+          className="meta block"
           parts={[
             m.confidence !== 'high' && <ConfidenceChip level={m.confidence} variant="meta" />,
             m.coverage_text,

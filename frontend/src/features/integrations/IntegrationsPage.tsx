@@ -2,9 +2,11 @@ import {
   Activity,
   CircleCheck,
   Clock,
+  HeartPulse,
   Plug,
   Smartphone,
   TriangleAlert,
+  Watch,
   Waypoints,
   Webhook,
   Wrench,
@@ -23,7 +25,7 @@ import ListRow, { ListGroup } from '../../components/ListRow'
 import { SkeletonCard } from '../../components/Skeleton'
 import Tile, { type TileFamily } from '../../components/Tile'
 import { relativeTime } from '../../lib/format'
-import { GroupFooter, GroupHeader, SettingsHeading } from '../settings/Switch'
+import { GroupFooter, GroupHeader, SettingsHero } from '../settings/Switch'
 
 const CAPABILITY_LABELS: [string, string[]][] = [
   ['Steps', ['steps']],
@@ -294,12 +296,15 @@ export default function IntegrationsPage() {
   const status = useJunctionStatus(configured)
 
   const header = (
-    <div className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
-      <SettingsHeading title="Integrations">
-        Every source feeds the same Recovery Intelligence Engine through one data store, so
-        connecting a new provider never changes what you see on the worklist.
-      </SettingsHeading>
-    </div>
+    <SettingsHero
+      icon={<Plug />}
+      badge={<span className="badge-ring">One data store for every source</span>}
+      title="Integrations"
+      decor={[<Watch key="watch" />, <Waypoints key="junction" />, <HeartPulse key="vitals" />]}
+    >
+      Every source feeds the same Recovery Intelligence Engine, so connecting a new provider
+      never changes what you see on the worklist.
+    </SettingsHero>
   )
 
   if (isLoading) {

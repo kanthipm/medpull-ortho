@@ -67,7 +67,7 @@ function CheckinRow({ checkin }: { checkin: Checkin }) {
             onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
             aria-controls={panelId}
-            className="stretched-link cursor-pointer text-left text-copy-lg font-medium tabular-nums text-ink outline-none"
+            className="stretched-link cursor-pointer text-left text-copy-lg font-medium tabular-nums text-ink outline-0 [outline-style:none]"
           >
             {relativeTime(checkin.occurred_at)}
             {tone && <span className="sr-only">, {tone.label}</span>}

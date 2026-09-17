@@ -218,6 +218,12 @@ private struct MPLegacyGlassSurface<S: Shape>: ViewModifier {
 
 // MARK: - 4. The floating glass action bar
 
+/// The action bar's outline: a capsule while the bar is one row (52pt
+/// control + insets, with room for a scaled one-line label), a 28pt
+/// continuous rounded rectangle once it is taller (the stacked layout at
+/// accessibility sizes), so it never becomes a near-circle over the form.
+private let mpActionBarShape = MPAdaptiveCapsule(rowCeiling: 88, stackedRadius: 28)
+
 /// The one floating glass surface a screen is allowed: a bar pinned to the
 /// bottom safe area, above the tab bar, carrying the screen's primary actions.
 ///
@@ -252,7 +258,7 @@ private struct MPGlassActionBar<Bar: View>: ViewModifier {
                     bar()
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
-                        .modifier(MPGlassSurface(shape: MP.pillShape, fallback: .regular))
+                        .modifier(MPGlassSurface(shape: mpActionBarShape, fallback: .regular))
                         .padding(.horizontal, 16)
                         .padding(.bottom, 8)
                         .foregroundStyle(.primary)
@@ -265,7 +271,7 @@ private struct MPGlassActionBar<Bar: View>: ViewModifier {
                     bar()
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
-                        .modifier(MPLegacyGlassSurface(shape: MP.pillShape, fallback: .ultraThin))
+                        .modifier(MPLegacyGlassSurface(shape: mpActionBarShape, fallback: .ultraThin))
                         .padding(.horizontal, 16)
                         .padding(.bottom, 8)
                         .foregroundStyle(.primary)
@@ -356,7 +362,9 @@ extension View {
     }
 
     /// The floating glass action bar — the screen's one custom glass surface.
-    /// One per screen; lay the content out horizontally yourself and use
+    /// One per screen; lay the content out yourself — one row normally, and a
+    /// stacked column at accessibility text sizes (the bar's outline turns
+    /// from a capsule into a 28pt rounded rectangle when it grows tall) — and use
     /// `.plain` buttons with `.primary` / `.secondary` ink only. When
     /// `isPresented` is false the bar and its inset collapse to nothing, and
     /// the content view keeps its identity (the condition is inside the bar,

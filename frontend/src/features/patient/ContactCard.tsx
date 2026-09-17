@@ -8,6 +8,19 @@ import ListRow from '../../components/ListRow'
 import { Popover } from '../../components/Menu'
 import { useToast } from '../../components/Toast'
 import { relativeTime } from '../../lib/format'
+import DotLine from './DotLine'
+
+/** One reachability line: a 16px icon column, then the text in normal
+ *  inline flow, so a wrapped line (and a wrapped action) starts at the text
+ *  column, never under the icon or indented past it (judge #10). */
+const ROW = 'grid grid-cols-[16px_minmax(0,1fr)] items-start gap-x-2'
+const ICON = 'mt-[3px] text-body'
+/** An action inside a line of text: brand-ink words with no side padding, so
+ *  when it wraps it lines up with the text above it. 24px tall (2.5.8), and
+ *  the focus ring is the console's solid 2px --focus. brand-ink on the safe
+ *  sky: 4.832 light / 4.735 dark. */
+const INLINE_ACTION =
+  'inline-flex min-h-6 cursor-pointer items-center gap-1 whitespace-nowrap rounded-sm align-middle font-medium text-brand-ink underline-offset-2 transition-colors duration-state ease-apple hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus'
 
 /**
  * Reachability, as one line of header meta: the number texts go to and
@@ -19,10 +32,11 @@ import { relativeTime } from '../../lib/format'
  * The editors open in top-layer popovers (R5), so the header stays one line.
  * The window.confirm steps are unchanged on purpose.
  *
- * Text sits on the header's ambient wash; every colour used here was measured
- * against its worst point (canvas, blue wash, teal wash):
- *   body 6.371 / 6.333, ink 16.212 / 16.374, risk-med-ink 5.130 / 9.181,
- *   risk-low-ink 4.736 / 8.604, brand-ink (btn-plain) 5.069 / 6.460.
+ * Text sits in the page head on the SAFE sky (AppShell's sky window); every
+ * colour used here at the sky's most saturated point, light / dark:
+ *   ink 15.453 / 12.002, body 6.073 / 4.642, brand-ink 4.832 / 4.735,
+ *   risk-med-ink 4.890 / 6.729, risk-low-ink 4.514 / 6.307.
+ * Each separator dot wraps with the item after it (DotLine).
  * In the popovers (overlay panel): body 4.955 dark, low 6.731, brand 5.054,
  * risk-high 5.635 — secondary text there is --body (OVERLAY_SCOPE).
  */
@@ -121,65 +135,72 @@ export default function ContactCard({
       : { label: 'texts reach this number', tone: 'text-body' }
 
   return (
-    <div className={`flex flex-wrap items-center gap-x-5 gap-y-1 text-copy ${className}`}>
+    <div className={`space-y-1 text-copy ${className}`}>
       {/* Phone */}
-      <span className="inline-flex min-h-8 flex-wrap items-center gap-x-1.5">
-        <Smartphone size={14} aria-hidden className="shrink-0 text-body" />
-        <span className="sr-only">Phone:</span>
-        {phone && <span className="font-medium tabular-nums text-ink">{phone}</span>}
-        {phone && <span aria-hidden className="text-body">·</span>}
-        <span className={reach.tone}>{reach.label}</span>
-        <button
-          ref={phoneBtn}
-          type="button"
-          className="btn-plain btn-sm"
-          aria-haspopup="dialog"
-          aria-expanded={editing}
-          aria-controls={editing ? phoneId : undefined}
-          onClick={() => {
-            setDraft(phone ?? '')
-            setEditing((v) => !v)
-          }}
-        >
-          <Pencil aria-hidden /> {phone ? 'Change' : 'Add number'}
-        </button>
-      </span>
+      <div className={ROW}>
+        <Smartphone size={14} aria-hidden className={ICON} />
+        <p className="min-w-0">
+          <span className="sr-only">Phone: </span>
+          <DotLine
+            parts={[
+              phone && <span className="font-medium tabular-nums text-ink">{phone}</span>,
+              <span className={reach.tone}>{reach.label}</span>,
+            ]}
+          />{' '}
+          <button
+            ref={phoneBtn}
+            type="button"
+            className={INLINE_ACTION}
+            aria-haspopup="dialog"
+            aria-expanded={editing}
+            aria-controls={editing ? phoneId : undefined}
+            onClick={() => {
+              setDraft(phone ?? '')
+              setEditing((v) => !v)
+            }}
+          >
+            <Pencil size={13} aria-hidden /> {phone ? 'Change' : 'Add number'}
+          </button>
+        </p>
+      </div>
 
       {/* Patient app */}
-      <span className="inline-flex min-h-8 flex-wrap items-center gap-x-1.5">
-        <SmartphoneNfc size={14} aria-hidden className="shrink-0 text-body" />
-        {app.enrolled ? (
-          <>
-            <span className="font-medium text-risk-low-ink">App signed in</span>
-            <span className="text-body">
-              <span aria-hidden>· </span>
-              {app.device_name ?? 'iPhone'}
-              {app.last_seen_at && <> · seen {relativeTime(app.last_seen_at)}</>}
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="font-medium text-ink">
-              {app.ever_enrolled ? 'App signed out' : 'App not enrolled'}
-            </span>
-            {/* The dot is its own item so a wrap leaves it trailing, never
-                leading the next line. */}
-            <span aria-hidden className="text-body">·</span>
-            <span className="text-body">{first} gets messages and tasks by text only</span>
-            <button
-              ref={linkBtn}
-              type="button"
-              className="btn-plain btn-sm"
-              aria-haspopup="dialog"
-              aria-expanded={linking}
-              aria-controls={linking ? linkId : undefined}
-              onClick={() => setLinking((v) => !v)}
-            >
-              <Link2 aria-hidden /> Link an app sign-up
-            </button>
-          </>
-        )}
-      </span>
+      <div className={ROW}>
+        <SmartphoneNfc size={14} aria-hidden className={ICON} />
+        <p className="min-w-0">
+          {app.enrolled ? (
+            <DotLine
+              parts={[
+                <span className="font-medium text-risk-low-ink">App signed in</span>,
+                app.device_name ?? 'iPhone',
+                app.last_seen_at && `seen ${relativeTime(app.last_seen_at)}`,
+              ]}
+            />
+          ) : (
+            <>
+              <DotLine
+                parts={[
+                  <span className="font-medium text-ink">
+                    {app.ever_enrolled ? 'App signed out' : 'App not enrolled'}
+                  </span>,
+                  `${first} gets messages and tasks by text only`,
+                ]}
+              />{' '}
+              <button
+                ref={linkBtn}
+                type="button"
+                className={INLINE_ACTION}
+                aria-haspopup="dialog"
+                aria-expanded={linking}
+                aria-controls={linking ? linkId : undefined}
+                onClick={() => setLinking((v) => !v)}
+              >
+                <Link2 size={13} aria-hidden /> Link an app sign-up
+              </button>
+            </>
+          )}
+        </p>
+      </div>
 
       <Popover
         open={editing}

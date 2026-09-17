@@ -67,6 +67,19 @@ export default {
     'on',
     'shimmer',
     'rise',
+    // Atmosphere + glass (Aside-derived). See index.css.
+    'sky-stage',
+    'sky-window',
+    'on-sky',
+    'glass',
+    'glass-overlay',
+    'field-glass',
+    'seg-glass',
+    'tile-frost',
+    'badge-ring',
+    'shimmer-text',
+    'well',
+    'ground-shadow',
   ],
   theme: {
     // WEIGHT — NOT in `extend`, deliberately: this REPLACES Tailwind's weight
@@ -183,14 +196,15 @@ export default {
         pill: 'var(--r-pill)', // 999px every button and chip
       },
 
-      // GLASS — the console gets exactly TWO blurred surfaces: the modal
-      // scrim and the scrolled app bar. Use the `.scrim` and `.appbar`
-      // recipes, which carry the degradation blocks and the kill switch.
-      // Never on a clinical number, risk pill, card or popover, never on
-      // /checkin or /t, never glass-on-glass.
+      // GLASS — the scrim, the scrolled app bar, and the Aside-derived
+      // recipes (`.glass`, `.glass-overlay`, `.seg-glass`, `.field-glass`,
+      // `.tile-frost`). Use the recipes: they carry the alpha floors, the
+      // degradation blocks and the kill switch. Never on a card, a clinical
+      // number or a risk pill, never on /checkin or /t.
       backdropBlur: {
         scrim: 'var(--blur-scrim)', // 2px
         bar: 'var(--bar-blur)', // 24px — only via .appbar
+        glass: 'var(--glass-blur)', // 20px — prefer the .glass / .glass-overlay recipes
       },
 
       // ELEVATION — one ambient wash (`overlay`, floating overlays only) and
@@ -221,6 +235,10 @@ export default {
         float: 'var(--shadow-float)',
         // The brand-filled segmented thumb.
         thumb: 'var(--shadow-thumb)',
+        // Aside's soft layered shadow (5-7% alpha): floating glass only.
+        soft: 'var(--shadow-soft)',
+        // Recessed well (inset). `.field` already carries it.
+        well: 'var(--shadow-well)',
       },
 
       colors: {

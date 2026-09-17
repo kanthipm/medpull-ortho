@@ -132,7 +132,7 @@ export default function ListRow({
   const tintClass =
     tint === 'risk-high' ? 'row-risk-high' : tint === 'brand' ? 'on-tint bg-brand-tint' : ''
   const titleText = `${compact ? 'text-copy' : 'text-copy-lg'} font-medium text-ink ${titleClassName}`
-  const linkClass = `stretched-link text-left outline-none ${titleText}`
+  const linkClass = `stretched-link text-left outline-0 [outline-style:none] ${titleText}`
 
   let titleNode: ReactNode = title
   if (to) {

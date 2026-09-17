@@ -18,10 +18,14 @@ const FOCUSABLE =
 
 /** Dialog — a floating sheet in the top layer.
  *
- *  SURFACE. `.overlay`: 20px corners, opaque overlay panel, the soft layered
- *  --shadow-overlay; dark adds its 1px --overlay-border (the dark overlay
- *  panel is only 1.584:1 on its scrim). Secondary text inside is --body
- *  (dark --muted is 3.655:1 on the overlay panel; --body 4.955).
+ *  SURFACE. `.overlay.glass-overlay`: 20px corners, the overlay panel as
+ *  liquid glass at its alpha floor (.93 light / .97 dark, computed over solid
+ *  black / solid white with no blur credit, so every text token still clears
+ *  4.5:1 over anything), a light-catching top rim, Aside's soft layered
+ *  shadow plus --shadow-overlay; dark adds its 1px --overlay-border.
+ *  Secondary text inside is --body (dark --muted is 3.655:1 on the overlay
+ *  panel; --body 4.955). Opaque under Increase Contrast, reduced
+ *  transparency, forced colours and data-glass="off".
  *
  *  BACKDROP. The `.scrim` recipe: non-flipping black at .62 light / .70 dark
  *  with a 2px blur and its reduced-transparency / contrast / forced-colors /
@@ -133,7 +137,7 @@ export default function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
-        className={`overlay ${OVERLAY_SCOPE} relative flex max-h-[min(88vh,860px)] w-full ${WIDTH[size]} animate-modalIn flex-col outline-none ${className}`}
+        className={`overlay glass-overlay ${OVERLAY_SCOPE} relative flex max-h-[min(88vh,860px)] w-full ${WIDTH[size]} animate-modalIn flex-col outline-0 [outline-style:none] ${className}`}
       >
         <div className="flex items-start justify-between gap-3 px-6 pb-3 pt-5">
           <div className="min-w-0">

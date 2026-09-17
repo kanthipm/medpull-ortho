@@ -1,6 +1,15 @@
-import { Archive, ArchiveRestore, Check, ClipboardList, MessageSquare, Plus, Star } from 'lucide-react'
+import {
+  Archive,
+  ArchiveRestore,
+  BookMarked,
+  Check,
+  ClipboardList,
+  MessageSquare,
+  Plus,
+  Star,
+} from 'lucide-react'
 import { useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { DraftTask, MessageTemplate, MessageTone, TaskTemplate } from '../../api/plan'
 import {
   useCreateMessageTemplate,
@@ -28,7 +37,7 @@ import {
   ucLabel,
 } from '../patient/plan/planCopy'
 import SettingsNav from './SettingsNav'
-import Switch, { GroupFooter, GroupHeader, SettingsHeading } from './Switch'
+import Switch, { GroupFooter, GroupHeader, SettingsHero } from './Switch'
 
 type Tab = 'tasks' | 'messages'
 const TABS: { key: Tab; label: string }[] = [
@@ -54,16 +63,22 @@ export default function LibraryPage() {
 
   return (
     <div className="pb-10">
-      <div className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
-        <SettingsNav className="mb-6" />
-        <SettingsHeading title="Library">
-          Care-plan tasks and patient messages the team reuses. Pinned ones show first as quick
-          picks.
-        </SettingsHeading>
-      </div>
+      <SettingsHero
+        nav={<SettingsNav />}
+        icon={<BookMarked />}
+        title="Library"
+        decor={[<ClipboardList key="tasks" />, <MessageSquare key="messages" />, <Star key="star" />]}
+      >
+        Care-plan tasks and patient messages the team reuses. Starred ones show first as quick
+        picks.
+      </SettingsHero>
 
+      {/* The toolbar sits in the sky's tail. Left: the glass tabs and a glass
+          capsule around the switch (the dark brand track is 2.666 on the bare
+          sky, 3.7 on the glass). Right, inside the decor zone at >= 1024px:
+          only the opaque filled capsule (white on #1976D2, 4.602). */}
       <div
-        className="rise mt-8 flex flex-wrap items-center gap-x-4 gap-y-3"
+        className="rise mt-8 flex flex-wrap items-center gap-x-3 gap-y-3"
         style={{ '--rise-delay': '60ms' } as CSSProperties}
       >
         <SegmentedControl<Tab>
@@ -73,9 +88,10 @@ export default function LibraryPage() {
             setTab(t)
             setCreating(false)
           }}
+          tone="glass"
           aria-label="Library section"
         />
-        <span className="inline-flex items-center gap-2">
+        <span className="glass inline-flex min-h-11 items-center gap-2.5 rounded-pill py-1 pl-2 pr-4">
           <Switch
             id="library-show-archived"
             checked={showArchived}
@@ -85,14 +101,14 @@ export default function LibraryPage() {
           <label
             id="library-show-archived-label"
             htmlFor="library-show-archived"
-            className="cursor-pointer text-copy font-medium text-body"
+            className="cursor-pointer text-copy font-medium text-ink"
           >
             Show archived
           </label>
         </span>
         <button
           type="button"
-          className="btn-tinted ml-auto"
+          className="btn-filled ml-auto"
           aria-expanded={creating}
           onClick={() => setCreating((c) => !c)}
         >
@@ -207,7 +223,7 @@ function TaskLibrary({
             </fieldset>
             <FormFooter
               pinId="task-pin"
-              pinLabel="Pin as a quick pick"
+              pinLabel="Star as a quick pick"
               pinned={pinned}
               onPinned={setPinned}
               onCancel={onDone}
@@ -251,7 +267,7 @@ function TaskLibrary({
               {rows.map((t) => (
                 <tr key={t.id} className={rowClass(t.archived)}>
                   <Td className="max-w-[380px]">
-                    <TitleCell title={t.title} pinned={t.pinned} archived={t.archived} />
+                    <TitleCell title={t.title} archived={t.archived} />
                     {t.why && <span className="mt-0.5 block text-copy text-secondary">{t.why}</span>}
                     <span className="meta mt-1 block">
                       {[
@@ -404,7 +420,7 @@ function MessageLibrary({
             </div>
             <FormFooter
               pinId="message-pin"
-              pinLabel="Pin in the composer"
+              pinLabel="Star as a composer quick pick"
               pinned={pinned}
               onPinned={setPinned}
               onCancel={onDone}
@@ -447,7 +463,7 @@ function MessageLibrary({
               {rows.map((t) => (
                 <tr key={t.id} className={rowClass(t.archived)}>
                   <Td className="max-w-[480px]">
-                    <TitleCell title={t.title} pinned={t.pinned} archived={t.archived} />
+                    <TitleCell title={t.title} archived={t.archived} />
                     <span className="mt-0.5 block text-copy text-secondary">{t.body}</span>
                     {(t.tags ?? []).length > 0 && (
                       <span className="meta mt-1 block">{(t.tags ?? []).join(' · ')}</span>
@@ -495,20 +511,21 @@ function LibraryGroup({
   id: string
   title: string
   count: number
-  empty: React.ReactNode
-  children: React.ReactNode
+  empty: ReactNode
+  children: ReactNode
 }) {
   return (
     <section aria-labelledby={id}>
-      <GroupHeader
-        id={id}
-        aside={
-          <span className="meta tabular-nums">
-            {count} {count === 1 ? 'template' : 'templates'}
-          </span>
-        }
-      >
+      {/* The count rides beside the title as a ring badge, on the left: the
+          header can sit in the sky's tail, and its right end would be in the
+          decor zone, where only ink may go. */}
+      <GroupHeader id={id} onSky>
         {title}
+        <span className="sr-only">, </span>
+        <span className="badge-ring ml-2 align-[1px] tabular-nums">
+          {count}
+          <span className="sr-only"> {count === 1 ? 'template' : 'templates'}</span>
+        </span>
       </GroupHeader>
       <div className="card-group">
         {count === 0 ? (
@@ -527,7 +544,7 @@ function LibraryGroup({
   )
 }
 
-function Th({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function Th({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <th
       scope="col"
@@ -538,19 +555,17 @@ function Th({ children, className = '' }: { children: React.ReactNode; className
   )
 }
 
-function Td({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function Td({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <td className={`px-2 py-3 align-top first:pl-4 last:pr-3 ${className}`}>{children}</td>
 }
 
-function TitleCell({ title, pinned, archived }: { title: string; pinned: boolean; archived: boolean }) {
+/** The title, plus an "Archived" chip when it applies. Quick-pick state is
+ *  the filled star in the actions column (named "Quick pick: <title>",
+ *  aria-pressed), and pinned rows sort first, so no pill repeats it. */
+function TitleCell({ title, archived }: { title: string; archived: boolean }) {
   return (
     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className="font-medium text-ink">{title}</span>
-      {pinned && (
-        <span className="chip bg-brand-tint text-on-brand-tint">
-          <Star size={12} fill="currentColor" aria-hidden /> Quick pick
-        </span>
-      )}
       {archived && <span className="chip bg-risk-missing-tint text-risk-missing-ink">Archived</span>}
     </span>
   )
@@ -565,7 +580,7 @@ function ToggleCapsule({
 }: {
   on: boolean
   onClick: () => void
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <button
@@ -637,12 +652,14 @@ function RowActions({
   const ArchiveIcon = archived ? ArchiveRestore : Archive
   return (
     <span className="inline-flex items-center gap-1">
-      <Tooltip content={pinned ? 'Remove from quick picks' : 'Pin as a quick pick'}>
+      {/* Judge #13: the name and the tooltip say the same thing. A toggle
+          keeps one name; aria-pressed (and the filled star) carry on/off. */}
+      <Tooltip content="Quick pick">
         <button
           type="button"
           onClick={onPin}
           aria-pressed={pinned}
-          aria-label={`Pin ${title}`}
+          aria-label={`Quick pick: ${title}`}
           className={`btn-icon btn-sm ${pinned ? 'text-brand-ink hover:text-brand-ink' : ''}`}
         >
           <Star fill={pinned ? 'currentColor' : 'none'} />

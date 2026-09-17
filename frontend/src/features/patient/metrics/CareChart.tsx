@@ -15,16 +15,11 @@ import {
 import type { ChartPoint, ChartSpec, GaugeExtra } from '../../../api/care'
 import {
   CHART_TOOLTIP_WRAPPER,
-  ChangeLabel,
-  ChartTooltip,
   lineDomain,
   markerSide,
-} from '../../../components/charts/Sparkline'
-import { fmtNum as fmtRaw } from './labels'
-
-/** fmtNum with a true minus (U+2212) — R19: a negative reading never shows a
- *  hyphen. */
-const fmtNum = (v: number) => fmtRaw(v).replace('-', '\u2212')
+} from '../../../components/charts/chartScale'
+import { ChangeLabel, ChartTooltip } from '../../../components/charts/Sparkline'
+import { fmtNum, visibleBars, xText, xTick } from './chartText'
 
 /** Every `ChartSpec.kind` the care engine emits, drawn in the app's chart
  *  idiom: quiet grid and references, a warm marker for change-points, status
@@ -104,24 +99,6 @@ function mergeRows(spec: ChartSpec): Row[] {
   return out
 }
 
-function xText(spec: ChartSpec, x: number | string, label?: string): string {
-  if (label) return label
-  if (typeof x === 'string') return x
-  const axis = spec.x_label || 'Post-op day'
-  return /^post-?op day$/i.test(axis) ? `Post-op day ${fmtNum(x)}` : `${axis} ${fmtNum(x)}`
-}
-
-function xTick(spec: ChartSpec, x: number | string): string {
-  if (typeof x === 'string') return x
-  const axis = spec.x_label || 'Post-op day'
-  // fmtNum carries the true minus, so pre-op days read "D−5".
-  if (/^post-?op day$/i.test(axis)) return `D${fmtNum(x)}`
-  if (/^day/i.test(axis)) return `D${fmtNum(x)}`
-  if (/^hour/i.test(axis)) return `${fmtNum(x)}h`
-  if (/^minute/i.test(axis)) return `${fmtNum(x)}m`
-  return fmtNum(x)
-}
-
 /** Tooltip body for every card chart. It renders through <ChartTooltip>, so
  *  it lives in the top layer (R5) as an opaque `.overlay` with the overlay
  *  scope (secondary text is --body there: 7.222 light / 4.955 dark; ink
@@ -164,20 +141,6 @@ function ChartTip({
       )}
     </ChartTooltip>
   )
-}
-
-/** "Post-op day 19" for the newest plotted point — the date line under a
- *  metric's value, like the app's portfolio tiles. Null when nothing is
- *  plotted or the chart is not a series (gauge / heat). */
-export function latestLabel(spec: ChartSpec | null): string | null {
-  if (!spec || spec.kind === 'gauge' || spec.kind === 'heat') return null
-  const pts = spec.series.filter((p) => p.y != null)
-  if (pts.length === 0) return null
-  let last = pts[pts.length - 1]
-  if (pts.every((p) => typeof p.x === 'number')) {
-    last = pts.reduce((a, b) => ((b.x as number) > (a.x as number) ? b : a))
-  }
-  return xText(spec, last.x, last.label)
 }
 
 /** Sparkline's panel-cored dot on the newest reading. */
@@ -428,15 +391,123 @@ function Empty({ thin }: { thin: boolean }) {
   )
 }
 
+/** "How far from their own normal" — the M12 tile when its per-signal bars
+ *  would be one bar and two dashes (judge #9). A horizontal track from 0σ,
+ *  the patient's usual range (0–2σ) as a solid --chart-s2 band, and a marker
+ *  at today's distance. The number itself is stated in the card header, so
+ *  this is a reading aid, never the only carrier.
+ *
+ *  Ratios on the --panel well, light / dark:
+ *    usual band  --chart-s2       5.811 / 10.825 (vs panel; a 1.4.11 object)
+ *    marker      --panel core in an --ink hairline: 5.811 / 10.825 on the
+ *                band, 18.377 / 17.194 core-to-hairline (as in <Gauge>)
+ *    scale text  --chart-axis-label 5.393 / 4.906 (11px, the axis rung)
+ *  The band is named in words ("usual range") under it, so the reading does
+ *  not rest on the teal. */
+const USUAL_SIGMA = 2
+
+function DistanceGauge({
+  sigma,
+  spec,
+  thin,
+}: {
+  sigma: number
+  spec: ChartSpec
+  thin: boolean
+}) {
+  const max = Math.min(8, Math.max(4, Math.ceil(sigma * 1.25)))
+  const pct = (v: number) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`
+  const over = sigma > max
+  const drivers = spec.series
+    .filter((p): p is ChartPoint & { y: number } => typeof p.y === 'number')
+    .sort((a, b) => b.y - a.y)
+  return (
+    <div className={thin ? 'flex h-11 flex-col justify-center' : 'py-2'}>
+      <div
+        role="img"
+        aria-label={`${fmtNum(sigma)}σ from their own baseline; the usual range is 0 to ${USUAL_SIGMA}σ`}
+        className={`relative w-full rounded-pill bg-line ${thin ? 'h-1.5' : 'h-2.5'}`}
+      >
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 rounded-l-pill bg-chart-s2"
+          style={{ width: pct(USUAL_SIGMA) }}
+        />
+        <span
+          aria-hidden
+          className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-panel outline outline-1 outline-ink ${thin ? 'h-3 w-[5px]' : 'h-4 w-[5px]'}`}
+          style={{ left: pct(sigma) }}
+        />
+      </div>
+      <div
+        aria-hidden
+        className="relative mt-1.5 h-4 text-micro font-medium tabular-nums text-chart-axis-label"
+      >
+        {thin ? (
+          // A tile is ~120px: one left label names the band and its edge.
+          <span className="absolute left-0">usual 0–{USUAL_SIGMA}σ</span>
+        ) : (
+          <>
+            <span className="absolute left-0">0σ</span>
+            <span className="absolute -translate-x-1/2" style={{ left: pct(USUAL_SIGMA) }}>
+              {USUAL_SIGMA}σ
+            </span>
+          </>
+        )}
+        <span className="absolute right-0">
+          {max}σ{over ? '+' : ''}
+        </span>
+      </div>
+      {!thin && (
+        <>
+          <p className="mt-1 text-label text-secondary">
+            <span
+              aria-hidden
+              className="mr-1.5 inline-block h-2 w-3 rounded-pill bg-chart-s2 align-middle"
+            />
+            usual range for this patient
+          </p>
+          {drivers.length > 0 && (
+            <ul className="mt-2 space-y-0.5 text-label" aria-label={spec.y_label || 'Share of distance'}>
+              {drivers.map((d) => (
+                <li key={String(d.x)} className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate text-body">{d.label ?? String(d.x)}</span>
+                  <span className="shrink-0 font-medium tabular-nums text-ink">
+                    {fmtNum(d.y)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** The M12 swap: a σ reading whose bar chart would be too sparse to read. */
+function wantsDistance(spec: ChartSpec, sigma: number | null | undefined): sigma is number {
+  return typeof sigma === 'number' && spec.kind === 'bars' && visibleBars(spec) < 3
+}
+
 function hasPoints(spec: ChartSpec): boolean {
   return spec.series.length > 0 || (spec.fit?.length ?? 0) > 0
 }
 
-/** Card-size chart (h-28) with axes, tooltip, legend for dual series. */
-export default function CareChart({ spec }: { spec: ChartSpec | null }) {
+/** Card-size chart (h-28) with axes, tooltip, legend for dual series.
+ *  `sigma`: the metric's distance from baseline, when its unit is σ (M12);
+ *  a sparse per-signal bar chart is then drawn as a distance gauge. */
+export default function CareChart({
+  spec,
+  sigma,
+}: {
+  spec: ChartSpec | null
+  sigma?: number | null
+}) {
   const gradientId = `care-fade-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const hostRef = useRef<HTMLDivElement>(null)
   if (!spec) return <Empty thin={false} />
+  if (wantsDistance(spec, sigma)) return <DistanceGauge sigma={sigma} spec={spec} thin={false} />
   if (spec.kind === 'gauge') return <Gauge spec={spec} thin={false} />
   if (spec.kind === 'heat') return <Heat spec={spec} />
   if (!hasPoints(spec)) return <Empty thin={false} />
@@ -693,9 +764,16 @@ export default function CareChart({ spec }: { spec: ChartSpec | null }) {
 /** 44px tile variant: line/band/scatter/bars reduced to the primary series
  *  with no axes; gauge → thin meter; heat → per-day dot strip; dual →
  *  primary series only. */
-export function MiniChart({ spec }: { spec: ChartSpec | null }) {
+export function MiniChart({
+  spec,
+  sigma,
+}: {
+  spec: ChartSpec | null
+  sigma?: number | null
+}) {
   const gradientId = `care-mini-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   if (!spec) return <Empty thin />
+  if (wantsDistance(spec, sigma)) return <DistanceGauge sigma={sigma} spec={spec} thin />
   if (spec.kind === 'gauge') return <Gauge spec={spec} thin />
   if (spec.kind === 'heat') return <HeatStrip spec={spec} />
   if (!hasPoints(spec)) return <Empty thin />

@@ -21,6 +21,14 @@ export function statusChipText(m: CareMetric): string {
   return METRIC_STATUS[m.status]?.label ?? 'OK'
 }
 
+/** State chip for a soft tile. Light --risk-missing-tint IS --soft, so a
+ *  "Needs data" chip would lose its capsule there; it is panel-filled
+ *  instead (missing ink on panel 7.222 / 6.650). See MetricCard.tsx. */
+export function tileChipClass(status: CareMetric['status']): string {
+  if (status === 'nodata') return 'bg-panel text-risk-missing-ink normal-case tracking-label'
+  return (METRIC_STATUS[status] ?? METRIC_STATUS.nodata).pill
+}
+
 /** The guardrail sentence for M12/M13-style metrics — verbatim, everywhere. */
 export const GUARDED_NOTE = 'for review · not a diagnosis'
 

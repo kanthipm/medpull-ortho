@@ -46,6 +46,18 @@ const ACTION = {
   { label: string; icon: typeof Phone; family: TileFamily }
 >
 
+/** Codes the header already states: the one risk pill says the composite
+ *  level, so "Composite risk high" under a step only restates it. */
+const HEADER_CODES = /^COMPOSITE_/
+
+/** A step's evidence as one line, minus what the header already says. */
+function evidenceOf(step: NextStep): string {
+  return (step.source ?? [])
+    .filter((src) => !HEADER_CODES.test(src))
+    .map((src) => sourceLabel(src))
+    .join(' · ')
+}
+
 const URGENCY_ORDER: Urgency[] = ['today', 'this_week', 'routine']
 
 function stepActionLabel(step: NextStep, canText: boolean): string {
@@ -151,7 +163,11 @@ export default function NextSteps({
                   const Icon = meta.icon
                   // Consecutive steps from one finding share a detail; say it once.
                   const repeat = i > 0 && items[i - 1].detail === s.detail
-                  const sources = (s.source ?? []).map((src) => sourceLabel(src)).join(' · ')
+                  // Evidence, said once per run (R7): a step that cites the same
+                  // evidence as the one above it shows none, and the composite
+                  // risk code is dropped because the header pill already says it.
+                  const sources = evidenceOf(s)
+                  const sourcesRepeat = i > 0 && evidenceOf(items[i - 1]) === sources
                   return (
                     <ListRow
                       key={s.key}
@@ -171,9 +187,9 @@ export default function NextSteps({
                       }
                       subtitleLines={2}
                       meta={
-                        sources || wording ? (
+                        (sources && !sourcesRepeat) || wording ? (
                           <>
-                            {sources && <span className="block">{sources}</span>}
+                            {sources && !sourcesRepeat && <span className="block">{sources}</span>}
                             {wording && (
                               <span className="block">
                                 AI wording · {wording.title}

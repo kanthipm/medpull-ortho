@@ -187,12 +187,19 @@ def m2(ctx: CareContext) -> CareMetric:
         y = next_day.get(d + 1)
         if x is not None and x == x and y is not None:
             pairs.append((d, float(x), y))
-    coverage = f"{len(pairs)} paired days of {label} and next-day {noun} in 21"
-    if len(pairs) < 6:
+    n = len(pairs)
+    coverage = (f"{n} paired {'day' if n == 1 else 'days'} of {label} and next-day {noun} "
+                "in the last 21 days")
+    if n < 6:
+        if n == 0:
+            have = f"No day yet pairs a {label} count with a next-day {noun} score"
+        elif n == 1:
+            have = f"Only one day pairs a {label} count with a next-day {noun} score"
+        else:
+            have = f"Only {n} days pair a {label} count with a next-day {noun} score"
         return nodata(
             "M2", ctx, "Needs more pairs", unlock=unlock, name=name, coverage_text=coverage,
-            finding=f"Only {len(pairs)} days pair a {label} count with a next-day {noun} score; "
-                    "six are needed.",
+            finding=f"{have}; six are needed.",
         )
     latest_pair_day = max(p[0] for p in pairs) + 1
     if stale(latest_pair_day, ctx.postop_day):

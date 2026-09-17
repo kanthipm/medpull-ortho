@@ -1,17 +1,5 @@
 import { PRIORITY, type Priority } from '../lib/risk'
-
-/** Up to two initials from a display name ("Marcus Reyes" -> "MR"). */
-export function initialsOf(name: string): string {
-  const parts = name
-    .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-  if (parts.length === 0) return '?'
-  const first = parts[0][0] ?? ''
-  const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? '') : ''
-  return (first + last).toUpperCase()
-}
+import { initialsOf } from './initials'
 
 const SIZE = {
   sm: 'h-7 w-7 text-label', // 28px

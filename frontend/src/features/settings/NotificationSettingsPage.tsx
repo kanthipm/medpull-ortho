@@ -1,4 +1,4 @@
-import { Bell, Mail, MessageSquare, Moon, PanelTop } from 'lucide-react'
+import { Bell, Mail, MessageSquare, Moon, Palette, PanelTop, SlidersHorizontal } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import { useNotificationPreferences, useUpdateNotificationPreferences } from '../../api/queries'
 import EmptyState from '../../components/EmptyState'
@@ -7,7 +7,7 @@ import { SkeletonCard } from '../../components/Skeleton'
 import Tile from '../../components/Tile'
 import { useGlass, useTheme } from '../../lib/theme'
 import SettingsNav from './SettingsNav'
-import { GroupFooter, GroupHeader, SettingsHeading, SwitchRow } from './Switch'
+import { GroupFooter, GroupHeader, SettingsHero, SwitchRow } from './Switch'
 
 const CHANNEL_META: Record<string, { label: string; description: string; icon: typeof Bell }> = {
   in_app: {
@@ -35,12 +35,14 @@ const TILE_LG_INSET = 68
  *  by AppShell). */
 export default function NotificationSettingsPage() {
   const header = (
-    <div className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
-      <SettingsNav className="mb-6" />
-      <SettingsHeading title="General">
-        How the care team is alerted, and how the console looks on this device.
-      </SettingsHeading>
-    </div>
+    <SettingsHero
+      nav={<SettingsNav />}
+      icon={<SlidersHorizontal />}
+      title="General"
+      decor={[<Bell key="bell" />, <Moon key="moon" />, <Palette key="palette" />]}
+    >
+      How the care team is alerted, and how the console looks on this device.
+    </SettingsHero>
   )
 
   return (
@@ -62,7 +64,7 @@ function AlertChannels() {
       className="rise mt-8"
       style={{ '--rise-delay': '60ms' } as CSSProperties}
     >
-      <GroupHeader id="alert-channels">Alert channels</GroupHeader>
+      <GroupHeader id="alert-channels" onSky>Alert channels</GroupHeader>
       {isLoading ? (
         <SkeletonCard rows={3} />
       ) : isError || !prefs ? (
@@ -136,11 +138,11 @@ function Appearance() {
         <SwitchRow
           id="appearance-glass"
           leading={<Tile size="lg" family="blue" icon={<PanelTop />} />}
-          title="Translucent app bar"
+          title="Glass and colour"
           detail={
             systemReducedTransparency
-              ? "Your system's Reduce transparency setting keeps the bar solid."
-              : 'Frosts the top bar as the page scrolls under it. Turn off for a solid bar.'
+              ? "Your system's Reduce transparency setting keeps every surface solid."
+              : 'Frosts the top bar and menus, and tints the sky behind page titles. Turn off for solid surfaces.'
           }
           checked={glass === 'on' && !systemReducedTransparency}
           disabled={systemReducedTransparency}

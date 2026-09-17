@@ -54,26 +54,80 @@ const CHOICE_LABELS: Record<string, string> = {
 
 // --- shared patient-web pieces ---------------------------------------------------
 
-/** The page frame: canvas only (no wash, no bar), a 16px gutter, and a quiet
- *  lockup — a blue tile plus the name in --ink 600. The name is not
- *  brand-ink: that is 5.354 on light canvas, under this route's 7:1 bar. */
+/** The page frame: canvas only (no wash, no bar, no glass), a 16px gutter.
+ *  With a `hero`, the lockup and the page head sit together in the static
+ *  brand gradient card (PatientHero); without one (loading, error), the
+ *  lockup sits quietly on the canvas. The name is --ink 600, not brand-ink:
+ *  that is 5.354 on light canvas, under this route's 7:1 bar. */
 export function PatientShell({
   children,
+  hero,
   width = 'lg',
 }: {
   children: ReactNode
+  hero?: ReactNode
   width?: 'md' | 'lg'
 }) {
+  const lockup = (
+    <p className="flex items-center gap-2.5 text-copy-lg font-semibold text-ink">
+      <Tile family="blue" icon={<HeartPulse />} />
+      MedPull Recovery
+    </p>
+  )
   return (
     <main
-      className={`mx-auto min-h-screen px-4 pb-16 pt-8 sm:pt-12 ${width === 'md' ? 'max-w-md' : 'max-w-lg'}`}
+      className={`mx-auto min-h-screen px-4 pb-16 pt-4 sm:pt-8 ${width === 'md' ? 'max-w-md' : 'max-w-lg'}`}
     >
-      <p className="mb-8 flex items-center gap-2.5 text-copy-lg font-semibold text-ink">
-        <Tile family="blue" icon={<HeartPulse />} />
-        MedPull Recovery
-      </p>
+      {hero ? (
+        <PatientHero>
+          {lockup}
+          <div className="mt-6">{hero}</div>
+        </PatientHero>
+      ) : (
+        <div className="mb-8 pt-4">{lockup}</div>
+      )}
       {children}
     </main>
+  )
+}
+
+/**
+ * The friendly head of a patient page: an OPAQUE card with a static Medical
+ * Blue / Teal gradient. No blur, no translucency (every layer paints over
+ * the opaque base inside the one element), no motion.
+ *
+ * Layers, top first: a white highlight (lightens only, light mode), a Medical
+ * Blue blob top right, a Teal blob bottom right, over a pale blue -> pale
+ * teal base. Worst point = every tinted blob at its peak over the base's
+ * darker stop (8-bit sRGB, WCAG 0.04045):
+ *   light  #AFDBEE / #B0D9F0   --ink 12.418 / 12.277
+ *   dark   #0E4A69 / #10466E   --ink  9.536 /  9.890
+ * So ONLY --ink text goes in here (above the route's 7:1 bar in both modes);
+ * --body would be 3.688 in dark and is not used. Tiles are opaque with their
+ * own glyph pairs. The ring is a 1px low-alpha line (0.5px only at 2dppx).
+ * Increase Contrast, forced colours, reduced transparency and glass-off
+ * drop the gradient to the plain --panel card with a --line-strong edge.
+ */
+function PatientHero({ children }: { children: ReactNode }) {
+  return (
+    <section
+      className={[
+        'mb-8 rounded-[28px] px-5 pb-6 pt-5 sm:px-6 sm:pb-7 sm:pt-6',
+        'shadow-[inset_0_0_0_1px_rgb(14_21_28/0.06),inset_0_1px_0_rgb(255_255_255/0.9)]',
+        'bg-[#EAF3FD]',
+        'bg-[image:radial-gradient(60%_70%_at_0%_0%,rgb(255_255_255/0.75),rgb(255_255_255/0)_70%),radial-gradient(60%_90%_at_100%_0%,rgb(25_118_210/0.14),rgb(25_118_210/0)_72%),radial-gradient(70%_90%_at_92%_110%,rgb(0_172_193/0.14),rgb(0_172_193/0)_72%),linear-gradient(135deg,#EAF3FD,#E7F7FA)]',
+        'dark:bg-[#0F2238]',
+        'dark:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08),inset_0_1px_0_rgb(255_255_255/0.10)]',
+        'dark:bg-[image:radial-gradient(60%_90%_at_100%_0%,rgb(25_118_210/0.26),rgb(25_118_210/0)_72%),radial-gradient(70%_90%_at_92%_110%,rgb(0_172_193/0.14),rgb(0_172_193/0)_72%),linear-gradient(135deg,#0F2238,#0C2830)]',
+        // Flattened: the plain card.
+        'contrast-more:!bg-panel contrast-more:!bg-none contrast-more:!shadow-[inset_0_0_0_1px_rgb(var(--line-strong))]',
+        '[@media(prefers-reduced-transparency:reduce)]:!bg-panel [@media(prefers-reduced-transparency:reduce)]:!bg-none',
+        '[[data-glass=off]_&]:!bg-panel [[data-glass=off]_&]:!bg-none',
+        'forced-colors:!bg-none forced-colors:border forced-colors:border-[CanvasText]',
+      ].join(' ')}
+    >
+      {children}
+    </section>
   )
 }
 
@@ -339,16 +393,20 @@ export default function CheckinPage() {
   const answered = Object.values(answers).some((v) => v !== null && v !== '')
 
   return (
-    <PatientShell>
-      <PatientTitle>
-        Hi {data.patient_name},<br />
-        how's your recovery today?
-      </PatientTitle>
-      <p className="mt-3 text-copy-lg text-ink">
-        Takes under a minute. Skip anything you're not sure about.
-      </p>
-
-      <div className="mt-8 flex flex-col gap-stack">
+    <PatientShell
+      hero={
+        <>
+          <PatientTitle>
+            Hi {data.patient_name},<br />
+            how's your recovery today?
+          </PatientTitle>
+          <p className="mt-3 text-copy-lg text-ink">
+            Takes under a minute. Skip anything you're not sure about.
+          </p>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-stack">
         {data.questions.map((q) => (
           <QuestionCard
             key={q.id}

@@ -1,10 +1,11 @@
-import { ChevronLeft, Sigma, Sparkles } from 'lucide-react'
-import { Fragment, useCallback, useState } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useCallback, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useCareMetrics } from '../../api/care'
 import { usePatientDelivery } from '../../api/plan'
 import { usePatient, useRecompute } from '../../api/queries'
+import { NarrativeTile } from '../../components/AIAttribution'
 import Avatar from '../../components/Avatar'
 import EmptyState from '../../components/EmptyState'
 import GuardrailFootnote from '../../components/GuardrailFootnote'
@@ -12,13 +13,13 @@ import type { ReadoutTone } from '../../components/MetricCluster'
 import PriorityBadge from '../../components/PriorityBadge'
 import SectionCard from '../../components/SectionCard'
 import { RefreshOverlay, SkeletonCard, SkeletonLine } from '../../components/Skeleton'
-import Tile from '../../components/Tile'
 import { useToast } from '../../components/Toast'
 import { relativeTime, signedPct } from '../../lib/format'
 import { CONFIDENCE_LABEL, TRAJECTORY_LABEL } from '../../lib/risk'
 import ActionBar from './ActionBar'
 import CheckinHistory from './CheckinHistory'
 import ContactCard from './ContactCard'
+import DotLine from './DotLine'
 import FullStats from './metrics/FullStats'
 import HeadlineMetrics from './metrics/HeadlineMetrics'
 import MessagesSection from './plan/MessagesSection'
@@ -30,10 +31,26 @@ import WearableConnectionCard from './WearableConnectionCard'
 /* Layout (R3, spec W3). AppShell already caps the page at 1240px and adds the
  * gutter, so nothing here sets a width or horizontal padding.
  *
- *   header      on the ambient wash: 56px avatar, name 26/600, the ONE risk
- *               pill (R7), a facts line, reachability, then the action
- *               capsules. Text on the wash is ink / body / brand-ink only
- *               (body 6.371 worst, btn-plain 5.069 worst — see ContactCard).
+ *   header      the page head (`data-hero`), inside AppShell's sky window —
+ *               Aside's rounded window with the static Medical Blue / Teal
+ *               clouds. The window sizes itself to this element. On it:
+ *               a glass `.badge-ring` naming the pathway, the 56px avatar
+ *               lifted on a white ring, the name at the section step with
+ *               the ONE opaque risk pill (R7), the facts line, reachability,
+ *               then the action capsules (all opaque).
+ *               Text contract (safe sky, worst points light / dark): ink
+ *               15.453 / 12.002, body 6.073 / 4.642, brand-ink 4.832 /
+ *               4.735, risk-low 4.514 / 6.307. Secondary text is --body here
+ *               (`data-hero` flips it). No clinical number sits on the sky:
+ *               post-op day, trajectory and the check-in time are on the
+ *               opaque recovery card below.
+ *               At >= 1024px the right side of the window (from 58% of its
+ *               width) is the DECOR zone, where only ink and opaque controls
+ *               may sit. The text column is capped at calc(58% - 76px) of
+ *               the header (the window is the header plus 28px each side, so
+ *               58% of it is 58% of the header + 4.5px; the column starts
+ *               76px in, after the avatar and gap), so head text never runs
+ *               into it; the action bar, which is opaque, may.
  *   >= 1200px   grid [main 1fr | side 360px], gap 20.
  *               main: recovery, next steps, check-ins, tasks, messages
  *               side: headline metrics, timeline, wearables
@@ -199,42 +216,59 @@ export default function PatientDetailPage() {
         : '—'
   const rulesBased = p.summary.provider === 'fallback'
 
-  // The facts line. Every part is plain body text on the wash; confidence is
+  // The facts line. Every part is plain body text on the sky; confidence is
   // said in words only when it is reduced (R7: no chip beside the risk pill).
+  // The pathway has its own badge above the name, so the procedure is left
+  // out when the pathway name already starts with it.
+  const pathwayName = care.data?.pathway?.name ?? null
+  const procedure = general ? 'No surgery on file' : p.procedure_display
+  const restated =
+    !general &&
+    !!pathwayName &&
+    !!procedure &&
+    pathwayName.toLowerCase().startsWith(procedure.toLowerCase())
   const facts = [
     `${p.age} ${p.sex}`,
-    general ? 'No surgery on file' : p.procedure_display,
+    restated ? null : procedure,
     p.surgeon,
     p.device?.model,
-    care.data?.pathway?.name ? `Pathway: ${care.data.pathway.name}` : null,
     p.data_confidence.level !== 'high' ? CONFIDENCE_LABEL[p.data_confidence.level] : null,
-  ].filter(Boolean) as string[]
+  ]
 
   return (
     <div className="pb-4">
-      {/* ── Header, on the ambient wash ─────────────────────────────────── */}
-      <header className="rise pt-3" style={{ '--rise-delay': '0ms' } as CSSProperties}>
+      {/* ── Page head, in the sky window ────────────────────────────────── */}
+      <header data-hero className="rise pb-2 pt-3" style={{ '--rise-delay': '0ms' } as CSSProperties}>
         <Link to="/" className="btn-plain btn-sm -ml-3">
           <ChevronLeft aria-hidden size={16} /> Worklist
         </Link>
 
-        <div className="mt-3 flex flex-wrap items-start gap-x-4 gap-y-4">
-          <Avatar name={p.name} tier={p.risk.level} size="xl" className="shrink-0" />
-          <div className="min-w-0 flex-1 basis-[240px]">
+        <div className="mt-4 flex flex-wrap items-start gap-x-5 gap-y-4">
+          <Avatar
+            name={p.name}
+            tier={p.risk.level}
+            size="xl"
+            className="mt-1 shrink-0 shadow-soft ring-4 ring-panel"
+          />
+          <div className="min-w-0 flex-1 basis-[240px] min-[1024px]:max-w-[calc(58%-76px)]">
+            {pathwayName && (
+              <button
+                type="button"
+                className="badge-ring mb-2 max-w-full"
+                onClick={() => openTarget('plan')}
+              >
+                <span className="min-w-0 truncate">{pathwayName}</span>
+                <ChevronRight aria-hidden />
+                <span className="sr-only">: go to the care plan</span>
+              </button>
+            )}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <h1 className="text-title font-semibold text-ink">{p.name}</h1>
+              <h1 className="text-section font-semibold text-ink">{p.name}</h1>
               <PriorityBadge priority={p.risk.level} />
             </div>
-            <p className="mt-1 text-copy text-body">
-              {facts.map((f, i) => (
-                <Fragment key={i}>
-                  {i > 0 && <span aria-hidden> · </span>}
-                  <span className="whitespace-nowrap">{f}</span>
-                </Fragment>
-              ))}
-            </p>
+            <DotLine as="p" className="mt-1.5 text-copy text-body" parts={facts} />
             <ContactCard
-              className="mt-1.5"
+              className="mt-2"
               patientId={p.id}
               patientName={p.name}
               phone={p.phone}
@@ -243,7 +277,7 @@ export default function PatientDetailPage() {
             />
           </div>
           <ActionBar
-            className="min-[900px]:ml-auto min-[900px]:justify-end min-[900px]:pt-1"
+            className="w-full min-[900px]:ml-auto min-[900px]:w-auto min-[900px]:justify-end min-[900px]:pt-1"
             patientId={p.id}
             patientName={p.name}
             surgeon={p.surgeon}
@@ -263,23 +297,23 @@ export default function PatientDetailPage() {
             <SectionCard
               sum
               title="Recovery summary"
-              icon={
-                <Tile
-                  size="sm"
-                  family={rulesBased ? 'indigo' : 'teal'}
-                  icon={rulesBased ? <Sigma /> : <Sparkles />}
-                />
-              }
+              icon={<NarrativeTile provider={p.summary.provider} />}
               aside={
-                <span className="meta tabular-nums">
-                  {rulesBased ? 'Rules-based' : 'Written by AI'}
-                  {p.summary.generated_at && (
-                    <>
-                      <span aria-hidden className="px-1">·</span>
-                      {relativeTime(p.summary.generated_at)}
-                    </>
-                  )}
-                </span>
+                refreshing ? (
+                  // Aside's AI signature, only while the summary is being
+                  // rewritten; static secondary text under Reduce Motion.
+                  <span role="status" className="shimmer-text text-label font-medium">
+                    {rulesBased ? 'Updating summary…' : 'Writing AI summary…'}
+                  </span>
+                ) : (
+                  <DotLine
+                    className="meta tabular-nums"
+                    parts={[
+                      rulesBased ? 'Rules-based' : 'Written by AI',
+                      p.summary.generated_at && relativeTime(p.summary.generated_at),
+                    ]}
+                  />
+                )
               }
             >
               <RefreshOverlay show={refreshing} />

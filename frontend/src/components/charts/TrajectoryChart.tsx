@@ -9,7 +9,8 @@ import {
   YAxis,
 } from 'recharts'
 import { useRef } from 'react'
-import { CHART_TOOLTIP_WRAPPER, ChangeLabel, ChartTooltip, lineDomain, markerSide } from './Sparkline'
+import { CHART_TOOLTIP_WRAPPER, lineDomain, markerSide } from './chartScale'
+import { ChangeLabel, ChartTooltip } from './Sparkline'
 
 interface Props {
   actual: { day: number; v: number }[]

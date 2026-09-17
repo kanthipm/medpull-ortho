@@ -14,10 +14,12 @@ import SwiftUI
 /// one-shot entrances on Welcome and Done.
 ///
 /// CONTRAST (WCAG, 0.04045 threshold; scratchpad/i5contrast.py), light / dark.
-/// The steps sit on the ambient wash, whose densest point is (232,242,251) /
-/// (17,30,44):
+/// The form steps sit on the ambient wash, whose densest point is
+/// (232,242,251) / (17,30,44):
 ///   ink on wash 16.24 / 16.84 · body 6.38 / 6.51 · muted 4.77 / 4.81 ·
-///   brandInk 5.08 / 6.64 · white on the brand mark 4.60 (both)
+///   brandInk 5.08 / 6.64
+/// Welcome and Done sit on the stronger `OnboardingSky`; its own numbers are
+/// on that type. The brand mark is the vector logo on a `panel` tile.
 /// Everything else sits on `panel`: muted 5.39 / 4.91, lineStrong edge 3.83 /
 /// 5.67. Secondary text on the Health card (brandTint) is `body` via
 /// `.mpSecondary()` (6.24 / 5.51; R8).
@@ -259,22 +261,126 @@ private extension View {
     }
 }
 
-/// The MedPull mark: the brand FILL with a white glyph (4.60:1 both modes).
+/// The MedPull mark, the same vector logo as the web console's bar, on a
+/// lifted `panel` squircle (Aside's white lifted tile). The mark's fills were
+/// tuned for `panel`: #4a90d9 3.34 / 5.14, #0097a7 3.51 / 4.90, #1976d2
+/// 4.60 / 3.74 (light / dark), all over the 3:1 graphic floor.
 private struct BrandMark: View {
     var side: CGFloat = 64
     @ScaledMetric(relativeTo: .largeTitle) private var scale: CGFloat = 1
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         let d = (side * min(scale, 1.4)).rounded()
-        RoundedRectangle(cornerRadius: d * 0.28, style: .continuous)
-            .fill(MP.brand)
+        let shape = RoundedRectangle(cornerRadius: d * 0.28, style: .continuous)
+        shape
+            .fill(MP.panel)
             .frame(width: d, height: d)
             .overlay(
-                Image(systemName: "waveform.path.ecg")
-                    .font(.system(size: (d * 0.44).rounded(), weight: MPFont.systemWeight(for: .semibold)))
-                    .foregroundStyle(MP.onBrand)
+                Image("MedPullMark")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(d * 0.17)
             )
+            .overlay(shape.strokeBorder(contrast == .increased ? MP.line : MP.hairline, lineWidth: 1))
+            // A soft 6% ground shadow, the only lift in the flow. Decoration.
+            .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 6)
             .accessibilityHidden(true)
+    }
+}
+
+/// A small capsule label with a hairline ring, above the Welcome headline.
+/// Opaque `panel`, so its `ink` text is 18.38 / 17.19 whatever sky is under
+/// it.
+private struct SkyBadge: View {
+    let text: String
+    let icon: String
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: MPFont.systemWeight(for: .semibold)))
+                .foregroundStyle(MP.tealInk)
+            Text(text)
+                .mpFont(.labelMedium)
+                .foregroundStyle(MP.ink)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(MP.capsuleShape.fill(MP.panel))
+        .overlay(MP.capsuleShape.strokeBorder(contrast == .increased ? MP.line : MP.hairline, lineWidth: 1))
+    }
+}
+
+/// The Welcome and Done backdrop: a STATIC Medical-Blue sky with a teal
+/// glow at the top trailing corner and two soft cloud blobs, fading to
+/// `canvas` by 62% of the height. Nothing moves.
+///
+/// Contrast is computed at the MOST saturated point of every layer, opaque
+/// (scratchpad/ib_contrast.py, ib_c2.py), light / dark:
+///   sky blue (200,225,250) / (17,45,78): ink 13.66 / 13.91, body 5.37 / 5.38
+///   teal peak (196,238,244) / (8,50,62): ink 14.77 / 13.67, body 5.81 / 5.29
+///   cloud over either (white .75 / (36,66,98) .30): ink >= 17.10 / 12.64,
+///   body >= 6.72 / 4.89 (scratchpad/ib_final.py)
+/// Only `ink` and `body` text may sit in the sky. `muted` (4.01 / 3.97) and
+/// `brandInk` (4.27 light) do NOT clear it. Because the sky stays put while
+/// the content scrolls (AX sizes), no `muted` or `brandInk` text is used on
+/// these two steps at all: the disclaimer is `body`.
+/// Increase Contrast and Reduce Transparency get plain canvas.
+private struct OnboardingSky: View {
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private static func tone(_ light: (CGFloat, CGFloat, CGFloat),
+                             _ dark: (CGFloat, CGFloat, CGFloat),
+                             lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) -> Color {
+        Color(UIColor { t in
+            let isDark = t.userInterfaceStyle == .dark
+            let c = isDark ? dark : light
+            return UIColor(red: c.0 / 255, green: c.1 / 255, blue: c.2 / 255,
+                           alpha: isDark ? darkAlpha : lightAlpha)
+        })
+    }
+
+    private static let blue = tone((200, 225, 250), (17, 45, 78))
+    private static let teal = tone((196, 238, 244), (8, 50, 62))
+    private static let cloud = tone((255, 255, 255), (36, 66, 98), lightAlpha: 0.75, darkAlpha: 0.30)
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            ZStack(alignment: .topLeading) {
+                MP.canvas
+                if contrast != .increased && !reduceTransparency {
+                    LinearGradient(stops: [
+                        .init(color: Self.blue, location: 0),
+                        .init(color: Self.blue.opacity(0.7), location: 0.28),
+                        .init(color: Self.blue.opacity(0), location: 0.62),
+                    ], startPoint: .top, endPoint: .bottom)
+                    // Teal glow, top trailing; its radius ends well above 62%.
+                    RadialGradient(colors: [Self.teal, Self.teal.opacity(0)],
+                                   center: UnitPoint(x: 1.0, y: 0.04),
+                                   startRadius: 0, endRadius: min(w * 0.85, h * 0.4))
+                    // Two clouds, soft edged.
+                    cloudBlob(width: w * 0.9, height: h * 0.14)
+                        .position(x: w * 0.18, y: h * 0.2)
+                    cloudBlob(width: w * 0.75, height: h * 0.11)
+                        .position(x: w * 0.92, y: h * 0.36)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+    }
+
+    private func cloudBlob(width: CGFloat, height: CGFloat) -> some View {
+        Ellipse()
+            .fill(RadialGradient(colors: [Self.cloud, Self.cloud.opacity(0)],
+                                 center: .center, startRadius: 0, endRadius: width / 2))
+            .frame(width: width, height: height)
     }
 }
 
@@ -292,15 +398,17 @@ private struct WelcomeStep: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer(minLength: 32)
                     VStack(alignment: .leading, spacing: 18) {
-                        HStack(spacing: 12) {
-                            BrandMark(side: 56)
+                        HStack(spacing: 14) {
+                            BrandMark(side: 60)
                             // 20/500 frozen on the UI band: a wordmark, not a title.
                             Text("MedPull").mpFont(.subheadSemibold).foregroundStyle(MP.ink)
                         }
                         .entrance(shown, order: 0)
                         .accessibilityElement(children: .combine)
 
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            SkyBadge(text: "Recovery, with your care team", icon: "heart.fill")
+                                .padding(.bottom, 2)
                             Text("Hi there.\nLet's get you set up.")
                                 .title(MPSize.displayM)
                                 .accessibilityAddTraits(.isHeader)
@@ -330,11 +438,12 @@ private struct WelcomeStep: View {
                     Spacer(minLength: 28)
                     VStack(spacing: 12) {
                         PrimaryButton(title: "Get started", icon: "arrow.right") { model.go(.hospital) }
-                        // THE DISCLAIMER: `muted` (4.77 / 4.81 at the wash's
-                        // densest; this line sits well below it, on canvas,
-                        // 5.03 / 5.24). Never `faint`.
+                        // THE DISCLAIMER: `body`, not `muted`. At accessibility
+                        // sizes this line scrolls up over the fixed sky, where
+                        // `muted` drops to 4.01 / 3.97; `body` holds 5.37 / 4.89
+                        // at the sky's worst point and 6.73 / 7.11 on canvas.
                         Text("Monitoring signals for your care team — not a diagnosis.")
-                            .mpFont(.label).foregroundStyle(MP.muted)
+                            .mpFont(.label).foregroundStyle(MP.body)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
                     }
@@ -345,7 +454,7 @@ private struct WelcomeStep: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-        .ambientScreen(height: 420)
+        .background { OnboardingSky() }
         .onAppear { shown = true }
     }
 }
@@ -891,6 +1000,7 @@ private struct DoneStep: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+        .background { OnboardingSky() }
         .onAppear { shown = true }
         .sensoryFeedback(.success, trigger: shown) { old, new in !old && new }
     }

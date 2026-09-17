@@ -64,6 +64,18 @@ METRIC_LABELS: dict[str, str] = {
 }
 
 
+def coverage_reason(pct: int, has_history: bool = False) -> str:
+    """The LOW_COVERAGE line, in words a clinician reads at a glance.
+
+    "Only 0% of recent days" is a percentage of nothing; a patient with no
+    readings at all has no device data yet, and one whose device went quiet
+    has none this week.
+    """
+    if pct <= 0:
+        return "No device data this week" if has_history else "No device data yet"
+    return f"Device data on only {pct}% of recent days"
+
+
 def score_risk(
     postop_day: int,
     deviations: dict[str, DeviationResult],
@@ -82,7 +94,7 @@ def score_risk(
         reasons.append(
             RiskReason(
                 code="LOW_COVERAGE",
-                text=f"Only {pct}% of recent days reporting data",
+                text=coverage_reason(pct, has_history=bool(deviations)),
                 metric_type=None,
                 severity=2,
             )

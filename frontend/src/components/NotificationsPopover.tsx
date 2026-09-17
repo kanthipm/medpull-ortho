@@ -17,8 +17,9 @@ import Tile from './Tile'
  *  unread badge is a risk-ink dot with a --panel ring; the count is in the
  *  accessible name, so the dot is never the only carrier.
  *
- *  The panel is a top-layer `Popover` (R5): 20px `.overlay`, soft layered
- *  shadow, opaque. Rows are ListRows with a blue Bell tile; every secondary
+ *  The panel is a top-layer `Popover` (R5): 20px `.overlay.glass-overlay`
+ *  (liquid glass at the overlay alpha floor, so every line still clears
+ *  4.5:1 over any content), soft layered shadow. Rows are ListRows with a blue Bell tile; every secondary
  *  line inside is --body (the overlay scope), because dark --muted on the
  *  overlay panel is 3.655:1 and --body is 4.955:1 (7.222 light). */
 export default function NotificationsPopover() {

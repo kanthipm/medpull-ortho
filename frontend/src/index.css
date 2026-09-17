@@ -334,6 +334,40 @@
   /* The ambient wash: two soft blobs at the top of the canvas. Peak alpha is
      the CEILING computed for header text on it (see the role maps). */
   --ambient-height: 420px;
+
+  /* ── ATMOSPHERE (Aside-derived) — geometry only; colours are in the role
+     maps. The sky lives in ONE rounded "window" behind the app bar and the
+     page head (AppShell renders it; pages never do).
+       --sky-pad     how far the window reaches OUT of the content column into
+                     the gutter, so the head text sits inside the frame.
+                     8px short of the gutter, so the window is never closer
+                     than 8px to the viewport edge (Aside insets ~16px).
+       --sky-inset   the window's distance from the top of the viewport.
+       --sky-height  set on the stage by AppShell from the page head's
+                     measured bottom (+ --sky-tail); this is the fallback.
+       --sky-tail    how far the sky runs past the head. The first card
+                     starts one --space-stack below the head, so cards float
+                     OVER the lower sky, like Aside's app window over its
+                     clouds; the tail then fades out behind them. */
+  --sky-pad: min(28px, calc(var(--page-gutter) - 8px));
+  --sky-inset: 8px;
+  --sky-radius: 28px;
+  --sky-height: 300px;
+  --sky-tail: 120px;
+
+  /* ── GLASS GEOMETRY — the colours and alpha floors are in the role maps.
+     --hl is the light-catching hairline: 1px on 1x clinic monitors (0.5px
+     rounds to nothing there), 0.5px from 2dppx up (media block below). */
+  --hl: 1px;
+  --glass-blur: 20px;
+  --glass-saturate: 180%;
+  --frost-blur: 12px;
+}
+
+@media (min-resolution: 2dppx) {
+  :root {
+    --hl: 0.5px;
+  }
 }
 
 @media (max-width: 479.98px) {
@@ -539,8 +573,63 @@
      Only the date line, the h1 and the patient header sit on it. */
   --ambient-blue: var(--brand-tint);
   --ambient-teal: var(--teal-tint);
-  --ambient-a: 0.7;
+  /* Now only the faint full-bleed echo around the sky window (the window is
+     opaque and covers it where text sits). Under the .70 ceiling. */
+  --ambient-a: 0.45;
 
+  /* SKY (light) — static brand "clouds" in the rounded window.
+     Two layers, two text contracts. Worst points are every blob of a layer
+     stacked at its peak over --sky-top (8-bit sRGB composite; the white
+     clouds are left out because they can only lighten):
+       SAFE  #E1EDF7: ink 15.453, body 6.073, brand-ink 4.832, teal-ink
+             4.886, risk-med 4.890, risk-high 4.727, risk-low 4.514.
+             (muted 4.535 also passes, but .on-sky flips it to body.)
+       DECOR #78B4E0 (safe + decor): ink 8.229, a body glyph 3.234.
+       BAR BAND: the same blobs at decor strength, so the same figures. */
+  --sky-top: 241 246 251; /* #F1F6FB -> fades to --canvas */
+  --sky-blue: 25 118 210; /* #1976D2 Medical Blue */
+  --sky-teal: 0 172 193; /* #00ACC1 Teal */
+  --sky-indigo: 63 61 184; /* #3F3DB8 the supporting indigo */
+  --sky-cloud: 255 255 255;
+  --sky-blue-a: 0.036;
+  --sky-teal-a: 0.029;
+  --sky-indigo-a: 0.014;
+  --sky-cloud-a: 0.35; /* lightens only, so it can never lower dark-text contrast */
+  --sky-glow-a: 0; /* dark only */
+  --decor-blue-a: 0.3;
+  --decor-teal-a: 0.24;
+  --decor-indigo-a: 0.09;
+  --decor-glow-a: 0;
+  /* The window frame: Aside's black/6 ring and a white top highlight. */
+  --sky-ring: 14 21 28 / 0.07;
+  --sky-sheen: 255 255 255 / 0.9;
+
+  /* GLASS (light). Fill is --panel at an alpha FLOOR computed with no blur
+     credit.
+       .glass .78 over the decor worst #78B4E0 -> #E1EEF8: ink 15.565, body
+         6.117, muted 4.568, brand-ink 4.867, teal-ink 4.922, risk-low 4.547.
+       .glass-overlay .93 over solid black -> #EDEDED: ink 15.697, body
+         6.169, muted 4.607, brand-ink 4.908, risk-high 4.802, risk-low 4.586. */
+  --glass-fill: var(--n-0);
+  --glass-control-a: 0.78;
+  --glass-overlay-a: 0.93;
+  --glass-thumb: var(--n-0);
+  --glass-edge: 255 255 255 / 0.75; /* the light-catching inner rim */
+  --glass-ring: 14 21 28 / 0.08; /* the outer hairline */
+  --bar-sheen-a: 0.35; /* white wash at the top of the scrolled bar: lightens, so ink only gains */
+  --bar-sheen-line: 255 255 255 / 0.7;
+  /* Aside's soft layered shadow, 5-7% alpha. Floating glass only. */
+  --shadow-soft: 0 1px 2px rgb(14 21 28 / 0.05), 0 4px 12px rgb(14 21 28 / 0.05),
+    0 16px 32px rgb(14 21 28 / 0.06);
+  /* Recessed well (Aside's inset 0 3px 5px black/5). Inputs and wells. */
+  --shadow-well: inset 0 2px 4px rgb(14 21 28 / 0.05);
+  --ground-a: 0.14; /* elliptical ground shadow under a floating hero object */
+  /* Frosted icon tile for use ON the sky: white .70 over the decor worst is
+     #D6E8F6; the --brand-ink glyph on it is 4.579. */
+  --frost-fill: 255 255 255;
+  --frost-a: 0.7;
+  --frost-ink: var(--brand-ink);
+  --frost-rim: 255 255 255 / 0.9;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -689,8 +778,49 @@
      .45 gives muted 4.577 on the teal blob, .50 gives 4.481):
        blue blob #111E2C: muted 4.809, body 6.519, brand-ink 6.650
        teal blob #0F222A: muted 4.671, body 6.333, teal-ink 10.308 */
-  --ambient-a: 0.4;
+  --ambient-a: 0.25;
 
+  /* SKY (dark) — deep navy with a brand glow. Worst points (see light):
+       SAFE  #17385A: ink 12.002, body 4.642, brand-ink 4.735, teal-ink
+             7.556, risk-med 6.729, risk-high 5.279, risk-low 6.307.
+             (muted 3.424 FAILS here: .on-sky flips it to body.)
+       DECOR #1F5484: ink 7.896, a body glyph 3.054.
+     Glass: .86 over the decor worst -> #162431: ink 15.780, body 6.103,
+     muted 4.502, brand-ink 6.225. Overlay .97 (#2A333D) over solid white
+     -> #303943: ink 11.719, body/overlay-muted 4.533, brand-ink 4.623,
+     teal-ink 7.377, risk-high 5.155. */
+  --sky-top: 13 24 36; /* #0D1824 -> fades to --canvas */
+  --sky-indigo: 91 89 224; /* #5B59E0, the indigo lifted for a dark ground */
+  --sky-blue-a: 0.16;
+  --sky-teal-a: 0.09;
+  --sky-indigo-a: 0.08;
+  --sky-cloud-a: 0; /* white clouds would lower light-text contrast */
+  --sky-glow-a: 0.015;
+  --decor-blue-a: 0.18;
+  --decor-teal-a: 0.12;
+  --decor-indigo-a: 0.08;
+  --decor-glow-a: 0.02;
+  --sky-ring: 255 255 255 / 0.07;
+  --sky-sheen: 255 255 255 / 0.08;
+
+  --glass-fill: var(--n-900);
+  --glass-control-a: 0.86;
+  --glass-overlay-a: 0.97;
+  --glass-thumb: var(--n-700);
+  --glass-edge: 255 255 255 / 0.08;
+  --glass-ring: 0 0 0 / 0.5;
+  /* A white wash would LOWER white-ink contrast on the .73 bar (7.090 is
+     the floor), so dark gets the 1px top line only, where no text sits. */
+  --bar-sheen-a: 0;
+  --bar-sheen-line: 255 255 255 / 0.07;
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.45);
+  --shadow-well: inset 0 2px 4px rgb(0 0 0 / 0.35);
+  --ground-a: 0.5;
+  /* Dark frost is smoked glass: --panel .50, not white (white frost would
+     drop the glyph to 2.5). Over the decor worst: #1A3854, glyph 4.768. */
+  --frost-fill: var(--n-900);
+  --frost-a: 0.5;
+  --frost-rim: 255 255 255 / 0.1;
 }
 
 /* Text selection is a system-drawn surface that otherwise ignores the tokens,
@@ -799,6 +929,252 @@ body {
       );
   }
 
+  /* ── THE SKY WINDOW (Aside's rounded window, brand clouds inside) ───────
+     AppShell renders, once:
+       <div class="sky-stage" aria-hidden style="--sky-height:…">
+         <div class="page page-*"><div class="sky-window"/></div>
+       </div>
+     The stage is absolute at the top of the shell, under the bar (z -1).
+     The inner .page gives the window the SAME centring as <main>, and the
+     window reaches --sky-pad out into the gutter, so the head text sits
+     inside the frame. It is decorative, so it costs no layout at all.
+
+     Two layers, two text contracts, both STATIC:
+       background  the SAFE sky. Every blob peaks at the alpha ceiling
+                   computed with all of them stacked on --sky-top (the most
+                   saturated point any pixel can reach). Page-head text on
+                   it: ink, body, brand-ink, teal-ink. Wrap the head in
+                   `.on-sky` so secondary text is --body, never --muted.
+       ::after     the BAR BAND: decor-strength colour along the top edge,
+                   masked out above the first line of page-head text.
+       ::before    the DECOR sky: stronger blobs masked to the right side
+                   of the window (ramping in from 58% to 85% of its width)
+                   at >= 1024px. That zone is for ink text and
+                   opaque controls only (ink >= 7, a body glyph >= 3).
+                   The bar's ink icons sit there; head text does not reach
+                   it at desktop widths.
+     The bottom of the window fades into the canvas behind the first cards.
+     Hidden by Increase Contrast, forced colours, reduced transparency and
+     data-glass="off". */
+  .sky-stage {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .sky-window {
+    position: relative;
+    height: calc(var(--sky-height) - var(--sky-inset));
+    margin-top: var(--sky-inset);
+    margin-inline: calc(-1 * var(--sky-pad));
+    border-radius: var(--sky-radius);
+    overflow: hidden;
+    background-color: rgb(var(--canvas));
+    background-image:
+      radial-gradient(34% 46% at 30% 58%, rgb(var(--sky-cloud) / var(--sky-cloud-a)), rgb(var(--sky-cloud) / 0) 70%),
+      radial-gradient(26% 36% at 58% 30%, rgb(var(--sky-cloud) / calc(var(--sky-cloud-a) * 0.8)), rgb(var(--sky-cloud) / 0) 70%),
+      radial-gradient(40% 60% at 22% 18%, rgb(255 255 255 / var(--sky-glow-a)), rgb(255 255 255 / 0) 70%),
+      radial-gradient(70% 95% at 6% 0%, rgb(var(--sky-blue) / var(--sky-blue-a)), rgb(var(--sky-blue) / 0) 72%),
+      radial-gradient(55% 80% at 58% -12%, rgb(var(--sky-indigo) / var(--sky-indigo-a)), rgb(var(--sky-indigo) / 0) 70%),
+      radial-gradient(60% 90% at 98% 10%, rgb(var(--sky-teal) / var(--sky-teal-a)), rgb(var(--sky-teal) / 0) 72%),
+      linear-gradient(180deg, rgb(var(--sky-top)) 0%, rgb(var(--canvas)) 100%);
+    box-shadow:
+      inset 0 0 0 var(--hl) rgb(var(--sky-ring)),
+      inset 0 1px 0 rgb(var(--sky-sheen));
+    -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - var(--sky-tail)), transparent 100%);
+    mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - var(--sky-tail)), transparent 100%);
+  }
+  .sky-window::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    display: none;
+    background-image:
+      radial-gradient(28% 40% at 80% 46%, rgb(var(--sky-cloud) / calc(var(--sky-cloud-a) * 0.9)), rgb(var(--sky-cloud) / 0) 70%),
+      radial-gradient(30% 50% at 92% 20%, rgb(255 255 255 / var(--decor-glow-a)), rgb(255 255 255 / 0) 70%),
+      radial-gradient(38% 70% at 74% -8%, rgb(var(--sky-blue) / var(--decor-blue-a)), rgb(var(--sky-blue) / 0) 70%),
+      radial-gradient(30% 60% at 64% 34%, rgb(var(--sky-indigo) / var(--decor-indigo-a)), rgb(var(--sky-indigo) / 0) 70%),
+      radial-gradient(36% 70% at 102% 40%, rgb(var(--sky-teal) / var(--decor-teal-a)), rgb(var(--sky-teal) / 0) 70%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 58%, #000 85%);
+    mask-image: linear-gradient(90deg, transparent 58%, #000 85%);
+  }
+  /* The BAR BAND: decor-strength blobs across the top of the window, masked
+     out by 76px (viewport y 84), above the first line any page head puts on
+     the sky (worklist date line ~y 120, patient back link ~y 92). Only the
+     bar's ink sits in the band, so it is held to the decor contract. */
+  .sky-window::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(34% 110px at 14% -30px, rgb(var(--sky-blue) / var(--decor-blue-a)), rgb(var(--sky-blue) / 0) 100%),
+      radial-gradient(30% 100px at 44% -40px, rgb(var(--sky-indigo) / var(--decor-indigo-a)), rgb(var(--sky-indigo) / 0) 100%),
+      radial-gradient(30% 100px at 30% -40px, rgb(var(--sky-teal) / var(--decor-teal-a)), rgb(var(--sky-teal) / 0) 100%);
+    /* Vertical fade INTERSECTED with a horizontal fade that is gone by 62%,
+       so the band and the decor layer (which starts at 58%) never both run
+       at full strength: where they meet, their alphas sum to well under one
+       decor layer, so the decor-zone figures bound the overlap too. */
+    -webkit-mask-image:
+      linear-gradient(180deg, #000 0, #000 28px, transparent 76px),
+      linear-gradient(90deg, #000 45%, transparent 62%);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(180deg, #000 0, #000 28px, transparent 76px),
+      linear-gradient(90deg, #000 45%, transparent 62%);
+    mask-composite: intersect;
+  }
+  /* 1024px: below it the patient header's action bar wraps under the text
+     and head text can run the full width, so the decor zone stays off. */
+  @media (min-width: 1024px) {
+    .sky-window::before {
+      display: block;
+    }
+  }
+  @supports (corner-shape: squircle) {
+    .sky-window {
+      border-radius: 50px;
+      corner-shape: squircle;
+    }
+  }
+  /* Text contract for the page head on the sky: secondary text is --body.
+     Applied automatically to the page head (`[data-hero]`, or the first
+     <header> of the page); add `.on-sky` to anything else placed on it. */
+  .on-sky,
+  #main [data-hero],
+  #main > * > header:first-child {
+    --text-secondary: var(--body);
+    --muted: var(--body);
+  }
+
+  /* ── GLASS RECIPES — the sky shows through. ──────────────────────────────
+     Every fill is --glass-fill at an alpha FLOOR computed against the worst
+     thing that can be underneath with NO blur credit, so the blur is a
+     bonus, never the thing that makes text readable.
+       .glass           a floating control ON THE SKY OR CANVAS ONLY (filter
+                        bar, search/ask field shell, badge). Floor .78 light
+                        / .86 dark, computed over the decor sky's most
+                        saturated point; any text token passes on it.
+       .glass-overlay   add to .overlay (popover, menu, toast, modal). Floor
+                        .93 light (over solid black) / .97 dark (over solid
+                        white): every text token passes over ANY content.
+     Both carry the light-catching rim (inner white hairline + top
+     highlight), an outer hairline and Aside's soft layered shadow. */
+  .glass {
+    background-color: rgb(var(--glass-fill) / var(--glass-control-a));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    box-shadow:
+      inset 0 0 0 var(--hl) rgb(var(--glass-edge)),
+      inset 0 1px 0 rgb(var(--glass-edge)),
+      0 0 0 var(--hl) rgb(var(--glass-ring)),
+      var(--shadow-soft);
+  }
+  .overlay.glass-overlay {
+    background-color: rgb(var(--overlay-panel) / var(--glass-overlay-a));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    box-shadow:
+      inset 0 1px 0 rgb(var(--glass-edge)),
+      0 0 0 var(--hl) rgb(var(--glass-ring)),
+      var(--shadow-soft),
+      var(--shadow-overlay);
+  }
+  /* A recessed well (Aside's inset shadow): inputs get it from .field; use
+     .well for any sunken container (a composer tray, a code box). */
+  .well {
+    @apply rounded-control bg-soft;
+    box-shadow: var(--shadow-well);
+  }
+  /* The elliptical ground shadow under a floating hero object (Aside's
+     product render). Put it on a positioned element inside an isolated
+     parent; the shadow paints behind it. Decoration only. */
+  .ground-shadow {
+    position: relative;
+  }
+  .ground-shadow::after {
+    content: '';
+    position: absolute;
+    left: 6%;
+    right: 6%;
+    bottom: -26px;
+    height: 44px;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(48% 40% at 50% 38%, rgb(14 21 28 / var(--ground-a)), rgb(14 21 28 / calc(var(--ground-a) * 0.55)) 42%, transparent 100%),
+      radial-gradient(56% 60% at 50% 50%, rgb(14 21 28 / calc(var(--ground-a) * 0.5)), transparent 100%);
+  }
+
+  /* Capsule badge with a hairline ring (Aside's "Backed by Y Combinator >").
+     24px, 12/500 ink; an optional trailing 12px chevron in --body. Sits on
+     the sky or a card. Glass-lite fill, so it reads on either. */
+  .badge-ring {
+    @apply inline-flex min-h-6 items-center gap-1 whitespace-nowrap rounded-pill text-label font-medium leading-label tracking-label;
+    padding-inline: 10px;
+    color: rgb(var(--ink));
+    background-color: rgb(var(--glass-fill) / var(--glass-control-a));
+    box-shadow:
+      inset 0 0 0 1px rgb(var(--glass-ring)),
+      inset 0 1px 0 rgb(var(--glass-edge));
+  }
+  .badge-ring svg {
+    width: 12px;
+    height: 12px;
+    color: rgb(var(--body));
+  }
+  a.badge-ring:hover,
+  button.badge-ring:hover {
+    background-color: rgb(var(--glass-fill));
+  }
+  a.badge-ring:focus-visible,
+  button.badge-ring:focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+  }
+
+  /* Shimmer text (Aside's AI signature), for AI content that is GENERATING,
+     and nothing else. The glyphs are always painted in a solid colour: the
+     secondary colour, with an ink highlight sweeping through it, so every
+     frame is at least --text-secondary contrast. Reduced motion (end of
+     file) freezes it into plain secondary text. */
+  .shimmer-text {
+    --spread: 60px;
+    color: rgb(var(--text-secondary));
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--text-secondary)) calc(50% - var(--spread)),
+      rgb(var(--ink)) 50%,
+      rgb(var(--text-secondary)) calc(50% + var(--spread))
+    );
+    background-image: linear-gradient(
+      90deg in oklch,
+      rgb(var(--text-secondary)) calc(50% - var(--spread)),
+      rgb(var(--ink)) 50%,
+      rgb(var(--text-secondary)) calc(50% + var(--spread))
+    );
+    background-size: 250% 100%;
+    background-repeat: no-repeat;
+    background-position: 100% 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: mp-text-shimmer 2.2s linear infinite;
+  }
+
+  /* Frosted icon tile, for use ON the sky: add `.tile-frost` to `.tile`
+     (or <Tile family="frost">). White .70 light / smoked panel .50 dark,
+     a bright rim and a soft shadow; glyph --brand-ink. */
+  .tile-frost {
+    color: rgb(var(--frost-ink));
+    background-color: rgb(var(--frost-fill) / var(--frost-a));
+    -webkit-backdrop-filter: blur(var(--frost-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--frost-blur)) saturate(var(--glass-saturate));
+    box-shadow:
+      inset 0 0 0 var(--hl) rgb(var(--frost-rim)),
+      0 1px 2px rgb(14 21 28 / 0.06);
+  }
+
   /* ── APP BAR (R2) ────────────────────────────────────────────────────── */
 
   /* Sticky; transparent at scroll 0 so the wash shows through with no edge;
@@ -823,7 +1199,17 @@ body {
     -webkit-backdrop-filter: blur(var(--bar-blur)) saturate(var(--bar-saturate));
     backdrop-filter: blur(var(--bar-blur)) saturate(var(--bar-saturate));
     border-bottom-color: rgb(var(--line));
-    box-shadow: var(--shadow-float);
+    /* Top-edge sheen: a white wash that fades down the bar (light only; it
+       can only RAISE ink contrast) and a 1px highlight along the top edge,
+       where no text sits. */
+    background-image: linear-gradient(
+      180deg,
+      rgb(255 255 255 / var(--bar-sheen-a)) 0%,
+      rgb(255 255 255 / 0) 100%
+    );
+    box-shadow:
+      inset 0 1px 0 rgb(var(--bar-sheen-line)),
+      var(--shadow-float);
   }
   /* Focus rings on the bar get an opaque --panel halo under them, so the ring
      is measured against --panel (4.602 light / 6.783 dark), never against
@@ -1345,8 +1731,24 @@ body {
       outline-color var(--dur-state) var(--ease-apple),
       box-shadow var(--dur-state) var(--ease-apple);
   }
+  .field {
+    box-shadow: var(--shadow-well);
+  }
   .field:focus {
     border-color: rgb(var(--focus));
+  }
+  /* A field ON THE SKY: the glass fill (floor .78 / .86, so placeholder
+     --muted still clears 4.5:1), same --line-strong border (1.4.11). */
+  .field-glass {
+    background-color: rgb(var(--glass-fill) / var(--glass-control-a));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    box-shadow:
+      var(--shadow-well),
+      0 1px 0 rgb(var(--glass-edge));
+  }
+  .field-glass:focus {
+    background-color: rgb(var(--glass-fill));
   }
   /* The ask field: a 52px capsule with room for a leading 20px glyph at
      left 16px and a trailing .btn-send at right 8px. Lifts on focus. */
@@ -1493,12 +1895,50 @@ body {
     color: rgb(var(--on-brand));
     font-weight: var(--weight-emphasis);
   }
+  /* Focus stays INSIDE the track (the ring used to spill past its edge):
+     idle items take an inset 2px --focus ring (4.057 on the light track /
+     6.336 dark); the selected item, whose brand thumb would swallow a
+     --focus ring, takes a 2px white inset ring (4.602 on #1976D2). */
   .seg-item:focus-visible {
     outline: 2px solid rgb(var(--focus));
-    outline-offset: 2px;
+    outline-offset: -2px;
   }
   .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on):focus-visible {
-    box-shadow: inset 0 0 0 2px rgb(var(--on-brand));
+    outline-color: rgb(var(--on-brand));
+  }
+
+  /* GLASS TONE — the segmented control that sits ON THE SKY (iOS / Aside).
+     The track is .glass; the selected thumb is a WHITE LIFTED PILL (light) /
+     an n-700 pill (dark) with the ink label. A white pill on a pale glass
+     track is ~1.1:1, so the thumb carries a --hl (1px; 0.5px at 2dppx) --line-strong ring to keep
+     the selected state at >= 3:1 (1.4.11): light ring 3.834 on the white
+     thumb, 3.248 on the glass track at the sky's worst; dark 4.225 on the
+     n-700 thumb, 5.204 on the track. The focus ring on the selected pill is
+     --focus again: 4.602 on white / 5.054 on n-700.
+     The brand-filled thumb stays the default on opaque surfaces: it is the
+     stronger state carrier (4.057 with no ring) and matches the app. */
+  .seg-glass {
+    background-color: rgb(var(--glass-fill) / var(--glass-control-a));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    box-shadow:
+      inset 0 0 0 var(--hl) rgb(var(--glass-edge)),
+      0 0 0 var(--hl) rgb(var(--glass-ring)),
+      var(--shadow-soft);
+  }
+  .seg-glass .seg-thumb {
+    background-color: rgb(var(--glass-thumb));
+    box-shadow:
+      0 0 0 var(--hl) rgb(var(--line-strong)),
+      0 1px 2px rgb(14 21 28 / 0.08),
+      0 3px 8px rgb(14 21 28 / 0.08);
+  }
+  .seg-glass .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on),
+  .dark .seg-glass .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on) {
+    color: rgb(var(--ink));
+  }
+  .seg-glass .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on):focus-visible {
+    outline-color: rgb(var(--focus));
   }
 
   /* ── MOTION ───────────────────────────────────────────────────────────── */
@@ -1527,6 +1967,16 @@ body {
       top var(--dur-spring) var(--ease-spring),
       width var(--dur-spring) var(--ease-spring),
       height var(--dur-spring) var(--ease-spring);
+  }
+}
+
+/* The AI shimmer sweep (.shimmer-text). The only loop besides skeletons. */
+@keyframes mp-text-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
   }
 }
 
@@ -1561,15 +2011,35 @@ body {
     --chart-grid: var(--n-460); /* 1.266 -> 3.834:1 */
     --faint: var(--n-500); /* 2.585 -> 5.393:1 */
     --bar-alpha: 1;
+    --glass-control-a: 1;
+    --glass-overlay-a: 1;
+    --frost-a: 1;
+    --bar-sheen-a: 0;
   }
   .dark {
     --hairline: var(--n-475); /* 1.342 -> 3.631:1 on panel */
     --line: var(--n-425); /* 3.631 -> 5.671:1 */
     --chart-grid: var(--n-425); /* 1.342 -> 5.671:1 */
     --faint: var(--n-425); /* 3.631 -> 5.671:1 */
+    --glass-control-a: 1;
+    --glass-overlay-a: 1;
+    --frost-a: 1;
+    --bar-sheen-a: 0;
   }
-  .ambient {
+  .ambient,
+  .sky-stage {
     display: none;
+  }
+  /* Glass goes opaque with a real edge. */
+  :is(.glass, .seg-glass, .field-glass, .tile-frost, .overlay.glass-overlay) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :is(.glass, .seg-glass, .badge-ring) {
+    box-shadow: inset 0 0 0 1px rgb(var(--line-strong));
+  }
+  .appbar[data-scrolled] {
+    background-image: none;
   }
   .appbar,
   .appbar[data-scrolled] {
@@ -1600,6 +2070,13 @@ body {
    border or outline in a system colour.
    ══════════════════════════════════════════════════════════════════════════ */
 @media (forced-colors: active) {
+  :root,
+  .dark {
+    --glass-control-a: 1;
+    --glass-overlay-a: 1;
+    --frost-a: 1;
+    --bar-sheen-a: 0;
+  }
   .scrim {
     background-color: Canvas;
     -webkit-backdrop-filter: none;
@@ -1610,12 +2087,29 @@ body {
     border: 1px solid CanvasText;
     box-shadow: none;
   }
-  .ambient {
+  .ambient,
+  .sky-stage {
     display: none;
+  }
+  :is(.glass, .seg-glass, .field-glass, .tile-frost, .overlay.glass-overlay) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :is(.glass, .badge-ring) {
+    border: 1px solid CanvasText;
+  }
+  .ground-shadow::after {
+    display: none;
+  }
+  .shimmer-text {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
   }
   .appbar,
   .appbar[data-scrolled] {
     background-color: Canvas;
+    background-image: none;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     border-bottom: 1px solid CanvasText;
@@ -1661,7 +2155,14 @@ body {
     background-color: Highlight;
     box-shadow: none;
   }
-  .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on) {
+  .seg-glass .seg-thumb {
+    forced-color-adjust: none;
+    background-color: Highlight;
+    box-shadow: none;
+  }
+  .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on),
+  .seg-glass .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on),
+  .dark .seg-glass .seg-item:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .on) {
     forced-color-adjust: none;
     color: HighlightText;
   }
@@ -1702,6 +2203,12 @@ body {
   .animate-toastOut {
     animation: none;
   }
+  /* The AI shimmer becomes plain, static secondary text. */
+  .shimmer-text {
+    animation: none;
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
   .rise {
     opacity: 1;
     transform: none;
@@ -1740,8 +2247,19 @@ body {
    `backdrop-blur-*` utilities are emitted in the utilities layer and would
    otherwise win on equal specificity.
    ══════════════════════════════════════════════════════════════════════════ */
-[data-glass='off'] {
+[data-glass='off'],
+[data-glass='off'] .dark,
+[data-glass='off'].dark {
   --bar-alpha: 1;
+  --glass-control-a: 1;
+  --glass-overlay-a: 1;
+  --frost-a: 1;
+  --bar-sheen-a: 0;
+}
+/* The atmosphere goes with the glass: one switch, one flat console. */
+[data-glass='off'] .sky-stage,
+[data-glass='off'] .ambient {
+  display: none;
 }
 [data-glass='off'],
 [data-glass='off'] * {
@@ -1755,8 +2273,13 @@ body {
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root {
+  :root,
+  .dark {
     --bar-alpha: 1;
+    --glass-control-a: 1;
+    --glass-overlay-a: 1;
+    --frost-a: 1;
+    --bar-sheen-a: 0;
   }
 }
 
@@ -1764,8 +2287,17 @@ body {
    document-wide rather than only to .scrim, so a blurred surface introduced
    anywhere else degrades too. */
 @media (prefers-reduced-transparency: reduce) {
-  :root {
+  :root,
+  .dark {
     --bar-alpha: 1;
+    --glass-control-a: 1;
+    --glass-overlay-a: 1;
+    --frost-a: 1;
+    --bar-sheen-a: 0;
+  }
+  .sky-stage,
+  .ambient {
+    display: none;
   }
   *,
   *::before,

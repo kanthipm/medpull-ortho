@@ -8,8 +8,11 @@ import type { ReactNode } from 'react'
  *    risk-high  escalate only                 (TriangleAlert)
  *  Glyph ink on its tint, light / dark:
  *    blue 4.963 / 5.624, teal 5.171 / 8.142, indigo 6.950 / 6.721,
- *    violet 6.354 / 7.114, risk-high 4.835 / 5.701. */
-export type TileFamily = 'blue' | 'teal' | 'indigo' | 'violet' | 'risk-high'
+ *    violet 6.354 / 7.114, risk-high 4.835 / 5.701.
+ *    frost  ON THE SKY ONLY — frosted translucent glass (white .70 light,
+ *           smoked panel .50 dark) with a --brand-ink glyph: 4.579 light / 4.768
+ *           dark over the sky's most saturated point. Not on /checkin or /t. */
+export type TileFamily = 'blue' | 'teal' | 'indigo' | 'violet' | 'risk-high' | 'frost'
 
 const FAMILY: Record<TileFamily, string> = {
   blue: 'tile-blue',
@@ -17,6 +20,7 @@ const FAMILY: Record<TileFamily, string> = {
   indigo: 'tile-indigo',
   violet: 'tile-violet',
   'risk-high': 'tile-risk-high',
+  frost: 'tile-frost',
 }
 
 /** A Health-style leading tile: a lucide glyph in a tinted rounded square,

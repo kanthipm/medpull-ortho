@@ -60,8 +60,21 @@ _DEFAULT_ACTION = {
 }
 
 
+# Assessments stored before the coverage line was reworded still carry it.
+_LEGACY_ZERO_COVERAGE = "Only 0% of recent days reporting data"
+
+
+def _reason_text(reason: dict[str, Any]) -> str:
+    text = reason["text"]
+    if text == _LEGACY_ZERO_COVERAGE:
+        return "No device data yet"
+    if reason.get("code") == "LOW_COVERAGE" and text.endswith("% of recent days reporting data"):
+        return "Device data on only " + text.removeprefix("Only ").removesuffix(" reporting data")
+    return text
+
+
 def _reason_texts(reasons: list[dict[str, Any]], limit: int) -> list[str]:
-    return [r["text"] for r in reasons[:limit]]
+    return [_reason_text(r) for r in reasons[:limit]]
 
 
 def worklist_reason(analytics: dict[str, Any]) -> dict[str, str]:
@@ -86,8 +99,10 @@ def patient_summary(patient_header: dict[str, Any], analytics: dict[str, Any]) -
     parts: list[str] = []
     if level == RiskLevel.MISSING_DATA:
         pct = int(round((confidence.get("score") or 0) * 100))
+        seen = ("there is no recent device data" if pct <= 0
+                else f"only {pct}% of recent days have device data")
         parts.append(
-            f"{name} is {since}, but only {pct}% of recent days have device data, "
+            f"{name} is {since}, but {seen}, "
             f"so {'recovery' if surgical else 'their baseline'} cannot be assessed reliably."
         )
         parts.append("Confirm the wearable is charged, worn, and syncing before reading trends.")
@@ -132,6 +147,14 @@ def suggested_actions(analytics: dict[str, Any]) -> dict[str, Any]:
     return {"actions": actions}
 
 
+def _stable_sentence(n: int, everyone: bool) -> str:
+    if everyone:
+        return ("The one patient on the roster is recovering as expected." if n == 1
+                else f"All {n} patients are recovering as expected.")
+    return ("The other patient is recovering as expected." if n == 1
+            else f"The other {n} patients are recovering as expected.")
+
+
 def daily_briefing(roster: list[dict[str, Any]]) -> dict[str, str]:
     high = [p for p in roster if p["priority"] == RiskLevel.HIGH]
     medium = [p for p in roster if p["priority"] == RiskLevel.MEDIUM]
@@ -151,7 +174,7 @@ def daily_briefing(roster: list[dict[str, Any]]) -> dict[str, str]:
     if missing:
         parts.append(f"{names(missing)} " + ("has" if len(missing) == 1 else "have") + " too little device data to assess — check the connection.")
     if stable:
-        parts.append(f"The remaining {len(stable)} are recovering as expected.")
+        parts.append(_stable_sentence(len(stable), everyone=len(stable) == len(roster)))
     if not parts:
         parts.append("No patients on the roster yet.")
     return {"briefing": " ".join(parts)}

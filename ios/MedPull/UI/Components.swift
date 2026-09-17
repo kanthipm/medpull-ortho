@@ -264,6 +264,7 @@ private struct MPButtonBody: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.mpOnTint) private var onTint
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var pressed: Bool { configuration.isPressed }
 
@@ -341,7 +342,11 @@ private struct MPButtonBody: View {
     var body: some View {
         configuration.label
             .mpFont(font)
-            .lineLimit(2)
+            // Two lines at the standard sizes; at accessibility sizes a label
+            // wraps as far as it needs to (by word) rather than truncating to
+            // "Connect Apple Heal…". The capsule grows with it (minHeight).
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+            .fixedSize(horizontal: false, vertical: true)
             .multilineTextAlignment(.center)
             .foregroundStyle(label)
             .tint(label) // a ProgressView inside the label
@@ -350,13 +355,13 @@ private struct MPButtonBody: View {
             .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: height)
             .background {
                 if !bare {
-                    MP.capsuleShape.fill(fill)
-                        .overlay(MP.capsuleShape.fill(pressOverlay))
+                    MPAdaptiveCapsule().fill(fill)
+                        .overlay(MPAdaptiveCapsule().fill(pressOverlay))
                 }
             }
             .overlay {
                 if needsEdge && !bare {
-                    MP.capsuleShape.strokeBorder(MP.lineStrong, lineWidth: 1)
+                    MPAdaptiveCapsule().strokeBorder(MP.lineStrong, lineWidth: 1)
                 }
             }
             .opacity(bare && pressed ? 0.6 : 1)
@@ -365,6 +370,32 @@ private struct MPButtonBody: View {
             .contentShape(Rectangle())
             .scaleEffect(bare ? 1 : MPMotion.pressScale(pressed, reduceMotion: reduceMotion))
             .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion), value: pressed)
+    }
+}
+
+/// A capsule while the view is one control tall; a continuous rounded
+/// rectangle once it grows past `rowCeiling` (a wrapped label or a stacked
+/// bar at accessibility text sizes). A capsule stretched over three lines
+/// becomes a lozenge whose ends cut into the label; this stays a button.
+struct MPAdaptiveCapsule: InsettableShape {
+    var rowCeiling: CGFloat = 64
+    var stackedRadius: CGFloat = 26
+    var inset: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        // The capsule-or-rectangle choice is made on the outer frame, so a
+        // stroked border matches its fill.
+        let radius = (rect.height <= rowCeiling ? rect.height / 2 : stackedRadius) - inset
+        let r = rect.insetBy(dx: inset, dy: inset)
+        return RoundedRectangle(cornerRadius: max(0, min(radius, r.width / 2, r.height / 2)),
+                                style: .continuous)
+            .path(in: r)
+    }
+
+    func inset(by amount: CGFloat) -> MPAdaptiveCapsule {
+        var copy = self
+        copy.inset += amount
+        return copy
     }
 }
 
@@ -387,6 +418,7 @@ extension ButtonStyle where Self == MPRowButtonStyle {
 /// brand fill with a white spinner and swallows taps; `disabled` uses the
 /// disabled token pair.
 struct PrimaryButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let title: String
     var icon: String? = nil
     var loading = false
@@ -399,7 +431,10 @@ struct PrimaryButton: View {
                 if loading {
                     ProgressView()
                 } else {
-                    if let icon { Image(systemName: icon) }
+                    // At accessibility sizes the words get the whole width;
+                    // a glyph beside a three-line label just pushes it off
+                    // centre.
+                    if let icon, !dynamicTypeSize.isAccessibilitySize { Image(systemName: icon) }
                     Text(title)
                 }
             }
@@ -416,6 +451,7 @@ struct PrimaryButton: View {
 /// The quieter full-width button: `.mpGray`, 52pt. On a tint card it takes a
 /// panel fill automatically.
 struct SecondaryButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let title: String
     var icon: String? = nil
     var loading = false
@@ -427,7 +463,10 @@ struct SecondaryButton: View {
                 if loading {
                     ProgressView()
                 } else {
-                    if let icon { Image(systemName: icon) }
+                    // At accessibility sizes the words get the whole width;
+                    // a glyph beside a three-line label just pushes it off
+                    // centre.
+                    if let icon, !dynamicTypeSize.isAccessibilitySize { Image(systemName: icon) }
                     Text(title)
                 }
             }
@@ -502,6 +541,11 @@ struct StatusPill: View {
         Text(text)
             .font(.labelMedium)
             .foregroundStyle(MP.foreground(tone))
+            // A pill never splits ("Not/conn/ecte/d" at AX3): one line at its
+            // ideal width. Callers that can run out of room stack the pill
+            // under the title at accessibility sizes instead.
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(MP.pillShape.fill(MP.background(tone)))
     }
@@ -607,6 +651,10 @@ struct FieldStyle: TextFieldStyle {
             .font(.copyLarge)
             .foregroundStyle(MP.ink)
             .padding(.horizontal, 14)
+            // Vertical inset so a multiline field's first line (and its
+            // "Optional" placeholder) does not sit on the top border. A
+            // single-line field still centres inside the 52pt minimum.
+            .padding(.vertical, 12)
             .frame(minHeight: 52)
             .background(MP.controlShape.fill(MP.panel))
             .overlay(MP.controlShape.strokeBorder(MP.lineStrong, lineWidth: 1))
