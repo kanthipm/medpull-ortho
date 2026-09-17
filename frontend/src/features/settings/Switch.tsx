@@ -2,20 +2,17 @@ import { useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import Tile from '../../components/Tile'
 
-/** iOS-style switch for the settings pages (W6).
+/** iOS-style switch for the settings pages.
  *
- *  Track 44x26 capsule, knob 22px white with the knob contact shadow, sliding
- *  on --ease-spring (Reduce Motion shortens it through the token). State is
- *  never colour alone: the knob POSITION is the state, and role="switch" +
- *  aria-checked announce it.
+ *  Track 46x28 capsule, knob 24px white with the contact shadow, sliding on
+ *  the spring. State is never colour alone: the knob POSITION is the state,
+ *  and role="switch" + aria-checked announce it.
  *
- *  Contrast (WCAG 1.4.11, 3:1 for control parts), light / dark:
- *    on  track --brand on --panel           4.602 / 3.736; knob on it 4.602
- *    off track --line-strong on --panel     3.834 / 5.671; knob on it 3.834 / 3.032
- *    disabled: --disabled-fill track keeps an inset --line-strong edge
- *              (3.834 / 5.671 on panel; the fill alone is 1.134 / 1.071),
- *              knob --disabled-ink (4.755 / 4.582 on the fill).
- *    focus ring --focus on --panel          4.602 / 6.783, 2px offset. */
+ *  On, the track is the site's sage (6.44 against the white knob). Off, a
+ *  warm fill with an inset --line-strong ring (3.39:1 on panel), so the
+ *  track's edge — and the knob inside it — stay identifiable. Disabled keeps
+ *  the ring and a white knob at half strength; it never turns dark. Focus is
+ *  the 2px ink ring, 2px out. */
 export default function Switch({
   checked,
   onChange,
@@ -56,22 +53,18 @@ export default function Switch({
         setArmed(true)
         onChange(!checked)
       }}
-      className={`relative inline-flex h-[26px] w-11 shrink-0 cursor-pointer items-center rounded-pill transition-colors duration-state ease-apple focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed forced-colors:border forced-colors:border-[ButtonText] ${
-        disabled
-          ? 'bg-disabled-fill shadow-[inset_0_0_0_1px_rgb(var(--line-strong))]'
-          : checked
-            ? 'bg-brand'
-            : 'bg-line-strong'
-      } ${className}`}
+      className={`relative inline-flex h-7 w-[46px] shrink-0 cursor-pointer items-center rounded-pill transition-[background-color,box-shadow] duration-state ease-apple focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed forced-colors:border forced-colors:border-[ButtonText] ${
+        checked && !disabled
+          ? 'bg-brand shadow-[inset_0_1px_2px_rgb(0_0_0_/_.12)]'
+          : 'bg-[rgb(var(--fill-strong))] shadow-[inset_0_0_0_1px_rgb(var(--line-strong)_/_.8)]'
+      } ${disabled ? 'opacity-60' : ''} ${className}`}
     >
       {/* Before/after the tap the thumb is the only moving part. */}
       <span
         aria-hidden
-        className={`absolute left-[2px] top-[2px] h-[22px] w-[22px] rounded-pill shadow-knob forced-colors:bg-[ButtonText] ${
+        className={`absolute left-[2px] top-[2px] h-6 w-6 rounded-pill bg-white shadow-knob forced-colors:bg-[ButtonText] ${
           armed ? 'transition-transform duration-spring ease-spring' : ''
-        } ${disabled ? 'bg-disabled-ink' : 'bg-n-0'} ${
-          checked ? 'translate-x-[18px]' : 'translate-x-0'
-        }`}
+        } ${checked ? 'translate-x-[18px]' : 'translate-x-0'}`}
       />
     </button>
   )
@@ -166,25 +159,16 @@ export function GroupFooter({ children }: { children: ReactNode }) {
   return <p className="meta mt-2 px-4">{children}</p>
 }
 
-/** The large frosted tile beside the page title: 56px, 16px corners, a 28px
- *  glyph. `.tile-frost` is a sky-only recipe, and the page head is on the sky. */
+/** The large gradient glyph beside the page title: 56px, 16px corners, a
+ *  26px white glyph (the site's panel glyph). */
 const HERO_TILE =
-  '!h-14 !w-14 !rounded-[16px] [&_svg]:!h-7 [&_svg]:!w-7 [&_svg]:[stroke-width:1.75]'
+  '!h-14 !w-14 !rounded-[16px] [&_svg]:!h-[26px] [&_svg]:!w-[26px] [&_svg]:[stroke-width:1.75]'
 
-/** Page head shared by the settings and integrations pages. It sits in the
- *  sky window (AppShell sizes the window to this `[data-hero]` element) and
- *  follows the sky's two zones (index.css), light / dark, at each zone's most
- *  saturated point:
- *    SAFE sky (left): ink 15.324 / 12.268, body 6.022 / 4.745. The intro is
- *      --body at 18px, and `[data-hero]` turns any --muted into --body.
- *      Head text is capped at 30rem (480px), inside the 555px where the
- *      decor zone starts (58% of the window at >= 1024px).
- *    DECOR sky (right, >= 1024px): ink 8.472 / 8.433 only. The decorative
- *      tile cluster lives there: frosted tiles, --brand-ink glyph 4.637 /
- *      4.921 over the decor worst (icons need 3:1). No text.
- *  Nothing starts in the bar band: <main> begins at y 88 (80 on phones,
- *  where the band is under 10% strength and the first item is a glass
- *  control whose floor is computed over the decor worst). */
+/** Page head shared by the settings and integrations pages, in the fog
+ *  window (AppShell sizes the window to this `[data-hero]` element): a
+ *  gradient glyph, the title in light display type, an intro in --body, and
+ *  a floating cluster of gradient tiles on the right at >= 1024px
+ *  (decorative, no text). */
 export function SettingsHero({
   nav,
   icon,
@@ -213,8 +197,8 @@ export function SettingsHero({
       {nav && <div className="mb-8">{nav}</div>}
       {badge && <p className="mb-3">{badge}</p>}
       <div className="flex max-w-[30rem] items-center gap-4">
-        <Tile family="frost" icon={icon} className={HERO_TILE} />
-        <h1 className="min-w-0 text-display font-semibold text-ink">{title}</h1>
+        <Tile family="teal" icon={icon} className={HERO_TILE} />
+        <h1 className="display-title min-w-0 text-display text-ink">{title}</h1>
       </div>
       {children && <p className="mt-4 max-w-[30rem] text-lede text-body">{children}</p>}
       {decor && <HeroDecor icons={decor} />}
@@ -222,35 +206,47 @@ export function SettingsHero({
   )
 }
 
-/** Aside's floating product object, reduced to three frosted tiles resting
- *  on a ground shadow at the right of the head. Purely decorative
- *  (aria-hidden), static, desktop only, and gone in forced colours. Under
- *  Increase Contrast / reduced transparency / glass off the frost turns
- *  opaque with the rest of the glass. */
+/** The site's floating glyph cluster: three grainy gradient tiles that
+ *  drift gently (transform only, paused off screen, still under Reduce
+ *  Motion) above a ground shadow. Decorative (aria-hidden), desktop only,
+ *  gone in forced colours. */
 function HeroDecor({ icons }: { icons: [ReactNode, ReactNode, ReactNode] }) {
   const [main, top, bottom] = icons
   return (
     <div
       aria-hidden
+      data-loop
       className="pointer-events-none absolute right-6 top-1/2 isolate hidden h-40 w-64 -translate-y-1/2 lg:block forced-colors:hidden"
     >
       <span className="ground-shadow absolute left-[76px] top-[34px]">
+        <span className="float-y block" style={{ '--t': '6s' } as CSSProperties}>
+          <Tile
+            family="teal"
+            icon={main}
+            className="!h-[88px] !w-[88px] !rounded-[26px] [&_svg]:!h-10 [&_svg]:!w-10 [&_svg]:[stroke-width:1.5]"
+          />
+        </span>
+      </span>
+      <span
+        className="float-y absolute left-[184px] top-0"
+        style={{ '--t': '7s', '--dl': '-2s' } as CSSProperties}
+      >
         <Tile
-          family="frost"
-          icon={main}
-          className="!h-[88px] !w-[88px] !rounded-[26px] [&_svg]:!h-10 [&_svg]:!w-10 [&_svg]:[stroke-width:1.5]"
+          family="blue"
+          icon={top}
+          className="!h-14 !w-14 rotate-[8deg] !rounded-[16px] [&_svg]:!h-6 [&_svg]:!w-6"
         />
       </span>
-      <Tile
-        family="frost"
-        icon={top}
-        className="absolute left-[184px] top-0 !h-14 !w-14 rotate-[8deg] !rounded-[16px] [&_svg]:!h-6 [&_svg]:!w-6"
-      />
-      <Tile
-        family="frost"
-        icon={bottom}
-        className="absolute left-2 top-[100px] !h-12 !w-12 -rotate-[8deg] !rounded-[14px] [&_svg]:!h-5 [&_svg]:!w-5"
-      />
+      <span
+        className="float-y absolute left-2 top-[100px]"
+        style={{ '--t': '8s', '--dl': '-4s' } as CSSProperties}
+      >
+        <Tile
+          family="indigo"
+          icon={bottom}
+          className="!h-12 !w-12 -rotate-[8deg] !rounded-[14px] [&_svg]:!h-5 [&_svg]:!w-5"
+        />
+      </span>
     </div>
   )
 }

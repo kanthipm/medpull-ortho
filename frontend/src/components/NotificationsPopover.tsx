@@ -78,7 +78,7 @@ export default function NotificationsPopover() {
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center px-6 pb-6 pt-4 text-center">
               <Tile family="blue" size="lg" icon={<BellRing />} />
-              <p className="mt-3 text-copy font-medium text-ink">You're all caught up</p>
+              <p className="mt-3 text-copy font-medium text-ink">You’re all caught up</p>
               <p className="mt-1 max-w-[28ch] text-copy text-secondary">
                 Anything that needs your attention will show up here.
               </p>

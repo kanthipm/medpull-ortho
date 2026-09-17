@@ -189,7 +189,7 @@ function TaskLibrary({
   if (library.isLoading) return <SkeletonCard rows={5} />
   if (library.isError)
     return (
-      <EmptyState title="The task library couldn't be loaded." icon={<ClipboardList />}>
+      <EmptyState title="The task library couldn’t be loaded." icon={<ClipboardList />}>
         Refresh the page to try again.
       </EmptyState>
     )
@@ -246,7 +246,7 @@ function TaskLibrary({
             icon={<ClipboardList />}
             family="violet"
           >
-            Save one from a patient's plan, or use New template.
+            Save one from a patient’s plan, or use New template.
           </EmptyState>
         }
       >
@@ -361,7 +361,7 @@ function MessageLibrary({
   if (library.isLoading) return <SkeletonCard rows={5} />
   if (library.isError)
     return (
-      <EmptyState title="The message library couldn't be loaded." icon={<MessageSquare />}>
+      <EmptyState title="The message library couldn’t be loaded." icon={<MessageSquare />}>
         Refresh the page to try again.
       </EmptyState>
     )

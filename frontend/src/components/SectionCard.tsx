@@ -1,21 +1,20 @@
 import { useId, type CSSProperties, type ReactNode } from 'react'
 
-/** THE card surface for the console, shaped like the app's cards: 20px
- *  corners, a 1px --line edge, an opaque --panel fill, and a small sentence-
- *  case header ("Your recovery", "Today") with an optional plain action on
- *  the right ("Details").
+/** THE card surface for the console: the medpull.org glass card (26px
+ *  corners, a white gradient, a light-catching rim, the layered glass
+ *  shadow) with a small sentence-case header ("Your recovery", "Today") and
+ *  an optional plain action on the right ("Details").
  *
- *  HEADER. Title 14/500 in the secondary colour (--muted 5.393 light / 4.906
- *  dark on panel; --body 6.237 / 5.513 on the brand tint, R8). An optional
+ *  HEADER. Title 15/500 ink, like the site's app cards. An optional
  *  leading `icon` (a small Tile), an `aside` (.meta — timestamps, counts) and
  *  an `action` (render a `.btn-plain btn-sm`). No rule under the title.
  *
  *  VARIANTS.
- *    sum / tint  brand-tint card (briefing, recovery summary). Ink prose on
- *                it is 15.871 light / 14.255 dark; secondary text is --body.
+ *    sum / tint  the site's briefing wash (lilac into amber) for AI and
+ *                narrative cards; secondary text is --body.
  *    flush       no body padding and clipped corners, so a ListGroup
  *                (`embedded`) or a table bleeds to the edge.
- *    clip        clip children to the 20px curve without removing padding.
+ *    clip        clip children to the card's curve without removing padding.
  *
  *  Not clipped by default: a menu or tooltip inside must still portal (R5),
  *  but an unported one is not cut off in the meantime.
@@ -88,7 +87,7 @@ export default function SectionCard({
             <div className="min-w-0">
               {eyebrow}
               {title && (
-                <H id={headingId} className="truncate text-copy font-medium text-secondary">
+                <H id={headingId} className="truncate text-[15px] font-medium tracking-[-0.015em] text-ink">
                   {title}
                 </H>
               )}

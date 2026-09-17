@@ -84,7 +84,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const region = (
-    <div className="pointer-events-none fixed inset-x-3 top-3 z-[100] flex flex-col items-end gap-2 sm:inset-x-auto sm:right-6 sm:top-[calc(var(--bar-height)+12px)] sm:w-[360px]">
+    <div className="pointer-events-none fixed inset-x-3 top-3 z-[100] flex flex-col items-end gap-2 sm:inset-x-auto sm:right-6 sm:top-[calc(var(--bar-height)+var(--bar-inset)+12px)] sm:w-[360px]">
       <div aria-live="polite" role="status" className="flex w-full flex-col items-end gap-2">
         {toasts
           .filter((t) => t.kind !== 'warning')

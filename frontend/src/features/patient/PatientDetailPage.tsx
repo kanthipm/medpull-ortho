@@ -61,7 +61,7 @@ import WearableConnectionCard from './WearableConnectionCard'
  *   Full stats  spans the width under the grid: its metric cards need room.
  */
 
-const ANCHOR = 'scroll-mt-[calc(var(--bar-height)+16px)]'
+const ANCHOR = 'scroll-mt-[calc(var(--bar-height)+var(--bar-inset)+16px)]'
 const COLUMN = 'contents min-[1200px]:flex min-[1200px]:min-w-0 min-[1200px]:flex-col min-[1200px]:gap-stack'
 
 function Block({
@@ -103,14 +103,12 @@ function Stats({
   items: { key: string; label: string; value: string; tone?: ReadoutTone; hint?: string }[]
 }) {
   return (
-    <dl className="mt-5 flex flex-wrap gap-x-10 gap-y-4">
+    <dl className="mt-6 flex flex-wrap gap-x-12 gap-y-5 border-t border-hairline pt-5">
       {items.map((s) => (
         <div key={s.key} className="flex min-w-0 flex-col">
           <dt className="text-copy text-secondary">{s.label}</dt>
           <dd className="mt-0.5 flex items-baseline gap-1.5">
-            <span
-              className={`text-title font-medium tabular-nums ${s.tone ? STAT_TONE[s.tone] : 'text-ink'}`}
-            >
+            <span className={`big-num text-[2.5rem] ${s.tone ? STAT_TONE[s.tone] : 'text-ink'}`}>
               {s.value}
             </span>
             {s.hint && <span className="text-copy text-secondary">{s.hint}</span>}
@@ -185,7 +183,7 @@ export default function PatientDetailPage() {
   if (isError || !p) {
     return (
       <EmptyState
-        title="This patient couldn't be loaded"
+        title="This patient couldn’t be loaded"
         className="mt-6"
         action={
           <Link to="/" className="btn-tinted">
@@ -263,7 +261,7 @@ export default function PatientDetailPage() {
               </button>
             )}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <h1 className="text-section font-semibold text-ink">{p.name}</h1>
+              <h1 className="display-title text-display text-ink">{p.name}</h1>
               <PriorityBadge priority={p.risk.level} />
             </div>
             <DotLine as="p" className="mt-1.5 text-copy text-body" parts={facts} />
@@ -290,8 +288,13 @@ export default function PatientDetailPage() {
         </div>
       </header>
 
+      {/* ── Headline bento ──────────────────────────────────────────────── */}
+      <div className="mt-8">
+        <HeadlineMetrics patientId={p.id} refreshing={refreshing} onOpen={openMetric} />
+      </div>
+
       {/* ── Two-column body ─────────────────────────────────────────────── */}
-      <div className="mt-8 flex flex-col gap-stack min-[1200px]:grid min-[1200px]:grid-cols-[minmax(0,1fr)_360px] min-[1200px]:items-start">
+      <div className="mt-stack flex flex-col gap-stack min-[1200px]:grid min-[1200px]:grid-cols-[minmax(0,1fr)_360px] min-[1200px]:items-start">
         <div className={COLUMN}>
           <Block index={1} order="order-1">
             <SectionCard
@@ -393,10 +396,6 @@ export default function PatientDetailPage() {
         </div>
 
         <div className={COLUMN}>
-          <Block index={3} order="order-3">
-            <HeadlineMetrics patientId={p.id} refreshing={refreshing} onOpen={openMetric} />
-          </Block>
-
           <Block index={5} order="order-5">
             <RecoveryTimeline patientId={p.id} trajectory={p.trajectory} refreshing={refreshing} />
           </Block>

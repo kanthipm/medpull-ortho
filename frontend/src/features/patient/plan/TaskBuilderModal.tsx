@@ -104,10 +104,10 @@ export default function TaskBuilderModal({
     if (checkin.isPending) return
     checkin.mutate(undefined, {
       onSuccess: (r) => {
-        const waiting = r.reused ? `${first} already had today's check-in waiting` : `Daily check-in is in ${first}'s app`
+        const waiting = r.reused ? `${first} already had today’s check-in waiting` : `Daily check-in is in ${first}'s app`
         if (r.sms.sent) toast(`${waiting} — and texted`, 'success')
         else if (!r.sms.attempted) toast(`${waiting} — not texted, no phone on file`, 'info')
-        else toast(`${waiting} — the text didn't go through (${r.sms.detail})`, 'warning')
+        else toast(`${waiting} — the text didn’t go through (${r.sms.detail})`, 'warning')
         onClose()
       },
       onError: (e) => toast(`Could not send the check-in — ${e.message}`, 'warning'),
@@ -176,7 +176,7 @@ export default function TaskBuilderModal({
           if (r.delivery?.sent) toast(`${tasks} — texted to ${first}`, 'success')
           else if (!phone) toast(`${tasks} — nothing sent (no phone on file)`, 'info')
           else if (!notify || !canText) toast(`${tasks} — in the app only`, 'info')
-          else toast(`${tasks} — the text didn't go through (${r.delivery?.detail || 'not sent'})`, 'warning')
+          else toast(`${tasks} — the text didn’t go through (${r.delivery?.detail || 'not sent'})`, 'warning')
           onClose()
         },
         onError: (e) => toast(`Tasks could not be assigned — ${e.message}`, 'warning'),
@@ -242,7 +242,7 @@ export default function TaskBuilderModal({
             type="button"
             onClick={sendCheckin}
             disabled={checkin.isPending}
-            title={`Sends ${first} today's check-in now — in the app, and by text if they have a number`}
+            title={`Sends ${first} today’s check-in now — in the app, and by text if they have a number`}
             className="on-tint mb-3 flex w-full cursor-pointer items-center gap-3 rounded-surface bg-brand-tint px-4 py-3 text-left transition-[background-color,transform] duration-state ease-apple hover:bg-brand-tint-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-press disabled:cursor-not-allowed disabled:bg-disabled-fill"
           >
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-control bg-brand text-on-brand">

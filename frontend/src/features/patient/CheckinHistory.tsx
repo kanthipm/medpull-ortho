@@ -153,7 +153,7 @@ export default function CheckinHistory({
             ))}
           </ListGroup>
           <p className="meta px-5 pb-4 pt-2">
-            Quotes are the patient's own words, selected from each conversation. Expand a check-in
+            Quotes are the patient’s own words, selected from each conversation. Expand a check-in
             for the full transcript.
           </p>
         </>

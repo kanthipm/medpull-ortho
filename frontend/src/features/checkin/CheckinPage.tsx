@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Activity, Check, CircleAlert, CircleCheck, HeartPulse } from 'lucide-react'
+import { Activity, Check, CircleAlert, CircleCheck } from 'lucide-react'
 import { useId, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError, fetchJson } from '../../api/client'
 import Tile from '../../components/Tile'
@@ -54,11 +54,10 @@ const CHOICE_LABELS: Record<string, string> = {
 
 // --- shared patient-web pieces ---------------------------------------------------
 
-/** The page frame: canvas only (no wash, no bar, no glass), a 16px gutter.
- *  With a `hero`, the lockup and the page head sit together in the static
- *  brand gradient card (PatientHero); without one (loading, error), the
- *  lockup sits quietly on the canvas. The name is --ink 600, not brand-ink:
- *  that is 5.354 on light canvas, under this route's 7:1 bar. */
+/** The page frame: the site's canvas with its faint fog, a 16px gutter and
+ *  no bar. With a `hero`, the lockup and the page head sit together in the
+ *  fog card (PatientHero); without one (loading, error), the lockup sits
+ *  quietly on the canvas. */
 export function PatientShell({
   children,
   hero,
@@ -69,73 +68,49 @@ export function PatientShell({
   width?: 'md' | 'lg'
 }) {
   const lockup = (
-    <p className="flex items-center gap-2.5 text-copy-lg font-semibold text-ink">
-      <Tile family="blue" icon={<HeartPulse />} />
-      MedPull Recovery
+    <p className="brand-lockup text-lede">
+      <span className="app-icon">
+        <img src="/medpull-mark.png" alt="" width={22} height={22} />
+      </span>
+      MedPull
     </p>
   )
   return (
-    <main
-      className={`mx-auto min-h-screen px-4 pb-16 pt-4 sm:pt-8 ${width === 'md' ? 'max-w-md' : 'max-w-lg'}`}
-    >
-      {hero ? (
-        <PatientHero>
-          {lockup}
-          <div className="mt-6">{hero}</div>
-        </PatientHero>
-      ) : (
-        <div className="mb-8 pt-4">{lockup}</div>
-      )}
-      {children}
-    </main>
+    <div className="ambient-host min-h-screen">
+      <div className="ambient" aria-hidden />
+      <main
+        className={`mx-auto min-h-screen px-4 pb-16 pt-4 sm:pt-8 ${width === 'md' ? 'max-w-md' : 'max-w-lg'}`}
+      >
+        {hero ? (
+          <PatientHero>
+            {lockup}
+            <div className="mt-7">{hero}</div>
+          </PatientHero>
+        ) : (
+          <div className="mb-8 pt-4">{lockup}</div>
+        )}
+        <div className="rise" style={{ '--rise-delay': '120ms' } as CSSProperties}>
+          {children}
+        </div>
+      </main>
+    </div>
   )
 }
 
 /**
- * The friendly head of a patient page: an OPAQUE card with a static Medical
- * Blue / Teal gradient. No blur, no translucency (every layer paints over
- * the opaque base inside the one element), no motion.
- *
- * Layers, top first: a white highlight (lightens only, light mode), a Medical
- * Blue blob top right, a Teal blob bottom right, over a pale blue -> pale
- * teal base. Worst point = every tinted blob at its peak over the base's
- * darker stop (8-bit sRGB, WCAG 0.04045):
- *   light  #AFDBEE / #B0D9F0   --ink 12.418 / 12.277
- *   dark   #0E4A69 / #10466E   --ink  9.536 /  9.890
- * So ONLY --ink text goes in here (above the route's 7:1 bar in both modes);
- * --body would be 3.688 in dark and is not used. Tiles are opaque with their
- * own glyph pairs. The ring is a 1px low-alpha line (0.5px only at 2dppx).
- * Increase Contrast, forced colours, reduced transparency and glass-off
- * drop the gradient to the plain --panel card with a --line-strong edge.
+ * The friendly head of a patient page: the site's hero canvas as a card —
+ * warm white with soft colour fog, grain and a faint dot grid (`.canvas-card`).
+ * Only --ink text goes in here (12:1 or better at the fog's strongest point
+ * in both modes). The flat modes (Increase Contrast, forced colours, reduced
+ * transparency, glass off) drop it to the plain panel with an edge.
  */
 function PatientHero({ children }: { children: ReactNode }) {
-  return (
-    <section
-      className={[
-        'mb-8 rounded-[28px] px-5 pb-6 pt-5 sm:px-6 sm:pb-7 sm:pt-6',
-        'shadow-[inset_0_0_0_1px_rgb(14_21_28/0.06),inset_0_1px_0_rgb(255_255_255/0.9)]',
-        'bg-[#EAF3FD]',
-        'bg-[image:radial-gradient(60%_70%_at_0%_0%,rgb(255_255_255/0.75),rgb(255_255_255/0)_70%),radial-gradient(60%_90%_at_100%_0%,rgb(25_118_210/0.14),rgb(25_118_210/0)_72%),radial-gradient(70%_90%_at_92%_110%,rgb(0_172_193/0.14),rgb(0_172_193/0)_72%),linear-gradient(135deg,#EAF3FD,#E7F7FA)]',
-        'dark:bg-[#0F2238]',
-        'dark:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08),inset_0_1px_0_rgb(255_255_255/0.10)]',
-        'dark:bg-[image:radial-gradient(60%_90%_at_100%_0%,rgb(25_118_210/0.26),rgb(25_118_210/0)_72%),radial-gradient(70%_90%_at_92%_110%,rgb(0_172_193/0.14),rgb(0_172_193/0)_72%),linear-gradient(135deg,#0F2238,#0C2830)]',
-        // Flattened: the plain card.
-        'contrast-more:!bg-panel contrast-more:!bg-none contrast-more:!shadow-[inset_0_0_0_1px_rgb(var(--line-strong))]',
-        '[@media(prefers-reduced-transparency:reduce)]:!bg-panel [@media(prefers-reduced-transparency:reduce)]:!bg-none',
-        '[[data-glass=off]_&]:!bg-panel [[data-glass=off]_&]:!bg-none',
-        'forced-colors:!bg-none forced-colors:border forced-colors:border-[CanvasText]',
-      ].join(' ')}
-    >
-      {children}
-    </section>
-  )
+  return <section className="canvas-card rise mb-8 px-6 pb-7 pt-6 sm:px-7 sm:pb-8">{children}</section>
 }
 
-/** Large title at 600, like the app's two-line greeting. */
+/** Large light title, like the site's display type. */
 export function PatientTitle({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return (
-    <h1 className={`text-balance text-section font-semibold text-ink ${className}`}>{children}</h1>
-  )
+  return <h1 className={`display-title text-[2.5rem] text-ink ${className}`}>{children}</h1>
 }
 
 /** A full-page state (loading, error, done): a large tile, a title and one
@@ -164,20 +139,18 @@ export function PatientStatus({
       aria-live={tone === 'loading' ? 'polite' : undefined}
     >
       {tile}
-      <h1 className="mt-4 text-balance text-title font-semibold text-ink">{title}</h1>
+      <h1 className="display-title mt-5 text-title text-ink">{title}</h1>
       {children && <p className="mt-2 text-copy-lg text-ink">{children}</p>}
     </section>
   )
 }
 
 /**
- * One answer target. Idle: --panel with a --line-strong edge (3.834 light /
- * 5.671 dark on the card; WCAG 1.4.11 binds it because the edge is the only
- * boundary). Hover: brand tint with a brand edge, ink label (15.871 / 14.255).
- * Selected: the brand FILL with white (4.602), a same-colour edge so nothing
- * moves by a pixel, aria-pressed, and — on word answers — a check mark, so
- * the state is never colour alone. Focus: a 2px --focus ring 2px out
- * (4.602 / 6.783 on panel).
+ * One answer target: the site's quick reply. Idle, a white capsule with a
+ * --line-strong ring (the ring is the boundary, so it stays at 3:1 or
+ * better). Picked, the sage message bubble with white text (6.44), plus
+ * aria-pressed and — on word answers — a check mark, so the state is never
+ * colour alone. Focus: a 2px ink ring 3px out.
  */
 function AnswerButton({
   active,
@@ -195,13 +168,9 @@ function AnswerButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`inline-flex min-h-14 min-w-11 select-none items-center justify-center gap-2 border text-copy-lg font-medium transition-[background-color,border-color,color,transform] duration-state ease-apple focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-press forced-colors:border-[ButtonText] ${
+      className={`reply forced-colors:border forced-colors:border-[ButtonText] ${
         shape === 'cell' ? 'w-full rounded-control tabular-nums' : 'rounded-pill px-6'
-      } ${
-        active
-          ? 'border-brand bg-brand text-on-brand forced-colors:bg-[Highlight] forced-colors:text-[HighlightText]'
-          : 'border-line-strong bg-panel text-ink hover:border-brand hover:bg-brand-tint'
-      }`}
+      } ${active ? 'forced-colors:bg-[Highlight] forced-colors:text-[HighlightText]' : ''}`}
     >
       {shape === 'capsule' && active && <Check size={18} strokeWidth={2.5} aria-hidden />}
       {children}
@@ -233,11 +202,11 @@ export function QuestionCard({
     <section className="panel p-4 sm:p-5" aria-labelledby={promptId}>
       {q.kind === 'text' || q.kind === 'number' ? (
         <label id={promptId} htmlFor={fieldId} className="mb-4 block text-lede font-semibold text-ink">
-          {q.prompt}
+          {typeset(q.prompt)}
         </label>
       ) : (
         <h2 id={promptId} className="mb-4 text-lede font-semibold text-ink">
-          {q.prompt}
+          {typeset(q.prompt)}
         </h2>
       )}
 
@@ -333,9 +302,16 @@ export function SendButton({
       onClick={onClick}
       className="btn-filled btn-lg mt-8 min-h-14 w-full text-lede disabled:cursor-not-allowed disabled:border-line-strong disabled:bg-disabled-fill disabled:text-disabled-ink"
     >
+      {!pending && !disabled && <span aria-hidden className="dot-lime" />}
       {pending ? 'Sending…' : children}
     </button>
   )
+}
+
+/** Server copy keeps plain apostrophes (it is also texted, and a curly one
+ *  would push an SMS into UCS-2); on the page they are typeset. */
+function typeset(text: string): string {
+  return text.replace(/(\w)'(\w)/g, '$1\u2019$2')
 }
 
 /** Tap an answer again to clear it; typed answers just replace. */
@@ -371,7 +347,7 @@ export default function CheckinPage() {
     const detail =
       error instanceof ApiError && error.status >= 400 && error.status < 500
         ? error.message
-        : "This check-in couldn't be loaded. Please try again."
+        : "This check-in couldn’t be loaded. Please try again."
     return (
       <PatientShell>
         <PatientStatus tone="error" title={detail}>
@@ -398,10 +374,10 @@ export default function CheckinPage() {
         <>
           <PatientTitle>
             Hi {data.patient_name},<br />
-            how's your recovery today?
+            how’s your recovery today?
           </PatientTitle>
           <p className="mt-3 text-copy-lg text-ink">
-            Takes under a minute. Skip anything you're not sure about.
+            Takes under a minute. Skip anything you’re not sure about.
           </p>
         </>
       }
@@ -424,7 +400,7 @@ export default function CheckinPage() {
               to check their connection sends them round the same loop. */}
           {submit.error instanceof ApiError && submit.error.status >= 400 && submit.error.status < 500
             ? submit.error.message
-            : "Couldn't send your answers. Check your connection and try again."}
+            : "Couldn’t send your answers. Check your connection and try again."}
         </PatientError>
       )}
 

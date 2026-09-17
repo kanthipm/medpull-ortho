@@ -66,7 +66,7 @@ function SignalTile({ m, index }: { m: MetricInsight; index: number }) {
       </div>
 
       <p className="mt-3 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-        <span className="text-title font-medium tabular-nums text-ink">{now?.value ?? '—'}</span>
+        <span className="big-num text-[2.25rem] text-ink">{now?.value ?? '—'}</span>
         {m.unit && <span className="text-copy text-secondary">{m.unit}</span>}
       </p>
       {now && <p className="meta mt-0.5">Latest · {now.date}</p>}

@@ -18,6 +18,7 @@ import type { NextStep, NextStepActionType, WorklistRowWithStep } from '../../ap
 import { useCompleteNextStep, useExecuteNextStep } from '../../api/plan'
 import { useWorklist } from '../../api/queries'
 import type { WorklistResponse } from '../../api/types'
+import DotLine from '../patient/DotLine'
 import MessageComposerModal from '../patient/plan/MessageComposerModal'
 import { AskAnswer, AskField } from './AskBar'
 import { useAskState } from './useAskState'
@@ -147,7 +148,7 @@ export default function WorklistPage() {
       <div className="pb-4 pt-8">
         {hero}
         <div className="mt-10">
-          <EmptyState title="The worklist couldn't be loaded." family="blue">
+          <EmptyState title="The worklist couldn’t be loaded." family="blue">
             Check that the API is running, then reload this page.
           </EmptyState>
         </div>
@@ -198,7 +199,7 @@ export default function WorklistPage() {
         className={`mt-10 flex flex-wrap items-center justify-between gap-3 ${riseCls}`}
         style={riseAt(140)}
       >
-        <h2 id={patientsHeadingId} className="text-subhead font-semibold text-ink">
+        <h2 id={patientsHeadingId} className="text-subhead font-medium text-ink">
           {askIds ? 'Matching patients' : 'Patients'}
           <span className="ml-2 text-copy-lg font-normal tabular-nums text-secondary">
             {askIds ? groups.reduce((n, g) => n + g.patients.length, 0) : data.patients.length}
@@ -316,16 +317,14 @@ function PageHead({
         />
         {/* --body on the sky: 6.073 light / 4.642 dark at its most
             saturated point. */}
-        <p className="mt-4 text-copy-lg font-medium text-body">
+        <p className="mt-5 text-copy-lg text-body">
           {greeting()}
           <span aria-hidden> · </span>
           <span className="sr-only">, </span>
           {longDate()}
         </p>
         {data ? (
-          <h1 className="mt-1 text-section font-semibold text-ink [text-wrap:balance] lg:text-display">
-            {headline(data.stats)}
-          </h1>
+          <Headline stats={data.stats} />
         ) : (
           <>
             <h1 className="sr-only">Worklist</h1>
@@ -375,9 +374,40 @@ function BriefingBadge({
   )
 }
 
-/** The head's right-hand summary: one OPAQUE panel on the decor sky.
- *  Numbers are ink on --panel; each tier is dot + label + count. The bar
- *  under the counts is decorative (aria-hidden) and repeats them. */
+/** The worklist's headline, the site's dashboard KPI: when someone needs
+ *  the team today, a big light count beside the sentence and the calm
+ *  remainder under it; otherwise one display sentence. */
+function Headline({ stats }: { stats: WorklistResponse['stats'] }) {
+  if (stats.high > 0) {
+    const rest = [
+      stats.medium > 0 && `${stats.medium} to review`,
+      stats.missing > 0 && `${stats.missing} with data gaps`,
+      stats.low > 0 && `${stats.low} on track`,
+    ].filter(Boolean) as string[]
+    return (
+      <h1 className="mt-2 flex items-center gap-4 text-ink">
+        <span className="big-num text-[5.5rem] leading-[.9]">{stats.high}</span>
+        <span className="min-w-0">
+          <span className="display-title block text-[1.75rem] leading-tight lg:text-[2rem]">
+            {stats.high === 1 ? 'patient needs you today' : 'patients need you today'}
+          </span>
+          {rest.length > 0 && (
+            <DotLine
+              className="mt-1 block text-copy-lg font-normal tracking-copy-lg text-body"
+              parts={rest}
+            />
+          )}
+        </span>
+      </h1>
+    )
+  }
+  return <h1 className="display-title mt-2 text-section text-ink lg:text-display">{headline(stats)}</h1>
+}
+
+/** The head's right-hand summary, as a gradient tile: the roster size in
+ *  light type on sage, a white meter of the tiers, and the counts on a solid
+ *  glass caption — each tier a dot + word + number, so risk is never colour
+ *  alone. The meter repeats the counts and is aria-hidden. */
 function TodayPanel({ stats }: { stats: WorklistResponse['stats'] }) {
   const rows: { tier: Priority; n: number }[] = [
     { tier: 'high', n: stats.high },
@@ -387,34 +417,48 @@ function TodayPanel({ stats }: { stats: WorklistResponse['stats'] }) {
   ]
   const total = Math.max(1, stats.total)
   return (
-    <div className="isolate hidden w-[264px] shrink-0 lg:block">
-      <section aria-label="Today at a glance" className="panel ground-shadow px-5 pb-4 pt-4">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-copy font-medium text-secondary">Today</h2>
-          <p className="meta tabular-nums">
-            {stats.total} {stats.total === 1 ? 'patient' : 'patients'}
-          </p>
+    <div className="hidden w-[300px] shrink-0 lg:block">
+      <section aria-label="Today at a glance" className="gtile g-sage spotlight rise" data-loop>
+        <div className="gtile-top">
+          <div>
+            <span className="gtile-kicker block">Today</span>
+            <span className="gtile-num big-num">
+              {stats.total}
+              <small>{stats.total === 1 ? 'patient' : 'patients'}</small>
+            </span>
+          </div>
+          <div className="gtile-side">
+            <b>{stats.low}</b>
+            on track
+          </div>
         </div>
-        <ul className="mt-2">
-          {rows.map(({ tier, n }) => (
-            <li key={tier} className="flex min-h-8 items-center gap-2">
-              <span aria-hidden className={`h-2 w-2 shrink-0 rounded-pill ${PRIORITY[tier].dot}`} />
-              <span className="flex-1 text-copy text-ink">{PRIORITY[tier].label}</span>
-              <span className="text-copy-lg font-medium tabular-nums text-ink">{n}</span>
-            </li>
-          ))}
-        </ul>
-        <div aria-hidden className="mt-3 flex h-1.5 gap-0.5 overflow-hidden rounded-pill">
+        <div aria-hidden className="relative z-[1] mx-5 mb-3 mt-4 flex h-2 gap-1">
           {rows
             .filter((r) => r.n > 0)
-            .map(({ tier, n }) => (
+            .map(({ tier, n }, i) => (
               <span
                 key={tier}
-                className={`${PRIORITY[tier].dot} h-full rounded-pill`}
-                style={{ flexGrow: n / total, flexBasis: 0 }}
+                className={`meter-fill h-full rounded-pill ${
+                  tier === 'high' ? 'bg-lime shadow-[0_0_10px_rgb(212_241_74_/_.7)]' : tier === 'low' ? 'bg-white/90' : 'bg-white/45'
+                }`}
+                style={{ flexGrow: n / total, flexBasis: 0, backgroundImage: 'none', animationDelay: `${0.3 + i * 0.08}s` }}
               />
             ))}
         </div>
+        <ul className="gtile-cap !pb-2 !pt-1.5">
+          {rows.map(({ tier, n }) => (
+            <li key={tier} className="flex min-h-8 items-center gap-2">
+              <span
+                aria-hidden
+                className={`h-2 w-2 shrink-0 rounded-pill ${
+                  tier === 'missing_data' ? 'border-[1.5px] border-risk-missing-ink' : PRIORITY[tier].dot
+                }`}
+              />
+              <span className="flex-1 text-copy text-ink">{PRIORITY[tier].label}</span>
+              <span className="big-num text-[1.375rem] text-ink">{n}</span>
+            </li>
+          ))}
+        </ul>
       </section>
     </div>
   )
@@ -467,7 +511,7 @@ function StartWith({ patient: p }: { patient: WorklistRowWithStep }) {
   return (
     <Link
       to={`/patients/${p.id}`}
-      className="group mt-4 flex items-start gap-3 rounded-control border border-line bg-panel p-3.5 transition-colors duration-state ease-apple hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:rgb(var(--focus))] lg:mt-0"
+      className="spotlight group mt-4 flex items-start gap-3 rounded-control bg-panel/80 p-4 shadow-soft transition-[box-shadow,transform] duration-spring ease-spring hover:-translate-y-0.5 hover:shadow-float focus-visible:outline motion-reduce:transform-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:rgb(var(--focus))] lg:mt-0"
     >
       <Avatar name={p.name} tier={p.priority} />
       <span className="min-w-0 flex-1">
@@ -517,9 +561,14 @@ function TierGroup({
   const id = useId()
   return (
     <section className={`card-group ${className}`} style={style} aria-labelledby={id}>
-      <div className="flex items-center gap-2 bg-panel px-4 pb-1.5 pt-3">
-        <span aria-hidden className={`h-2 w-2 shrink-0 rounded-pill ${PRIORITY[tier].dot}`} />
-        <h3 id={id} className="text-copy font-medium text-ink">
+      <div className="flex items-center gap-2 px-4 pb-1.5 pt-3.5">
+        <span
+          aria-hidden
+          className={`h-2 w-2 shrink-0 rounded-pill ${
+            tier === 'missing_data' ? 'border-[1.5px] border-risk-missing-ink' : PRIORITY[tier].dot
+          }`}
+        />
+        <h3 id={id} className="text-[15px] font-medium text-ink">
           {PRIORITY[tier].label}
         </h3>
         <span className="text-copy tabular-nums text-secondary">

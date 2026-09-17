@@ -146,7 +146,7 @@ export default function NextSteps({
             )}
             {aiActions.length > 0 && (
               <p className="meta px-4 pb-4 pt-2">
-                The planner is unavailable, so these are the AI's suggestions as wording only.
+                The planner is unavailable, so these are the AI’s suggestions as wording only.
               </p>
             )}
           </div>

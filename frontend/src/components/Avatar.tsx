@@ -2,21 +2,26 @@ import { PRIORITY, type Priority } from '../lib/risk'
 import { initialsOf } from './initials'
 
 const SIZE = {
-  sm: 'h-7 w-7 text-label', // 28px
-  md: '', // 32px — the recipe default, 12/500 initials
-  lg: 'h-10 w-10 text-copy', // 40px
-  xl: 'h-14 w-14 text-copy-lg', // 56px — patient header
+  sm: 'h-7 w-7 text-[11px]', // 28px
+  md: '', // 36px — the recipe default, 12/500 initials
+  lg: 'h-11 w-11 text-copy', // 44px
+  xl: 'h-16 w-16 text-lede', // 64px — patient header
 } as const
 
-/** Initials disc.
+const TONES = ['av-1', 'av-2', 'av-3', 'av-4', 'av-5'] as const
+
+/** A stable gradient per name, so a patient keeps their colour everywhere. */
+function toneFor(name: string): string {
+  let h = 0
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0
+  return TONES[h % TONES.length]
+}
+
+/** Initials disc — the site's grainy gradient avatar, white initials.
  *
- *  Default: brand-tint disc, on-brand-tint initials (7.454 light / 5.624
- *  dark). `tier="high"` (R1) switches to `.avatar-risk`: a PANEL disc with
- *  risk-high-ink initials (5.622 light / 7.563 dark), so on a risk-tinted
- *  row the avatar never shares the row's fill. White on a filled risk disc
- *  was computed and rejected: 5.622 light but 2.273 dark (#FFF on #FF8A87).
- *
- *  Decorative by default (the name is next to it). Pass `label` when the
+ *  The tone is picked from the name. `tier="high"` swaps in the clay
+ *  `.avatar-risk` disc. Decorative by default (the name is next to it, so the
+ *  initials never carry information on their own). Pass `label` when the
  *  avatar stands alone and must be announced. */
 export default function Avatar({
   name,
@@ -35,7 +40,7 @@ export default function Avatar({
   const risk = tier ? PRIORITY[tier]?.avatar ?? '' : ''
   return (
     <span
-      className={`avatar ${risk} ${SIZE[size]} ${className}`}
+      className={`avatar ${risk || toneFor(name)} ${SIZE[size]} ${className}`}
       aria-hidden={label ? undefined : true}
       role={label ? 'img' : undefined}
       aria-label={label}

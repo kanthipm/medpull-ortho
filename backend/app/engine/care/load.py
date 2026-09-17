@@ -376,7 +376,7 @@ def m3(ctx: CareContext) -> CareMetric:
                       marker_x=plateau_day, y_label=f"{label} %", reference=round(ok_level, 1))
     return build(
         "M3", ctx, name=name, status=status, status_text=text, finding=finding,
-        value=f"{latest:.1f}%", value_num=latest, unit="%", value_label=label,
+        value=f"{latest:.1f}", value_num=latest, unit="%", value_label=label,
         delta_text=delta_text, next_step=next_step,
         confidence=confidence_for(ctx, len(last7), 7),
         coverage_text=f"{len(last7)} of 7 days of {label}", chart=chart, inputs=[key],

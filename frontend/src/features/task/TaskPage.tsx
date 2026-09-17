@@ -93,7 +93,7 @@ export default function TaskPage() {
     const detail =
       error instanceof ApiError && error.status >= 400 && error.status < 500
         ? error.message
-        : "This task couldn't be loaded. Please try again."
+        : "This task couldn’t be loaded. Please try again."
     return (
       <PatientShell width="md">
         <PatientStatus tone="error" title={detail}>
@@ -125,9 +125,7 @@ export default function TaskPage() {
       width="md"
       hero={
         <>
-          {/* Kind label: --ink, like everything in the gradient head (9.536
-              dark / 12.277 light at its most saturated point; --body would
-              be 3.688 in dark there). */}
+          {/* Kind label: --ink, like everything on the fog card. */}
           <p className="flex items-center gap-2.5 text-copy-lg font-medium text-ink">
             <Tile family={tile.family} icon={tile.icon} />
             {task.kind_label}
@@ -138,13 +136,10 @@ export default function TaskPage() {
       }
     >
 
-      {/* The app hand-off: a 56px tinted capsule. Label --on-brand-tint on the
-          tint (7.454 light / 5.624 dark); the brand edge is what makes it a
-          button on the canvas (4.288 / 3.993), since the tint fill alone is
-          1.079 there. */}
+      {/* The app hand-off: the site's white glass capsule, ink label. */}
       <a
         href={data.deep_link}
-        className="flex min-h-14 w-full select-none items-center justify-center gap-2.5 rounded-pill border border-brand bg-brand-tint px-6 text-copy-lg font-medium text-on-brand-tint transition-[background-color,transform] duration-state ease-apple hover:bg-brand-tint-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-press forced-colors:border-[LinkText]"
+        className="btn-gray btn-lg w-full !min-h-14 forced-colors:border-[LinkText]"
       >
         <Smartphone size={20} aria-hidden />
         Open in the MedPull app
@@ -176,7 +171,7 @@ export default function TaskPage() {
         <PatientError>
           {submit.error instanceof ApiError
             ? submit.error.message
-            : "Couldn't send your answers. Check your connection and try again."}
+            : "Couldn’t send your answers. Check your connection and try again."}
         </PatientError>
       )}
 

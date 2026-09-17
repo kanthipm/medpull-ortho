@@ -153,7 +153,7 @@ function LinkModal({
             target="_blank"
             rel="noreferrer"
             className="btn-tinted"
-            title="Opens Junction's page in a new tab — hand the device to the patient to sign in"
+            title="Opens Junction’s page in a new tab — hand the device to the patient to sign in"
           >
             <ExternalLink size={16} aria-hidden /> Open here
           </a>
@@ -164,8 +164,8 @@ function LinkModal({
       }
     >
       <p className="text-copy text-body">
-        Share this link with {firstName}. They sign in to their device's account (Oura, Fitbit,
-        Garmin, WHOOP, Withings, Polar or Dexcom) on Junction's page — nothing is typed into this
+        Share this link with {firstName}. They sign in to their device’s account (Oura, Fitbit,
+        Garmin, WHOOP, Withings, Polar or Dexcom) on Junction’s page — nothing is typed into this
         console. Data starts flowing within minutes and the pre-op history back-fills on its own.
       </p>
       <label className="mt-4 block">
@@ -208,7 +208,7 @@ export default function WearableConnectionCard({
   if (isError || !data) {
     return (
       <SectionCard title="Wearables" icon={<Tile size="sm" family="teal" icon={<Watch />} />}>
-        <p className="text-copy text-secondary">The connection state couldn't be loaded.</p>
+        <p className="text-copy text-secondary">The connection state couldn’t be loaded.</p>
       </SectionCard>
     )
   }
@@ -224,7 +224,7 @@ export default function WearableConnectionCard({
   const issueLink = () =>
     createLink.mutate(undefined, {
       onSuccess: (result) => setLink(result),
-      onError: (err) => toast(`Couldn't issue a link — ${err.message}`, 'warning'),
+      onError: (err) => toast(`Couldn’t issue a link — ${err.message}`, 'warning'),
     })
 
   const runBackfill = () =>
@@ -300,7 +300,7 @@ export default function WearableConnectionCard({
       {configured && !active && (
         <p className="text-copy text-body">
           No live wearable is linked. Issue a one-time Junction link for {firstName} to sign in to
-          their device's account; readings then flow into this chart automatically.
+          their device’s account; readings then flow into this chart automatically.
         </p>
       )}
 
@@ -332,7 +332,7 @@ export default function WearableConnectionCard({
 
       {c && wrongEnvironment && (
         <Notice tone="med">
-          This account lives on Junction's {c.environment} host and this deployment is configured
+          This account lives on Junction’s {c.environment} host and this deployment is configured
           for {data.aggregator.environment}. Disconnect it and issue a new link.
         </Notice>
       )}

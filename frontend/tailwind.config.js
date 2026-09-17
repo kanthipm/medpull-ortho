@@ -80,6 +80,59 @@ export default {
     'shimmer-text',
     'well',
     'ground-shadow',
+    // medpull.org language (index.css).
+    'appbar-inner',
+    'brand-lockup',
+    'app-icon',
+    'app-icon-lg',
+    'dot-lime',
+    'big-num',
+    'display-title',
+    'gtile',
+    'gtile-top',
+    'gtile-kicker',
+    'gtile-num',
+    'gtile-side',
+    'gtile-art',
+    'gtile-cap',
+    'g-sage',
+    'g-meadow',
+    'g-amber',
+    'g-clay',
+    'g-dusk',
+    'g-lilac',
+    'g-mint',
+    'g-origin',
+    'art',
+    'art-line',
+    'art-dash',
+    'art-grid',
+    'art-dot',
+    'art-node',
+    'meter',
+    'meter-fill',
+    'meter-on-tile',
+    'aurora',
+    'av-1',
+    'av-2',
+    'av-3',
+    'av-4',
+    'av-5',
+    'reveal',
+    'is-shown',
+    'is-paused',
+    'draw-in',
+    'comet',
+    'pulse-ring',
+    'pop-in',
+    'grow-y',
+    'now-dot',
+    'spotlight',
+    'dash-flow',
+    'gauge-fill',
+    'canvas-card',
+    'reply',
+    'float-y',
   ],
   theme: {
     // WEIGHT — NOT in `extend`, deliberately: this REPLACES Tailwind's weight
@@ -95,6 +148,7 @@ export default {
     // No `<b>`/`<strong>` is used anywhere in src/, so preflight's
     // `font-weight: bolder` never fires.
     fontWeight: {
+      light: 'var(--weight-display)',
       normal: 'var(--weight-body)',
       medium: 'var(--weight-emphasis)',
       semibold: 'var(--weight-strong)',
@@ -109,13 +163,14 @@ export default {
         // Windows clinic machines, so the overrides are tuned to it, but it is
         // the banned body face, so it must not be the first thing anyone sees.
         sans: [
-          '"Instrument Sans"',
-          '"Instrument Sans Fallback"',
-          '"Helvetica Neue"',
-          'Helvetica',
-          'Arial',
-          'system-ui',
+          'Outfit',
+          '"Outfit Fallback"',
           '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          '"Helvetica Neue"',
+          'Arial',
           'sans-serif',
         ],
         // Identifiers and code only (patient ids, endpoints, template keys).
@@ -189,10 +244,11 @@ export default {
       },
 
       borderRadius: {
-        surface: 'var(--r-surface)', // 20px cards, grouped lists, overlays
-        control: 'var(--r-control)', // 12px fields, segmented track, menus
-        'control-sm': 'var(--r-control-sm)', // 10px compact controls, segmented thumb
-        tile: 'var(--r-tile)', // 8px category tile
+        canvas: 'var(--r-canvas)', // 34px the fog window, big panels
+        surface: 'var(--r-surface)', // 26px cards, tiles, overlays
+        control: 'var(--r-control)', // 18px inner rows, menus
+        'control-sm': 'var(--r-control-sm)', // 14px fields, compact controls
+        tile: 'var(--r-tile)', // 9px icon tile
         pill: 'var(--r-pill)', // 999px every button and chip
       },
 
@@ -246,25 +302,30 @@ export default {
         // rather than a role.
         n: {
           0: 'rgb(var(--n-0) / <alpha-value>)',
+          25: 'rgb(var(--n-25) / <alpha-value>)',
           50: 'rgb(var(--n-50) / <alpha-value>)',
           100: 'rgb(var(--n-100) / <alpha-value>)',
+          150: 'rgb(var(--n-150) / <alpha-value>)',
           200: 'rgb(var(--n-200) / <alpha-value>)',
           300: 'rgb(var(--n-300) / <alpha-value>)',
           400: 'rgb(var(--n-400) / <alpha-value>)',
-          425: 'rgb(var(--n-425) / <alpha-value>)',
           450: 'rgb(var(--n-450) / <alpha-value>)',
-          460: 'rgb(var(--n-460) / <alpha-value>)',
-          475: 'rgb(var(--n-475) / <alpha-value>)',
           500: 'rgb(var(--n-500) / <alpha-value>)',
           600: 'rgb(var(--n-600) / <alpha-value>)',
           700: 'rgb(var(--n-700) / <alpha-value>)',
+          750: 'rgb(var(--n-750) / <alpha-value>)',
           800: 'rgb(var(--n-800) / <alpha-value>)',
+          850: 'rgb(var(--n-850) / <alpha-value>)',
           900: 'rgb(var(--n-900) / <alpha-value>)',
           950: 'rgb(var(--n-950) / <alpha-value>)',
         },
 
         // Roles. Light and dark re-index the same ramp in index.css.
         ink: 'rgb(var(--ink) / <alpha-value>)',
+        // The site's accent. Dots and markers only, never text.
+        lime: 'rgb(var(--lime) / <alpha-value>)',
+        action: 'rgb(var(--action) / <alpha-value>)',
+        'on-action': 'rgb(var(--on-action) / <alpha-value>)',
         body: 'rgb(var(--body) / <alpha-value>)',
         muted: 'rgb(var(--muted) / <alpha-value>)',
         // R8 — `text-secondary`: --muted normally, --body inside `.on-tint`
@@ -365,7 +426,7 @@ export default {
 
       keyframes: {
         rise: {
-          from: { opacity: '0', transform: 'translateY(10px)' },
+          from: { opacity: '0', transform: 'translateY(18px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
         shimmer: {
@@ -373,11 +434,11 @@ export default {
           to: { backgroundPosition: '900px 0' },
         },
         toastIn: {
-          from: { opacity: '0', transform: 'translateX(34px) translateY(-6px)' },
+          from: { opacity: '0', transform: 'translateX(30px) scale(.96)' },
           to: { opacity: '1', transform: 'none' },
         },
         modalIn: {
-          from: { opacity: '0', transform: 'translateY(8px) scale(.97)' },
+          from: { opacity: '0', transform: 'translateY(20px) scale(.94)' },
           to: { opacity: '1', transform: 'translateY(0) scale(1)' },
         },
         fadeIn: {
@@ -423,9 +484,9 @@ export default {
       },
       animation: {
         // Enter.
-        rise: 'rise 240ms cubic-bezier(.22,.61,.36,1) backwards', // was 500ms
-        toastIn: 'toastIn 240ms cubic-bezier(.22,.61,.36,1) both', // was 420ms + spring
-        modalIn: 'modalIn 220ms cubic-bezier(.22,.61,.36,1) both', // was spring
+        rise: 'rise 600ms cubic-bezier(.2,.8,.2,1) backwards', // the site's entrance
+        toastIn: 'toastIn 500ms cubic-bezier(.34,1.36,.64,1) both', // spring, like the site's notification
+        modalIn: 'modalIn 350ms cubic-bezier(.34,1.36,.64,1) both', // the site's dialog
         fadeIn: 'fadeIn 200ms cubic-bezier(.22,.61,.36,1) both',
         // Exit — ~65% of the matching enter.
         toastOut: 'toastOut 160ms cubic-bezier(.4,0,1,1) both',

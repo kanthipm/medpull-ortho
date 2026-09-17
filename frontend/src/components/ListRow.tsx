@@ -42,7 +42,7 @@ export function ListGroup({
       role={As === 'div' ? 'list' : undefined}
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledby}
-      className={`card-group ${embedded ? '!rounded-none !border-0 !bg-transparent' : ''} ${className}`}
+      className={`card-group ${embedded ? '!rounded-none !border-0 !bg-transparent !shadow-none' : ''} ${className}`}
       style={{ ['--row-inset' as string]: `${px}px`, ...style }}
     >
       {children}

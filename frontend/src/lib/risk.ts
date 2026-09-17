@@ -7,26 +7,17 @@ export type Urgency = 'today' | 'this_week' | 'routine'
  *  console. Four tiers x their roles, and the class strings here are the only
  *  place the colour is chosen.
  *
- *  WHY THE TOKENS CHANGED. These were the Material defaults (`risk-high` =
- *  #EF6C00 on `risk-high-bg` = #FFF3E0 and its neighbours), and every one of
- *  them failed WCAG 1.4.3 as a 12px pill label — #EF6C00 on #FFF3E0 measures
- *  2.81:1. The pairs below are the redesigned `-ink` / `-tint` tokens and every
- *  one clears AA in BOTH modes, recomputed here from sRGB relative luminance:
+ *  The tokens are the medpull.org status pills (alert, watch, ok, missing),
+ *  deepened so every pill clears AA in BOTH modes:
  *
  *    pill (ink on its own tint)      light    dark
- *      high      #C62828 / #FBEAEA   4.835   5.701
- *      medium    #9A5300 / #FBF0E1   5.165   6.890
- *      low       #1B7A43 / #E6F4EB   4.731   6.484
- *      missing   #4E5865 / #EDF1F6   6.367   5.093
- *    dot / avatar (ink on --panel)   light    dark
- *      high                          5.622   7.563
- *      medium                        5.815   9.641
- *      low                           5.369   9.035
- *      missing                       7.222   6.650
+ *      high      #B04A26 / #FBECE6   4.73    6.12
+ *      medium    #7C5D0A / #F8F0D8   5.38    7.49
+ *      low       #43712F / #E7EFE1   4.90    7.41
+ *      missing   #4C5680 / #E8EAF3   5.93    6.22
  *
  *  `-ink` is the only risk token that may carry text or a mark; `-tint` is the
- *  only one that may be a background. The bare `risk-*` / `risk-*-bg` aliases
- *  these used to name are deleted from the token set.
+ *  only one that may be a background.
  *
  *  COLOUR NEVER CARRIES THE STATE ALONE. Every recipe below is a `pill`, and a
  *  pill always renders its `label` (or the engine's `status_text`) as words, so
@@ -43,12 +34,8 @@ export type Urgency = 'today' | 'this_week' | 'routine'
  *  and the patient header carries the one risk pill. They always sit on their
  *  own opaque tint, never on glass or the ambient wash.
  *
- *  `avatar` (R1). A white-initials disc on the risk ink was computed and
- *  REJECTED: #FFF on #C62828 is 5.622 light but #FFF on #FF8A87 is 2.273 dark.
- *  So a high-risk avatar is a PANEL disc with risk-high ink (5.622 / 7.563),
- *  which also keeps it off the row's own tint. Every other tier returns '' and
- *  keeps the default brand-tint `.avatar` (7.454 / 5.624). Use as
- *  `avatar ${PRIORITY[tier].avatar}`.
+ *  `avatar` (R1). A high-risk patient gets the clay gradient disc
+ *  (`.avatar-risk`); every other tier keeps its name-picked gradient.
  *
  *  `normal-case tracking-label` is part of every pill recipe ON PURPOSE. Some
  *  call sites still append `uppercase tracking-[.03em]` next to these strings,

@@ -9,7 +9,9 @@ export type Theme = 'light' | 'dark'
  *  blurred surface opaque (index.css `[data-glass='off']`). */
 export type Glass = 'on' | 'off'
 
-export const STORAGE_KEY = 'medpull-theme'
+/** Written only when the clinician picks a mode. Light is the default, so an
+ *  absent key means light; index.html's pre-paint script reads the same key. */
+export const STORAGE_KEY = 'medpull-theme-choice'
 /** Shared with index.html's pre-paint script, which applies 'off' before the
  *  first frame. This file owns the key at runtime. */
 export const GLASS_KEY = 'medpull-glass'

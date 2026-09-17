@@ -6,6 +6,7 @@ import CareChart from './CareChart'
 import { latestLabel } from './chartText'
 import { GUARDED_NOTE, statusChipText, taskKindLabel, tileChipClass } from './labels'
 import { careMetricTile } from './metricTiles'
+import { valueParts } from './valueParts'
 
 /* ════════════════════════════════════════════════════════════════════════
    METRIC TILES — the app's "Your portfolio" tiles, at console size.
@@ -38,6 +39,7 @@ export default function MetricCard({ m }: { m: CareMetric }) {
   const tile = careMetricTile(m)
   const when = latestLabel(m.chart)
   const valueId = `metric-${m.id}-name`
+  const { value, unit } = valueParts(m)
   return (
     <article
       id={`metric-${m.id}`}
@@ -58,8 +60,8 @@ export default function MetricCard({ m }: { m: CareMetric }) {
       </div>
 
       <p className="mt-3 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-        <span className="text-title font-medium tabular-nums text-ink">{m.value ?? '—'}</span>
-        {m.unit && <span className="text-copy text-secondary">{m.unit}</span>}
+        <span className="big-num text-[2.25rem] text-ink">{value}</span>
+        {unit && <span className="text-copy text-secondary">{unit}</span>}
         {m.value_label && <span className="text-copy text-secondary">{m.value_label}</span>}
       </p>
       <DotLine as="p" className="meta mt-0.5" parts={[when, m.delta_text]} />

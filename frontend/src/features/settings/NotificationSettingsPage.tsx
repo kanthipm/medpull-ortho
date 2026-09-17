@@ -68,7 +68,7 @@ function AlertChannels() {
       {isLoading ? (
         <SkeletonCard rows={3} />
       ) : isError || !prefs ? (
-        <EmptyState title="Alert settings couldn't be loaded." icon={<Bell />}>
+        <EmptyState title="Alert settings couldn’t be loaded." icon={<Bell />}>
           Refresh the page to try again.
         </EmptyState>
       ) : (
@@ -141,7 +141,7 @@ function Appearance() {
           title="Glass and colour"
           detail={
             systemReducedTransparency
-              ? "Your system's Reduce transparency setting keeps every surface solid."
+              ? "Your system’s Reduce transparency setting keeps every surface solid."
               : 'Frosts the top bar and menus, and tints the sky behind page titles. Turn off for solid surfaces.'
           }
           checked={glass === 'on' && !systemReducedTransparency}

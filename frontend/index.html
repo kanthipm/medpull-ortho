@@ -3,78 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- theme-color is --panel, because the app bar is --panel in both modes:
-         #FFFFFF (n-0) light / #141C24 (n-900) dark. The inline script below
-         rewrites this before paint and src/lib/theme.tsx rewrites it from
-         --panel on mount, so the pre-paint and runtime values are the same
-         pair. (It was the retired app-bar blue, #1976D2 / #0D47A1, which
-         flashed #0D47A1 above a #141C24 bar for a frame on every dark load.) -->
-    <meta name="theme-color" content="#ffffff" />
-    <link rel="icon" type="image/svg+xml" href="/medpull-logo.svg" />
+    <!-- theme-color follows the canvas: #FBFBF9 light / #0B0B0C dark. The
+         pre-paint script below rewrites it before the first frame and
+         src/lib/ThemeProvider.tsx keeps it in sync after. -->
+    <meta name="theme-color" content="#fbfbf9" />
+    <link rel="icon" type="image/png" href="/medpull-mark.png" />
+    <link rel="apple-touch-icon" href="/medpull-mark.png" />
 
-    <!-- Self-hosted UI face. All three files are ~16-17KB, so preloading them
-         costs ~50KB and lets index.css use `font-display: swap` without ever
-         showing Arial: the metric-matched fallback face makes the swap reflow
-         nothing, and the preload makes it happen in the first frame on a warm
-         cache. SemiBold (600) carries every page title, which is above the
-         fold on every console route. -->
+    <!-- Outfit (SIL OFL 1.1), the medpull.org face: one variable file for
+         every weight, so one preload covers the whole first paint. -->
     <link
       rel="preload"
-      href="/fonts/InstrumentSans-Regular.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
-    <link
-      rel="preload"
-      href="/fonts/InstrumentSans-Medium.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
-    <link
-      rel="preload"
-      href="/fonts/InstrumentSans-SemiBold.woff2"
+      href="/fonts/Outfit-latin.woff2"
       as="font"
       type="font/woff2"
       crossorigin
     />
 
-    <!-- Roboto Mono still comes from Google Fonts, so BOTH preconnects stay:
-         dropping them while the stylesheet request remains adds a DNS + TLS
-         round trip to the face that renders every clinical figure. -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
-    <!-- Apply stored/system theme before paint to avoid a light flash.
-         The two background hexes shadow --canvas: #F5F7FA (n-50) light and
-         #0E151C (n-950) dark. src/lib/theme.tsx carries the same pair.
-         The glass kill switch (R18) is applied here too, so a clinician who
-         turned the translucent bar off never sees one frame of blur:
-         localStorage 'medpull-glass' === 'off' -> <html data-glass="off">.
-         src/lib/theme.tsx owns that key and keeps the attribute in sync. -->
+    <!-- Light is the default. Dark applies only when the clinician chose it
+         ('medpull-theme-choice', written by the theme toggle and Settings),
+         so the first paint never flashes the wrong mode. The glass kill
+         switch is applied here too, so a clinician who turned it off never
+         sees one frame of blur. -->
     <script>
       (function () {
         try {
-          var t = localStorage.getItem('medpull-theme')
-          if (t !== 'light' && t !== 'dark') {
-            t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-          }
+          var t = localStorage.getItem('medpull-theme-choice') === 'dark' ? 'dark' : 'light'
           if (t === 'dark') document.documentElement.classList.add('dark')
           document.documentElement.style.colorScheme = t
           var meta = document.querySelector('meta[name="theme-color"]')
-          if (meta) meta.setAttribute('content', t === 'dark' ? '#141c24' : '#ffffff')
-          document.documentElement.style.background = t === 'dark' ? '#0e151c' : '#f5f7fa'
+          if (meta) meta.setAttribute('content', t === 'dark' ? '#0b0b0c' : '#fbfbf9')
+          document.documentElement.style.background = t === 'dark' ? '#0b0b0c' : '#fbfbf9'
           if (localStorage.getItem('medpull-glass') === 'off') {
             document.documentElement.setAttribute('data-glass', 'off')
           }
         } catch (e) {}
       })()
     </script>
-    <title>MedPull — Recovery Copilot</title>
+    <title>MedPull · Recovery Copilot</title>
   </head>
   <body>
     <div id="root"></div>

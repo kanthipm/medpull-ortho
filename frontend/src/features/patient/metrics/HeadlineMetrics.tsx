@@ -1,67 +1,104 @@
-import { ChevronRight, LayoutGrid } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
+import type { CSSProperties } from 'react'
 import type { CareMetric } from '../../../api/care'
 import { useCareMetrics } from '../../../api/care'
 import ConfidenceChip from '../../../components/ConfidenceChip'
 import SectionCard from '../../../components/SectionCard'
 import { RefreshOverlay, SkeletonCard } from '../../../components/Skeleton'
-import Tile from '../../../components/Tile'
+import type { TileFamily } from '../../../components/Tile'
 import DotLine from '../DotLine'
-import { MiniChart } from './CareChart'
 import { latestLabel } from './chartText'
 import { GUARDED_NOTE, statusChipText, tileChipClass } from './labels'
 import { careMetricTile } from './metricTiles'
+import TileArt from './TileArt'
+import { valueParts } from './valueParts'
 
-/** The headline metrics — the pathway's priority picks (the API has already
- *  chosen applicable ones), drawn like the app's "Your portfolio" card: one
- *  white card holding soft filled tiles. Each tile is a button that opens
- *  Full stats on that metric's card; the card header's "Full stats" does the
- *  same for the first tile.
+/** The headline metrics — the pathway's priority picks — as the medpull.org
+ *  bento: grainy gradient tiles, the number in light Outfit, the metric's own
+ *  chart as white line art, and a solid-glass caption with the status chip
+ *  and the finding. The first tile spans two columns, like the site's
+ *  "Daily steps" tile.
  *
- *  The grid is `auto-fill` rather than a fixed column count, so the same
- *  component reads well in the page's 360px side column (one or two tiles
- *  across) and full width (three across). Contrast on --soft is documented in
- *  MetricCard.tsx; the mini chart sits in an opaque --panel well. */
+ *  Hue follows the metric's category, never its state: activity and function
+ *  sage, engagement amber, sleep and trajectory lilac, vitals and symptoms
+ *  clay. The state is the chip, in words, on the opaque caption. White text
+ *  only sits in the dark top band of each gradient (7.1:1 or better).
+ *
+ *  Each tile is a button that opens Full stats on that metric's card. */
 
-function HeadlineTile({ m, onOpen }: { m: CareMetric; onOpen: (metricId: string) => void }) {
+const GRADIENT: Record<TileFamily, string> = {
+  teal: 'g-sage',
+  blue: 'g-amber',
+  indigo: 'g-lilac',
+  violet: 'g-clay',
+  'risk-high': 'g-dusk',
+  frost: 'g-mint',
+}
+
+function HeadlineTile({
+  m,
+  index,
+  wide,
+  onOpen,
+}: {
+  m: CareMetric
+  index: number
+  wide: boolean
+  onOpen: (metricId: string) => void
+}) {
   const nodata = m.status === 'nodata'
   const tile = careMetricTile(m)
   const when = latestLabel(m.chart)
+  const { value, unit } = valueParts(m)
   return (
     <button
       type="button"
       onClick={() => onOpen(m.id)}
-      className="group/tile flex h-full w-full cursor-pointer flex-col rounded-control border border-transparent bg-soft p-3.5 text-left transition-[border-color,transform] duration-state ease-apple hover:border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-press motion-reduce:active:scale-100"
+      data-loop
+      style={{ '--d': index } as CSSProperties}
+      className={`gtile ${GRADIENT[tile.family]} spotlight reveal group/tile min-h-[22rem] w-full cursor-pointer text-left transition-[transform,box-shadow] duration-spring ease-spring hover:-translate-y-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus active:scale-[.985] motion-reduce:transform-none ${
+        wide ? 'lg:col-span-2' : ''
+      }`}
     >
-      <span className="flex w-full items-start gap-2">
-        <Tile family={tile.family} icon={tile.icon} size="sm" className="mt-0.5 shrink-0" />
-        <span className="min-w-0 flex-1 text-copy font-medium text-ink">{m.name}</span>
-        <ChevronRight
-          aria-hidden
-          size={16}
-          className="mt-0.5 shrink-0 text-secondary transition-transform duration-state ease-apple group-hover/tile:translate-x-0.5 motion-reduce:transform-none"
-        />
+      <span className="gtile-top">
+        <span className="min-w-0">
+          <span className="gtile-kicker block">{m.name}</span>
+          <span className="gtile-num big-num">
+            {value}
+            {unit && <small>{unit}</small>}
+          </span>
+          {m.value_label && <span className="mt-1 block text-label text-white/90">{m.value_label}</span>}
+        </span>
+        {when && (
+          <span className="gtile-side shrink-0">
+            <b>{when.replace(/^Post-op day /i, 'Day ').replace(/^D(\d+)$/, 'Day $1')}</b>
+            latest
+          </span>
+        )}
       </span>
 
-      <span className={`chip mt-2 self-start ${tileChipClass(m.status)}`}>{statusChipText(m)}</span>
-
-      <span className="mt-2 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-        <span className="text-title font-medium tabular-nums text-ink">{m.value ?? '—'}</span>
-        {m.unit && <span className="text-copy text-secondary">{m.unit}</span>}
-      </span>
-      <DotLine className="meta mt-0.5 block" parts={[m.value_label, when]} />
-      <DotLine className="meta block" parts={[m.delta_text]} />
-
-      <span className="mt-2.5 block rounded-control-sm bg-panel px-1.5">
-        <MiniChart spec={m.chart} sigma={m.unit === 'σ' ? m.value_num : null} />
+      <span className="gtile-art">
+        {nodata ? (
+          <span className="text-copy text-white/90">Not enough data yet</span>
+        ) : (
+          <TileArt spec={m.chart} sigma={m.unit === 'σ' ? m.value_num : null} />
+        )}
       </span>
 
-      <span className="mt-2.5 line-clamp-3 text-copy text-body">
-        {nodata ? (m.unlock ?? m.finding) : m.finding}
-      </span>
-
-      <span className="mt-auto block pt-2.5">
+      <span className="gtile-cap block">
+        <span className="flex items-center justify-between gap-2">
+          <span className={`chip ${tileChipClass(m.status)}`}>{statusChipText(m)}</span>
+          <ChevronRight
+            aria-hidden
+            size={16}
+            className="shrink-0 text-secondary transition-transform duration-spring ease-spring group-hover/tile:translate-x-0.5 motion-reduce:transform-none"
+          />
+        </span>
+        <span className={`mt-2 block text-copy text-body ${wide ? 'line-clamp-2' : 'line-clamp-3'}`}>
+          {nodata ? (m.unlock ?? m.finding) : m.finding}
+        </span>
         <DotLine
-          className="meta block"
+          className="meta mt-1.5 block"
           parts={[
             m.confidence !== 'high' && <ConfidenceChip level={m.confidence} variant="meta" />,
             m.coverage_text,
@@ -75,7 +112,6 @@ function HeadlineTile({ m, onOpen }: { m: CareMetric; onOpen: (metricId: string)
 }
 
 const TITLE = 'Headline metrics'
-const ICON = <Tile family="blue" size="sm" icon={<LayoutGrid />} />
 
 export default function HeadlineMetrics({
   patientId,
@@ -99,32 +135,40 @@ export default function HeadlineMetrics({
 
   if (isError || tiles.length === 0) {
     return (
-      <SectionCard title={TITLE} icon={ICON}>
+      <SectionCard title={TITLE}>
         <p className="text-copy text-secondary">
           {isError
-            ? 'Care metrics are not available for this patient yet.'
-            : 'No headline metrics for this pathway yet. Full stats lists every metric and what unlocks it.'}
+            ? 'Care metrics aren’t available for this patient yet.'
+            : 'No headline metrics for this pathway yet. Full stats lists every metric and what it needs.'}
         </p>
       </SectionCard>
     )
   }
 
   return (
-    <SectionCard
-      title={TITLE}
-      icon={ICON}
-      action={
-        <button type="button" className="btn-plain btn-sm" onClick={() => onOpen(tiles[0].id)}>
-          Full stats
+    <section aria-labelledby="headline-metrics" className="relative">
+      <div className="mb-3 flex items-end justify-between gap-3 px-1">
+        <h2 id="headline-metrics" className="text-subhead font-medium text-ink">
+          {TITLE}
+        </h2>
+        <button type="button" className="btn-plain btn-sm -mr-2" onClick={() => onOpen(tiles[0].id)}>
+          Full stats <ChevronRight aria-hidden size={14} />
         </button>
-      }
-    >
+      </div>
       <RefreshOverlay show={refreshing} />
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-2.5">
-        {tiles.map((m) => (
-          <HeadlineTile key={m.id} m={m} onOpen={onOpen} />
+      <div
+        className={`grid gap-3 sm:grid-cols-2 ${tiles.length >= 3 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}
+      >
+        {tiles.map((m, i) => (
+          <HeadlineTile
+            key={m.id}
+            m={m}
+            index={i}
+            wide={i === 0 && tiles.length !== 2}
+            onOpen={onOpen}
+          />
         ))}
       </div>
-    </SectionCard>
+    </section>
   )
 }

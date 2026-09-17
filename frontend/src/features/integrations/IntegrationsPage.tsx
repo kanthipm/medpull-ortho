@@ -322,7 +322,7 @@ export default function IntegrationsPage() {
     return (
       <div className="pb-10">
         {header}
-        <EmptyState title="Integrations couldn't be loaded." icon={<Plug />} className="mt-8">
+        <EmptyState title="Integrations couldn’t be loaded." icon={<Plug />} className="mt-8">
           Refresh the page to try again.
         </EmptyState>
       </div>

@@ -245,7 +245,10 @@ def m7(ctx: CareContext) -> CareMetric:
         else:
             status, text = MetricStatus.OK, "Holding own baseline"
 
-    fmt = (lambda v: f"{v:.0f} spm") if cadence_mode else (lambda v: f"{v:.2f} m/s")
+    # `value` is the number alone; the unit travels separately so no surface
+    # prints it twice. Prose (finding, delta) keeps the unit inline.
+    num = (lambda v: f"{v:.0f}") if cadence_mode else (lambda v: f"{v:.2f}")
+    fmt = (lambda v: f"{num(v)} spm") if cadence_mode else (lambda v: f"{num(v)} m/s")
     finding = f"Latest {label} {fmt(latest)}; 3-day mean {fmt(last3)}"
     if reference is not None:
         finding += (f" vs {'expected' if ctx.uses_expected_curve else 'own 28-day median'} "
@@ -259,7 +262,7 @@ def m7(ctx: CareContext) -> CareMetric:
                       reference=reference, y_label=unit)
     return build(
         "M7", ctx, name=name, status=status, status_text=text, finding=finding,
-        value=fmt(latest), value_num=latest, unit=unit, value_label=label,
+        value=num(latest), value_num=latest, unit=unit, value_label=label,
         delta_text=f"3-day mean {fmt(last3)}", chart=chart, inputs=inputs,
         next_step="Review activity progression with PT." if status is not MetricStatus.OK else None,
         confidence=confidence_for(ctx, len(post.iloc[-7:]), 7),
