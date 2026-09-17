@@ -68,6 +68,11 @@ targets:
           - InstrumentSans-Medium.ttf
           - InstrumentSans-SemiBold.ttf
           - InstrumentSans-Bold.ttf
+          # Outfit (SIL OFL 1.1) is the display face only, for numerals and
+          # titles at 20pt and up. OFL-Outfit.txt ships via the sources rule.
+          - Outfit-Light.ttf
+          - Outfit-Regular.ttf
+          - Outfit-Medium.ttf
         CFBundleURLTypes:
           - CFBundleURLName: com.medpull.recovery
             CFBundleURLSchemes: [medpull]

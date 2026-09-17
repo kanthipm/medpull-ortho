@@ -56,6 +56,9 @@
 		<string>InstrumentSans-Medium.ttf</string>
 		<string>InstrumentSans-SemiBold.ttf</string>
 		<string>InstrumentSans-Bold.ttf</string>
+		<string>Outfit-Light.ttf</string>
+		<string>Outfit-Regular.ttf</string>
+		<string>Outfit-Medium.ttf</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
