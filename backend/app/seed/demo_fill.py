@@ -374,6 +374,99 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona]]:
                 MessageSpec(3, 12, "patient", "Thank you Maya."),
             ],
         ),
+        # --- the two the room should be looking at -------------------------
+        #
+        # A demo roster with one high-risk patient shows the tier but not the
+        # judgement: the interesting question on this screen is which of the
+        # red rows to open first. These two are both HIGH and they get there
+        # by different routes — one is a vitals story on a fresh knee, the
+        # other a functional collapse three weeks out — so the worklist has a
+        # call to make rather than a single alarm to read out.
+        Persona(
+            # Possible early prosthetic joint infection: the reyes signature
+            # (coupled RHR/skin-temp rise with HRV and activity falling away)
+            # landing on day 9, with the patient's own words matching it.
+            spec=_spec("dana", "Dana Okonkwo", 64, "F", PT.TKA,
+                       "Total Knee Replacement (TKA)",
+                       9, SP.APPLE, "Apple Watch Series 10", 2, DEMO_HOSPITAL),
+            scenario=ScenarioSpec(ramps=(
+                Ramp(M.RESTING_HR, 5, 9, add=8.0),
+                Ramp(M.SKIN_TEMP, 5, 9, add=0.7),
+                Ramp(M.HRV_RMSSD, 5, 9, mult_to=0.78),
+                Ramp(M.STEPS, 5, 9, mult_to=0.58),
+                Ramp(M.WALKING_SPEED, 5, 9, mult_to=0.75),
+            )),
+            phone="+17135550128", mrn="DM962574",
+            tasks=[
+                TaskSpec("Walk 10 minutes, twice daily", "Restores knee motion and circulation", "step data"),
+                TaskSpec("Quad sets, 3 sets of 10", "Rebuilds the thigh strength that guards the joint", "self-report"),
+                TaskSpec("Check the incision each evening", "Catches redness or drainage early", "self-report"),
+            ],
+            adherence_rate=0.54,
+            conversations=[
+                (4, 9, [
+                    (C, "Good morning, Dana. How is the knee today?"),
+                    (P, "Warmer than last week, and it aches deeper than it did."),
+                    (C, "Thank you for telling me. Any redness spreading, or drainage from the incision?"),
+                    (P, "A little redness around the middle of it. Nothing leaking."),
+                ]),
+                (1, 8, [
+                    (C, "Hi Dana, checking in. How was the night?"),
+                    (P, "Chills around two in the morning. I took my temperature, 100.9."),
+                    (C, "I'm flagging this for your care team now. Please don't wait for your next visit."),
+                ]),
+            ],
+            messages=[
+                MessageSpec(1, 9, "care_team", "Dana, Maya from Dr. Alvarez's team. A temperature of 100.9 with a warm, red knee on day nine needs to be seen today, not at your Thursday visit. Can you come to the clinic this morning?", RN),
+                MessageSpec(1, 10, "patient", "I can be there by eleven."),
+                MessageSpec(1, 10, "care_team", "Perfect, we'll have a room ready. Please bring the thermometer readings you've taken.", RN),
+            ],
+        ),
+        Persona(
+            # Three weeks out and going backwards: a near-fall stopped her
+            # walking, and the sleep and heart-rate drift followed. No fever,
+            # nothing to admit for — the deterioration is in the pattern,
+            # which is the case a worklist is supposed to catch.
+            spec=_spec("omar", "Omar Haddad", 58, "M", PT.THA,
+                       "Total Hip Replacement (THA)",
+                       22, SP.FITBIT, "Fitbit Charge 6", 2, DEMO_HOSPITAL),
+            scenario=ScenarioSpec(
+                track=0.80,
+                plateau_after=12,
+                ramps=(
+                    Ramp(M.STEPS, 13, 20, mult_to=0.45),
+                    Ramp(M.WALKING_SPEED, 13, 20, mult_to=0.70),
+                    Ramp(M.SLEEP_DURATION, 13, 20, mult_to=0.74),
+                    Ramp(M.RESTING_HR, 13, 20, add=7.0),
+                    Ramp(M.HRV_RMSSD, 13, 20, mult_to=0.80),
+                ),
+            ),
+            phone="+17135550129", mrn="DM071685",
+            tasks=[
+                TaskSpec("Walk 15 minutes, twice daily", "Keeps the hip loading evenly as strength returns", "step data"),
+                TaskSpec("Hip abduction exercises, 2x daily", "Strengthens the muscles that steady the hip", "self-report"),
+                TaskSpec("Log pain before and after walks", "Shows the team what the hip does under load", "self-report"),
+            ],
+            adherence_rate=0.41,
+            conversations=[
+                (6, 19, [
+                    (C, "Evening, Omar. How did the walks go this week?"),
+                    (P, "I stopped them. I nearly went down on the front step on Monday."),
+                    (C, "That sounds frightening. Were you hurt?"),
+                    (P, "No, I caught the rail. But I'm not going out there again."),
+                ]),
+                (2, 20, [
+                    (C, "Hi Omar, checking in. Have you managed any walking since we spoke?"),
+                    (P, "Only room to room. The hip feels weaker than it did a fortnight ago."),
+                    (C, "Thank you for being straight with me. I'll make sure your team sees this today."),
+                ]),
+            ],
+            messages=[
+                MessageSpec(3, 15, "care_team", "Omar, Sam from physical therapy. Your steps have dropped by more than half since the near-fall and your sleep is going the same way. That combination at three weeks is worth a proper look — can I come to you on Wednesday and walk the front step with you?", PTH),
+                MessageSpec(3, 18, "patient", "Wednesday is fine. The step is what worries me."),
+                MessageSpec(3, 18, "care_team", "Then that's where we'll start. Keep the walks inside until I'm there.", PTH),
+            ],
+        ),
     ]
     return legacy, new
 
