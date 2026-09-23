@@ -366,7 +366,20 @@ def get_daily_briefing(db: Session) -> Insight:
 
     roster: list[dict[str, Any]] = []
     for patient, assessment in assessments:
-        reason = get_patient_insight(db, InsightKind.WORKLIST_REASON, patient.id)
+        # Never the model, however cold the cache is. This loop runs once per
+        # patient, so an allowed call here fans one request out into a call
+        # per patient — which is exactly what the worklist's LLM_BUDGET
+        # exists to prevent, and it defeated it: on the morning a roster
+        # goes stale every assessment re-keys at once, and eighteen
+        # sequential Groq calls ran past the tokens-per-minute limit, then
+        # past the Lambda timeout, so the request died without persisting
+        # the insights it had already paid for and the next one started
+        # from cold again. The line is prompt context for a summary; the
+        # deterministic one says the same thing in fewer words, and the
+        # worklist's own budgeted reads still fill the real key.
+        reason = get_patient_insight(
+            db, InsightKind.WORKLIST_REASON, patient.id, allow_llm=False
+        )
         roster.append(
             {
                 "name": patient.name,
