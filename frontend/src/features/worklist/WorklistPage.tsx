@@ -45,6 +45,19 @@ const FILTERS: { key: Filter; label: string }[] = [
 
 const TIER_ORDER: Priority[] = ['high', 'medium', 'missing_data', 'low']
 
+/** Charts whose numbers come from a real person using the app. Everything
+ *  else on this roster is generated for the demo, and the two are banded
+ *  apart so nobody in the room reads a persona's vitals as clinical truth.
+ *  Ids, not hospitals: the demo personas carry placeholder phones and sit on
+ *  the same roster, so there is no field on the row that tells them apart. */
+const REAL_PATIENT_IDS = new Set(['steve'])
+
+/** The two bands, real first — the real chart is what the demo opens on. */
+const SOURCE_BANDS = [
+  { key: 'real', label: 'Real data', real: true },
+  { key: 'demo', label: 'Fake data', real: false },
+] as const
+
 /** How long the first-load rise runs before rows stop animating in. Rows
  *  that remount later (filter changes, ask results) appear without motion. */
 const INTRO_MS = 1400
@@ -157,14 +170,23 @@ export default function WorklistPage() {
   }
 
   const askIds = askResult && askResult.patient_ids.length > 0 ? new Set(askResult.patient_ids) : null
-  const groups = TIER_ORDER.map((tier) => ({
-    tier,
-    patients: data.patients.filter((p) =>
-      askIds
-        ? askIds.has(p.id) && p.priority === tier
-        : p.priority === tier && (filter === 'all' || p.priority === filter),
-    ),
-  })).filter((g) => g.patients.length > 0)
+  const visible = data.patients.filter((p) =>
+    askIds ? askIds.has(p.id) : filter === 'all' || p.priority === filter,
+  )
+  // Two bands, each still grouped by tier inside: the source of the numbers
+  // is the outer question, triage the inner one.
+  const bands = SOURCE_BANDS.map((band) => {
+    const patients = visible.filter((p) => REAL_PATIENT_IDS.has(p.id) === band.real)
+    return {
+      ...band,
+      count: patients.length,
+      groups: TIER_ORDER.map((tier) => ({
+        tier,
+        patients: patients.filter((p) => p.priority === tier),
+      })).filter((g) => g.patients.length > 0),
+    }
+  }).filter((band) => band.count > 0)
+  const shown = bands.reduce((n, band) => n + band.count, 0)
 
   // "Start with": the top patient of the most urgent non-calm tier.
   const startWith =
@@ -202,7 +224,7 @@ export default function WorklistPage() {
         <h2 id={patientsHeadingId} className="text-subhead font-medium text-ink">
           {askIds ? 'Matching patients' : 'Patients'}
           <span className="ml-2 text-copy-lg font-normal tabular-nums text-secondary">
-            {askIds ? groups.reduce((n, g) => n + g.patients.length, 0) : data.patients.length}
+            {askIds ? shown : data.patients.length}
           </span>
         </h2>
         {/* On the canvas, below the sky: the default brand thumb, not glass. */}
@@ -218,7 +240,7 @@ export default function WorklistPage() {
         )}
       </div>
 
-      {groups.length === 0 ? (
+      {bands.length === 0 ? (
         <div className="mt-4">
           <EmptyState
             icon={<Users />}
@@ -230,24 +252,31 @@ export default function WorklistPage() {
           </EmptyState>
         </div>
       ) : (
-        <div className="mt-4 space-y-stack" aria-labelledby={patientsHeadingId} role="region">
-          {groups.map(({ tier, patients }, gi) => (
-            <TierGroup
-              key={tier}
-              tier={tier}
-              count={patients.length}
-              className={gi === 0 ? settleCls : ''}
-              style={gi === 0 ? settleAt(180) : undefined}
-            >
-              {patients.map((p) => (
-                <WorklistRow
-                  key={p.id}
-                  patient={p}
-                  rise={intro ? 260 + riseIndex++ * 40 : null}
-                  onMessage={(step) => setComposer({ patient: p, step })}
-                />
-              ))}
-            </TierGroup>
+        <div className="mt-4 space-y-8" aria-labelledby={patientsHeadingId} role="region">
+          {bands.map((band, bi) => (
+            <SourceBand key={band.key} label={band.label} count={band.count}>
+              {band.groups.map(({ tier, patients }, gi) => {
+                const first = bi === 0 && gi === 0
+                return (
+                  <TierGroup
+                    key={tier}
+                    tier={tier}
+                    count={patients.length}
+                    className={first ? settleCls : ''}
+                    style={first ? settleAt(180) : undefined}
+                  >
+                    {patients.map((p) => (
+                      <WorklistRow
+                        key={p.id}
+                        patient={p}
+                        rise={intro ? 260 + riseIndex++ * 40 : null}
+                        onMessage={(step) => setComposer({ patient: p, step })}
+                      />
+                    ))}
+                  </TierGroup>
+                )
+              })}
+            </SourceBand>
           ))}
         </div>
       )}
@@ -541,6 +570,41 @@ function StartWith({ patient: p }: { patient: WorklistRowWithStep }) {
   )
 }
 
+/** One source band — "Real data" over Steve's own chart, "Fake data" over
+ *  the generated roster. A quiet caption over the tier cards rather than
+ *  another card: the tier groups keep the visual weight, and the band only
+ *  answers "whose numbers am I looking at".
+ *
+ *  Nothing is disclosed to the patient by this label; it is a demo aid for
+ *  the room, which is why it is plain words and not a risk-coloured badge. */
+function SourceBand({
+  label,
+  count,
+  children,
+}: {
+  label: string
+  count: number
+  children: ReactNode
+}) {
+  const id = useId()
+  return (
+    <section aria-labelledby={id}>
+      <h3
+        id={id}
+        className="flex items-baseline gap-2 px-1 pb-2 text-label font-medium uppercase tracking-label text-secondary"
+      >
+        {label}
+        <span className="tabular-nums normal-case tracking-normal">
+          <span className="sr-only">, </span>
+          {count}
+          <span className="sr-only"> {count === 1 ? 'patient' : 'patients'}</span>
+        </span>
+      </h3>
+      <div className="space-y-stack">{children}</div>
+    </section>
+  )
+}
+
 /** One tier: its own rounded group with a dot + word header that replaces
  *  the per-row risk badge (R4). The header is NOT sticky (judge #7): each
  *  tier is a short card, and a sticky header outlived its card and hung
@@ -568,9 +632,9 @@ function TierGroup({
             tier === 'missing_data' ? 'border-[1.5px] border-risk-missing-ink' : PRIORITY[tier].dot
           }`}
         />
-        <h3 id={id} className="text-[15px] font-medium text-ink">
+        <h4 id={id} className="text-[15px] font-medium text-ink">
           {PRIORITY[tier].label}
-        </h3>
+        </h4>
         <span className="text-copy tabular-nums text-secondary">
           <span className="sr-only">, </span>
           {count}
