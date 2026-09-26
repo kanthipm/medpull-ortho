@@ -36,7 +36,9 @@ from app.notifications import sendblue
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("checkin", "exercise", "walk", "medication", "wound_check", "custom")
+# "workout" and "sleep" are the personal tier's kinds (app/personal/plan.py):
+# a session with its minutes and RPE, and a bedtime to make.
+KINDS = ("checkin", "exercise", "walk", "medication", "wound_check", "custom", "workout", "sleep")
 OPEN_STATUSES = ("pending", "sent")
 COMPLETION_CHANNELS = ("app", "sms", "voice", "web", "console")
 
@@ -47,6 +49,8 @@ KIND_LABELS = {
     "medication": "Medication",
     "wound_check": "Incision check",
     "custom": "Task",
+    "workout": "Session",
+    "sleep": "Sleep",
 }
 
 # The daily check-in. api/checkin.py serves the same list on the tokenized
@@ -75,9 +79,46 @@ GENERAL_CHECKIN_QUESTIONS: list[dict[str, Any]] = [
     {"id": "note", "prompt": "Anything else you want the care team to know?", "kind": "text"},
 ]
 
+# The personal tier's morning check-in: how the person feels, which no
+# wearable measures. Answers are written to the subjective log
+# (app/personal/logs.py) as well as the transcript. The recovery-goal
+# variant asks about pain in the words the care metrics parse (M2, M9), so a
+# subscriber coming back from an operation gets the same pain-load analysis
+# a clinic patient does.
+PERSONAL_CHECKIN_QUESTIONS: list[dict[str, Any]] = [
+    {"id": "energy", "prompt": "How's your energy this morning, 0 to 10?", "kind": "scale"},
+    {"id": "soreness", "prompt": "Any soreness or pain, 0 to 10?", "kind": "scale"},
+    {"id": "sleep_quality", "prompt": "How was your sleep?", "kind": "choice",
+     "options": ["great", "ok", "rough"]},
+    {"id": "mood", "prompt": "And your mood?", "kind": "choice",
+     "options": ["good", "flat", "low"]},
+    {"id": "note", "prompt": "Anything you want to remember about today?", "kind": "text"},
+]
+PERSONAL_RECOVERY_CHECKIN_QUESTIONS: list[dict[str, Any]] = [
+    {"id": "energy", "prompt": "How's your energy this morning, 0 to 10?", "kind": "scale"},
+    {"id": "pain", "prompt": "How's your pain today, 0 to 10?", "kind": "scale"},
+    {"id": "sleep_quality", "prompt": "How was your sleep?", "kind": "choice",
+     "options": ["great", "ok", "rough"]},
+    {"id": "mood", "prompt": "And your mood?", "kind": "choice",
+     "options": ["good", "flat", "low"]},
+    {"id": "note", "prompt": "Anything you want to remember about today?", "kind": "text"},
+]
+
 QUESTION_SETS: dict[str, list[dict[str, Any]]] = {
     "checkin": CHECKIN_QUESTIONS,
     "checkin_general": GENERAL_CHECKIN_QUESTIONS,
+    "checkin_personal": PERSONAL_CHECKIN_QUESTIONS,
+    "checkin_personal_recovery": PERSONAL_RECOVERY_CHECKIN_QUESTIONS,
+    "workout": [
+        {"id": "minutes", "prompt": "How many minutes was the session?", "kind": "number",
+         "min": 0, "max": 600},
+        {"id": "rpe", "prompt": "How hard was it, 0 to 10?", "kind": "scale"},
+        {"id": "note", "prompt": "Anything worth noting?", "kind": "text"},
+    ],
+    "sleep": [
+        {"id": "done", "prompt": "Did you make your bedtime?", "kind": "yes_no"},
+        {"id": "note", "prompt": "Anything that kept you up?", "kind": "text"},
+    ],
     "exercise": [
         {"id": "exercises", "prompt": "Did you get through the set?", "kind": "choice",
          "options": ["all", "some", "none"]},
@@ -134,6 +175,11 @@ PHRASES: dict[str, dict[str, str]] = {
         "some": "I got some activity in today.",
         "none": "I didn't get any activity in today.",
     },
+    "sleep_quality": {
+        "great": "I slept great.", "ok": "I slept ok.",
+        "rough": "It was a rough night, I kept waking up.",
+    },
+    "mood": {"good": "My mood is good.", "flat": "I'm feeling flat.", "low": "I'm feeling low."},
 }
 
 # Answers that should reach the care team as an alert, not just a transcript.
@@ -524,9 +570,9 @@ def _adherence_status(kind: str, answers: dict[str, Any]) -> AdherenceStatus:
         return AdherenceStatus.MISSED
     if kind == "medication" and str(answers.get("taken", "")).lower() == "no":
         return AdherenceStatus.MISSED
-    if kind == "custom" and str(answers.get("done", "")).lower() == "no":
+    if kind in ("custom", "sleep") and str(answers.get("done", "")).lower() == "no":
         return AdherenceStatus.MISSED
-    if kind == "walk" and _int(answers.get("minutes")) == 0:
+    if kind in ("walk", "workout") and _int(answers.get("minutes")) == 0:
         return AdherenceStatus.MISSED
     return AdherenceStatus.SELF_ATTESTED
 
@@ -629,7 +675,15 @@ def complete_task(
     else:
         record.status = status
 
-    if patient is not None:
+    qset = question_set_key(task)
+    if qset in ("checkin_personal", "checkin_personal_recovery", "workout", "sleep"):
+        # A subscriber's answers also land in their subjective log, where the
+        # personal readouts read them beside the wearable stream. Their
+        # profile has no care team, so no alert is raised for them.
+        from app.personal.logs import record_task_answers
+
+        record_task_answers(db, task, answers, today)
+    elif patient is not None:
         for alert in _alerts(answers):
             notify_care_team(
                 db, patient, f"{patient.name} — {alert}",
@@ -831,6 +885,18 @@ def patient_for_phone(db: Session, phone: str) -> Patient | None:
         return None
     if len(rows) == 1:
         return rows[0]
+    # A clinic chart and its personal profile legitimately share one number
+    # (app/personal/identity.py). A text answers whichever one is mid-way
+    # through a task conversation; otherwise the clinic chart, because the
+    # care team's channel is the one that must never lose a reply.
+    for p in rows:
+        if _active_conversation(open_tasks(db, p.id)) is not None:
+            return p
+    clinic = [p for p in rows if (p.account_kind or "clinic") != "personal"]
+    if len(clinic) == 1:
+        return clinic[0]
+    if clinic:
+        rows = clinic
 
     def last_seen(p: Patient) -> datetime:
         seen = db.scalar(

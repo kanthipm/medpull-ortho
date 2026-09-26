@@ -60,6 +60,15 @@ CARE_TEAM_PHONES="${CARE_TEAM_PHONES:-$(dotenv_value CARE_TEAM_PHONES)}"
 SITE_DOMAIN="${SITE_DOMAIN-$(dotenv_value SITE_DOMAIN)}"
 SITE_CERTIFICATE_ARN="${SITE_CERTIFICATE_ARN-$(dotenv_value SITE_CERTIFICATE_ARN)}"
 BUDGET_EMAIL="${BUDGET_EMAIL:-}"
+# The personal tier (app/personal). How App Store transactions are checked
+# and which environment a strict check accepts; lenient/Sandbox until App
+# Store Connect is live. The morning run's schedule, in UTC.
+APPLE_SUBSCRIPTION_VERIFY="${APPLE_SUBSCRIPTION_VERIFY:-$(dotenv_value APPLE_SUBSCRIPTION_VERIFY)}"
+APPLE_SUBSCRIPTION_VERIFY="${APPLE_SUBSCRIPTION_VERIFY:-lenient}"
+APPLE_ENVIRONMENT="${APPLE_ENVIRONMENT:-$(dotenv_value APPLE_ENVIRONMENT)}"
+APPLE_ENVIRONMENT="${APPLE_ENVIRONMENT:-Sandbox}"
+PERSONAL_DAILY_CRON="${PERSONAL_DAILY_CRON:-$(dotenv_value PERSONAL_DAILY_CRON)}"
+PERSONAL_DAILY_CRON="${PERSONAL_DAILY_CRON:-cron(0 12 * * ? *)}"
 
 RESEED=false
 BACKEND_ONLY=false
@@ -286,6 +295,9 @@ PARAMS=(
   # Passed even when empty so clearing them in .env removes the alias.
   "CustomDomainName=$SITE_DOMAIN"
   "CertificateArn=$SITE_CERTIFICATE_ARN"
+  "AppleSubscriptionVerify=$APPLE_SUBSCRIPTION_VERIFY"
+  "AppleEnvironment=$APPLE_ENVIRONMENT"
+  "PersonalDailyCron=$PERSONAL_DAILY_CRON"
 )
 [ -n "$BUDGET_EMAIL" ] && PARAMS+=("BudgetAlertEmail=$BUDGET_EMAIL")
 
@@ -302,11 +314,13 @@ outputs() {
 }
 SITE_URL="$(outputs SiteUrl)"
 DATA_BUCKET="$(outputs DataBucketName)"
+PERSONAL_BUCKET="$(outputs PersonalDataBucketName)"
 DIST_ID="$(outputs DistributionId)"
 DIST_DOMAIN="$(outputs DistributionDomainName)"
 SEED_FN="$(outputs SeedFunctionName)"
 info "site   $SITE_URL"
 info "bucket $DATA_BUCKET"
+info "personal bucket $PERSONAL_BUCKET (subscribers' files; separate from the clinic bucket)"
 
 # --------------------------------------------------------------------------
 if ! $BACKEND_ONLY; then

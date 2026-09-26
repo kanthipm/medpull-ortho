@@ -51,6 +51,12 @@ final class HealthConnector {
         (.stairAscentSpeed, "stair_speed_up", HKUnit.meter().unitDivided(by: .second()), 1),
         (.stairDescentSpeed, "stair_speed_down", HKUnit.meter().unitDivided(by: .second()), 1),
         (.sixMinuteWalkTestDistance, "six_min_walk", .meter(), 1),
+        // The athlete fitness signals (the personal tier's Cardio fitness
+        // panel): Apple's VO2 max estimate in mL/(kg·min), and the one-minute
+        // heart-rate recovery after a workout, in bpm.
+        (.vo2Max, "vo2_max",
+         HKUnit.literUnit(with: .milli).unitDivided(by: HKUnit.gramUnit(with: .kilo).unitMultiplied(by: .minute())), 1),
+        (.heartRateRecoveryOneMinute, "hr_recovery_1min", HKUnit.count().unitDivided(by: .minute()), 1),
     ]
 
     private let store = HKHealthStore()

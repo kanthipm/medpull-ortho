@@ -11,6 +11,13 @@ from app.models.mobile import Message, PatientSession, PhoneVerification
 from app.models.notification import Notification, NotificationPreference
 from app.models.observation import Observation, WebhookEvent
 from app.models.patient import CareTeamMember, Device, Patient
+from app.models.personal import (
+    Consent,
+    Entitlement,
+    PersonalCredential,
+    PersonalLog,
+    PersonalProfile,
+)
 
 __all__ = [
     "AdherenceRecord",
@@ -37,4 +44,9 @@ __all__ = [
     "Device",
     "Patient",
     "WearableConnection",
+    "Consent",
+    "Entitlement",
+    "PersonalCredential",
+    "PersonalLog",
+    "PersonalProfile",
 ]

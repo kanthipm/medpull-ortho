@@ -28,7 +28,9 @@ struct MessagesView: View {
                         header
                         if app.messages.isEmpty {
                             EmptyRow(icon: "bubble.left.and.bubble.right", title: "No messages yet",
-                                     detail: "Anything you write here goes to your care team. Task texts show up here too.")
+                                     detail: app.isPersonal
+                                        ? "Your morning brief lands here, and anything you write goes to your coach."
+                                        : "Anything you write here goes to your care team. Task texts show up here too.")
                         }
                         ForEach(app.messages) { m in
                             Bubble(message: m).id(m.id)
@@ -53,7 +55,7 @@ struct MessagesView: View {
                 .mpComposerBar { composer }
             }
             .ambientScreen()
-            .navigationTitle("Messages")
+            .navigationTitle(app.isPersonal ? "Coach" : "Messages")
             .navigationBarTitleDisplayMode(.inline)
             .photosPicker(isPresented: $choosingPhotos, selection: $photoPicks,
                           maxSelectionCount: 4, matching: .images)
@@ -144,7 +146,7 @@ struct MessagesView: View {
                 }
                 .disabled(uploading || pending.count >= 4)
                 .accessibilityLabel("Attach a photo or file")
-                ComposerField(placeholder: "Message your care team",
+                ComposerField(placeholder: app.isPersonal ? "Message your coach" : "Message your care team",
                               text: $draft,
                               canSend: canSend,
                               busy: sending,

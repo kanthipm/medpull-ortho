@@ -92,6 +92,8 @@ def _ensure_hospitals() -> None:
         for patient in db.scalars(select(Patient)).all():
             if patient.hospital_id in known:
                 continue
+            if (patient.account_kind or "clinic") == "personal":
+                continue  # a subscriber belongs to no hospital, by design
             spec = get_spec(patient.id)
             hospital_id = spec.hospital_id if spec and spec.hospital_id in known else fallback
             if hospital_id is not None:

@@ -87,6 +87,8 @@ def link_candidates(db: Session, patient: Patient) -> list[dict[str, Any]]:
     rows = db.scalars(select(Patient).where(Patient.id != patient.id)).all()
     out: list[dict[str, Any]] = []
     for p in rows:
+        if (p.account_kind or "clinic") == "personal":
+            continue  # a personal space is paired, never folded into a chart
         status = app_status(db, p)
         if not status["ever_enrolled"] and not p.phone:
             continue

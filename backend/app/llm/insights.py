@@ -347,7 +347,9 @@ def get_patient_insight(
 
 
 def get_daily_briefing(db: Session) -> Insight:
-    patients = db.scalars(select(Patient).order_by(Patient.id)).all()
+    from app.personal.scope import clinic_patients
+
+    patients = clinic_patients(db, order_by=Patient.id)
     assessments = [(patient, _latest_assessment(db, patient.id)) for patient in patients]
 
     provider = provider_name()

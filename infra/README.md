@@ -259,6 +259,52 @@ it (and discards anything entered through the UI). It runs on a separate
 `-seed` function because warming every insight through Groq takes minutes,
 well past the API function's 45-second timeout.
 
+## The personal tier
+
+The subscription tier (`backend/app/personal/`, [docs/personal-tier.md](../docs/personal-tier.md))
+adds three things to the stack and nothing to its cost.
+
+- **`PersonalDataBucket`** — subscribers' files and data exports, under
+  `personal/<patient>/…`. Its own bucket, not a prefix in `DataBucket`, so a
+  hospital's patient files and a consumer's never share a policy, a lifecycle
+  rule or an access log, and the function's IAM grants are per bucket (the
+  clinic grant cannot reach it and vice versa). Never served by CloudFront:
+  every read is a presigned URL minted after the API checked the session.
+  Wired to the function as `PERSONAL_S3_BUCKET`; the database stays where it
+  is (one SQLite file, rows told apart by `patients.account_kind`). Besides
+  files and exports it holds each subscriber's **lake**
+  (`personal/<patient>/lake/…`: the signed consent, daily snapshots, every
+  model result, coach turns, account events; see the doc), kept for future
+  work and swept by account deletion. Deployed 2026-09-26; the name is the
+  stack output `PersonalDataBucketName`.
+- **`PersonalDailyRule`** — an EventBridge schedule (`PersonalDailyCron`,
+  default `cron(0 12 * * ? *)`, 12:00 UTC) that invokes the API function with
+  `{"action": "personal_daily"}`. The handler takes the write lock like the
+  seed does, writes every entitled subscriber's plan and morning brief, texts
+  those who opted in, and uploads the database once. One invocation a day.
+- **App Store verification** — `AppleSubscriptionVerify` (`lenient` |
+  `strict`) and `AppleEnvironment` (`Sandbox` | `Production`) on the function.
+  Lenient until App Store Connect is live: Xcode's local StoreKit testing signs
+  transactions with a certificate Apple's chain cannot vouch for, and a
+  deployment without the store still has to demo the purchase. Strict pins
+  Apple Root CA G3 (`APPLE_ROOT_CA_G3_SHA256` in `.env.example`; confirm the
+  fingerprint against apple.com/certificateauthority before switching).
+
+Template gotcha, learned the hard way: CloudFormation's lifecycle `Rule`
+takes `Prefix` plus `TagFilters`, not the S3 API's `Filter`/`And` shape. The
+early-validation hook rejects the latter before a change set exists, and
+`deploy.sh` only sees "PropertyValidation failed". The property is named by
+`aws cloudformation describe-events --change-set-name <arn>` (a newer CLI
+verb; `uvx --from awscli aws …` if the installed one lacks it).
+
+Manual run, when needed:
+
+```bash
+aws lambda invoke --function-name recovery-copilot-api \
+  --payload '{"action":"personal_daily","text":false}' \
+  --cli-binary-format raw-in-base64-out /dev/stdout
+```
+
 ## Security posture
 
 The app ships **no authentication**, by design, for demos — that predates this

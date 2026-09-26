@@ -20,6 +20,22 @@ table before treating any section of it as shipped; the RTM billing platform
 it describes was built and then removed from this codebase (see CHANGELOG
 1.5.0), so its RTM sections are direction, not description.
 
+## MedPull Personal
+
+The same iPhone app also sells a subscription tier to people who are not a
+hospital's patient: readiness, HRV, resting heart rate, sleep need and debt,
+training load (acute:chronic, fitness/fatigue/form, monotony), cardio
+fitness, body signals and a coach that knows the numbers, all computed
+against the person's own baselines from the same wearable stream. Design,
+data model, the two-space workflow for someone who is both a patient and a
+subscriber, subscription verification and the separate storage bucket are in
+**[docs/personal-tier.md](docs/personal-tier.md)**. Backend package
+`backend/app/personal/`, routes `/api/mobile/personal/*` and
+`/api/mobile/profiles/*`, iOS screens `ios/MedPull/Features/Personal/`.
+Subscribers never appear on a console screen. They sign up with an email and
+password behind a beta consent form; the form, their daily snapshots and the
+model's outputs are archived per person in the personal bucket.
+
 ## Quickstart
 
 Requirements: [uv](https://docs.astral.sh/uv/) and Node 20+.

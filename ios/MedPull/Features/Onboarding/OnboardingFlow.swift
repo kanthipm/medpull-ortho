@@ -35,17 +35,45 @@ struct OnboardingFlow: View {
         // text, so the tint is the sage text colour. The Toggles pass the
         // sage fill themselves.
         .tint(MP.brandInk)
+        .onAppear { jumpForVerification() }
+    }
+
+    /// Simulator verification only: `MP_ONBOARDING_STEP=goals` (or mode,
+    /// personalAbout, plan) opens the flow on that step of the personal
+    /// path so a screenshot needs no taps. Debug builds only.
+    private func jumpForVerification() {
+        #if DEBUG
+        guard let raw = AppConfig.debugFlag("MP_ONBOARDING_STEP") else { return }
+        model.name = "Ada Runner"
+        model.phone = "5125559001"
+        switch raw {
+        case "mode": model.route = [.mode]
+        case "consent": model.path = .personal; model.route = [.mode, .consent]
+        case "login": model.route = [.login]
+        case "personalAbout": model.path = .personal; model.route = [.mode, .consent, .personalAbout]
+        case "goals": model.path = .personal; model.goal = "performance"; model.sport = "running"
+            model.email = "ada@example.com"; model.password = "run-fast-sleep-well"
+            model.route = [.mode, .consent, .personalAbout, .goals]
+        default: break
+        }
+        #endif
     }
 
     @ViewBuilder private func destination(_ step: OnboardingModel.Step) -> some View {
         Group {
             switch step {
             case .welcome: WelcomeStep(model: model)
+            case .mode: ModeStep(model: model)
+            case .consent: ConsentStep(model: model)
+            case .login: LoginStep(model: model)
             case .hospital: HospitalStep(model: model)
             case .path: PathStep(model: model)
             case .identity: IdentityStep(model: model)
             case .join: JoinStep(model: model)
+            case .personalAbout: PersonalAboutStep(model: model)
+            case .goals: GoalsStep(model: model)
             case .verify: VerifyStep(model: model)
+            case .plan: PlanStep(model: model)
             case .health: HealthStep(model: model)
             case .wearable: WearableStep(model: model)
             case .done: DoneStep(model: model)
@@ -62,12 +90,12 @@ struct OnboardingFlow: View {
     /// shared glass capsule: the dots are their own shape, and a capsule
     /// around them would read as a button.
     @ToolbarContentBuilder private func dotsItem(_ step: OnboardingModel.Step) -> some ToolbarContent {
-        if step != .done {
+        if step != .done && step != .mode && step != .login {
             if #available(iOS 26, *) {
-                ToolbarItem(placement: .principal) { StepDots(current: step) }
+                ToolbarItem(placement: .principal) { StepDots(current: step, shown: model.stepsShown) }
                     .sharedBackgroundVisibility(.hidden)
             } else {
-                ToolbarItem(placement: .principal) { StepDots(current: step) }
+                ToolbarItem(placement: .principal) { StepDots(current: step, shown: model.stepsShown) }
             }
         }
     }
@@ -77,11 +105,17 @@ struct OnboardingFlow: View {
     static func backTitle(_ step: OnboardingModel.Step) -> String {
         switch step {
         case .welcome: return "Welcome"
+        case .mode: return "How you’ll use MedPull"
+        case .consent: return "Consent"
+        case .login: return "Sign in"
         case .hospital: return "Hospital"
         case .path: return "Joining"
         case .identity: return "Your record"
         case .join: return "About you"
+        case .personalAbout: return "About you"
+        case .goals: return "Your goal"
         case .verify: return "Code"
+        case .plan: return "Your plan"
         case .health: return "Health"
         case .wearable: return "Wearables"
         case .done: return "All set"
@@ -97,7 +131,7 @@ struct OnboardingFlow: View {
 private struct StepDots: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let current: OnboardingModel.Step
-    private let shown: [OnboardingModel.Step] = [.hospital, .path, .identity, .verify, .health, .wearable]
+    let shown: [OnboardingModel.Step]
 
     var body: some View {
         HStack(spacing: 6) {
@@ -330,12 +364,15 @@ private struct WelcomeStep: View {
                         .accessibilityElement(children: .combine)
 
                         VStack(alignment: .leading, spacing: 12) {
-                            SkyBadge(text: "Recovery, with your care team")
-                                .padding(.bottom, 2)
+                            HStack(spacing: 8) {
+                                SkyBadge(text: "Recovery and performance, from your wearable")
+                                StatusPill(text: "Beta", tone: .med)
+                            }
+                            .padding(.bottom, 2)
                             Text("Hi there.\nLet’s get you set up.")
                                 .title(MPSize.displayM)
                                 .accessibilityAddTraits(.isHeader)
-                            Text("Your hospital, your watch and your care team, together in one place. It takes about two minutes.")
+                            Text("Your watch, read properly: with your care team after an operation, or on your own for training, sleep and everyday health. About two minutes.")
                                 .mpFont(.lede).foregroundStyle(MP.body).lineSpacing(2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -344,15 +381,15 @@ private struct WelcomeStep: View {
                         VStack(alignment: .leading, spacing: 18) {
                             FeatureRow(icon: "figure.walk", family: .teal,
                                        title: "Your everyday signals",
-                                       detail: "Steps, sleep and heart rate flow in from Apple Health or your wearable. No typing.")
+                                       detail: "Steps, sleep, HRV and heart rate flow in from Apple Health or your wearable. No typing.")
                                 .entrance(shown, order: 2)
-                            FeatureRow(icon: "text.bubble.fill", family: .blue,
-                                       title: "Quick check-ins",
-                                       detail: "Answer a question by text or right here. A few taps, not a form.")
+                            FeatureRow(icon: "gauge.with.dots.needle.67percent", family: .indigo,
+                                       title: "Readouts that mean something",
+                                       detail: "Readiness, training load, sleep debt and more, against your own baselines, with the reasons.")
                                 .entrance(shown, order: 3)
-                            FeatureRow(icon: "person.2.fill", family: .indigo,
-                                       title: "A care team that sees it",
-                                       detail: "Your nurses and doctors see the same picture you do, and reach out when something changes.")
+                            FeatureRow(icon: "person.2.fill", family: .blue,
+                                       title: "With a care team, or on your own",
+                                       detail: "Recovering from surgery? Your clinicians see the same picture. Training? Your coach is the app.")
                                 .entrance(shown, order: 4)
                         }
                         .padding(.top, 10)
@@ -360,7 +397,9 @@ private struct WelcomeStep: View {
                     .padding(.horizontal, 24)
                     Spacer(minLength: 28)
                     VStack(spacing: 12) {
-                        PrimaryButton(title: "Get started", icon: "arrow.right") { model.go(.hospital) }
+                        PrimaryButton(title: "Get started", icon: "arrow.right") { model.go(.mode) }
+                        Button("Already have an account? Sign in") { model.go(.login) }
+                            .buttonStyle(MPButtonStyle(kind: .plain, fullWidth: true))
                         // THE DISCLAIMER: `body`, not `muted`, because at
                         // accessibility sizes it scrolls up over the fog.
                         Text("Monitoring signals for your care team — not a diagnosis.")
@@ -377,6 +416,62 @@ private struct WelcomeStep: View {
         }
         .background { OnboardingSky() }
         .onAppear { shown = true }
+    }
+}
+
+/// The fork: a hospital's patient, or a subscriber on their own.
+private struct ModeStep: View {
+    @Bindable var model: OnboardingModel
+
+    var body: some View {
+        StepScaffold(eyebrow: "First", title: "How will you use MedPull?",
+                     subtitle: "Both read the same watch. One shares the picture with your care team; the other keeps it to you, with readouts built for training, sleep and recovery.") {
+            VStack(spacing: 12) {
+                modeCard(icon: "building.2.fill", family: .blue,
+                         title: "With my care team",
+                         detail: "Your hospital set you up, or you’re recovering from an operation they follow. Free with your clinic.") {
+                    model.path = .joinGeneral
+                    model.go(model.consent == nil ? .consent : .hospital)
+                }
+                modeCard(icon: "sparkles", family: .teal,
+                         title: "On my own",
+                         detail: "MedPull Personal: readiness, training load, sleep debt and a coach that knows your numbers. 14 days free, then a subscription.") {
+                    model.path = .personal
+                    model.candidates = []
+                    model.selected = nil
+                    model.go(model.consent == nil ? .consent : .personalAbout)
+                }
+            }
+        } footer: {
+            EmptyView()
+        }
+    }
+
+    private func modeCard(icon: String, family: MP.Category, title: String, detail: String,
+                          action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Card {
+                HStack(alignment: .top, spacing: 14) {
+                    IconTile(icon, family: family, size: 44)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title).mpFont(.ledeMedium).foregroundStyle(MP.ink)
+                        Text(detail).mpFont(.copy).mpSecondary().lineSpacing(2)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.systemGlyphs(13, weight: .semibold))
+                        .foregroundStyle(MP.muted)
+                        .padding(.top, 14)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(MP.surfaceShape)
+        }
+        .buttonStyle(CardPressStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -632,7 +727,7 @@ private struct VerifyStep: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        StepScaffold(eyebrow: "Step 4 of 5", title: "Check your texts",
+        StepScaffold(eyebrow: model.eyebrow(.verify), title: "Check your texts",
                      subtitle: "We sent a code to \(model.phoneMasked ?? "your number"). It’s good for 10 minutes.") {
             VStack(spacing: 14) {
                 // `FieldStyle` sets the font on the configuration, so a
@@ -669,8 +764,10 @@ private struct HealthStep: View {
     ]
 
     var body: some View {
-        StepScaffold(eyebrow: "Step 5 of 5", title: "Connect Apple Health",
-                     subtitle: "One tap, and your activity, sleep and heart data fill in on their own. Nothing to type.") {
+        StepScaffold(eyebrow: model.eyebrow(.health), title: "Connect Apple Health",
+                     subtitle: model.isPersonal
+                        ? "One tap, and your readiness, load and sleep readouts build themselves from overnight HRV, resting heart rate, sleep and workouts."
+                        : "One tap, and your activity, sleep and heart data fill in on their own. Nothing to type.") {
             VStack(spacing: 12) {
                 Card(padding: 0, tint: true) {
                     VStack(alignment: .leading, spacing: 0) {
@@ -885,7 +982,16 @@ private struct DoneStep: View {
                         .entrance(shown, order: 1)
 
                         VStack(alignment: .leading, spacing: 18) {
-                            if app.me?.patient.isRecovery == true {
+                            if app.me?.isPersonal == true {
+                                FeatureRow(icon: "gauge.with.dots.needle.67percent", family: .teal,
+                                           title: "Readiness every morning",
+                                           detail: "Wear your watch tonight. Tomorrow you’ll see where you stand and why, against your own baseline.")
+                                    .entrance(shown, order: 2)
+                                FeatureRow(icon: "checklist", family: .blue,
+                                           title: "A plan for the day",
+                                           detail: "Written from your numbers each morning: push, hold, ease off or rest, with a check-in that takes a minute.")
+                                    .entrance(shown, order: 3)
+                            } else if app.me?.patient.isRecovery == true {
                                 FeatureRow(icon: "message.fill", family: .blue,
                                            title: "We’ll text you",
                                            detail: "When a task is ready, answer right in Messages or open the app. Either way your care team sees it.")
@@ -906,7 +1012,9 @@ private struct DoneStep: View {
                             }
                             FeatureRow(icon: "waveform", family: .indigo,
                                        title: "Talk any time",
-                                       detail: "Tell MedPull how you’re doing in your own words. Anything important goes to your care team.")
+                                       detail: app.me?.isPersonal == true
+                                        ? "Ask your coach why a number moved and get the actual values back. Log how you feel in a sentence."
+                                        : "Tell MedPull how you’re doing in your own words. Anything important goes to your care team.")
                                 .entrance(shown, order: 4)
                         }
                         .padding(.top, 6)
@@ -1044,6 +1152,349 @@ private struct FlowProcedures: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - The personal space
+
+/// The beta consent, read before any account exists. What it records goes
+/// out with the call that creates the session.
+private struct ConsentStep: View {
+    @Environment(AppModel.self) private var app
+    @Bindable var model: OnboardingModel
+
+    var body: some View {
+        ConsentLoader(onAgree: { accepted in
+            model.consent = accepted
+            if model.name.isEmpty, let name = accepted.signature { model.name = name }
+            model.go(model.isPersonal ? .personalAbout : .hospital)
+        }) {
+            EmptyView()
+        }
+    }
+}
+
+/// Back in, on any phone: the email and password. Forgot: a code by text
+/// to the number on the account, when the server can send one.
+private struct LoginStep: View {
+    @Environment(AppModel.self) private var app
+    @Bindable var model: OnboardingModel
+    @FocusState private var focus: Field?
+    @State private var forgetting = false
+    enum Field { case email, password, code, newPassword }
+
+    var body: some View {
+        StepScaffold(eyebrow: "Welcome back", title: forgetting ? "Reset your password" : "Sign in",
+                     subtitle: forgetting
+                        ? "We’ll text a code to the number on your account, if there is one, and you choose a new password."
+                        : "The email and password you set up MedPull Personal with.") {
+            VStack(spacing: 14) {
+                TextField("Email", text: $model.loginEmail,
+                          prompt: Text("Email").foregroundColor(MP.muted))
+                    .textFieldStyle(FieldStyle())
+                    .textContentType(.emailAddress).keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .focused($focus, equals: .email)
+                    .submitLabel(.next)
+                    .onSubmit { focus = forgetting ? .email : .password }
+                if !forgetting {
+                    SecureField("Password", text: $model.loginPassword,
+                                prompt: Text("Password").foregroundColor(MP.muted))
+                        .textFieldStyle(FieldStyle())
+                        .textContentType(.password)
+                        .focused($focus, equals: .password)
+                        .submitLabel(.go)
+                        .onSubmit { if model.canLogin { Task { await model.login(api: app.api, app: app) } } }
+                } else if let sent = model.forgotSent {
+                    if sent.sent {
+                        Card(tint: true) {
+                            Text("Code texted to \(sent.phoneMasked ?? "your number"). It’s good for 10 minutes.")
+                                .mpFont(.copy).foregroundStyle(MP.ink)
+                        }
+                        TextField("6-digit code", text: $model.resetCode,
+                                  prompt: Text("6-digit code").foregroundColor(MP.muted))
+                            .textFieldStyle(FieldStyle()).keyboardType(.numberPad).textContentType(.oneTimeCode)
+                            .focused($focus, equals: .code)
+                        SecureField("New password (8+ characters)", text: $model.resetPassword,
+                                    prompt: Text("New password (8+ characters)").foregroundColor(MP.muted))
+                            .textFieldStyle(FieldStyle()).textContentType(.newPassword)
+                            .focused($focus, equals: .newPassword)
+                    } else {
+                        ErrorBanner(text: sent.detail ?? "We couldn’t send a code.")
+                    }
+                }
+                if let error = model.error { ErrorBanner(text: error) }
+                Button(forgetting ? "Back to sign in" : "Forgot your password?") {
+                    model.error = nil
+                    model.forgotSent = nil
+                    forgetting.toggle()
+                }
+                .buttonStyle(MPButtonStyle(kind: .plain, bare: true))
+                Button("New here? Set up an account") { model.go(.mode) }
+                    .buttonStyle(MPButtonStyle(kind: .plain, bare: true))
+            }
+        } footer: {
+            if !forgetting {
+                PrimaryButton(title: "Sign in", icon: "arrow.right", loading: model.loading,
+                              disabled: !model.canLogin) {
+                    Task { await model.login(api: app.api, app: app) }
+                }
+            } else if model.forgotSent?.sent == true {
+                PrimaryButton(title: "Set new password", loading: model.loading,
+                              disabled: model.resetCode.count < 4 || model.resetPassword.count < 8) {
+                    Task { await model.reset(api: app.api, app: app) }
+                }
+            } else {
+                PrimaryButton(title: "Text me a code", icon: "message.fill", loading: model.loading,
+                              disabled: !model.loginEmail.contains("@")) {
+                    Task { await model.forgot(api: app.api) }
+                }
+            }
+        }
+        .onAppear { focus = .email }
+        .mpErrorFeedback(model.error)
+    }
+}
+
+/// Name, email and password for a new space; the mobile number is optional
+/// (texts, and pairing with a hospital record). The phone-only sign-in is
+/// the fallback for a person who set up before the email login existed.
+private struct PersonalAboutStep: View {
+    @Environment(AppModel.self) private var app
+    @Bindable var model: OnboardingModel
+    @FocusState private var focus: Field?
+    enum Field { case name, email, password, phone }
+
+    var body: some View {
+        StepScaffold(eyebrow: model.eyebrow(.personalAbout),
+                     title: model.personalSignin ? "Welcome back" : "Set up your login",
+                     subtitle: model.personalSignin
+                        ? "The mobile number on your personal space. We’ll text a code when this server can."
+                        : "Your name, an email and a password get you back in on any phone. A mobile number is optional: it turns on the morning brief by text.") {
+            VStack(spacing: 14) {
+                if !model.personalSignin {
+                    TextField("Full name", text: $model.name,
+                              prompt: Text("Full name").foregroundColor(MP.muted))
+                        .textFieldStyle(FieldStyle())
+                        .textContentType(.name).autocorrectionDisabled()
+                        .focused($focus, equals: .name)
+                        .submitLabel(.next)
+                        .onSubmit { focus = .email }
+                    TextField("Email", text: $model.email,
+                              prompt: Text("Email").foregroundColor(MP.muted))
+                        .textFieldStyle(FieldStyle())
+                        .textContentType(.emailAddress).keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .focused($focus, equals: .email)
+                        .submitLabel(.next)
+                        .onSubmit { focus = .password }
+                    HStack(spacing: 8) {
+                        Group {
+                            if model.showPassword {
+                                TextField("Password (8+ characters)", text: $model.password,
+                                          prompt: Text("Password (8+ characters)").foregroundColor(MP.muted))
+                            } else {
+                                SecureField("Password (8+ characters)", text: $model.password,
+                                            prompt: Text("Password (8+ characters)").foregroundColor(MP.muted))
+                            }
+                        }
+                        .textFieldStyle(FieldStyle())
+                        .textContentType(.newPassword)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .focused($focus, equals: .password)
+                        .submitLabel(.next)
+                        .onSubmit { focus = .phone }
+                        Button { model.showPassword.toggle() } label: {
+                            Image(systemName: model.showPassword ? "eye.slash" : "eye")
+                                .font(.systemGlyphs(17))
+                                .foregroundStyle(MP.muted)
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel(model.showPassword ? "Hide password" : "Show password")
+                    }
+                }
+                TextField(model.personalSignin ? "Mobile number" : "Mobile number (optional)", text: $model.phone,
+                          prompt: Text(model.personalSignin ? "Mobile number" : "Mobile number (optional)").foregroundColor(MP.muted))
+                    .textFieldStyle(FieldStyle())
+                    .textContentType(.telephoneNumber).keyboardType(.phonePad)
+                    .focused($focus, equals: .phone)
+                if !model.personalSignin {
+                    Card(padding: 0) {
+                        Toggle(isOn: $model.smsBriefs) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Morning brief by text").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                                    Text("Your readiness and plan, before you open anything.")
+                                        .mpFont(.label).foregroundStyle(MP.muted)
+                                }
+                            } icon: {
+                                IconTile("message.fill", family: .blue)
+                            }
+                            .labelStyle(TileLabelStyle())
+                        }
+                        .tint(MP.brand)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                    }
+                }
+                if model.personalSignin {
+                    Button("Set up a new space instead") {
+                        model.error = nil
+                        model.personalSignin = false
+                    }
+                    .buttonStyle(MPButtonStyle(kind: .plain, bare: true))
+                } else {
+                    Button("Already have an account? Sign in") { model.go(.login) }
+                        .buttonStyle(MPButtonStyle(kind: .plain, bare: true))
+                }
+                if let error = model.error { ErrorBanner(text: error) }
+            }
+        } footer: {
+            PrimaryButton(title: model.personalSignin ? "Text me a code" : "Continue", icon: "arrow.right",
+                          loading: model.loading, disabled: !model.canContinuePersonal) {
+                if model.personalSignin {
+                    Task { await model.personalJoin(api: app.api, app: app) }
+                } else {
+                    model.go(.goals)
+                }
+            }
+        }
+        .onAppear { focus = model.personalSignin ? .phone : (model.name.isEmpty ? .name : .email) }
+        .mpErrorFeedback(model.error)
+    }
+}
+
+/// What the person wants out of MedPull. The goal decides which readouts
+/// lead, what the plan writes and how the coach talks.
+private struct GoalsStep: View {
+    @Environment(AppModel.self) private var app
+    @Bindable var model: OnboardingModel
+
+    private let goals: [(String, String, MP.Category, String, String)] = [
+        ("performance", "figure.run", .teal, "Train and perform",
+         "Load, form, readiness. For runners, lifters, anyone with a training plan."),
+        ("recovery", "cross.case.fill", .violet, "Recover from an injury or surgery",
+         "MedPull’s recovery metrics on your own data, plus readiness and load for the return."),
+        ("sleep", "bed.double.fill", .indigo, "Sleep and recover better",
+         "Need, debt, regularity and what to change tonight."),
+        ("everyday", "heart.fill", .blue, "Everyday health",
+         "The full picture, balanced. Readiness, sleep, activity, resting heart rate."),
+    ]
+
+    var body: some View {
+        StepScaffold(eyebrow: model.eyebrow(.goals), title: "What do you want from it?",
+                     subtitle: "Pick one to lead. You can change it any time in Profile; everything is still measured.") {
+            VStack(spacing: 12) {
+                ForEach(goals, id: \.0) { key, icon, family, title, detail in
+                    goalCard(key: key, icon: icon, family: family, title: title, detail: detail)
+                }
+                details.padding(.top, 4)
+                if let error = model.error { ErrorBanner(text: error) }
+            }
+        } footer: {
+            PrimaryButton(title: "Create my space", icon: "sparkles", loading: model.loading,
+                          disabled: !model.canCreateSpace) {
+                Task { await model.personalJoin(api: app.api, app: app) }
+            }
+        }
+        .task(id: model.goal) { if model.goal == "recovery" { await model.loadProcedures(api: app.api) } }
+        .mpErrorFeedback(model.error)
+    }
+
+    private func goalCard(key: String, icon: String, family: MP.Category, title: String,
+                          detail: String) -> some View {
+        let isSelected = model.goal == key
+        return Button { model.goal = key } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.systemGlyphs(22, weight: .regular))
+                    .foregroundStyle(isSelected ? MP.ink : MP.lineStrong)
+                    .contentTransition(.symbolEffect(.replace))
+                    .padding(.top, 10)
+                IconTile(icon, family: family, size: 40)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                        .multilineTextAlignment(.leading)
+                    Text(detail).mpFont(.label).foregroundStyle(MP.body)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .glassSurface(MP.surfaceShape, solid: true)
+            .overlay(MP.surfaceShape.strokeBorder(isSelected ? MP.ink : .clear, lineWidth: 1.5))
+            .contentShape(MP.surfaceShape)
+        }
+        .buttonStyle(CardPressStyle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .sensoryFeedback(.selection, trigger: isSelected) { _, new in new }
+    }
+
+    @ViewBuilder private var details: some View {
+        switch model.goal {
+        case "performance":
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Your sport and target").mpFont(.labelMedium).foregroundStyle(MP.muted)
+                TextField("Sport (running, cycling, lifting…)", text: $model.sport,
+                          prompt: Text("Sport (running, cycling, lifting…)").foregroundColor(MP.muted))
+                    .textFieldStyle(FieldStyle()).autocorrectionDisabled()
+                Card(padding: 0) {
+                    Stepper(value: $model.weeklyTargetMinutes, in: 30...1500, step: 30) {
+                        HStack {
+                            Text("Training a week").mpFont(.copyLarge).foregroundStyle(MP.ink)
+                            Spacer()
+                            Text("\(model.weeklyTargetMinutes / 60) h \(model.weeklyTargetMinutes % 60 == 0 ? "" : "\(model.weeklyTargetMinutes % 60) min")")
+                                .font(.figuresCopyLarge).foregroundStyle(MP.ink)
+                        }
+                    }
+                    .tint(MP.brand)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .mpSelectionFeedback(model.weeklyTargetMinutes)
+                }
+            }
+        case "sleep":
+            Card(padding: 0) {
+                Stepper(value: $model.sleepTargetHours, in: 5...10, step: 0.25) {
+                    HStack {
+                        Text("Sleep you’re aiming for").mpFont(.copyLarge).foregroundStyle(MP.ink)
+                        Spacer()
+                        Text(String(format: "%.2g h", model.sleepTargetHours))
+                            .font(.figuresCopyLarge).foregroundStyle(MP.ink)
+                    }
+                }
+                .tint(MP.brand)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .mpSelectionFeedback(model.sleepTargetHours)
+            }
+        case "recovery":
+            VStack(alignment: .leading, spacing: 10) {
+                Text("What are you coming back from?").mpFont(.labelMedium).foregroundStyle(MP.muted)
+                if model.procedures.isEmpty {
+                    ProgressView().controlSize(.small)
+                } else {
+                    FlowProcedures(procedures: model.procedures, selected: $model.procedure)
+                }
+                TextField("Or describe it (ACL, left; stress fracture…)", text: $model.injury,
+                          prompt: Text("Or describe it (ACL, left; stress fracture…)").foregroundColor(MP.muted))
+                    .textFieldStyle(FieldStyle())
+                DatePicker("When did it happen?", selection: $model.anchorDate, in: ...Date(),
+                           displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .mpFont(.copyLargeMedium)
+                    .foregroundStyle(MP.ink)
+            }
+        default:
+            EmptyView()
+        }
+    }
+}
+
+/// The trial has started; here are the plans.
+private struct PlanStep: View {
+    @Bindable var model: OnboardingModel
+
+    var body: some View {
+        PaywallView(mode: .onboarding) { model.go(.health) }
     }
 }
 

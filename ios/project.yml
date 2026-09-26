@@ -96,6 +96,9 @@ targets:
         product: VitalCore
       - package: VitalSDK
         product: VitalHealthKit
+    # In-App Purchase needs no entitlement key on iOS; the products are
+    # defined in App Store Connect, and locally in MedPull.storekit (wired to
+    # the scheme below so a simulator run can buy them).
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.medpull.recovery
@@ -117,3 +120,17 @@ targets:
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+schemes:
+  MedPull:
+    build:
+      targets:
+        MedPull: all
+    run:
+      config: Debug
+      # Local StoreKit testing: the two MedPull Personal subscriptions, signed
+      # by Xcode. The backend accepts those in its lenient mode
+      # (APPLE_SUBSCRIPTION_VERIFY=lenient); a strict server refuses them and
+      # the account runs on its trial instead.
+      storeKitConfiguration: MedPull.storekit
+    archive:
+      config: Release

@@ -98,7 +98,9 @@ def _render_block(p: dict[str, Any]) -> str:
 
 
 def _roster_context(db: Session) -> list[dict[str, Any]]:
-    patients = db.scalars(select(Patient).order_by(Patient.id)).all()
+    from app.personal.scope import clinic_patients
+
+    patients = clinic_patients(db, order_by=Patient.id)
     roster: list[dict[str, Any]] = []
     for patient in patients:
         assessment = db.scalar(

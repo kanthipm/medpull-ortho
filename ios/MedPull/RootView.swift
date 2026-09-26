@@ -23,23 +23,65 @@ struct MainTabs: View {
     var body: some View {
         @Bindable var app = app
         TabView(selection: $app.selectedTab) {
-            HomeView()
-                .tabItem { Label("Home", systemImage: "house.fill") }
-                .tag(AppModel.Tab.home)
-            TasksView()
-                .tabItem { Label("Tasks", systemImage: "checklist") }
-                .tag(AppModel.Tab.tasks)
-                .badge(app.tasks.open.count)
-            VoiceView()
-                .tabItem { Label("Talk", systemImage: "waveform") }
-                .tag(AppModel.Tab.talk)
-            MessagesView()
-                .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right.fill") }
-                .tag(AppModel.Tab.messages)
-                .badge(app.me?.unreadMessages ?? 0)
-            HealthView()
-                .tabItem { Label("Health", systemImage: "heart.fill") }
-                .tag(AppModel.Tab.health)
+            if app.isPersonal {
+                // A subscriber's space: their day, their readouts, their
+                // plan, their coach. No care team, so no Messages tab — the
+                // coach's thread (the morning brief lives there) opens from
+                // Home. Health (devices and the raw portfolio) is reached
+                // from Stats.
+                PersonalHomeView()
+                    .tabItem { Label("Today", systemImage: "sun.max.fill") }
+                    .tag(AppModel.Tab.home)
+                StatsView()
+                    .tabItem { Label("Stats", systemImage: "chart.xyaxis.line") }
+                    .tag(AppModel.Tab.stats)
+                TasksView()
+                    .tabItem { Label("Plan", systemImage: "checklist") }
+                    .tag(AppModel.Tab.tasks)
+                    .badge(app.tasks.open.count)
+                VoiceView()
+                    .tabItem { Label("Coach", systemImage: "waveform") }
+                    .tag(AppModel.Tab.talk)
+                HealthView()
+                    .tabItem { Label("Devices", systemImage: "applewatch") }
+                    .tag(AppModel.Tab.health)
+            } else {
+                HomeView()
+                    .tabItem { Label("Home", systemImage: "house.fill") }
+                    .tag(AppModel.Tab.home)
+                TasksView()
+                    .tabItem { Label("Tasks", systemImage: "checklist") }
+                    .tag(AppModel.Tab.tasks)
+                    .badge(app.tasks.open.count)
+                VoiceView()
+                    .tabItem { Label("Talk", systemImage: "waveform") }
+                    .tag(AppModel.Tab.talk)
+                MessagesView()
+                    .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right.fill") }
+                    .tag(AppModel.Tab.messages)
+                    .badge(app.me?.unreadMessages ?? 0)
+                HealthView()
+                    .tabItem { Label("Health", systemImage: "heart.fill") }
+                    .tag(AppModel.Tab.health)
+            }
+        }
+        // The paywall covers the personal screens when access has lapsed; the
+        // hospital record (if there is one) is a switch away inside it.
+        .fullScreenCover(isPresented: Binding(
+            get: { app.isPersonal && app.paywall != nil && !(app.me?.needsConsent ?? false) },
+            set: { if !$0 { app.paywall = nil } }
+        )) {
+            PaywallView(mode: .lapsed)
+                .environment(app)
+        }
+        // The beta consent, for an account that has never accepted it or
+        // met a new version: nothing else is usable until it is read.
+        .fullScreenCover(isPresented: Binding(
+            get: { app.me?.needsConsent ?? false },
+            set: { _ in }
+        )) {
+            ConsentGate()
+                .environment(app)
         }
         // The system's own Liquid Glass, and the only glass in this file: the
         // tab bar collapses to a pill on scroll down and comes back on scroll

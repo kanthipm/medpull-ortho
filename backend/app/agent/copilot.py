@@ -98,8 +98,26 @@ _GENERAL_REPLACEMENTS = (
     ("I'm sorry — a fall needs to be checked", "I'm sorry — a fall needs to be checked"),
 )
 
+# A personal subscriber has no care team, so the emergency script cannot
+# promise that anyone was alerted: it tells them who to call instead.
+_PERSONAL_REPLACEMENTS = (
+    ("Please call 911 now. I've alerted your care team.", "Please call 911 now."),
+    ("Please call your care team now — and 911 if you also have trouble breathing. "
+     "I've alerted them.",
+     "Please see a doctor today, and call 911 if you also have trouble breathing."),
+    ("is something your care team wants to see today. I've alerted them — please call the "
+     "clinic if it's more than a small spot.",
+     "should be looked at today. Please contact the clinic that did the operation."),
+    ("I've flagged it for your care team — if it's over 101°F, please call the clinic now.",
+     "If it's over 101°F, please see a doctor today."),
+    ("I've alerted your care team; if you hit your head", "If you hit your head"),
+)
 
-def _for_patient(text: str, patient: Patient) -> str:
+
+def _for_patient(text: str, patient: Patient, care_team: bool = True) -> str:
+    if not care_team:
+        for old, new in _PERSONAL_REPLACEMENTS:
+            text = text.replace(old, new)
     if tasks.surgical(patient):
         return text
     for old, new in _GENERAL_REPLACEMENTS:
@@ -108,7 +126,8 @@ def _for_patient(text: str, patient: Patient) -> str:
 
 
 def _context(
-    db: Session, patient: Patient, open_tasks: list[AdherenceTask], channel: str = "app"
+    db: Session, patient: Patient, open_tasks: list[AdherenceTask], channel: str = "app",
+    extra: str | None = None,
 ) -> str:
     from app.engine.pipeline import latest_assessment
 
@@ -129,8 +148,10 @@ def _context(
             f"Procedure: {patient.procedure_display}",
             f"Post-op day: {postop if postop is not None else 'unknown'}",
         ]
-    else:
+    elif extra is None:
         lines.append("No surgery: a general patient followed by their hospital's care team")
+    if extra:
+        lines.append(extra)
     lines.append("Open tasks:" if open_tasks else "Open tasks: none")
     for t in open_tasks:
         qs = tasks.questions_for(t)
@@ -210,7 +231,9 @@ def fallback_intent(text: str, open_tasks: list[AdherenceTask], *, default_to_ca
     return {"reply": "", "actions": actions}
 
 
-def _validate_model_output(raw: Any, open_ids: set[int]) -> dict[str, Any] | None:
+def _validate_model_output(
+    raw: Any, open_ids: set[int], *, allow_log_metric: bool = False
+) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
     reply = raw.get("reply")
@@ -240,6 +263,17 @@ def _validate_model_output(raw: Any, open_ids: set[int]) -> dict[str, Any] | Non
             if not isinstance(text, str) or not text.strip():
                 return None
             actions.append({"type": "message_care_team", "text": text.strip()[:1000]})
+        elif kind == "log_metric" and allow_log_metric:
+            from app.personal.logs import LOG_KEYS
+
+            key = a.get("key")
+            value = a.get("value")
+            if key not in LOG_KEYS or key == "note" or not isinstance(value, (int, float)):
+                return None
+            limit = 600 if key == "session_minutes" else 10
+            if not 0 <= float(value) <= limit:
+                return None
+            actions.append({"type": "log_metric", "key": key, "value": float(value)})
         elif kind in (None, "none"):
             continue
         else:
@@ -260,18 +294,34 @@ def _log_pain(db: Session, patient: Patient, value: int, channel: str) -> None:
 
 def _apply(
     db: Session, patient: Patient, actions: list[dict[str, Any]], channel: str,
-    open_tasks: list[AdherenceTask],
+    open_tasks: list[AdherenceTask], care_team: bool = True,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Run the validated actions. Returns (applied, sentences for the reply)."""
     applied: list[dict[str, Any]] = []
     notes: list[str] = []
     by_id = {t.id: t for t in open_tasks}
     for a in actions:
-        if a["type"] == "log_pain":
+        if a["type"] == "log_metric":
+            from datetime import date as _date
+
+            from app.personal.logs import record
+
+            record(db, patient.id, _date.today(), a["key"], value=a["value"], source="coach")
+            applied.append(a)
+            label = a["key"].replace("_", " ")
+            notes.append(f"Logged {label} {a['value']:g} for today.")
+        elif a["type"] == "log_pain":
             _log_pain(db, patient, a["value"], channel)
             applied.append(a)
             notes.append(f"Logged pain {a['value']}/10 for today.")
-            if a["value"] >= tasks._ALERT_PAIN:
+            if not care_team:
+                from datetime import date as _date
+
+                from app.personal.logs import record
+
+                record(db, patient.id, _date.today(), "soreness", value=float(a["value"]),
+                       source="coach")
+            elif a["value"] >= tasks._ALERT_PAIN:
                 tasks.notify_care_team(db, patient, f"{patient.name} — Reported pain {a['value']}/10",
                                        f"Told the copilot by {channel}.", "patient_report")
                 notes.append("That's high — I've let your care team know.")
@@ -287,6 +337,17 @@ def _apply(
             applied.append({**a, "title": task.title})
             notes.append(f"Marked \"{task.title}\" as done.")
         elif a["type"] == "message_care_team":
+            if not care_team:
+                # A subscriber has nobody to pass a note to: it goes in their
+                # own journal, where the coach and the weekly review read it.
+                from datetime import date as _date
+
+                from app.personal.logs import record
+
+                record(db, patient.id, _date.today(), "note", text=a["text"], source="coach")
+                applied.append({"type": "note", "text": a["text"]})
+                notes.append("Saved that to your journal.")
+                continue
             # The patient's own line is already on the thread (recorded by
             # respond() or by the SMS handler); a second copy of it here
             # showed every forwarded note twice. The action's work is the
@@ -316,9 +377,17 @@ def respond(
     record_reply: bool = True,
     default_to_care_team: bool = False,
     deadline_s: float | None = None,
+    system_prompt: str | None = None,
+    extra_context: str | None = None,
+    care_team: bool = True,
 ) -> dict[str, Any]:
     """One turn. Records the patient's line and the reply on the thread
-    (unless the caller does that itself) and returns what happened."""
+    (unless the caller does that itself) and returns what happened.
+
+    ``system_prompt``, ``extra_context`` and ``care_team=False`` are how the
+    personal tier's coach (app/personal/coach.py) speaks through the same
+    machinery: its own voice, the day's readouts in context, and no care
+    team to alert or pass notes to."""
     text = (text or "").strip()
     open_tasks = tasks.open_tasks(db, patient.id)
     if not text:
@@ -331,6 +400,8 @@ def respond(
 
     flags = _red_flags(text)
     for _patient_text, team_text in flags:
+        if not care_team:
+            break
         tasks.notify_care_team(db, patient, f"{patient.name} — {team_text}",
                                f"Said by {channel}: \"{text[:240]}\"", "patient_report")
 
@@ -339,8 +410,9 @@ def respond(
     if not flags:  # a red flag gets the deterministic script, never a model's words
         try:
             raw = complete_json(
-                SYSTEM_PROMPT if tasks.surgical(patient) else GENERAL_SYSTEM_PROMPT,
-                f"{_context(db, patient, open_tasks, channel)}\n\nPatient said: {json.dumps(text)}",
+                system_prompt or (SYSTEM_PROMPT if tasks.surgical(patient) else GENERAL_SYSTEM_PROMPT),
+                f"{_context(db, patient, open_tasks, channel, extra_context)}\n\n"
+                f"Patient said: {json.dumps(text)}",
                 num_predict=300,
                 temperature=0.3,
                 # A caller holding something more valuable than a request
@@ -349,7 +421,8 @@ def respond(
                 deadline_s=deadline_s,
             )
             active = provider_name()
-            intent = _validate_model_output(raw, {t.id for t in open_tasks})
+            intent = _validate_model_output(raw, {t.id for t in open_tasks},
+                                            allow_log_metric=not care_team)
             if intent is None:
                 note_invalid_output(active)
             else:
@@ -360,10 +433,10 @@ def respond(
     if intent is None:
         intent = fallback_intent(text, open_tasks, default_to_care_team=default_to_care_team)
 
-    applied, notes = _apply(db, patient, intent["actions"], channel, open_tasks)
+    applied, notes = _apply(db, patient, intent["actions"], channel, open_tasks, care_team)
 
     if flags:
-        reply = " ".join(dict.fromkeys(_for_patient(f, patient) for f, _ in flags))
+        reply = " ".join(dict.fromkeys(_for_patient(f, patient, care_team) for f, _ in flags))
         if notes:
             reply += " " + " ".join(notes)
     elif provider != "fallback" and intent["reply"]:
@@ -375,6 +448,9 @@ def respond(
         reply = " ".join(notes)
     elif re.search(r"\b(tasks?|to ?do|today|what do i|help)\b", text.lower()):
         reply = _task_list_sentence(open_tasks)
+    elif not care_team:
+        reply = ("Got it. I can log how you feel, mark a task done, explain any of your "
+                 "readouts, or save a note — just say which. " + _task_list_sentence(open_tasks))
     else:
         reply = ("Got it. " if not default_to_care_team else "") + (
             "I can log your pain, mark a task done, or pass a note to your care team — "

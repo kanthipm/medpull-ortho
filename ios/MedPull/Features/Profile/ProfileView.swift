@@ -23,10 +23,16 @@ struct ProfileView: View {
     var body: some View {
         @Bindable var appearance = appearance
         return NavigationStack {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     if let me = app.me {
                         aboutCard(me)
+                        SpacesCard()
+                        if me.isPersonal {
+                            PersonalCard()
+                            AccountCard().id("account")
+                        }
                         if !me.patient.careTeam.isEmpty {
                             group("Care team") {
                                 ForEach(Array(me.patient.careTeam.enumerated()), id: \.offset) { i, m in
@@ -36,13 +42,19 @@ struct ProfileView: View {
                             }
                         }
                         group("Connections",
-                              footer: "Task texts come from your care team’s MedPull number. Reply 1 to any of them to do the task by text, or open it here.") {
+                              footer: me.isPersonal
+                                ? "Your morning brief and check-in come from MedPull’s number when texts are on. Reply 1 to do the check-in by text."
+                                : "Task texts come from your care team’s MedPull number. Reply 1 to any of them to do the task by text, or open it here.") {
                             row("Texts from MedPull", me.features.sms ? "On" : "Not set up on this server",
                                 icon: "message.fill", family: .blue)
                             InsetDivider()
                             row("Apple Health",
                                 app.health.isConnected || me.wearables.appleHealth.connected ? "Connected" : "Not connected",
                                 icon: "heart.fill", family: .violet)
+                            if !me.isPersonal, me.consent?.acceptedAt != nil {
+                                InsetDivider()
+                                ConsentRow()
+                            }
                         }
                     }
 
@@ -120,6 +132,14 @@ struct ProfileView: View {
             .tint(MP.brandInk)
             .mpNavigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
+            #if DEBUG
+            .task {
+                if let target = AppConfig.debugFlag("MP_SCROLL_PROFILE") {
+                    try? await Task.sleep(for: .seconds(1.5))
+                    proxy.scrollTo(target, anchor: .top)
+                }
+            }
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     if #available(iOS 26, *) {
@@ -129,6 +149,7 @@ struct ProfileView: View {
                             .mpFont(.copyLargeMedium)
                     }
                 }
+            }
             }
         }
         // Large only: a medium detent put the sheet over the dimmed Home at
@@ -148,7 +169,8 @@ struct ProfileView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(me.patient.name)
                             .mpFont(.subheadSemibold).foregroundStyle(MP.ink)
-                        Text(me.patient.procedureDisplay)
+                        Text(me.isPersonal ? (app.dashboard?.profile.goalLabel ?? "MedPull Personal")
+                             : me.patient.procedureDisplay)
                             .mpFont(.copy).foregroundStyle(MP.muted)
                     }
                     .fixedSize(horizontal: false, vertical: true)
@@ -158,7 +180,13 @@ struct ProfileView: View {
                 .accessibilityElement(children: .combine)
 
                 InsetDivider(leading: 16)
-                if me.patient.isRecovery, let surgery = me.patient.surgeryDate {
+                if me.isPersonal {
+                    row("Space", "Personal")
+                    if let p = me.patient.phoneMasked {
+                        InsetDivider(leading: 16)
+                        row("Mobile", p)
+                    }
+                } else if me.patient.isRecovery, let surgery = me.patient.surgeryDate {
                     row("Surgery", Self.displayDate(surgery))
                     InsetDivider(leading: 16)
                     row("Post-op day", "\(me.patient.postopDay ?? 0)")
@@ -169,7 +197,7 @@ struct ProfileView: View {
                     InsetDivider(leading: 16)
                     row("Hospital", h.name)
                 }
-                if let p = me.patient.phoneMasked {
+                if let p = me.patient.phoneMasked, !me.isPersonal {
                     InsetDivider(leading: 16)
                     row("Mobile", p)
                 }

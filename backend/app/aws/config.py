@@ -16,6 +16,11 @@ class AwsSettings(BaseSettings):
     # Durable home of the SQLite database. Empty => AWS persistence disabled.
     s3_bucket: str = ""
     s3_db_key: str = "db/recovery.db"
+    # The personal tier's own bucket: subscribers' attachments and data
+    # exports live here, never beside a hospital's patient files. Empty
+    # falls back to the main bucket (a laptop, or a stack deployed before the
+    # tier existed).
+    personal_s3_bucket: str = ""
 
     # Distributed write lock (an S3 object created with If-None-Match: *).
     # The TTL must stay comfortably under the Lambda timeout so a function that

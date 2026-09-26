@@ -43,7 +43,10 @@ def worklist(db: Session = Depends(get_db)) -> dict:
     from app.llm.insights import get_daily_briefing, get_patient_insight
     from app.plan.next_steps import next_step_summary
 
-    patients = db.scalars(select(Patient)).all()
+    from app.personal.scope import clinic_patients
+
+    # Clinic charts only: a personal subscriber is never on a worklist.
+    patients = clinic_patients(db)
     # The next-step planner names the library tasks a step would assign, so
     # the library is read once here rather than once per row.
     ensure_ready(db)

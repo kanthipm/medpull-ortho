@@ -34,7 +34,7 @@ struct TasksView: View {
             // A real large title (600, from the UIKit proxy) that collapses
             // to an inline "Tasks" on scroll, and names TaskDetail's back
             // button.
-            .mpNavigationTitle("Tasks")
+            .mpNavigationTitle(app.isPersonal ? "Plan" : "Tasks")
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(item: $openTask) { task in TaskDestination(task: task) }
             .task { await app.refreshTasks() }
@@ -62,7 +62,8 @@ struct TasksView: View {
         } description: {
             // Explicit `muted`: the system description colour is secondary
             // label, 3.44:1 on the light canvas.
-            Text("New tasks from your care team show up here.")
+            Text(app.isPersonal ? "Your plan is written each morning from the night’s numbers."
+                 : "New tasks from your care team show up here.")
                 .mpFont(.copy).foregroundStyle(MP.muted)
         }
         .frame(maxWidth: .infinity)
@@ -297,8 +298,10 @@ struct TaskDetailView: View {
                         HStack(spacing: 12) {
                             seal
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Sent to your care team").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
-                                Text("They’ll see it with their next review.").mpFont(.copy).mpSecondary()
+                                Text(app.isPersonal ? "Logged" : "Sent to your care team")
+                                    .mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                                Text(app.isPersonal ? "It feeds tomorrow’s readouts." : "They’ll see it with their next review.")
+                                    .mpFont(.copy).mpSecondary()
                             }
                         }
                     }
@@ -408,8 +411,8 @@ struct TaskDetailView: View {
     /// The visible word is short ("Send"), so it never wraps at any size;
     /// VoiceOver and Voice Control still hear the full "Send to my care team".
     private func commitButton(fullWidth: Bool) -> some View {
-        let spoken = task.kind == "checkin" ? "Send to my care team" : "Mark done"
-        let shown = task.kind == "checkin" ? "Send" : "Mark done"
+        let spoken = task.kind == "checkin" ? (app.isPersonal ? "Save my check-in" : "Send to my care team") : "Mark done"
+        let shown = task.kind == "checkin" ? (app.isPersonal ? "Save" : "Send") : "Mark done"
         return Button { submit() } label: {
             HStack(spacing: 6) {
                 if sending {

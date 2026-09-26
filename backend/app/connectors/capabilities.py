@@ -27,7 +27,7 @@ CAPABILITIES: dict[P, list[M]] = {
     # the moment a patient switches platforms. Apple skin temp is a DELTA.
     P.APPLE: CORE + GAIT + [M.HRV_SDNN, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,
                             M.SKIN_TEMP_DELTA, M.EXERCISE_SESSION, M.FLIGHTS_CLIMBED,
-                            M.BODY_WEIGHT],
+                            M.BODY_WEIGHT, M.VO2_MAX, M.HR_RECOVERY_1MIN],
     P.FITBIT: CORE + [M.HRV_RMSSD, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,
                       M.SKIN_TEMP, M.EXERCISE_SESSION],
     P.GARMIN: CORE + [M.HRV_RMSSD, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,

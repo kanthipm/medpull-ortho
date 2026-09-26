@@ -109,6 +109,12 @@ class MetricType(StrEnum):
     BLOOD_GLUCOSE = "blood_glucose"                 # mg/dL (CGM instants or daily summaries)
     BREATHLESSNESS = "breathlessness"               # 0-4 mMRC-style patient scale
     FATIGUE = "fatigue"                             # 0-10 patient scale
+    # --- Athlete fitness signals (the personal tier) ---
+    # Read by the iOS app straight from HealthKit, like the gait metrics, and
+    # posted through the same ingest path. Apple estimates VO2 max from
+    # outdoor walks/runs; one-minute heart-rate recovery comes from workouts.
+    VO2_MAX = "vo2_max"                             # mL/kg/min
+    HR_RECOVERY_1MIN = "hr_recovery_1min"           # bpm drop, one minute after a workout
 
 
 class Granularity(StrEnum):
@@ -154,6 +160,10 @@ class InsightKind(StrEnum):
     SUGGESTED_ACTIONS = "suggested_actions"
     DAILY_BRIEFING = "daily_briefing"
     ASK = "ask"  # roster-level natural-language Q&A (cached per question)
+    # The personal tier (app/personal): the one-paragraph morning brief, and
+    # the on-demand deep dives per domain (recovery, training, sleep, weekly).
+    PERSONAL_BRIEF = "personal_brief"
+    PERSONAL_DEEP = "personal_deep"
 
 
 class NotificationChannel(StrEnum):
@@ -188,3 +198,6 @@ class CareRole(StrEnum):
 # The guardrail sentence used across the product. AI output that omits it (or
 # uses diagnostic language) is replaced by the deterministic fallback.
 GUARDRAIL_SENTENCE = "Monitoring signals for clinician review — not a diagnosis."
+# The personal tier has no clinician behind it, so its sentence says what the
+# product is instead: guidance for training and recovery, never medicine.
+PERSONAL_GUARDRAIL_SENTENCE = "Guidance for training and recovery — not medical advice."

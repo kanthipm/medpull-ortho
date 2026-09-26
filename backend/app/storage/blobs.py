@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 # Everything this module writes lives under here, and it is never the SPA's
 # prefix: web/* is world-readable through the distribution.
 PREFIX = "attachments"
+# The personal tier's files (app/personal). Keys under this prefix resolve to
+# the personal bucket when one is configured, so a subscriber's photos and
+# exports never sit beside a hospital's patient files. On a laptop it is a
+# sibling directory.
+PERSONAL_PREFIX = "personal"
 
 # What a patient or a clinician may attach. Deliberately short: an image of a
 # wound, a document from the clinic. Anything executable or scriptable is
@@ -72,6 +77,18 @@ class StoredBlob:
 
 def enabled_s3() -> bool:
     return bool(aws_settings.s3_bucket)
+
+
+def bucket_for(key: str) -> str:
+    """Which bucket a key lives in: the personal bucket for personal keys
+    when the deployment has one, else the main bucket."""
+    if key.startswith(f"{PERSONAL_PREFIX}/") and aws_settings.personal_s3_bucket:
+        return aws_settings.personal_s3_bucket
+    return aws_settings.s3_bucket
+
+
+def prefix_for(personal: bool) -> str:
+    return PERSONAL_PREFIX if personal else PREFIX
 
 
 def local_root() -> Path:
@@ -132,7 +149,7 @@ def head_bytes(key: str, count: int = 1024) -> bytes:
 
         try:
             obj = client().get_object(
-                Bucket=aws_settings.s3_bucket, Key=key, Range=f"bytes=0-{count - 1}"
+                Bucket=bucket_for(key), Key=key, Range=f"bytes=0-{count - 1}"
             )
         except Exception as exc:  # noqa: BLE001
             raise BlobError("That file is no longer available") from exc
@@ -152,11 +169,18 @@ def check_size(byte_size: int) -> int:
     return byte_size
 
 
-def new_key(patient_id: str, content_type: str) -> str:
+def new_key(patient_id: str, content_type: str, personal: bool = False) -> str:
     """An opaque key. The patient id is a path segment for operability — a
     per-patient purge is one prefix — and the rest is random, so a key is
-    never guessable from anything a reader knows."""
-    return f"{PREFIX}/{patient_id}/{uuid.uuid4().hex}{ALLOWED_TYPES[content_type]}"
+    never guessable from anything a reader knows. ``personal`` puts it under
+    the personal tier's prefix (and so its bucket)."""
+    return f"{prefix_for(personal)}/{patient_id}/{uuid.uuid4().hex}{ALLOWED_TYPES[content_type]}"
+
+
+def owned_by(key: str, patient_id: str) -> bool:
+    """Whether a key was minted for this patient, under either prefix."""
+    return key.startswith(f"{PREFIX}/{patient_id}/") or \
+        key.startswith(f"{PERSONAL_PREFIX}/{patient_id}/")
 
 
 # --- writing -------------------------------------------------------------------
@@ -171,12 +195,30 @@ def put(key: str, data: bytes, content_type: str) -> StoredBlob:
         from app.aws.storage import client
 
         client().put_object(
-            Bucket=aws_settings.s3_bucket,
+            Bucket=bucket_for(key),
             Key=key,
             Body=data,
             ContentType=content_type,
             # A browser must render or download this, never run it.
             ContentDisposition="inline",
+        )
+    else:
+        path = local_root() / key
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return StoredBlob(key=key, byte_size=len(data), sha256=digest)
+
+
+def put_json(key: str, data: bytes) -> StoredBlob:
+    """A data export (app/personal/api.py): JSON, served as a download, not
+    subject to the attachment type list or size cap."""
+    digest = hashlib.sha256(data).hexdigest()
+    if enabled_s3():
+        from app.aws.storage import client
+
+        client().put_object(
+            Bucket=bucket_for(key), Key=key, Body=data, ContentType="application/json",
+            ContentDisposition="attachment",
         )
     else:
         path = local_root() / key
@@ -213,7 +255,7 @@ def read(key: str) -> bytes:
         from app.aws.storage import client
 
         try:
-            obj = client().get_object(Bucket=aws_settings.s3_bucket, Key=key)
+            obj = client().get_object(Bucket=bucket_for(key), Key=key)
         except Exception as exc:  # noqa: BLE001 — a missing object is a 404, not a 500
             raise BlobError("That file is no longer available") from exc
         return obj["Body"].read()
@@ -234,14 +276,15 @@ def download_url(key: str, content_type: str, filename: str | None = None) -> st
     # The type the server validated, never whatever is stored on the object:
     # a file that reached S3 with a scriptable type must not come back as
     # one. Images are shown inline; anything else is a download.
-    served_type = content_type if content_type in ALLOWED_TYPES else "application/octet-stream"
+    served_type = content_type if content_type in ALLOWED_TYPES or content_type == "application/json" \
+        else "application/octet-stream"
     disposition = "inline" if served_type.startswith("image/") else "attachment"
     if filename:
         # Quotes, newlines and paths out: this lands in a response header.
         safe = "".join(c for c in filename if c.isalnum() or c in " ._-")[:80]
         disposition = f'{disposition}; filename="{safe}"'
     params: dict[str, str] = {
-        "Bucket": aws_settings.s3_bucket,
+        "Bucket": bucket_for(key),
         "Key": key,
         "ResponseContentType": served_type,
         "ResponseContentDisposition": disposition,
@@ -284,7 +327,7 @@ def upload_ticket(key: str, content_type: str) -> UploadTicket | None:
     from app.aws.storage import client
 
     signed = client().generate_presigned_post(
-        Bucket=aws_settings.s3_bucket,
+        Bucket=bucket_for(key),
         Key=key,
         Fields={"Content-Type": content_type},
         Conditions=[
@@ -308,7 +351,7 @@ def stat(key: str) -> int | None:
         from app.aws.storage import client
 
         try:
-            head = client().head_object(Bucket=aws_settings.s3_bucket, Key=key)
+            head = client().head_object(Bucket=bucket_for(key), Key=key)
         except Exception:  # noqa: BLE001
             return None
         return int(head.get("ContentLength") or 0)
@@ -389,7 +432,7 @@ def delete(key: str) -> bool:
         from app.aws.storage import client
 
         try:
-            client().delete_object(Bucket=aws_settings.s3_bucket, Key=key)
+            client().delete_object(Bucket=bucket_for(key), Key=key)
         except Exception:  # noqa: BLE001 — already gone is the desired state
             logger.warning("Could not delete blob %s", key, exc_info=True)
             return False
@@ -414,25 +457,27 @@ def delete_keys(keys: list[str]) -> int:
 
 
 def delete_patient_blobs(patient_id: str) -> int:
-    """Everything still sitting under one patient's prefix. A sweep for
+    """Everything still sitting under one patient's prefixes. A sweep for
     orphans — bytes uploaded against a ticket whose row never confirmed —
     not the authoritative delete, which is ``delete_keys``."""
-    prefix = f"{PREFIX}/{patient_id}/"
+    return sum(_delete_prefix(f"{p}/{patient_id}/") for p in (PREFIX, PERSONAL_PREFIX))
+
+
+def _delete_prefix(prefix: str) -> int:
     if enabled_s3():
         from app.aws.storage import client
 
+        bucket = bucket_for(prefix)
         removed = 0
         token: str | None = None
         while True:
-            kwargs = {"Bucket": aws_settings.s3_bucket, "Prefix": prefix}
+            kwargs = {"Bucket": bucket, "Prefix": prefix}
             if token:
                 kwargs["ContinuationToken"] = token
             page = client().list_objects_v2(**kwargs)
             keys = [{"Key": row["Key"]} for row in page.get("Contents", [])]
             if keys:
-                client().delete_objects(
-                    Bucket=aws_settings.s3_bucket, Delete={"Objects": keys}
-                )
+                client().delete_objects(Bucket=bucket, Delete={"Objects": keys})
                 removed += len(keys)
             if not page.get("IsTruncated"):
                 return removed

@@ -15,6 +15,7 @@ from app.api import (
     webhooks,
     worklist,
 )
+from app.personal import api as personal
 
 api_router = APIRouter(prefix="/api")
 
@@ -36,3 +37,4 @@ api_router.include_router(care.router)
 api_router.include_router(plan.router)
 api_router.include_router(attachments.router)
 api_router.include_router(attachments.console_router)
+api_router.include_router(personal.router)

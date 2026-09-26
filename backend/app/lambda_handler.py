@@ -99,6 +99,25 @@ def _seed(event: dict) -> dict:
     return {"ok": True, "uploaded": uploaded, "counts": summary}
 
 
+def _personal_daily(event: dict) -> dict:
+    """The subscribers' morning run (app/personal/daily.py), invoked by the
+    EventBridge schedule. Holds the write lock like any mutating request:
+    it writes plans, thread lines and, when asked, texts."""
+    from app.database import SessionLocal
+    from app.personal import daily
+
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        db = SessionLocal()
+        try:
+            result = daily.run(db, text=bool(event.get("text", True)))
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False) if storage.is_dirty() else False
+    logger.info("Personal daily complete: %s (uploaded=%s)", result, uploaded)
+    return {"ok": True, "uploaded": uploaded, **result}
+
+
 def handler(event, context):
     # Function URL / API Gateway events always carry requestContext; a direct
     # invoke of an admin action never does.
@@ -106,6 +125,8 @@ def handler(event, context):
         action = event["action"]
         if action == "seed":
             return _seed(event)
+        if action == "personal_daily":
+            return _personal_daily(event)
         return {"ok": False, "error": f"Unknown action: {action}"}
 
     if not _origin_is_cloudfront(event):

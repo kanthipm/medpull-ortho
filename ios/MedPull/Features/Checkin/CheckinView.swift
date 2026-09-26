@@ -61,7 +61,7 @@ struct CheckinView: View {
             }
         }
         .ambientScreen()
-        .navigationTitle("Daily check-in")
+        .navigationTitle(app.isPersonal ? "Morning check-in" : "Daily check-in")
         .navigationBarTitleDisplayMode(.inline)
         .animation(stepMotion, value: step)
         .animation(doneMotion, value: done)
@@ -161,7 +161,8 @@ struct CheckinView: View {
 
     private var review: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(answered == 0 ? "Nothing answered yet" : "Here’s what goes to your care team")
+            Text(answered == 0 ? "Nothing answered yet"
+                 : app.isPersonal ? "Here’s what you’re logging" : "Here’s what goes to your care team")
                 .title(MPSize.displayS)
                 .accessibilityAddTraits(.isHeader)
             if answered == 0 {
@@ -262,7 +263,8 @@ struct CheckinView: View {
     }
 
     private var sendTitle: String {
-        answered == 0 ? "Send nothing for now" : "Send to my care team"
+        if answered == 0 { return app.isPersonal ? "Skip today" : "Send nothing for now" }
+        return app.isPersonal ? "Save" : "Send to my care team"
     }
 
     private func submit() {
@@ -469,6 +471,7 @@ private enum Pain {
 }
 
 private struct CheckinDoneView: View {
+    @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sealHidden = true
     @State private var landed = false
@@ -478,7 +481,7 @@ private struct CheckinDoneView: View {
             Spacer()
             // 54pt on the DISPLAY curve (1.69x at AX5), not the UI curve.
             seal
-            Text("Sent to your care team")
+            Text(app.isPersonal ? "Logged" : "Sent to your care team")
                 .title(MPSize.displayS)
                 .multilineTextAlignment(.center)
             Text("That’s today done. They’ll see it with their next review.")

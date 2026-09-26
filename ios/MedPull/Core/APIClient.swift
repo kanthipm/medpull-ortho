@@ -5,6 +5,8 @@ struct APIError: LocalizedError, Equatable {
     let detail: String
     var errorDescription: String? { detail }
     var isUnauthorized: Bool { status == 401 }
+    /// The personal tier's paywall: access has lapsed, the account is fine.
+    var isPaywalled: Bool { status == 402 }
 }
 
 /// One JSON client for /api/mobile. The session token is attached to every
@@ -43,6 +45,10 @@ final class APIClient {
 
     func post<T: Decodable>(_ path: String) async throws -> T {
         try await send("POST", path, query: [:], body: Optional<Empty>.none)
+    }
+
+    func patch<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
+        try await send("PATCH", path, query: [:], body: body)
     }
 
     private func send<T: Decodable, B: Encodable>(
@@ -99,8 +105,9 @@ final class APIClient {
     }
 
     /// The status check the JSON path applies, for the requests that build
-    /// their own URLRequest (an upload body, a file download).
-    fileprivate func check(_ response: URLResponse, _ data: Data) throws {
+    /// their own URLRequest (an upload body, a file download, the personal
+    /// export in PersonalAPI.swift).
+    func check(_ response: URLResponse, _ data: Data) throws {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if status == 0 {
             throw APIError(status: 0, detail: "Can't reach MedPull right now. Check your connection.")
@@ -124,7 +131,7 @@ final class APIClient {
         }
     }
 
-    fileprivate func delete<T: Decodable>(_ path: String) async throws -> T {
+    func delete<T: Decodable>(_ path: String) async throws -> T {
         try await send("DELETE", path, query: [:], body: Optional<Empty>.none)
     }
 
@@ -172,22 +179,26 @@ extension APIClient {
 
     struct EnrollBody: Encodable {
         let patientId: String; let hospitalId: String; let phone: String
+        let consent: ConsentAcceptance?
         let deviceName: String; let appVersion: String
     }
 
-    func enroll(patientId: String, hospitalId: String, phone: String) async throws -> EnrollResponse {
+    func enroll(patientId: String, hospitalId: String, phone: String,
+                consent: ConsentAcceptance? = nil) async throws -> EnrollResponse {
         try await post("/api/mobile/enroll", body: EnrollBody(
-            patientId: patientId, hospitalId: hospitalId, phone: phone,
+            patientId: patientId, hospitalId: hospitalId, phone: phone, consent: consent,
             deviceName: UIDeviceName.current, appVersion: AppConfig.appVersion))
     }
 
     struct VerifyBody: Encodable {
-        let verificationId: Int; let code: String; let deviceName: String; let appVersion: String
+        let verificationId: Int; let code: String
+        var consent: ConsentAcceptance? = nil
+        let deviceName: String; let appVersion: String
     }
 
-    func verify(verificationId: Int, code: String) async throws -> EnrollResponse {
+    func verify(verificationId: Int, code: String, consent: ConsentAcceptance? = nil) async throws -> EnrollResponse {
         try await post("/api/mobile/enroll/verify", body: VerifyBody(
-            verificationId: verificationId, code: code,
+            verificationId: verificationId, code: code, consent: consent,
             deviceName: UIDeviceName.current, appVersion: AppConfig.appVersion))
     }
 
@@ -206,17 +217,20 @@ extension APIClient {
         let hadSurgery: Bool
         let procedureType: String?
         let surgeryDate: String?
+        let consent: ConsentAcceptance?
         let deviceName: String
         let appVersion: String
     }
 
     func join(hospitalId: String, name: String, phone: String, dateOfBirth: Date?,
-              hadSurgery: Bool, procedureType: String?, surgeryDate: Date?) async throws -> EnrollResponse {
+              hadSurgery: Bool, procedureType: String?, surgeryDate: Date?,
+              consent: ConsentAcceptance? = nil) async throws -> EnrollResponse {
         try await post("/api/mobile/join", body: JoinBody(
             hospitalId: hospitalId, name: name, phone: phone,
             dateOfBirth: dateOfBirth.map(Dates.dayString),
             hadSurgery: hadSurgery, procedureType: hadSurgery ? procedureType : nil,
             surgeryDate: hadSurgery ? surgeryDate.map(Dates.dayString) : nil,
+            consent: consent,
             deviceName: UIDeviceName.current, appVersion: AppConfig.appVersion))
     }
 

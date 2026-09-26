@@ -70,6 +70,31 @@ class Settings(BaseSettings):
     # the team id is set, so a deployment without the app publishes nothing.
     ios_team_id: str = ""
     ios_bundle_id: str = "com.medpull.recovery"
+    # --- the personal tier (app/personal) ---------------------------------
+    # Every personal account starts on a trial this long; the paywall closes
+    # after it unless an Apple subscription is on file.
+    personal_trial_days: int = 14
+    # The App Store product ids the iOS app sells (comma separated). A signed
+    # transaction for any other product is refused.
+    personal_product_ids: str = (
+        "com.medpull.recovery.personal.monthly,com.medpull.recovery.personal.annual"
+    )
+    # How a StoreKit 2 signed transaction (JWS) is checked before it grants
+    # access. "strict" verifies the x5c chain to Apple's root and the ES256
+    # signature (needs the `cryptography` package and the pinned root below);
+    # "lenient" decodes the payload and checks bundle id, product and expiry
+    # only, recording the grant as unverified. Lenient is the default until
+    # App Store Connect is live, because Xcode's local StoreKit testing signs
+    # with a certificate Apple's chain cannot vouch for.
+    apple_subscription_verify: str = "lenient"  # strict | lenient
+    # Sandbox | Production: the environment a strict deployment accepts.
+    apple_environment: str = "Sandbox"
+    # SHA-256 of Apple Root CA - G3 (DER), the anchor a strict check pins.
+    # Confirm against https://www.apple.com/certificateauthority/ before
+    # turning strict mode on.
+    apple_root_ca_g3_sha256: str = (
+        "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179"
+    )
     # Local Ollama is OPT-IN (cloud-first product direction): leave the URL
     # empty and the chain is Groq -> deterministic fallback. Set OLLAMA_URL
     # explicitly to use a local model as the middle tier.

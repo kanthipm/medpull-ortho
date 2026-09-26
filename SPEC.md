@@ -41,6 +41,16 @@ Markers used below:
 | 9. Practice overview | Built | Five numbers, every one of them from `GET /api/practice/overview`. |
 | Future integrations | Partly built | The Junction wearable aggregator is live end to end: one Junction account per patient issued from the patient record, a hosted Link page for the patient, Svix-verified webhooks for summaries and timeseries, automatic and on-demand back-fill, and disconnect — all through the same connector interface, webhook path, idempotent upsert and capability map. Oura, Fitbit/Google Health, Garmin, WHOOP, Withings, Polar and Dexcom connect this way. Apple Health and Android Health Connect need Junction's mobile SDK inside a patient app, which is not built; Terra stays scaffolded; EHR, PT platforms and patient portals are not started. Junction passes no Apple gait metrics through, so those stay demo-only. |
 
+## Beside this spec: MedPull Personal
+
+Since 2026-09-25 the same app also carries a consumer subscription tier for
+people who are not a hospital's patient (training, sleep, recovery on their
+own). It reuses this platform's wearable stream, engine and copilot but is a
+separate product with its own rows, screens, storage bucket and words; it is
+specified in [docs/personal-tier.md](docs/personal-tier.md), not here. A
+subscriber never appears on a provider worklist, and a person who is both a
+patient and a subscriber holds two paired rows and switches between them.
+
 ## CPT code reference
 
 Source: Centers for Medicare & Medicaid Services.

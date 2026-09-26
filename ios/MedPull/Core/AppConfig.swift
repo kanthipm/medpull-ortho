@@ -26,4 +26,15 @@ enum AppConfig {
     static var appVersion: String {
         (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"
     }
+
+    #if DEBUG
+    /// A verification knob, from the environment or a launch argument
+    /// (`xcrun simctl launch <device> <bundle> -MP_TAB stats`, which lands
+    /// in the argument domain of UserDefaults). Debug builds only.
+    static func debugFlag(_ name: String) -> String? {
+        if let value = ProcessInfo.processInfo.environment[name], !value.isEmpty { return value }
+        if let value = UserDefaults.standard.string(forKey: name), !value.isEmpty { return value }
+        return nil
+    }
+    #endif
 }

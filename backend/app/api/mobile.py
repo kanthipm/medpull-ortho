@@ -289,6 +289,11 @@ def _message_view(
 
 
 def _wearable_summary(db: Session, patient: Patient) -> dict[str, Any]:
+    from app.personal.scope import data_patient
+
+    # A personal space paired with a chart reads the chart's stream, so the
+    # devices and connection it reports are the chart's.
+    patient = data_patient(db, patient)
     conn = junction_connector().connection_for(db, patient.id)
     apple = next(
         (d for d in patient.devices if str(d.source_provider) == "apple" and d.status != "revoked"),
@@ -315,6 +320,9 @@ def _wearable_summary(db: Session, patient: Patient) -> dict[str, Any]:
 def _signal_days(db: Session, patient_id: str, days: int = 14) -> int:
     """Distinct days in the window with at least one portfolio metric stored,
     whatever the engine makes of them. What the patient has actually shared."""
+    owner = db.get(Patient, patient_id)
+    if owner is not None and owner.observations_from:
+        patient_id = owner.observations_from
     since = date.today() - timedelta(days=days - 1)
     wanted = []
     for key, *_ in PORTFOLIO_METRICS:
@@ -355,6 +363,22 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
     postop = analytics.get("postop_day")
     if postop is None:
         postop = (date.today() - patient.surgery_date).days
+    from app.personal import auth as personal_auth
+    from app.personal import identity as personal_identity
+    from app.personal import subscription as personal_subscription
+    from app.personal.scope import is_personal
+
+    personal = is_personal(patient)
+    email = None
+    if personal:
+        # A subscriber's tier and blurb come from their readouts, not the
+        # clinic risk engine; the app reads /mobile/personal/dashboard for
+        # the real thing and this stays a light status line.
+        label, blurb = "Your space", "Your readouts, plan and coach live here."
+        from app.models.personal import PersonalCredential
+
+        credential = db.get(PersonalCredential, patient.id)
+        email = credential.email if credential else None
     return {
         "patient": {
             "id": patient.id,
@@ -363,7 +387,9 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
             "initials": patient.initials,
             # recovery: had surgery, followed along a recovery curve.
             # general: joined their hospital's programme; no operation.
-            "mode": "recovery" if surgical else "general",
+            # personal: a subscriber's own space (app/personal).
+            "mode": "personal" if personal else "recovery" if surgical else "general",
+            "account_kind": "personal" if personal else "clinic",
             "procedure_display": patient.procedure_display,
             "surgery_date": patient.surgery_date.isoformat() if surgical else None,
             "joined_date": patient.surgery_date.isoformat(),
@@ -371,8 +397,10 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
             "days_enrolled": postop,
             "care_pathway": patient.care_pathway,
             "phone_masked": _mask_phone(patient.phone),
+            # The login email, for a personal space; a chart has none.
+            "email": email,
             "hospital": _hospital_view(patient.hospital),
-            "care_team": [
+            "care_team": [] if personal else [
                 {"name": patient.surgeon.name, "role": str(patient.surgeon.role)},
                 *(
                     [{"name": patient.assigned_provider.name,
@@ -382,6 +410,14 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
                 ),
             ],
         },
+        # The spaces this person can move between (a chart and its paired
+        # personal space), and the subscription state when this is the
+        # personal one.
+        "profiles": personal_identity.profiles_view(db, patient),
+        "subscription": personal_subscription.status(db, patient) if personal else None,
+        # The beta consent on file (app/personal/auth.py): the app shows the
+        # form again when the version moved or nothing was ever accepted.
+        "consent": personal_auth.consent_view(db, patient),
         "recovery": {
             "level": str(level),
             "label": label,
@@ -400,6 +436,10 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
             "sms": sendblue.configured(),
             "apple_health": junction_connector().is_configured(),
             "deep_link_scheme": settings.mobile_app_scheme,
+            # The whole app is a beta while these are true; the app says so
+            # in onboarding and Profile.
+            "beta": True,
+            "consent_version": personal_auth.CONSENT_VERSION,
         },
     }
 
@@ -483,11 +523,37 @@ def patient_search(body: SearchBody, db: Session = Depends(get_db)) -> dict:
                                             body.date_of_birth)}
 
 
+class ConsentAcceptance(BaseModel):
+    """The beta consent, accepted before the account exists (app/personal/auth.py)."""
+
+    version: str
+    scopes: dict[str, bool] = Field(default_factory=dict)
+    signature: str | None = Field(default=None, max_length=120)
+
+
+def _record_consent(db: Session, patient: Patient, consent: ConsentAcceptance | None,
+                    device_name: str | None, app_version: str | None) -> None:
+    """A hospital patient's acceptance, when the app sent one. Optional
+    here: a clinic enrolment predates the form and must keep working."""
+    if consent is None:
+        return
+    from app.personal import auth as personal_auth
+
+    try:
+        personal_auth.record_consent(db, patient, version=consent.version, scopes=consent.scopes,
+                                     signature=consent.signature, device_name=device_name,
+                                     app_version=app_version)
+        db.commit()
+    except personal_auth.AuthError as e:
+        raise HTTPException(status_code=e.status, detail=e.detail)
+
+
 class EnrollBody(BaseModel):
     patient_id: str
     hospital_id: str
     phone: str
     date_of_birth: date | None = None
+    consent: ConsentAcceptance | None = None
     device_name: str | None = None
     app_version: str | None = None
 
@@ -541,6 +607,9 @@ def _claim_phone(db: Session, patient: Patient, phone: str, *, verified: bool) -
     others = db.scalars(
         select(Patient).where(Patient.phone == phone, Patient.id != patient.id)
     ).all()
+    # A chart and its paired personal space share one number on purpose
+    # (app/personal/identity.py); neither may take it off the other.
+    others = [o for o in others if o.id != patient.linked_patient_id]
     if others and not verified:
         raise HTTPException(
             status_code=409,
@@ -611,6 +680,7 @@ def enroll(body: EnrollBody, db: Session = Depends(get_db)) -> dict:
     token = _issue_session(db, patient, body.device_name, body.app_version)
     if first:
         _welcome(db, patient)
+    _record_consent(db, patient, body.consent, body.device_name, body.app_version)
     return {"status": "enrolled", "verified": False, "session_token": token,
             "me": me_view(db, patient)}
 
@@ -618,6 +688,7 @@ def enroll(body: EnrollBody, db: Session = Depends(get_db)) -> dict:
 class VerifyBody(BaseModel):
     verification_id: int
     code: str = Field(min_length=4, max_length=8)
+    consent: ConsentAcceptance | None = None
     device_name: str | None = None
     app_version: str | None = None
 
@@ -644,6 +715,7 @@ def verify(body: VerifyBody, db: Session = Depends(get_db)) -> dict:
     token = _issue_session(db, patient, body.device_name, body.app_version)
     if first:
         _welcome(db, patient)
+    _record_consent(db, patient, body.consent, body.device_name, body.app_version)
     return {"status": "enrolled", "verified": True, "session_token": token,
             "me": me_view(db, patient)}
 
@@ -662,6 +734,7 @@ class JoinBody(BaseModel):
     had_surgery: bool = False
     procedure_type: str | None = None
     surgery_date: date | None = None
+    consent: ConsentAcceptance | None = None
     device_name: str | None = None
     app_version: str | None = None
 
@@ -703,6 +776,15 @@ def join(body: JoinBody, db: Session = Depends(get_db)) -> dict:
     if phone is None:
         raise HTTPException(status_code=422, detail="Enter a valid mobile number")
     holder = tasks.patient_for_phone(db, phone)
+    if holder is not None and (holder.account_kind or "clinic") == "personal":
+        # The number belongs to a personal space. Joining a hospital keeps
+        # that space and pairs the new record with it, which is an
+        # authenticated call from inside the app (personal/link-hospital).
+        raise HTTPException(
+            status_code=409,
+            detail="That number is on a MedPull Personal account — sign in to it and add your "
+            "hospital from Profile",
+        )
     if holder is not None:
         # The person is already on a roster (they enrolled before, or a
         # clinician created their chart with this number). The app reads
@@ -761,6 +843,7 @@ def join(body: JoinBody, db: Session = Depends(get_db)) -> dict:
     patient.phone = phone
     token = _issue_session(db, patient, body.device_name, body.app_version)
     _welcome(db, patient)
+    _record_consent(db, patient, body.consent, body.device_name, body.app_version)
     return {"status": "enrolled", "verified": False, "session_token": token,
             "me": me_view(db, patient)}
 
@@ -920,7 +1003,24 @@ def agent(
     from app.agent.copilot import respond
 
     channel = body.channel if body.channel in ("app", "voice") else "app"
-    result = respond(db, patient, body.text, channel=channel)
+    from app.personal.scope import is_personal
+
+    if is_personal(patient):
+        # A subscriber talks to the coach: same machinery, its own voice,
+        # the day's readouts in context, nobody to alert.
+        from app.personal import coach, identity as personal_identity
+        from app.personal.data import load_personal_data
+        from app.personal.metrics import compute_dashboard
+
+        profile = personal_identity.profile_of(db, patient)
+        board = None
+        try:
+            board = compute_dashboard(load_personal_data(db, patient), patient, profile)
+        except Exception:  # noqa: BLE001 — the coach answers without numbers if it must
+            logger.exception("dashboard for coach failed for %s", patient.id)
+        result = coach.respond(db, patient, profile, board, body.text, channel=channel)
+    else:
+        result = respond(db, patient, body.text, channel=channel)
     return {**result, "tasks_open": len(tasks.open_tasks(db, patient.id))}
 
 
@@ -938,8 +1038,12 @@ def apple_session(patient: Patient = Depends(current_patient), db: Session = Dep
     SDK in the app. The team API key stays here; the app only ever sees a
     token scoped to its own user."""
     _require_configured()
+    from app.personal.scope import data_patient_id
+
+    # The phone signs the Health SDK into the aggregator user of the row that
+    # owns the stream: for a paired personal space, the clinic chart.
     try:
-        return junction_connector().create_sign_in_token(db, patient.id)
+        return junction_connector().create_sign_in_token(db, data_patient_id(patient))
     except (JunctionError, ValueError) as e:
         _raise_for(e)
 
@@ -951,16 +1055,19 @@ def wearables_refresh(
     """After the Health SDK connects, ask Junction what it now reports for
     the user so the Apple Health device row exists before the first webhook
     (which a laptop deployment never receives)."""
+    from app.personal.scope import data_patient
+
+    owner = data_patient(db, patient)
     connector = junction_connector()
-    conn = connector.connection_for(db, patient.id)
+    conn = connector.connection_for(db, owner.id)
     error: str | None = None
     if conn is not None and conn.status != ConnectionStatus.DISCONNECTED and connector.is_configured():
         try:
-            connector.sync_providers(db, patient.id)
+            connector.sync_providers(db, owner.id)
         except (JunctionError, ValueError) as e:
             error = str(e)
-        db.refresh(patient)
-    return {**_wearables_view(db, patient, error), "summary": _wearable_summary(db, patient)}
+        db.refresh(owner)
+    return {**_wearables_view(db, owner, error), "summary": _wearable_summary(db, patient)}
 
 
 @router.post("/wearables/link")
@@ -968,9 +1075,12 @@ def wearable_link(patient: Patient = Depends(current_patient), db: Session = Dep
     """A Junction Link for a cloud wearable (Oura, Garmin, WHOOP...). The
     hosted page hands back to the app through its URL scheme."""
     _require_configured()
+    from app.personal.scope import data_patient_id
+
     redirect = f"{settings.mobile_app_scheme}://wearables/connected"
     try:
-        session = junction_connector().create_link(db, patient.id, redirect_url=redirect)
+        session = junction_connector().create_link(db, data_patient_id(patient),
+                                                   redirect_url=redirect)
     except (JunctionError, ValueError) as e:
         _raise_for(e)
     return {"link_url": session.url, "expires_at": session.expires_at}
@@ -987,7 +1097,7 @@ def progress(
     since = date.today() - timedelta(days=days - 1)
     rows = db.scalars(
         select(Observation).where(
-            Observation.patient_id == patient.id,
+            Observation.patient_id == (patient.observations_from or patient.id),
             Observation.metric_type.in_([MetricType.STEPS, MetricType.SLEEP_DURATION]),
             Observation.local_date >= since,
             Observation.deleted_at.is_(None),
@@ -1038,6 +1148,8 @@ PORTFOLIO_METRICS: list[tuple[str, str, str, str]] = [
     ("bp_diastolic", "Blood pressure (diastolic)", "mmHg", "mean"),
     ("blood_glucose", "Blood glucose", "mg/dL", "mean"),
     ("pain_nrs", "Pain", "/10", "last"),
+    ("vo2_max", "VO2 max", "mL/kg/min", "last"),
+    ("hr_recovery_1min", "Heart rate recovery", "bpm", "mean"),
 ]
 
 
@@ -1059,7 +1171,7 @@ def portfolio(
             continue
     rows = db.scalars(
         select(Observation).where(
-            Observation.patient_id == patient.id,
+            Observation.patient_id == (patient.observations_from or patient.id),
             Observation.metric_type.in_([m for m, *_ in wanted]),
             Observation.local_date >= since,
             Observation.deleted_at.is_(None),
@@ -1121,6 +1233,10 @@ GAIT_UNITS: dict[MetricType, str] = {
     MetricType.STAIR_SPEED_UP: "m/s",
     MetricType.STAIR_SPEED_DOWN: "m/s",
     MetricType.SIX_MIN_WALK: "m",
+    # The athlete fitness signals (app/personal): Apple's VO2 max estimate and
+    # one-minute heart-rate recovery, HealthKit-only like the gait metrics.
+    MetricType.VO2_MAX: "mL/kg/min",
+    MetricType.HR_RECOVERY_1MIN: "bpm",
 }
 MAX_GAIT_ROWS = 400
 
@@ -1167,7 +1283,9 @@ def upload_gait(
             continue
         rows.append(
             CanonicalObservation(
-                patient_id=patient.id,
+                # Into the stream this row reads: a paired personal space
+                # writes its phone's walking data onto the chart.
+                patient_id=patient.observations_from or patient.id,
                 source_provider=SourceProvider.APPLE,
                 metric_type=metric,
                 unit=unit,
@@ -1185,7 +1303,7 @@ def upload_gait(
     if ingested or updated:
         from app.engine.pipeline import run_patient
 
-        run_patient(db, patient.id)
+        run_patient(db, patient.observations_from or patient.id)
     return {
         "ingested": ingested,
         "updated": updated,

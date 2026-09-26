@@ -40,6 +40,17 @@ struct Me: Codable {
     let unreadMessages: Int
     let wearables: WearableSummary
     let features: Features
+    /// The spaces this person can move between (a hospital record and its
+    /// paired personal space). Absent from an older server.
+    let profiles: [SpaceProfile]?
+    /// The personal tier's access state; nil on a hospital record.
+    let subscription: SubscriptionState?
+    /// Whether the beta consent has been accepted at its current version.
+    let consent: ConsentStatus?
+
+    var isPersonal: Bool { patient.isPersonal }
+    var needsConsent: Bool { consent?.needsConsent ?? false }
+    var otherSpace: SpaceProfile? { profiles?.first { !$0.current } }
 }
 
 struct PatientProfile: Codable {
@@ -47,9 +58,12 @@ struct PatientProfile: Codable {
     let name: String
     let firstName: String
     let initials: String
-    /// "recovery" (had surgery, followed along a curve) or "general" (joined
-    /// the hospital's programme; no operation).
+    /// "recovery" (had surgery, followed along a curve), "general" (joined
+    /// the hospital's programme; no operation) or "personal" (a subscriber's
+    /// own space, no hospital).
     let mode: String
+    /// "clinic" or "personal". Absent from an older server (clinic).
+    let accountKind: String?
     let procedureDisplay: String
     let surgeryDate: String?
     let joinedDate: String
@@ -57,10 +71,13 @@ struct PatientProfile: Codable {
     let daysEnrolled: Int
     let carePathway: String?
     let phoneMasked: String?
+    /// The login email of a personal space; nil on a hospital record.
+    let email: String?
     let hospital: Hospital?
     let careTeam: [CareTeamMember]
 
     var isRecovery: Bool { mode == "recovery" }
+    var isPersonal: Bool { mode == "personal" || accountKind == "personal" }
 }
 
 struct Procedure: Codable, Identifiable, Hashable {
@@ -266,6 +283,20 @@ struct Features: Codable {
     let sms: Bool
     let appleHealth: Bool
     let deepLinkScheme: String
+    /// The whole app is a beta while this is true; onboarding and Profile say so.
+    let beta: Bool?
+    let consentVersion: String?
+
+    var isBeta: Bool { beta ?? true }
+}
+
+/// The beta consent on file for this account, as `/me` reports it.
+struct ConsentStatus: Codable, Hashable {
+    let version: String?
+    let acceptedAt: String?
+    let scopes: [String: Bool]?
+    let currentVersion: String
+    let needsConsent: Bool
 }
 
 struct Question: Codable, Identifiable, Hashable {

@@ -140,13 +140,19 @@ def claim(db: Session, patient: Patient, attachment_ids: list[int], message: Mes
 # --- minting, confirming, reading: shared by both callers -------------------------
 
 
+def _personal(patient: Patient) -> bool:
+    """A subscriber's files go under the personal prefix, and so into the
+    personal bucket where the deployment has one."""
+    return (getattr(patient, "account_kind", None) or "clinic") == "personal"
+
+
 def _ticket(patient: Patient, content_type: str, byte_size: int) -> dict[str, Any]:
     try:
         content_type = blobs.check_type(content_type)
         blobs.check_size(byte_size)
     except blobs.BlobError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    key = blobs.new_key(patient.id, content_type)
+    key = blobs.new_key(patient.id, content_type, personal=_personal(patient))
     ticket = blobs.upload_ticket(key, content_type)
     if ticket is None:
         # No object store to send the bytes to: this deployment takes them.
@@ -179,7 +185,7 @@ def _confirm(
         raise HTTPException(status_code=422, detail=str(e))
     # The key must be one we minted for this patient. Without this check a
     # caller could confirm a row against any object in the bucket.
-    if not storage_key.startswith(f"{blobs.PREFIX}/{patient.id}/"):
+    if not blobs.owned_by(storage_key, patient.id):
         raise HTTPException(status_code=403, detail="That upload does not belong to this patient")
     if db.scalar(select(Attachment.id).where(Attachment.storage_key == storage_key)):
         raise HTTPException(status_code=409, detail="That upload was already confirmed")
@@ -240,7 +246,8 @@ def _store_body(
     try:
         blobs.check_size(len(data))
         blobs.sniff(data[:1024], checked)
-        stored = blobs.put(blobs.new_key(patient.id, checked), data, checked)
+        stored = blobs.put(blobs.new_key(patient.id, checked, personal=_personal(patient)),
+                           data, checked)
     except blobs.BlobError as e:
         raise HTTPException(status_code=422, detail=str(e))
 

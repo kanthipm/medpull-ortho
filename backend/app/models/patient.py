@@ -46,6 +46,27 @@ class Patient(Base):
     # Which care pathway the engine scores this patient against ("ortho_tka",
     # "heart_failure", "copd", ...). NULL derives it from procedure_type.
     care_pathway: Mapped[str | None] = mapped_column(String, nullable=True)
+    # --- the personal tier (app/personal) ---
+    # "clinic": a chart on a hospital roster, followed by a care team (every
+    # row before the personal tier existed). "personal": a subscriber's own
+    # profile — no hospital, no care team, never on a worklist. The console
+    # enumerates rosters through app.personal.scope.clinic_patients(), which
+    # is what keeps the two apart.
+    account_kind: Mapped[str] = mapped_column(String, default="clinic")
+    # One person, two rows: a clinic chart and its personal profile point at
+    # each other here, so the app can switch between them and the personal
+    # side can read the chart's wearable stream (see observations_from).
+    linked_patient_id: Mapped[str | None] = mapped_column(
+        ForeignKey("patients.id"), nullable=True
+    )
+    # When set, this row has no wearable stream of its own: readers resolve
+    # observations through app.personal.scope.data_patient_id(), which returns
+    # this id. Set on a personal profile linked to a clinic chart, because the
+    # phone's Health SDK can be signed into one aggregator user at a time and
+    # the chart is the one the care team is watching.
+    observations_from: Mapped[str | None] = mapped_column(
+        ForeignKey("patients.id"), nullable=True
+    )
 
     surgeon: Mapped[CareTeamMember] = relationship(foreign_keys=[surgeon_id])
     hospital = relationship("Hospital")

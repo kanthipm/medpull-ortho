@@ -286,6 +286,32 @@ def test_seed_action_runs_under_the_lock_and_uploads(monkeypatch, tmp_path):
     assert aws_settings.s3_lock_key not in fake.objects  # released
 
 
+def test_personal_daily_action_runs_under_the_lock_and_uploads(monkeypatch, tmp_path):
+    """The subscribers' morning run (app/personal/daily.py) is a mutating
+    admin action like the seed: lock, hydrate, run, persist, release."""
+    handler, fake = _import_handler(monkeypatch, tmp_path)
+
+    seen = {}
+
+    def fake_run(db, today=None, *, text=True):
+        seen["text"] = text
+        assert aws_settings.s3_lock_key in fake.objects, "daily run ran without the write lock"
+        # A real run commits; the dirty flag is what triggers the upload.
+        storage.mark_dirty()
+        aws_settings.local_db_path.write_bytes(b"morning-plans")
+        return {"date": "2026-09-25", "done": ["ada-me"], "skipped": [], "texted": 1}
+
+    monkeypatch.setattr("app.personal.daily.run", fake_run)
+
+    result = handler.handler({"action": "personal_daily", "text": False}, None)
+
+    assert result["ok"] is True and result["uploaded"] is True
+    assert result["done"] == ["ada-me"] and result["texted"] == 1
+    assert seen["text"] is False
+    assert fake.objects[aws_settings.s3_db_key] == b"morning-plans"
+    assert aws_settings.s3_lock_key not in fake.objects  # released
+
+
 def test_unknown_admin_action_is_reported(monkeypatch, tmp_path):
     handler, _ = _import_handler(monkeypatch, tmp_path)
     result = handler.handler({"action": "drop-everything"}, None)

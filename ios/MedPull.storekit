@@ -1,0 +1,91 @@
+{
+  "identifier" : "8B2C6D4E-5F10-4A3B-9C7D-1E2F3A4B5C6D",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6740000000",
+    "_developerTeamID" : "2DFDVFGSH3",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 780000000,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21600001",
+      "localizations" : [
+
+      ],
+      "name" : "MedPull Personal",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "9.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6740000001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Readiness, load, sleep and a coach, every day.",
+              "displayName" : "MedPull Personal Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.medpull.recovery.personal.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Personal Monthly",
+          "subscriptionGroupID" : "21600001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "79.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6740000002",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Readiness, load, sleep and a coach, every day. One payment a year.",
+              "displayName" : "MedPull Personal Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.medpull.recovery.personal.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Personal Yearly",
+          "subscriptionGroupID" : "21600001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

@@ -144,6 +144,30 @@ Parameters:
       Optional. ARN of an ISSUED ACM certificate covering CustomDomainName.
       Must be in us-east-1 — CloudFront accepts certificates from nowhere else.
 
+  AppleSubscriptionVerify:
+    Type: String
+    Default: lenient
+    AllowedValues: [lenient, strict]
+    Description: >-
+      How the personal tier checks a StoreKit 2 signed transaction before it
+      grants access (app/personal/subscription.py). "lenient" decodes and
+      checks bundle id, product and expiry — what a deployment without App
+      Store Connect needs, and the only mode Xcode's local StoreKit testing can
+      pass. "strict" verifies the certificate chain to Apple's root and the
+      signature; switch to it once real App Store transactions flow.
+  AppleEnvironment:
+    Type: String
+    Default: Sandbox
+    AllowedValues: [Sandbox, Production]
+    Description: Which App Store environment a strict check accepts.
+  PersonalDailyCron:
+    Type: String
+    Default: "cron(0 12 * * ? *)"
+    Description: >-
+      When the personal tier's morning run fires (UTC): today's plan, the
+      brief on each subscriber's thread, and a text for those who asked. The
+      default is 12:00 UTC, 7am US Central / 8am Eastern.
+
   BudgetAlertEmail:
     Type: String
     Default: ""
@@ -235,6 +259,85 @@ Resources:
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
 
+  # ------------------------------------------------------------------
+  # The personal tier's bucket: subscribers' files and data exports.
+  # Deliberately its own bucket rather than a prefix in DataBucket, so a
+  # hospital's patient files and a consumer's never share a policy, a
+  # lifecycle rule or an access log, and either can be audited, moved or
+  # deleted without touching the other. Never served by CloudFront: every
+  # read is a presigned URL minted after the API has checked the session.
+  # ------------------------------------------------------------------
+  PersonalDataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      CorsConfiguration:
+        # The app uploads a photo straight to S3 with a presigned POST.
+        CorsRules:
+          - Id: personal-uploads
+            AllowedMethods: [PUT, POST, GET, HEAD]
+            AllowedOrigins: !If
+              - HasCustomDomain
+              - - https://*.cloudfront.net
+                - !Sub "https://${CustomDomainName}"
+                - http://localhost:5173
+              - - https://*.cloudfront.net
+                - http://localhost:5173
+            AllowedHeaders: [content-type]
+            ExposedHeaders: [ETag]
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          # A withdrawn file is a promise to a subscriber: one day of
+          # recoverability, like the clinic attachments.
+          - Id: expire-deleted-personal-files
+            Status: Enabled
+            Prefix: personal/
+            NoncurrentVersionExpirationInDays: 1
+            ExpiredObjectDeleteMarker: true
+          # Data exports are minted for a five-minute link; a week is plenty.
+          - Id: expire-exports
+            Status: Enabled
+            Prefix: personal/
+            TagFilters:
+              - Key: kind
+                Value: export
+            ExpirationInDays: 7
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  PersonalDataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PersonalDataBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt PersonalDataBucket.Arn
+              - !Sub "${PersonalDataBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
   DataBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -302,6 +405,20 @@ Resources:
                   - s3:PutObject
                   - s3:DeleteObject
                 Resource: !Sub "${DataBucket.Arn}/attachments/*"
+              - Effect: Allow
+                # The personal tier's files (app/storage/blobs.py routes keys
+                # under personal/ to this bucket). Its own statement on its
+                # own bucket: the clinic grant above cannot reach it and this
+                # one cannot reach the clinic's.
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${PersonalDataBucket.Arn}/personal/*"
+              - Effect: Allow
+                # The orphan sweep lists a subscriber's prefix before deleting it.
+                Action: s3:ListBucket
+                Resource: !GetAtt PersonalDataBucket.Arn
               - Effect: Allow
                 # Without ListBucket, S3 answers a HEAD for a missing key with
                 # 403 instead of 404, and the "database not seeded yet" path
@@ -380,6 +497,11 @@ Resources:
           S3_BUCKET: !Ref DataBucket
           S3_DB_KEY: db/recovery.db
           S3_LOCK_KEY: db/recovery.db.lock
+          # The personal tier (app/personal): where subscribers' files go,
+          # and how their App Store transactions are checked.
+          PERSONAL_S3_BUCKET: !Ref PersonalDataBucket
+          APPLE_SUBSCRIPTION_VERIFY: !Ref AppleSubscriptionVerify
+          APPLE_ENVIRONMENT: !Ref AppleEnvironment
           ORIGIN_VERIFY_SECRET: !Ref OriginVerifySecret
           GROQ_API_KEY_PARAMETER: !Ref GroqApiKeyParameter
           GROQ_MODEL: !Ref GroqModel
@@ -456,6 +578,33 @@ Resources:
           # cover it — but stay under the 900s timeout above, or a seed the
           # runtime kills leaves a lock no later writer is allowed to break.
           LOCK_TTL_SECONDS: "840"
+
+  # ------------------------------------------------------------------
+  # The personal tier's morning run, on a schedule. The same API function is
+  # invoked directly with {"action": "personal_daily"}; the handler takes the
+  # write lock, writes every subscriber's plan and brief, texts those who
+  # asked, and uploads the database once. One invocation a day sits well
+  # inside the free tier; EventBridge rules are free.
+  # ------------------------------------------------------------------
+  PersonalDailyRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${AWS::StackName}-personal-daily"
+      Description: MedPull Personal morning run (plans, briefs, texts)
+      ScheduleExpression: !Ref PersonalDailyCron
+      State: ENABLED
+      Targets:
+        - Id: api
+          Arn: !GetAtt ApiFunction.Arn
+          Input: '{"action": "personal_daily", "text": true}'
+
+  PersonalDailyPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt PersonalDailyRule.Arn
 
   ApiFunctionUrl:
     Type: AWS::Lambda::Url
@@ -638,6 +787,9 @@ Outputs:
     Value: !GetAtt Distribution.DomainName
   DataBucketName:
     Value: !Ref DataBucket
+  PersonalDataBucketName:
+    Description: Subscribers' files and exports (the personal tier); never served by CloudFront.
+    Value: !Ref PersonalDataBucket
   ApiFunctionName:
     Value: !Ref ApiFunction
   SeedFunctionName:

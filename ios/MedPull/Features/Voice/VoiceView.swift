@@ -22,7 +22,11 @@ struct VoiceView: View {
 
     /// Starters that FILL the field, never send it. A tapped "my pain is a
     /// 4" that went straight to the chart would be a pain score nobody gave.
-    private let starters = ["My pain is a 4", "I did my exercises", "Tell my nurse the swelling is down"]
+    private var starters: [String] {
+        app.isPersonal
+            ? ["Why is my readiness low?", "I ran 45 minutes, RPE 7", "Energy is a 6 today"]
+            : ["My pain is a 4", "I did my exercises", "Tell my nurse the swelling is down"]
+    }
 
     var body: some View {
         NavigationStack {
@@ -61,7 +65,7 @@ struct VoiceView: View {
                 .mpComposerBar { controls }
             }
             .ambientScreen()
-            .navigationTitle("Talk")
+            .navigationTitle(app.isPersonal ? "Coach" : "Talk")
             .navigationBarTitleDisplayMode(.inline)
             .mpErrorFeedback(error)
         }
@@ -72,10 +76,12 @@ struct VoiceView: View {
         VStack(spacing: 14) {
             IconTile("waveform", family: .blue, size: 56)
             VStack(spacing: 6) {
-                Text("Talk to MedPull").mpFont(.subheadSemibold).foregroundStyle(MP.ink)
+                Text(app.isPersonal ? "Talk to your coach" : "Talk to MedPull").mpFont(.subheadSemibold).foregroundStyle(MP.ink)
                 // `body` on the ambient wash: 6.37:1 light / 6.52:1 dark at
                 // its densest.
-                Text("Tap the mic and say how you’re doing. We’ll log it, and pass anything important to your care team.")
+                Text(app.isPersonal
+                     ? "Tap the mic and ask about any of your numbers, or say how you’re doing. Your coach knows today’s readouts."
+                     : "Tap the mic and say how you’re doing. We’ll log it, and pass anything important to your care team.")
                     .mpFont(.copy).foregroundStyle(MP.body)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
