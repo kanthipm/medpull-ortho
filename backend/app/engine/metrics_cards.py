@@ -49,11 +49,45 @@ CARD_ORDER: list[tuple[M, str, str, bool]] = [
     (M.ROM_ABDUCTION, "Abduction (ROM)", "°", False),
     (M.EXERCISE_SESSION, "Exercise minutes", "min", False),
     (M.ACTIVE_ENERGY, "Active energy", "kcal", False),
+    (M.CALORIES, "Total calories", "kcal", False),
     (M.STRESS_INDEX, "Stress index", "score", True),
     # variant statistics: charted only when the canonical series is absent
     (M.HRV_SDNN, "HRV (SDNN)", "ms", False),
     (M.SKIN_TEMP_DELTA, "Skin temperature change", "°C", True),
 ]
+
+# Where a metric comes from, for the card a patient has never produced: the
+# clinician sees the whole panel and what would fill each gap.
+WEARABLE = "Comes from the patient's wearable once it is connected and worn."
+GUIDED_WALK = ("Measured by the guided walk in the MedPull app (an iPhone carried in a pocket "
+               "also reports Apple's estimate).")
+SOURCE_HINT: dict[M, str] = {
+    M.STEPS: WEARABLE, M.RESTING_HR: WEARABLE, M.HRV_RMSSD: WEARABLE, M.HRV_SDNN: WEARABLE,
+    M.SLEEP_DURATION: "Comes from the wearable when it is worn overnight.",
+    M.SKIN_TEMP: "Comes from a wearable with a skin-temperature sensor, worn overnight.",
+    M.SKIN_TEMP_DELTA: "Comes from a wearable with a skin-temperature sensor, worn overnight.",
+    M.SPO2: "Comes from a wearable with a blood-oxygen sensor, worn overnight.",
+    M.RESPIRATORY_RATE: "Comes from the wearable when it is worn overnight.",
+    M.WALKING_SPEED: GUIDED_WALK, M.WALKING_ASYMMETRY_PCT: GUIDED_WALK, M.STEP_LENGTH: GUIDED_WALK,
+    M.CADENCE: "Measured by the guided walk in the MedPull app.",
+    M.DOUBLE_SUPPORT_PCT: GUIDED_WALK, M.WALKING_STEADINESS: GUIDED_WALK,
+    M.STAIR_SPEED_UP: "Measured when a walk recorded in the app includes a flight of stairs "
+                      "(an Apple Watch also reports its estimate).",
+    M.STAIR_SPEED_DOWN: "Measured when a walk recorded in the app includes a flight of stairs "
+                        "(an Apple Watch also reports its estimate).",
+    M.SIX_MIN_WALK: "Measured by the six-minute walk test in the MedPull app.",
+    M.ROM_FLEXION: "Measured by the range-of-motion test in the MedPull app.",
+    M.ROM_EXTENSION: "Measured by the range-of-motion test in the MedPull app (knee: straighten).",
+    M.ROM_ABDUCTION: "Measured by the range-of-motion test in the MedPull app (shoulder: raise sideways).",
+    M.EXERCISE_SESSION: "Comes from workouts on the wearable or a guided walk in the app.",
+    M.ACTIVE_ENERGY: WEARABLE, M.CALORIES: WEARABLE,
+    M.STRESS_INDEX: "Derived once the wearable has reported HRV or resting heart rate on three "
+                    "days in the last six weeks.",
+}
+# Readings the sparkline keeps: the last two weeks, or the last eight readings
+# when the metric is measured less often than daily (a weekly test would
+# otherwise draw one point).
+MIN_SPARKLINE_POINTS = 8
 
 # A device measures vitals nightly and the phone measures gait on every walk,
 # but the six-minute walk and a joint angle are tests the patient performs
@@ -133,14 +167,27 @@ def build_cards(
     surgery_date: date,
 ) -> list[MetricInsight]:
     cards: list[MetricInsight] = []
+    variants_present = {str(v) for v in VARIANT_OF if str(v) in series}
     for metric, name, unit, guarded in CARD_ORDER:
         key = str(metric)
         s = series.get(key)
-        if s is None:
-            continue  # provider doesn't supply this metric — card omitted entirely
         canonical = VARIANT_OF.get(metric)
-        if canonical is not None and str(canonical) in series:
-            continue  # the canonical statistic is charted instead
+        if canonical is not None and (s is None or str(canonical) in series):
+            continue  # a variant is charted only in place of an absent canonical
+        if s is None and any(VARIANT_OF[v] is metric for v in VARIANT_OF if str(v) in variants_present):
+            continue  # the device ships the variant statistic instead
+        if s is None:
+            # Never measured for this patient: the card stays on the panel so
+            # the clinician sees the whole set and what would fill the gap.
+            cards.append(MetricInsight(
+                metric_key=key, name=name, status=MetricStatus.NODATA,
+                status_text="Not measured yet",
+                finding=SOURCE_HINT.get(metric, WEARABLE),
+                confidence=ConfidenceLevel.LOW,
+                coverage_text=f"0 of {confidence.window_days or 7} days of data",
+                next_step=None, guarded=guarded, unit=unit, series=[], baseline_mean=None,
+            ))
+            continue
         post = s[s.index >= 0]
         baseline = baselines.get(key)
         dev = deviations.get(key)
@@ -154,6 +201,7 @@ def build_cards(
             status_text, finding = _no_reading_text(
                 metric, post, baseline, has_recent, procedure, postop_day,
                 building=(has_recent and (baseline is None or dev is None)),
+                surgery_date=surgery_date,
             )
             next_step = None
         elif dev.flagged:
@@ -229,6 +277,8 @@ def build_cards(
             window, len(post[post.index > postop_day - window])
         )
         last14 = post[post.index > postop_day - 14]
+        if len(last14) < MIN_SPARKLINE_POINTS:
+            last14 = post.tail(MIN_SPARKLINE_POINTS)
         cards.append(
             MetricInsight(
                 metric_key=key,
@@ -262,10 +312,26 @@ def _no_reading_text(
     procedure: ProcedureType,
     postop_day: int,
     building: bool = False,
+    surgery_date: date | None = None,
 ) -> tuple[str, str]:
     """Why this card carries no verdict — the two reasons look identical on
     screen otherwise, and 'No recent data' is a lie for a patient whose device
     reports faithfully but who cannot be measured against anything."""
+    if not has_recent and len(post) > 0:
+        # The metric has history but nothing current: say what the last
+        # reading was and when, instead of hiding the data that exists.
+        last_day = int(post.index[-1])
+        ago = postop_day - last_day
+        when = (
+            (surgery_date + timedelta(days=last_day)).strftime("%b %-d") if surgery_date
+            else f"post-op day {last_day}"
+        )
+        latest = _fmt(float(post.iloc[-1]), metric)
+        return (
+            "No recent data",
+            f"Last reading {latest} on {when}, {ago} days ago. Nothing newer has arrived "
+            "from the patient's device.",
+        )
     if building and len(post) > 0:
         # Reporting, but not yet enough readings for a reference: the
         # six-minute walk or a joint angle two tests in.

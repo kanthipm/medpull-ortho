@@ -64,8 +64,11 @@ def test_metrics_endpoint(client):
     keys = {m["metric_key"] for m in body_apple["metrics"]}
     assert "walking_asymmetry_pct" in keys  # apple patient gets gait cards
     body2 = client.get("/api/patients/linda/metrics").json()
-    keys2 = {m["metric_key"] for m in body2["metrics"]}
-    assert "walking_asymmetry_pct" not in keys2  # fitbit patient: no gait card
+    # The panel is always whole: a Fitbit patient's gait card exists, but it
+    # says the metric was never measured and what would fill it.
+    gait = next(m for m in body2["metrics"] if m["metric_key"] == "walking_asymmetry_pct")
+    assert gait["status"] == "nodata" and gait["status_text"] == "Not measured yet"
+    assert "guided walk" in gait["finding"] and gait["series"] == []
 
 
 def test_timeline(client):

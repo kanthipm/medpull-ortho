@@ -269,6 +269,13 @@ final class AppModel {
         } else if outcomes.contains(.failed) {
             lastError = "Can't reach MedPull right now. Check your connection."
         }
+        // Apple's walking metrics never pass through Junction, so they only
+        // reached the console when the patient pressed "Send walking data".
+        // Every refresh now sends the last two weeks in the background; the
+        // server dedupes, so a repeat costs nothing.
+        if health.isConnected && !isPersonal {
+            Task { try? await self.health.uploadGait(api: self.api) }
+        }
     }
 
     @discardableResult

@@ -11,4 +11,7 @@
 # double support, steadiness, stair speeds, six-minute walk, joint angles), the
 # derived stress index and the activity totals join the signal cards, judged
 # for display only. Assessments stored by 1.3.x carry none of those cards.
-ENGINE_VERSION = "1.4.0"
+# 1.4.1: the signal panel is always whole (a never-measured metric is a card
+# that says so), a stale metric shows its last reading, and the stress index
+# accepts the clustered sync cadence a phone-linked wearable really has.
+ENGINE_VERSION = "1.4.1"

@@ -11,8 +11,10 @@ direction that means strain.
                      ships — never mixed, the series is whichever exists]
                      resting heart rate
                      respiratory rate (sleep)
-  baseline           trailing window of BASELINE_DAYS days ending the day
-                     before, at least MIN_BASELINE_DAYS values; mean and SD
+  baseline           trailing window of BASELINE_DAYS (42) days ending the
+                     day before, at least MIN_BASELINE_DAYS (3) values — a
+                     phone-synced wearable reports in clusters, not nightly,
+                     and a month of silence must not erase the index; mean and SD
                      with the same physiological SD floors the risk engine
                      uses, so one quiet week cannot make a normal night look
                      extreme
@@ -38,8 +40,8 @@ import pandas as pd
 
 from app.models.enums import MetricType as M
 
-BASELINE_DAYS = 28
-MIN_BASELINE_DAYS = 5
+BASELINE_DAYS = 42
+MIN_BASELINE_DAYS = 3
 WEIGHTS = {"hrv": 0.4, "rhr": 0.4, "rr": 0.2}
 SD_FLOORS = {"hrv": 0.06, "rhr": 1.5, "rr": 0.6}   # ln-units, bpm, breaths/min
 Z_CLIP = 3.0

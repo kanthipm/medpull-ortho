@@ -199,7 +199,7 @@ def test_stress_index_sits_at_fifty_on_baseline_and_rises_with_strain():
     rhr.loc[15:] += 6.0
     index = stress_index_series({"hrv_rmssd": hrv, "resting_hr": rhr, "respiratory_rate": rr})
     assert index is not None
-    assert -10 not in index.index and -5 in index.index   # needs five baseline days first
+    assert -10 not in index.index and -7 in index.index   # needs three baseline days first
     assert 40.0 <= index.loc[0:14].mean() <= 60.0
     assert index.loc[15:].mean() >= 75.0          # the flag band, on average
     assert (index.loc[15:] >= 62.5).all()         # never below the watch band
@@ -380,3 +380,47 @@ def test_six_minute_walk_and_range_of_motion_tests_store_their_rows(client, db):
         assert resp.status_code == 422
     finally:
         _forget_medpull_rows(db)
+
+
+# --- the panel is always whole ------------------------------------------------------
+
+
+def test_every_signal_gets_a_card_even_when_never_measured():
+    from datetime import date as _date
+
+    from app.engine.confidence import coverage
+    from app.engine.metrics_cards import CARD_ORDER, build_cards
+    from app.models.enums import MetricStatus, ProcedureType
+
+    days = list(range(-10, 16))
+    series = {"steps": pd.Series([4000.0] * len(days), index=days, dtype=float),
+              "hrv_sdnn": pd.Series([60.0] * len(days), index=days, dtype=float)}
+    cards = {c.metric_key: c for c in build_cards(series, {}, {}, coverage(series, 15),
+                                                   ProcedureType.TKA, 15, _date(2026, 9, 1))}
+    expected = {str(m) for m, *_ in CARD_ORDER} - {"hrv_rmssd", "skin_temp_delta"}
+    assert set(cards) == expected                      # SDNN stands in for RMSSD; no delta card
+    six = cards["six_min_walk"]
+    assert six.status is MetricStatus.NODATA and six.status_text == "Not measured yet"
+    assert "six-minute walk test" in six.finding and six.series == []
+    assert cards["hrv_sdnn"].status_text != "Not measured yet"
+
+
+def test_a_stale_metric_reports_its_last_reading():
+    from datetime import date as _date
+
+    from app.engine.confidence import coverage
+    from app.engine.deviation import analyze_metric
+    from app.engine.metrics_cards import build_cards
+    from app.models.enums import MetricStatus, ProcedureType
+
+    days = list(range(-10, 13))                      # last reading on post-op day 12
+    speed = pd.Series([1.2] * len(days), index=days, dtype=float)
+    series = {"walking_speed": speed}
+    baseline, dev = analyze_metric(M.WALKING_SPEED, speed, ProcedureType.TKA)
+    cards = {c.metric_key: c for c in build_cards(
+        series, {"walking_speed": baseline}, {"walking_speed": dev}, coverage(series, 25),
+        ProcedureType.TKA, 25, _date(2026, 9, 2))}
+    card = cards["walking_speed"]
+    assert card.status is MetricStatus.NODATA and card.status_text == "No recent data"
+    assert card.finding.startswith("Last reading 1.20 on Sep 14, 13 days ago.")
+    assert len(card.series) == 8                     # the last eight readings, not one point

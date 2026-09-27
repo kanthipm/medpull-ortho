@@ -176,7 +176,7 @@ Each movement is its own series (joint and side travel on the row) so a 110° fl
 No vendor exposes a comparable stress score (Garmin and Oura ship proprietary ones; Apple, Fitbit, WHOOP and Samsung ship none), so the index is computed the same way for every device from daily summaries.
 
 - Inputs: `ln(HRV)` (RMSSD, or SDNN when that is what the device ships — whichever series exists, never both), resting heart rate, sleep respiratory rate.
-- Baseline per input: the trailing **28 days** ending the day before, at least **5** values; mean and SD with physiological SD floors (0.06 in ln-units, 1.5 bpm, 0.6 breaths/min — the risk engine's own floors) so one quiet week cannot make a normal night look extreme.
+- Baseline per input: the trailing **42 days** ending the day before, at least **3** values (a phone-synced wearable reports in clusters, not nightly); mean and SD with physiological SD floors (0.06 in ln-units, 1.5 bpm, 0.6 breaths/min — the risk engine's own floors) so one quiet week cannot make a normal night look extreme.
 - Strain z: `−z(ln HRV)`, `+z(RHR)`, `+z(RR)`, each clipped to ±3.
 - Composite: weighted mean over the inputs present that day (HRV 0.4, RHR 0.4, RR 0.2, renormalised).
 - `index = clip(50 + 25 × composite, 0, 100)`: **50 = at the patient's own baseline, 75 = one SD of strain.**
@@ -187,7 +187,7 @@ The construction follows the HRV–stress literature (RMSSD and HF power fall, h
 
 - **Rows.** One `INTERVAL` observation per bout per metric (walking speed, step length, cadence, asymmetry, double support, steadiness), one per flight (stair speeds), one `SESSION` per six-minute walk, one `INSTANT` per joint test, plus the walk itself as an exercise session with per-minute cadence and speed (which the guided-walk task verification and the walking-economy / endurance-fade care metrics read). Provider `medpull`, device `medpull:imu:<model>`. Rows are deterministic and idempotent: a retried upload lands on the same rows.
 - **Daily series.** The engine's daily value is the mean of the day's bouts. When a day has both a MedPull row and a vendor row for the same metric, only MedPull's enters the series; the vendor row stays in the raw data for side-by-side comparison.
-- **Comparison.** Activity-shaped metrics (step length, cadence, stair speeds, six-minute walk, exercise minutes, active energy) are judged, like steps and walking speed already were, against the procedure's expected-recovery curve as a fraction of the patient's own reference — every post-operative patient walks shorter and slower than before surgery, and that is not a finding. Joint angles are judged against the patient's own early readings (a loss of motion is the finding). Steadiness, double support, asymmetry and stress read on absolute bands. Tests taken every few days (six-minute walk, joint angles) keep a longer recency window (14 and 10 days) before a card calls them stale.
+- **Comparison.** Activity-shaped metrics (step length, cadence, stair speeds, six-minute walk, exercise minutes, active energy) are judged, like steps and walking speed already were, against the procedure's expected-recovery curve as a fraction of the patient's own reference — every post-operative patient walks shorter and slower than before surgery, and that is not a finding. Joint angles are judged against the patient's own early readings (a loss of motion is the finding). Steadiness, double support, asymmetry and stress read on absolute bands. Tests taken every few days (six-minute walk, joint angles) keep a longer recency window (14 and 10 days) before a card calls them stale. Every metric in the panel is always a card: one never measured says so and names what would fill it; one with history but nothing current shows its last reading and date; a sparkline keeps the last two weeks or the last eight readings, whichever is longer.
 - **Risk tier.** None of the in-house metrics feeds the risk tier, the multi-signal composite or the trajectory index. They are charted and judged for the clinician; the tier's inputs are unchanged until the validation in §15 supports adding them.
 
 ## 14. Verification performed
@@ -265,7 +265,7 @@ These are self-consistency checks of the rules, not evidence about patients.
 | ANCHORS / WEIGHTS / LOW / VERY_LOW | §8 table / 60 / 40 | stability.py | steadiness index |
 | ALT_FS / FLIGHT_MIN_M / MIN_V / V_RANGE / MIN_STEPS | 2 Hz / 2.5 m / 0.08 m/s / 0.10–1.50 m/s / 6 | stairs.py | stair detection |
 | GPS_MAX_ACCURACY_M / STEP_LENGTH_HEIGHT_RATIO / HOLD_MAX_SD | 12 m / 0.415 / 3° | active.py | six-minute walk and ROM |
-| BASELINE_DAYS / MIN_BASELINE_DAYS / WEIGHTS / SD_FLOORS / Z_CLIP | 28 / 5 / 0.4-0.4-0.2 / 0.06-1.5-0.6 / 3 | stress.py | stress index |
+| BASELINE_DAYS / MIN_BASELINE_DAYS / WEIGHTS / SD_FLOORS / Z_CLIP | 42 / 3 / 0.4-0.4-0.2 / 0.06-1.5-0.6 / 3 | stress.py | stress index |
 | STRESS_FLAG / STRESS_WATCH | 75 / 62.5 | metrics_cards.py | dashboard bands |
 | STEADINESS_LOW / VERY_LOW | 60 / 40 | metrics_cards.py | dashboard bands |
 | DOUBLE_SUPPORT_OK / FLAG | 28 % / 40 % (after post-op day 10) | metrics_cards.py | dashboard bands |
