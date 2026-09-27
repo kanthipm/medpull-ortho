@@ -19,6 +19,7 @@ struct HealthView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     appleCard
+                    if !app.isPersonal { MeasureCard() }
                     wearablesCard
                     portfolioSection
                     if let error { ErrorBanner(text: error) }

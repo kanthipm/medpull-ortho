@@ -492,6 +492,98 @@ struct GaitUploadResponse: Codable {
 
 struct OKResponse: Codable { let ok: Bool }
 
+// MARK: - MedPull's own measurements (backend app/api/mobility)
+
+/// One recorded walk, as the server's mobility engine wants it: device-frame
+/// samples in SI units, timestamps as seconds from the start.
+struct MotionWindowUpload: Encodable {
+    let startedAt: String          // ISO 8601 with offset (Dates.iso)
+    let sampleRateHz: Double
+    let accel: [[Double]]
+    let gyro: [[Double]]?
+    let gravity: [[Double]]?
+    let timestamps: [Double]?
+    let altitude: [[Double]]?
+    let gpsDistanceM: Double?
+    let gpsAccuracyM: Double?
+    let pedometerSteps: Int?
+    let pedometerDistanceM: Double?
+    let pocketSide: String?
+    let context: String
+}
+
+struct MotionUpload: Encodable {
+    let windows: [MotionWindowUpload]
+    let heightCm: Double?
+    let deviceModel: String?
+}
+
+/// What the engine found in one window; the app shows it straight back.
+struct MotionWindowSummary: Decodable {
+    let durationS: Double
+    let walkingS: Double
+    let bouts: Int
+    let steps: Int
+    let cadenceSpm: Double?
+    let walkingSpeedMps: Double?
+    let stepLengthM: Double?
+    let asymmetryPct: Double?
+    let doubleSupportPct: Double?
+    let steadiness: Double?
+    let notes: [String]
+}
+
+struct MotionUploadResponse: Decodable {
+    let windows: [MotionWindowSummary]
+    let ingested: Int
+    let updated: Int
+    let duplicates: Int
+}
+
+struct SixMinuteWalkUpload: Encodable {
+    let startedAt: String
+    let durationS: Double
+    let steps: Int?
+    let pedometerDistanceM: Double?
+    let gpsDistanceM: Double?
+    let gpsAccuracyM: Double?
+    let minuteSteps: [Int]?
+    let heightCm: Double?
+    let deviceModel: String?
+    let motion: MotionWindowUpload?
+}
+
+struct SixMinuteWalkResponse: Decodable {
+    let distanceM: Double
+    let method: String
+    let steps: Int?
+    let cadenceSpm: Double?
+    let fadePct: Double?
+    let motion: MotionWindowSummary?
+}
+
+struct RangeOfMotionUpload: Encodable {
+    let recordedAt: String
+    let protocolName: String
+    let side: String
+    let reference: [[Double]]
+    let movement: [[Double]]
+    let deviceModel: String?
+
+    enum CodingKeys: String, CodingKey {
+        case recordedAt, side, reference, movement, deviceModel
+        case protocolName = "protocol"
+    }
+}
+
+struct RangeOfMotionResponse: Decodable {
+    let joint: String
+    let movement: String
+    let side: String
+    let angleDeg: Double
+    let steady: Bool
+}
+
 enum Dates {
     private static let withFraction: DateFormatter = {
         let f = DateFormatter()
@@ -521,6 +613,13 @@ enum Dates {
     }
 
     static func dayString(_ date: Date) -> String { day.string(from: date) }
+    /// ISO 8601 with the local offset, for the measurement uploads.
+    static func iso(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        f.timeZone = .current
+        return f.string(from: date)
+    }
 
     static func relative(_ raw: String?) -> String {
         guard let date = parse(raw) else { return "" }

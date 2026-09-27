@@ -19,7 +19,7 @@ from app.connectors.base import CanonicalObservation
 from app.connectors.capabilities import CAPABILITIES
 from app.connectors.mock import UNITS, daily_observation
 from app.engine.curves import curve_mid, recovery_progress
-from app.models.enums import Granularity
+from app.models.enums import Granularity, ProcedureType
 from app.models.enums import MetricType as M
 from app.models.enums import SourceProvider as P
 from app.seed.patients import PatientSpec, get_spec
@@ -367,6 +367,11 @@ def _care_extensions(
             if flights >= 1 and M.STAIR_SPEED_UP in supported:
                 tempo = max(0.1, 0.3 + 0.5 * progress + float(tempo_noise[i]) * 0.03)
                 out.append(daily_observation(spec.id, spec.provider, M.STAIR_SPEED_UP, day_date, tempo))
+                if M.STAIR_SPEED_DOWN in supported:
+                    # Descent is the harder half after a knee or hip: slower
+                    # than the ascent early on, level with it by the plateau.
+                    down = max(0.1, tempo * (0.75 + 0.25 * progress))
+                    out.append(daily_observation(spec.id, spec.provider, M.STAIR_SPEED_DOWN, day_date, down))
 
     # --- guided walks with per-minute cadence / HR / speed --------------------
     if M.EXERCISE_SESSION in supported:
@@ -445,6 +450,63 @@ def _care_extensions(
                     spec.id, spec.provider, M.HR_SAMPLE, start, end, round(hr, 1),
                     Granularity.INTERVAL, external_id=ext,
                 ))
+
+    # --- MedPull's own mobility set (engine/mobility over the phone's IMU) -------
+    # Seeded under MEDPULL, the provider the app's uploads land under, for the
+    # patients whose phone runs the app (Apple / mock). Walking speed itself is
+    # left to the device row so the demo's pinned tiers keep their source. The
+    # numbers are shaped by the same recovery progress as everything else:
+    # step length and cadence share out the day's walking speed, steadiness
+    # climbs with recovery, the six-minute walk is a weekly test, and the knee
+    # procedures measure flexion and the extension deficit every third day.
+    if spec.provider in (P.APPLE, P.MOCK):
+        mob = _rng(spec.id, "noise:inhouse_mobility").standard_normal((n, 6))
+        side = "left" if sum(ord(c) for c in spec.id) % 2 else "right"
+        knee = spec.procedure in (ProcedureType.TKA, ProcedureType.ACL, ProcedureType.MENISCUS)
+        # A personal pre-op step length; the day's speed is shared out between
+        # step length (which recovers the slower, fraction^0.6) and cadence
+        # (fraction^0.4), so both follow the same curve the speed does.
+        base_step = float(_rng(spec.id, "baseline:step_length").uniform(0.58, 0.72))
+        base_speed = base[M.WALKING_SPEED]
+        for d in days:
+            if d not in present:
+                continue
+            speed = values_by_day[d].get(M.WALKING_SPEED)
+            if speed is None:
+                continue
+            i = d + offset
+            progress = 1.0 if d < 0 else _progress(spec, scenario, d)
+            day_date = surgery + timedelta(days=d)
+            fraction = min(max(speed / base_speed, 0.05), 1.5) if base_speed > 0 else 1.0
+            step_len = min(max(base_step * fraction ** 0.6 + float(mob[i, 0]) * 0.015, 0.20), 0.95)
+            cadence = min(max(speed / step_len * 60.0, 40.0), 140.0)
+            # Steadiness: an older pre-op patient is not a 94; early post-op
+            # walking sits in the Low band and climbs into OK with recovery.
+            steady = min(max(44.0 + 40.0 * progress + float(mob[i, 1]) * 3.0, 15.0), 99.0)
+            for metric, value in ((M.STEP_LENGTH, step_len), (M.CADENCE, cadence),
+                                  (M.WALKING_STEADINESS, steady)):
+                row = daily_observation(spec.id, P.MEDPULL, metric, day_date, value)
+                row.value_json = {"version": "mobility-1", "method": "seed", "context": "guided_walk"}
+                row.source_device_id = f"medpull:imu:{spec.device_model}"
+                out.append(row)
+            if d >= 0 and d % 7 == 6:
+                dist = min(max(200.0 + 300.0 * progress + float(mob[i, 2]) * 12.0, 80.0), 700.0)
+                row = daily_observation(spec.id, P.MEDPULL, M.SIX_MIN_WALK, day_date, dist)
+                row.value_json = {"version": "mobility-1", "method": "pedometer", "context": "six_minute_walk"}
+                row.source_device_id = f"medpull:6mwt:{spec.device_model}"
+                out.append(row)
+            if knee and d >= 2 and (d - 2) % 3 == 0:
+                flexion = min(max(62.0 + 58.0 * progress + float(mob[i, 3]) * 3.0, 40.0), 135.0)
+                deficit = max(-2.0, 14.0 * (1.0 - progress) + float(mob[i, 4]) * 1.0)
+                for metric, value, protocol in ((M.ROM_FLEXION, flexion, "knee_flexion_supine"),
+                                                (M.ROM_EXTENSION, deficit, "knee_extension_supine")):
+                    row = daily_observation(spec.id, P.MEDPULL, metric, day_date, value)
+                    row.value_json = {"version": "mobility-1", "method": "phone_inclinometer",
+                                      "protocol": protocol, "joint": "knee", "steady": True}
+                    row.source_device_id = f"medpull:rom:{spec.device_model}"
+                    row.body_site = "knee"
+                    row.side = side
+                    out.append(row)
 
     # --- Withings scale + cuff (priya) --------------------------------------------
     if spec.provider is P.WITHINGS and M.BODY_WEIGHT in supported:

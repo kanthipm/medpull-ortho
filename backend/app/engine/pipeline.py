@@ -10,6 +10,8 @@ import hashlib
 import logging
 from datetime import date
 
+import pandas as pd
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -40,6 +42,42 @@ ANALYZED_METRICS = [
     M.STEPS, M.WALKING_SPEED, M.RESTING_HR, M.HRV_RMSSD, M.SLEEP_DURATION,
     M.SKIN_TEMP, M.SPO2, M.RESPIRATORY_RATE, M.WALKING_ASYMMETRY_PCT,
 ]
+
+# Charted and judged against the patient's own baseline / the recovery curve
+# for the clinician's dashboard, but NEVER fed to the risk tier, the
+# composite or the trajectory: the tier's inputs stay the calibrated list
+# above. The in-house mobility set (engine/mobility), the derived stress
+# index, the activity totals, and the variant statistics a device ships
+# instead of the canonical one (HRV SDNN, skin-temperature delta), which are
+# charted only when the canonical series is absent.
+DISPLAY_METRICS = [
+    M.STEP_LENGTH, M.CADENCE, M.DOUBLE_SUPPORT_PCT, M.WALKING_STEADINESS,
+    M.STAIR_SPEED_UP, M.STAIR_SPEED_DOWN, M.SIX_MIN_WALK,
+    M.ROM_FLEXION, M.ROM_EXTENSION, M.ROM_ABDUCTION,
+    M.EXERCISE_SESSION, M.ACTIVE_ENERGY, M.STRESS_INDEX,
+    M.HRV_SDNN, M.SKIN_TEMP_DELTA,
+]
+VARIANT_OF = {M.HRV_SDNN: M.HRV_RMSSD, M.SKIN_TEMP_DELTA: M.SKIN_TEMP}
+
+
+def display_deviations(
+    series: dict[str, "pd.Series"], baselines: dict[str, Baseline],
+    deviations: dict[str, DeviationResult], procedure,
+) -> tuple[dict[str, Baseline], dict[str, DeviationResult]]:
+    """The card inputs: the risk path's baselines and deviations plus a
+    locally scored entry for every DISPLAY_METRICS series present."""
+    card_baselines, card_deviations = dict(baselines), dict(deviations)
+    for metric in DISPLAY_METRICS:
+        canonical = VARIANT_OF.get(metric)
+        if canonical is not None and str(canonical) in series:
+            continue
+        s = series.get(str(metric))
+        if s is None or str(metric) in card_deviations:
+            continue
+        result = analyze_metric(metric, s, procedure)
+        if result is not None:
+            card_baselines[str(metric)], card_deviations[str(metric)] = result
+    return card_baselines, card_deviations
 
 
 def compute_input_hash(db: Session, patient_id: str) -> str:
@@ -208,8 +246,18 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
         postop_day, deviations, trajectory, composite, confidence, adherence,
         gait_latest, gait_day,
     )
+    # The stress index is derived from the daily autonomic series the loader
+    # just built (engine/mobility/stress) and charted like any other signal.
+    from app.engine.mobility import stress_index_series
+
+    stress = stress_index_series(series)
+    if stress is not None:
+        series[str(M.STRESS_INDEX)] = stress
+    card_baselines, card_deviations = display_deviations(
+        series, baselines, deviations, patient.procedure_type
+    )
     cards = build_cards(
-        series, baselines, deviations, confidence, patient.procedure_type,
+        series, card_baselines, card_deviations, confidence, patient.procedure_type,
         postop_day, patient.surgery_date,
     )
 

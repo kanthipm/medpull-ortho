@@ -72,6 +72,14 @@ UNITS: dict[MetricType, str] = {
     MetricType.BLOOD_GLUCOSE: "mg/dL",
     MetricType.BREATHLESSNESS: "score",
     MetricType.FATIGUE: "score",
+    # athlete signals + the in-house mobility set
+    MetricType.VO2_MAX: "mL/kg/min",
+    MetricType.HR_RECOVERY_1MIN: "bpm",
+    MetricType.CADENCE: "spm",
+    MetricType.STRESS_INDEX: "score",
+    MetricType.ROM_FLEXION: "deg",
+    MetricType.ROM_EXTENSION: "deg",
+    MetricType.ROM_ABDUCTION: "deg",
 }
 
 

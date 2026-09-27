@@ -79,6 +79,10 @@ targets:
         NSHealthUpdateUsageDescription: MedPull does not write to Health, but the Health SDK it uses declares this capability.
         NSMicrophoneUsageDescription: Talk to MedPull instead of typing — the microphone is only on while you hold the button.
         NSSpeechRecognitionUsageDescription: MedPull turns what you say into text so it can log your pain, mark tasks done, or pass a note to your care team.
+        # The Measure screen (Health tab): a walk or a joint test records the
+        # phone's motion sensors; an outdoor walk may use GPS for distance.
+        NSMotionUsageDescription: MedPull records your phone’s motion during a guided walk or a joint measurement so your care team can follow how you are walking and moving.
+        NSLocationWhenInUseUsageDescription: On an outdoor walk, MedPull uses your location only to measure how far you walked. It is never tracked otherwise.
         BGTaskSchedulerPermittedIdentifiers: [io.tryvital.VitalHealthKit.ProcessingTask]
         UIBackgroundModes: [processing]
         # Development builds talk to `make dev` over plain http (localhost, or

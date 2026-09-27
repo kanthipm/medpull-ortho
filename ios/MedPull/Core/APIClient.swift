@@ -287,6 +287,17 @@ extension APIClient {
     func uploadGait(_ upload: GaitUpload) async throws -> GaitUploadResponse {
         try await post("/api/mobile/observations/gait", body: upload)
     }
+    // MedPull's own measurements: the server computes every metric from the
+    // raw window (backend app/engine/mobility), the app only records.
+    func uploadMotion(_ upload: MotionUpload) async throws -> MotionUploadResponse {
+        try await post("/api/mobile/observations/motion", body: upload)
+    }
+    func sixMinuteWalk(_ upload: SixMinuteWalkUpload) async throws -> SixMinuteWalkResponse {
+        try await post("/api/mobile/tests/six-minute-walk", body: upload)
+    }
+    func rangeOfMotion(_ upload: RangeOfMotionUpload) async throws -> RangeOfMotionResponse {
+        try await post("/api/mobile/tests/range-of-motion", body: upload)
+    }
     func signOut() async throws { let _: OKResponse = try await post("/api/mobile/signout") }
 }
 

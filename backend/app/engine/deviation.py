@@ -72,15 +72,30 @@ REF_ANCHORED_CURVE = "anchored_curve"
 # double-support are deliberately absent: they are HIGH after every surgery
 # and improve along recovery, so baseline control charts would flag every
 # patient — they get an absolute-threshold rule in risk.py instead.
-ADVERSE_UP = {M.RESTING_HR, M.SKIN_TEMP, M.RESPIRATORY_RATE}
-ADVERSE_DOWN = {M.HRV_RMSSD, M.STEPS, M.SLEEP_DURATION, M.SPO2, M.WALKING_SPEED}
+ADVERSE_UP = {M.RESTING_HR, M.SKIN_TEMP, M.RESPIRATORY_RATE,
+              # in-house: more residual flexion, more autonomic strain
+              M.ROM_EXTENSION, M.STRESS_INDEX}
+ADVERSE_DOWN = {M.HRV_RMSSD, M.STEPS, M.SLEEP_DURATION, M.SPO2, M.WALKING_SPEED,
+                # in-house mobility set (engine/mobility): falling is the finding
+                M.STEP_LENGTH, M.CADENCE, M.WALKING_STEADINESS, M.STAIR_SPEED_UP,
+                M.STAIR_SPEED_DOWN, M.SIX_MIN_WALK, M.ROM_FLEXION, M.ROM_ABDUCTION,
+                M.EXERCISE_SESSION, M.ACTIVE_ENERGY}
 
+# The two inputs of the trajectory index (engine/trajectory). Unchanged by the
+# in-house set on purpose: the pinned risk tiers are calibrated on them.
 FUNCTIONAL = {M.STEPS, M.WALKING_SPEED}
+# Everything judged against the procedure's expected-recovery curve rather
+# than the pre-op baseline: every post-op patient walks shorter, slower and
+# less than before surgery, and that is not a finding. The activity-shaped
+# in-house metrics join the two trajectory inputs here; the curve is the
+# same one, read as a fraction of the patient's own reference level.
+CURVE_SCALED = FUNCTIONAL | {M.STEP_LENGTH, M.CADENCE, M.STAIR_SPEED_UP, M.STAIR_SPEED_DOWN,
+                             M.SIX_MIN_WALK, M.EXERCISE_SESSION, M.ACTIVE_ENERGY}
 
 
 def reference_of(metric: M, baseline: Baseline) -> str:
     """Which comparison this metric's z-scores express."""
-    if metric not in FUNCTIONAL:
+    if metric not in CURVE_SCALED:
         return REF_BASELINE
     return REF_PREOP_CURVE if baseline.is_preop else REF_ANCHORED_CURVE
 
@@ -138,7 +153,7 @@ def standardized_deviations(
     pre-op capacity on day 3" as if it were 100%.
     """
     post = series[series.index >= SKIP_EARLY_DAYS]
-    if metric in FUNCTIONAL:
+    if metric in CURVE_SCALED:
         anchor = curve_anchor(baseline, procedure)
         if anchor is None or baseline.mean <= 0:
             return pd.Series(dtype=float)

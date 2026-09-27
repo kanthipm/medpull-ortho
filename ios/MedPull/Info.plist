@@ -46,8 +46,12 @@
 	<string>MedPull shares your activity, sleep, heart and walking data with your care team so they can follow your recovery between visits.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>MedPull does not write to Health, but the Health SDK it uses declares this capability.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>On an outdoor walk, MedPull uses your location only to measure how far you walked. It is never tracked otherwise.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Talk to MedPull instead of typing — the microphone is only on while you hold the button.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>MedPull records your phone’s motion during a guided walk or a joint measurement so your care team can follow how you are walking and moving.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>MedPull turns what you say into text so it can log your pain, mark tasks done, or pass a note to your care team.</string>
 	<key>UIAppFonts</key>

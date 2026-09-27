@@ -65,6 +65,14 @@ CAPABILITIES: dict[P, list[M]] = {
                  M.SKIN_TEMP, M.SKIN_TEMP_DELTA, M.ACTIVE_ENERGY, M.CALORIES,
                  M.EXERCISE_SESSION, M.BODY_WEIGHT, M.BLOOD_PRESSURE_SYSTOLIC,
                  M.BLOOD_PRESSURE_DIASTOLIC, M.BLOOD_GLUCOSE],
+    # MedPull's own algorithms (engine/mobility) over raw phone sensor windows
+    # from the patient app: the whole gait set on every phone, iPhone or
+    # Android, plus cadence, the phone-inclinometer range of motion, the
+    # in-app six-minute walk and the guided walk's exercise session. The
+    # stress index is derived inside the engine from whatever wearable
+    # supplies HRV / resting HR / respiratory rate.
+    P.MEDPULL: GAIT + [M.CADENCE, M.ROM_FLEXION, M.ROM_EXTENSION, M.ROM_ABDUCTION,
+                       M.EXERCISE_SESSION, M.STRESS_INDEX],
 }
 
 

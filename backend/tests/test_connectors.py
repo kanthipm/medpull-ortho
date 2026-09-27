@@ -335,11 +335,14 @@ def test_registry_shape():
     assert get_connector(SourceProvider.FITBIT) is None  # a brand, reached through Junction
 
 
-def test_gait_capability_is_apple_only():
+def test_gait_capability_is_apple_or_medpull_only():
+    # No wearable vendor but Apple exposes gait quality; MedPull's own
+    # algorithm (engine/mobility, provider MEDPULL) is the other source, and
+    # it is what makes the metric available on every phone.
     gait = MetricType.WALKING_ASYMMETRY_PCT
     real_providers = [p for p in CAPABILITIES if p not in (SourceProvider.MOCK,)]
     supporting = {p for p in real_providers if provider_supports(p, gait)}
-    assert supporting == {SourceProvider.APPLE}
+    assert supporting == {SourceProvider.APPLE, SourceProvider.MEDPULL}
 
 
 def test_stub_connectors_raise_not_implemented(db):

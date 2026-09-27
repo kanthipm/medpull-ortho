@@ -10,11 +10,10 @@ from datetime import date, timedelta
 import pandas as pd
 
 from app.engine.deviation import (
-    FUNCTIONAL,
+    CURVE_SCALED,
     RECENCY_WINDOW_DAYS,
     REF_ANCHORED_CURVE,
     expected_functional,
-    is_stale,
 )
 from app.engine.risk import GAIT_FLAG_AFTER_DAY, GAIT_FLAG_PCT
 from app.engine.types import Baseline, ConfidenceResult, DeviationResult, MetricInsight
@@ -37,7 +36,45 @@ CARD_ORDER: list[tuple[M, str, str, bool]] = [
     (M.RESPIRATORY_RATE, "Respiratory rate", "br/min", True),
     (M.WALKING_SPEED, "Walking speed", "m/s", False),
     (M.WALKING_ASYMMETRY_PCT, "Walking asymmetry", "%", True),
+    # --- the in-house mobility set (engine/mobility) and the derived signals ---
+    (M.STEP_LENGTH, "Step length", "m", False),
+    (M.CADENCE, "Cadence", "spm", False),
+    (M.DOUBLE_SUPPORT_PCT, "Double support", "%", True),
+    (M.WALKING_STEADINESS, "Walking steadiness", "score", True),
+    (M.STAIR_SPEED_UP, "Stair speed up", "m/s", False),
+    (M.STAIR_SPEED_DOWN, "Stair speed down", "m/s", False),
+    (M.SIX_MIN_WALK, "Six-minute walk", "m", False),
+    (M.ROM_FLEXION, "Flexion (ROM)", "°", False),
+    (M.ROM_EXTENSION, "Extension deficit (ROM)", "°", False),
+    (M.ROM_ABDUCTION, "Abduction (ROM)", "°", False),
+    (M.EXERCISE_SESSION, "Exercise minutes", "min", False),
+    (M.ACTIVE_ENERGY, "Active energy", "kcal", False),
+    (M.STRESS_INDEX, "Stress index", "score", True),
+    # variant statistics: charted only when the canonical series is absent
+    (M.HRV_SDNN, "HRV (SDNN)", "ms", False),
+    (M.SKIN_TEMP_DELTA, "Skin temperature change", "°C", True),
 ]
+
+# A device measures vitals nightly and the phone measures gait on every walk,
+# but the six-minute walk and a joint angle are tests the patient performs
+# every few days: they keep a longer window before the card calls them stale.
+SLOW_RECENCY_DAYS: dict[M, int] = {
+    M.SIX_MIN_WALK: 14, M.ROM_FLEXION: 10, M.ROM_EXTENSION: 10, M.ROM_ABDUCTION: 10,
+    M.STAIR_SPEED_UP: 7, M.STAIR_SPEED_DOWN: 7,
+}
+VARIANT_OF: dict[M, M] = {M.HRV_SDNN: M.HRV_RMSSD, M.SKIN_TEMP_DELTA: M.SKIN_TEMP}
+# Absolute bands (engine/mobility/stress, /stability): 50 is "at baseline",
+# 75 one SD of strain; the steadiness bands mirror Apple's three levels.
+STRESS_FLAG = 75.0
+STRESS_WATCH = 62.5
+STEADINESS_LOW = 60.0
+STEADINESS_VERY_LOW = 40.0
+# Double support rises for everyone after a lower-limb operation and falls
+# back over months (Fary 2023: week 24 after TKA), so like asymmetry it reads
+# on absolute bands rather than against the pre-op norm. Healthy walking
+# sits near 20 %; Apple's typical range is 20-40 %.
+DOUBLE_SUPPORT_OK_PCT = 28.0
+DOUBLE_SUPPORT_FLAG_PCT = 40.0
 
 STATUS_TEXT = {
     ("up", True): "Rising vs baseline",
@@ -54,13 +91,34 @@ NEXT_STEPS: dict[M, str] = {
     M.SPO2: "Ask about breathing comfort; verify device fit.",
     M.RESPIRATORY_RATE: "Review alongside temperature and heart rate.",
     M.WALKING_ASYMMETRY_PCT: "Consider a gait review with PT.",
+    M.STEP_LENGTH: "Review stride progression with PT.",
+    M.CADENCE: "Review activity progression with PT.",
+    M.DOUBLE_SUPPORT_PCT: "Ask about confidence on the operated leg; consider a gait review.",
+    M.WALKING_STEADINESS: "Ask about balance and near-falls; review assistive-device use.",
+    M.STAIR_SPEED_UP: "Ask about stairs at home; review stair training with PT.",
+    M.STAIR_SPEED_DOWN: "Ask about descending stairs; review eccentric control with PT.",
+    M.SIX_MIN_WALK: "Review endurance goals with PT.",
+    M.ROM_FLEXION: "Review the home exercise programme; consider a PT visit for motion.",
+    M.ROM_EXTENSION: "Check for a flexion contracture; review extension exercises.",
+    M.ROM_ABDUCTION: "Review the home exercise programme for the shoulder.",
+    M.EXERCISE_SESSION: "Ask what is limiting exercise — pain, fatigue, or confidence.",
+    M.ACTIVE_ENERGY: "Ask what is limiting activity — pain, fatigue, or fear of movement.",
+    M.STRESS_INDEX: "Review alongside sleep, pain and the vitals; ask how they are coping.",
+    M.HRV_SDNN: "Review alongside heart rate and temperature.",
+    M.SKIN_TEMP_DELTA: "Ask about fever, chills, and the incision site.",
 }
 
 
+def _stale(dev: DeviationResult, postop_day: int, recency: int) -> bool:
+    return dev.last_day is None or postop_day - dev.last_day > recency
+
+
 def _fmt(value: float, metric: M) -> str:
-    if metric == M.STEPS:
+    if metric in (M.STEPS, M.ACTIVE_ENERGY, M.SIX_MIN_WALK):
         return f"{value:,.0f}"
-    if metric in (M.WALKING_SPEED,):
+    if metric in (M.CADENCE, M.WALKING_STEADINESS, M.STRESS_INDEX, M.EXERCISE_SESSION):
+        return f"{value:.0f}"
+    if metric in (M.WALKING_SPEED, M.STEP_LENGTH, M.STAIR_SPEED_UP, M.STAIR_SPEED_DOWN):
         return f"{value:.2f}"
     return f"{value:.1f}"
 
@@ -80,17 +138,22 @@ def build_cards(
         s = series.get(key)
         if s is None:
             continue  # provider doesn't supply this metric — card omitted entirely
+        canonical = VARIANT_OF.get(metric)
+        if canonical is not None and str(canonical) in series:
+            continue  # the canonical statistic is charted instead
         post = s[s.index >= 0]
         baseline = baselines.get(key)
         dev = deviations.get(key)
+        recency = SLOW_RECENCY_DAYS.get(metric, RECENCY_WINDOW_DAYS)
 
-        has_recent = len(post[post.index >= postop_day - RECENCY_WINDOW_DAYS]) > 0
+        has_recent = len(post[post.index >= postop_day - recency]) > 0
 
         anchored = dev is not None and dev.reference == REF_ANCHORED_CURVE
-        if not has_recent or baseline is None or dev is None or is_stale(dev, postop_day):
+        if not has_recent or baseline is None or dev is None or _stale(dev, postop_day, recency):
             status = MetricStatus.NODATA
             status_text, finding = _no_reading_text(
-                metric, post, baseline, has_recent, procedure, postop_day
+                metric, post, baseline, has_recent, procedure, postop_day,
+                building=(has_recent and (baseline is None or dev is None)),
             )
             next_step = None
         elif dev.flagged:
@@ -125,6 +188,41 @@ def build_cards(
             elif status is not MetricStatus.NODATA:
                 status = MetricStatus.OK if latest <= GAIT_OK_PCT else MetricStatus.WATCH
                 status_text = "Improving" if latest <= GAIT_OK_PCT else "Still elevated"
+        # The two 0-100 indices read on absolute bands, which are what their
+        # construction promises (engine/mobility/stress, /stability), not on
+        # a control chart over the index itself.
+        if metric == M.STRESS_INDEX and has_recent and len(post) > 0 and status is not MetricStatus.NODATA:
+            latest = float(post.iloc[-1])
+            if latest >= STRESS_FLAG:
+                status, status_text, next_step = MetricStatus.FLAG, "Elevated strain", NEXT_STEPS[metric]
+            elif latest >= STRESS_WATCH:
+                status, status_text, next_step = MetricStatus.WATCH, "Above own baseline", NEXT_STEPS[metric]
+            else:
+                status, status_text, next_step = MetricStatus.OK, "Near own baseline", None
+            finding = (f"Latest {latest:.0f} on a 0-100 scale where 50 is the patient's own "
+                       "baseline and 75 is one standard deviation of strain.")
+        if metric == M.WALKING_STEADINESS and has_recent and len(post) > 0 and status is not MetricStatus.NODATA:
+            latest = float(post.iloc[-1])
+            if latest < STEADINESS_VERY_LOW:
+                status, status_text, next_step = MetricStatus.FLAG, "Very low steadiness", NEXT_STEPS[metric]
+            elif latest < STEADINESS_LOW:
+                status, status_text, next_step = MetricStatus.WATCH, "Low steadiness", NEXT_STEPS[metric]
+            else:
+                status, status_text, next_step = MetricStatus.OK, "Steady", None
+            band = ("OK" if latest >= STEADINESS_LOW else "Low" if latest >= STEADINESS_VERY_LOW
+                    else "Very low")
+            finding = (f"Latest {latest:.0f} of 100 ({band} band; OK is 60 and above), "
+                       f"from a baseline of {baseline.mean:.0f}.")
+        if metric == M.DOUBLE_SUPPORT_PCT and has_recent and len(post) > 0 and status is not MetricStatus.NODATA:
+            latest = float(post.iloc[-1])
+            if postop_day > GAIT_FLAG_AFTER_DAY and latest > DOUBLE_SUPPORT_FLAG_PCT:
+                status, status_text, next_step = MetricStatus.FLAG, "Both feet down most of the time", NEXT_STEPS[metric]
+            elif latest > DOUBLE_SUPPORT_OK_PCT:
+                status, status_text, next_step = MetricStatus.WATCH, "Still elevated", NEXT_STEPS[metric]
+            else:
+                status, status_text, next_step = MetricStatus.OK, "Improving", None
+            finding = (f"Latest {latest:.1f}% of the stride with both feet on the ground "
+                       f"(healthy walking is near 20%; baseline {baseline.mean:.1f}%).")
 
         window = confidence.window_days or 1
         covered = min(
@@ -163,14 +261,23 @@ def _no_reading_text(
     has_recent: bool,
     procedure: ProcedureType,
     postop_day: int,
+    building: bool = False,
 ) -> tuple[str, str]:
     """Why this card carries no verdict — the two reasons look identical on
     screen otherwise, and 'No recent data' is a lie for a patient whose device
     reports faithfully but who cannot be measured against anything."""
+    if building and len(post) > 0:
+        # Reporting, but not yet enough readings for a reference: the
+        # six-minute walk or a joint angle two tests in.
+        latest = _fmt(float(post.iloc[-1]), metric)
+        return (
+            "Building baseline",
+            f"Latest {latest}; a comparison needs three readings from post-op day 2 on.",
+        )
     if (
         has_recent
         and baseline is not None
-        and metric in FUNCTIONAL
+        and metric in CURVE_SCALED
         and expected_functional(baseline, procedure, postop_day) is None
     ):
         latest = _fmt(float(post.iloc[-1]), metric)
@@ -193,9 +300,11 @@ def _reference(
     for a patient with no pre-op history, whose line is the curve's shape
     projected from their own early post-op level rather than a fraction of a
     pre-op norm they never recorded."""
+    if metric == M.STRESS_INDEX:
+        return 50.0
     if baseline is None:
         return None
-    if metric in FUNCTIONAL:
+    if metric in CURVE_SCALED:
         expected = expected_functional(baseline, procedure, postop_day)
         return None if expected is None else round(expected, 2)
     if metric == M.WALKING_ASYMMETRY_PCT:
@@ -206,7 +315,7 @@ def _reference(
 def _finding(metric: M, post: pd.Series, baseline: Baseline, procedure: ProcedureType) -> str:
     latest = float(post.iloc[-1])
     latest_str = _fmt(latest, metric)
-    if metric in FUNCTIONAL:
+    if metric in CURVE_SCALED:
         day = int(post.index[-1])
         expected = expected_functional(baseline, procedure, day)
         if expected is None:

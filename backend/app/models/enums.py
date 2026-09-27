@@ -42,6 +42,13 @@ class SourceProvider(StrEnum):
     # are clinician-entered.
     PATIENT_REPORTED = "patient_reported"
     CLINICIAN_ENTERED = "clinician_entered"
+    # MedPull's own measurements: gait, stairs, steadiness, the six-minute walk
+    # and joint range of motion computed by engine/mobility from raw phone
+    # sensor windows the patient app uploads, plus the derived stress index.
+    # One algorithm for every patient whatever wearable they own, which is why
+    # these rows never masquerade as the phone vendor's (Apple's walking
+    # metrics stay under APPLE and are compared against these side by side).
+    MEDPULL = "medpull"
 
 
 class ConnectionStatus(StrEnum):
@@ -115,6 +122,21 @@ class MetricType(StrEnum):
     # outdoor walks/runs; one-minute heart-rate recovery comes from workouts.
     VO2_MAX = "vo2_max"                             # mL/kg/min
     HR_RECOVERY_1MIN = "hr_recovery_1min"           # bpm drop, one minute after a workout
+    # --- In-house mobility and autonomic signals (engine/mobility) ---
+    # Steps per minute over detected walking bouts; the temporal half of
+    # walking speed (speed = step length x cadence / 60).
+    CADENCE = "cadence"                             # steps/min
+    # 0-100 autonomic strain index from the patient's own overnight HRV,
+    # resting HR and respiratory rate baselines (50 = at baseline). Computed
+    # per day inside the engine, never ingested from a vendor.
+    STRESS_INDEX = "stress_index"                   # score 0-100
+    # Joint range of motion measured by the phone-inclinometer protocol in the
+    # app (engine/mobility/active), one series per movement so a flexion of
+    # 110 degrees and an extension deficit of 5 never average into one number.
+    # The joint and side travel on the row (body_site, side, value_json).
+    ROM_FLEXION = "rom_flexion"                     # degrees
+    ROM_EXTENSION = "rom_extension"                 # degrees of residual flexion (negative = hyperextension)
+    ROM_ABDUCTION = "rom_abduction"                 # degrees
 
 
 class Granularity(StrEnum):

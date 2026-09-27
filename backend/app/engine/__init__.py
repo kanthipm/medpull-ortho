@@ -7,4 +7,8 @@
 # the analytics bundle as `care_metrics`, and the input hash now also covers
 # check-ins, adherence records and tasks. Assessments stored by 1.2.x carry no
 # care metrics at all, so they must not survive the upgrade.
-ENGINE_VERSION = "1.3.0"
+# 1.4.0: the in-house mobility set (engine/mobility: step length, cadence,
+# double support, steadiness, stair speeds, six-minute walk, joint angles), the
+# derived stress index and the activity totals join the signal cards, judged
+# for display only. Assessments stored by 1.3.x carry none of those cards.
+ENGINE_VERSION = "1.4.0"

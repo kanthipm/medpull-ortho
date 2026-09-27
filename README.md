@@ -36,6 +36,21 @@ Subscribers never appear on a console screen. They sign up with an email and
 password behind a beta consent form; the form, their daily snapshots and the
 model's outputs are archived per person in the personal bucket.
 
+## MedPull's own mobility metrics
+
+Gait (walking speed, step length, cadence, signed asymmetry, double support),
+walking steadiness, stair speeds, the six-minute walk, joint range of motion
+and a daily stress index are computed by MedPull itself, in
+`backend/app/engine/mobility/` (pure numpy), from raw phone sensor windows
+the patient app records on the Health tab's **Measure** card (guided walk,
+six-minute walk, range-of-motion test; `ios/MedPull/Features/Measure/`) and
+from the daily autonomic series. One algorithm for every phone and wearable;
+rows land under provider `medpull` and take precedence over a vendor's on the
+same day, with the vendor's kept in the raw data for comparison. Inputs,
+functions, constants, what was verified and the validation plan are in
+**[docs/methods/custom-metrics-methodology.md](docs/methods/custom-metrics-methodology.md)**
+(PDF beside it, rebuilt with `python3 docs/methods/build_pdf.py`).
+
 ## Quickstart
 
 Requirements: [uv](https://docs.astral.sh/uv/) and Node 20+.

@@ -67,6 +67,22 @@ const METRIC_TYPE_LABEL: Record<string, string> = {
   prom_score: 'PROM score',
   bp_systolic: 'Blood pressure, systolic',
   bp_diastolic: 'Blood pressure, diastolic',
+  // MedPull's own mobility set (backend app/engine/mobility) and derived signals
+  cadence: 'Cadence',
+  step_length: 'Step length',
+  walking_speed: 'Walking speed',
+  walking_steadiness: 'Walking steadiness',
+  stress_index: 'Stress index',
+  rom_flexion: 'Flexion (ROM)',
+  rom_extension: 'Extension deficit (ROM)',
+  rom_abduction: 'Abduction (ROM)',
+  range_of_motion: 'Range of motion',
+  exercise_session: 'Exercise minutes',
+  active_energy: 'Active energy',
+  vo2_max: 'VO₂ max',
+  hr_recovery_1min: 'Heart rate recovery (1 min)',
+  sit_to_stand: 'Sit-to-stand',
+  flights_climbed: 'Flights climbed',
 }
 
 /** `metric_type` keys read as words: `hrv_rmssd` → "HRV (RMSSD)", and

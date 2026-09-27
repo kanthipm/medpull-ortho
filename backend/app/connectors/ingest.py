@@ -94,6 +94,11 @@ PLAUSIBLE_RANGE: dict[str, tuple[float, float]] = {
     str(M.FATIGUE): (0.0, 10.0),
     str(M.VO2_MAX): (10.0, 95.0),
     str(M.HR_RECOVERY_1MIN): (0.0, 120.0),
+    str(M.CADENCE): (0.0, 250.0),
+    str(M.STRESS_INDEX): (0.0, 100.0),
+    str(M.ROM_FLEXION): (0.0, 180.0),
+    str(M.ROM_EXTENSION): (-30.0, 90.0),
+    str(M.ROM_ABDUCTION): (0.0, 180.0),
 }
 
 # Observations are dated in patient-local wall time, so a patient east of the

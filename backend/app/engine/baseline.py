@@ -17,11 +17,27 @@ SD_FLOORS_ABS: dict[str, float] = {
     str(M.RESPIRATORY_RATE): 0.6,
     str(M.WALKING_ASYMMETRY_PCT): 1.0,
     str(M.DOUBLE_SUPPORT_PCT): 1.2,
+    # in-house set: the steadiness index moves in whole points; a joint angle
+    # by the phone inclinometer has an MDC95 of ~3 deg (extension) to ~9 deg
+    # (flexion); the stress index is a z-composite scaled 25 per SD.
+    str(M.WALKING_STEADINESS): 5.0,
+    str(M.ROM_FLEXION): 4.0,
+    str(M.ROM_EXTENSION): 3.0,
+    str(M.ROM_ABDUCTION): 4.0,
+    str(M.STRESS_INDEX): 8.0,
+    str(M.EXERCISE_SESSION): 3.0,
 }
 SD_FLOORS_REL: dict[str, float] = {
     str(M.HRV_RMSSD): 0.06,
     str(M.STEPS): 0.05,
     str(M.WALKING_SPEED): 0.05,
+    str(M.STEP_LENGTH): 0.05,
+    str(M.CADENCE): 0.05,
+    str(M.STAIR_SPEED_UP): 0.10,
+    str(M.STAIR_SPEED_DOWN): 0.10,
+    str(M.SIX_MIN_WALK): 0.06,
+    str(M.EXERCISE_SESSION): 0.15,
+    str(M.ACTIVE_ENERGY): 0.10,
 }
 
 # Days 0-1 after surgery are an expected physiological perturbation, not a

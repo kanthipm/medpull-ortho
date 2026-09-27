@@ -203,7 +203,13 @@ def m7(ctx: CareContext) -> CareMetric:
     name, unit, label, inputs = "Walking pace recovery", "m/s", "walking pace", [str(M.WALKING_SPEED)]
     series = speed.astype(float)
     cadence_mode = False
-    if step_len is not None:
+    measured = ctx.series.get(str(M.CADENCE))
+    if measured is not None and len(measured[measured.index >= 2]) >= 3:
+        # MedPull's own cadence (engine/mobility), measured on every walk.
+        series = measured.astype(float)
+        name, unit, label, cadence_mode = "Cadence recovery curve", "spm", "cadence", True
+        inputs = [str(M.CADENCE)]
+    elif step_len is not None:
         aligned = pd.concat([speed, step_len], axis=1, join="inner").dropna()
         if len(aligned) >= 3:
             series = (aligned.iloc[:, 0] / aligned.iloc[:, 1] * 60.0).astype(float)

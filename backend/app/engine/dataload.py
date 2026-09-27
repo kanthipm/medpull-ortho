@@ -6,7 +6,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.enums import Granularity, MetricType
+from app.models.enums import Granularity, MetricType, SourceProvider
 from app.models.observation import Observation
 
 # Metrics whose intraday rows are parts of a daily total rather than repeated
@@ -25,6 +25,13 @@ ADDITIVE = {
 }
 
 _SUMMARY = str(Granularity.DAILY_SUMMARY)
+# When MedPull's own algorithm (engine/mobility, provider MEDPULL) and a
+# vendor (Apple's walking metrics) both report a metric on the same day, the
+# day's value is MedPull's alone: one algorithm for every patient, whatever
+# phone they carry, is the point of computing it ourselves. The vendor row is
+# kept and shown in the raw data for comparison; it just does not enter the
+# series. Days MedPull did not measure fall back to the vendor.
+PREFERRED_PROVIDER = str(SourceProvider.MEDPULL)
 
 
 def load_daily_series(db: Session, patient_id: str, surgery_date: date) -> dict[str, pd.Series]:
@@ -50,6 +57,7 @@ def load_daily_series(db: Session, patient_id: str, surgery_date: date) -> dict[
             Observation.local_date,
             Observation.value_num,
             Observation.granularity,
+            Observation.source_provider,
         )
         .where(
             Observation.patient_id == patient_id,
@@ -61,10 +69,16 @@ def load_daily_series(db: Session, patient_id: str, surgery_date: date) -> dict[
     if not rows:
         return {}
 
-    df = pd.DataFrame(rows, columns=["metric_type", "local_date", "value", "granularity"])
+    df = pd.DataFrame(
+        rows, columns=["metric_type", "local_date", "value", "granularity", "source_provider"]
+    )
     df["day"] = df["local_date"].map(lambda d: (d - surgery_date).days)
     df["metric_type"] = df["metric_type"].map(str)
     df["granularity"] = df["granularity"].map(str)
+    df["preferred"] = df["source_provider"].map(str) == PREFERRED_PROVIDER
+    if df["preferred"].any():
+        any_preferred = df.groupby(["metric_type", "day"])["preferred"].transform("any")
+        df = df[df["preferred"] | ~any_preferred]
 
     out: dict[str, pd.Series] = {}
     for metric, group in df.groupby("metric_type"):
