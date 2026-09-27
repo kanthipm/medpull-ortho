@@ -109,6 +109,21 @@ STEADINESS_VERY_LOW = 40.0
 # sits near 20 %; Apple's typical range is 20-40 %.
 DOUBLE_SUPPORT_OK_PCT = 28.0
 DOUBLE_SUPPORT_FLAG_PCT = 40.0
+# Baseline days behind a stress reading before its band may flag.
+STRESS_FIRM_DAYS = 7
+AUTONOMIC_INPUTS = (M.HRV_RMSSD, M.HRV_SDNN, M.RESTING_HR, M.RESPIRATORY_RATE)
+
+
+def _autonomic_baseline_days(series: dict[str, pd.Series], day: int, window: int = 42) -> int:
+    """The most days any autonomic input reported in the window before `day`
+    — how much history the stress index's baseline actually rests on."""
+    best = 0
+    for metric in AUTONOMIC_INPUTS:
+        s = series.get(str(metric))
+        if s is None:
+            continue
+        best = max(best, int(((s.index < day) & (s.index >= day - window)).sum()))
+    return best
 
 STATUS_TEXT = {
     ("up", True): "Rising vs baseline",
@@ -199,7 +214,7 @@ def build_cards(
         if not has_recent or baseline is None or dev is None or _stale(dev, postop_day, recency):
             status = MetricStatus.NODATA
             status_text, finding = _no_reading_text(
-                metric, post, baseline, has_recent, procedure, postop_day,
+                metric, post if len(post) else s, baseline, has_recent, procedure, postop_day,
                 building=(has_recent and (baseline is None or dev is None)),
                 surgery_date=surgery_date,
             )
@@ -239,7 +254,9 @@ def build_cards(
         # The two 0-100 indices read on absolute bands, which are what their
         # construction promises (engine/mobility/stress, /stability), not on
         # a control chart over the index itself.
-        if metric == M.STRESS_INDEX and has_recent and len(post) > 0 and status is not MetricStatus.NODATA:
+        # The band-read cards judge any CURRENT reading on their absolute
+        # bands, whether or not a control-chart baseline exists yet.
+        if metric == M.STRESS_INDEX and has_recent and len(post) > 0:
             latest = float(post.iloc[-1])
             if latest >= STRESS_FLAG:
                 status, status_text, next_step = MetricStatus.FLAG, "Elevated strain", NEXT_STEPS[metric]
@@ -249,7 +266,16 @@ def build_cards(
                 status, status_text, next_step = MetricStatus.OK, "Near own baseline", None
             finding = (f"Latest {latest:.0f} on a 0-100 scale where 50 is the patient's own "
                        "baseline and 75 is one standard deviation of strain.")
-        if metric == M.WALKING_STEADINESS and has_recent and len(post) > 0 and status is not MetricStatus.NODATA:
+            n_days = _autonomic_baseline_days(series, int(post.index[-1]))
+            if n_days < STRESS_FIRM_DAYS:
+                # Three noisy sync days can put one reading two SD out; until a
+                # week of baseline exists the card says so and never flags.
+                if status is MetricStatus.FLAG:
+                    status = MetricStatus.WATCH
+                status_text = "Early estimate"
+                finding += (f" Estimated from {n_days} baseline day{'s' if n_days != 1 else ''}; "
+                            f"the band firms up after {STRESS_FIRM_DAYS}.")
+        if metric == M.WALKING_STEADINESS and has_recent and len(post) > 0:
             latest = float(post.iloc[-1])
             if latest < STEADINESS_VERY_LOW:
                 status, status_text, next_step = MetricStatus.FLAG, "Very low steadiness", NEXT_STEPS[metric]
@@ -259,9 +285,9 @@ def build_cards(
                 status, status_text, next_step = MetricStatus.OK, "Steady", None
             band = ("OK" if latest >= STEADINESS_LOW else "Low" if latest >= STEADINESS_VERY_LOW
                     else "Very low")
-            finding = (f"Latest {latest:.0f} of 100 ({band} band; OK is 60 and above), "
-                       f"from a baseline of {baseline.mean:.0f}.")
-        if metric == M.DOUBLE_SUPPORT_PCT and has_recent and len(post) > 0 and status is not MetricStatus.NODATA:
+            finding = f"Latest {latest:.0f} of 100 ({band} band; OK is 60 and above)"
+            finding += f", from a baseline of {baseline.mean:.0f}." if baseline else "."
+        if metric == M.DOUBLE_SUPPORT_PCT and has_recent and len(post) > 0:
             latest = float(post.iloc[-1])
             if postop_day > GAIT_FLAG_AFTER_DAY and latest > DOUBLE_SUPPORT_FLAG_PCT:
                 status, status_text, next_step = MetricStatus.FLAG, "Both feet down most of the time", NEXT_STEPS[metric]
@@ -270,7 +296,8 @@ def build_cards(
             else:
                 status, status_text, next_step = MetricStatus.OK, "Improving", None
             finding = (f"Latest {latest:.1f}% of the stride with both feet on the ground "
-                       f"(healthy walking is near 20%; baseline {baseline.mean:.1f}%).")
+                       "(healthy walking is near 20%"
+                       + (f"; baseline {baseline.mean:.1f}%)." if baseline else ")."))
 
         window = confidence.window_days or 1
         covered = min(
@@ -278,7 +305,7 @@ def build_cards(
         )
         last14 = post[post.index > postop_day - 14]
         if len(last14) < MIN_SPARKLINE_POINTS:
-            last14 = post.tail(MIN_SPARKLINE_POINTS)
+            last14 = (post if len(post) else s).tail(MIN_SPARKLINE_POINTS)
         cards.append(
             MetricInsight(
                 metric_key=key,
@@ -318,7 +345,8 @@ def _no_reading_text(
     screen otherwise, and 'No recent data' is a lie for a patient whose device
     reports faithfully but who cannot be measured against anything."""
     if not has_recent and len(post) > 0:
-        # The metric has history but nothing current: say what the last
+        # The metric has history (post-op, or only pre-op — the caller hands
+        # over the whole series then) but nothing current: say what the last
         # reading was and when, instead of hiding the data that exists.
         last_day = int(post.index[-1])
         ago = postop_day - last_day

@@ -424,3 +424,41 @@ def test_a_stale_metric_reports_its_last_reading():
     assert card.status is MetricStatus.NODATA and card.status_text == "No recent data"
     assert card.finding.startswith("Last reading 1.20 on Sep 14, 13 days ago.")
     assert len(card.series) == 8                     # the last eight readings, not one point
+
+
+def test_history_that_predates_surgery_is_still_shown():
+    from datetime import date as _date
+
+    from app.engine.confidence import coverage
+    from app.engine.metrics_cards import build_cards
+    from app.models.enums import MetricStatus, ProcedureType
+
+    days = list(range(-60, -50))                     # sleep only reported before surgery
+    sleep = pd.Series([7.1] * len(days), index=days, dtype=float)
+    series = {"sleep_duration": sleep}
+    cards = {c.metric_key: c for c in build_cards(series, {}, {}, coverage(series, 25),
+                                                   ProcedureType.TKA, 25, _date(2026, 9, 2))}
+    card = cards["sleep_duration"]
+    assert card.status is MetricStatus.NODATA and card.status_text == "No recent data"
+    assert card.finding.startswith("Last reading 7.1 on Jul 13, 76 days ago.")
+    assert len(card.series) == 8
+
+
+def test_stress_card_reads_its_band_and_stays_an_estimate_on_thin_baselines():
+    from datetime import date as _date
+
+    from app.engine.confidence import coverage
+    from app.engine.metrics_cards import build_cards
+    from app.models.enums import MetricStatus, ProcedureType
+
+    thin = {"hrv_sdnn": pd.Series([80.0, 78.0, 89.0, 61.0], index=[10, 11, 12, 24], dtype=float),
+            "stress_index": pd.Series([100.0], index=[24], dtype=float)}
+    card = {c.metric_key: c for c in build_cards(thin, {}, {}, coverage(thin, 25),
+                                                  ProcedureType.TKA, 25, _date(2026, 9, 2))}["stress_index"]
+    assert card.status is MetricStatus.WATCH and card.status_text == "Early estimate"
+    assert "3 baseline days" in card.finding
+    firm = {"hrv_sdnn": pd.Series([80.0] * 10 + [61.0], index=list(range(10, 20)) + [24], dtype=float),
+            "stress_index": pd.Series([100.0], index=[24], dtype=float)}
+    card = {c.metric_key: c for c in build_cards(firm, {}, {}, coverage(firm, 25),
+                                                  ProcedureType.TKA, 25, _date(2026, 9, 2))}["stress_index"]
+    assert card.status is MetricStatus.FLAG and card.status_text == "Elevated strain"

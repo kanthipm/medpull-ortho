@@ -14,4 +14,7 @@
 # 1.4.1: the signal panel is always whole (a never-measured metric is a card
 # that says so), a stale metric shows its last reading, and the stress index
 # accepts the clustered sync cadence a phone-linked wearable really has.
-ENGINE_VERSION = "1.4.1"
+# 1.4.2: stale cards show pre-op history too, the band-read cards judge any
+# current reading, and a stress reading on under a week of baseline is an
+# early estimate that cannot flag.
+ENGINE_VERSION = "1.4.2"

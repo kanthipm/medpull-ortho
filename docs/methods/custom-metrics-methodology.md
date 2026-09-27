@@ -176,12 +176,12 @@ Each movement is its own series (joint and side travel on the row) so a 110° fl
 No vendor exposes a comparable stress score (Garmin and Oura ship proprietary ones; Apple, Fitbit, WHOOP and Samsung ship none), so the index is computed the same way for every device from daily summaries.
 
 - Inputs: `ln(HRV)` (RMSSD, or SDNN when that is what the device ships — whichever series exists, never both), resting heart rate, sleep respiratory rate.
-- Baseline per input: the trailing **42 days** ending the day before, at least **3** values (a phone-synced wearable reports in clusters, not nightly); mean and SD with physiological SD floors (0.06 in ln-units, 1.5 bpm, 0.6 breaths/min — the risk engine's own floors) so one quiet week cannot make a normal night look extreme.
+- Baseline per input: the trailing **42 days** ending the day before, at least **3** values (a phone-synced wearable reports in clusters, not nightly); mean and SD with physiological SD floors (0.15 in ln-units, because day-to-day RMSSD varies by 10–20 % in healthy adults, Plews 2013; 1.5 bpm; 0.6 breaths/min) so one quiet week cannot make a normal night look extreme.
 - Strain z: `−z(ln HRV)`, `+z(RHR)`, `+z(RR)`, each clipped to ±3.
 - Composite: weighted mean over the inputs present that day (HRV 0.4, RHR 0.4, RR 0.2, renormalised).
 - `index = clip(50 + 25 × composite, 0, 100)`: **50 = at the patient's own baseline, 75 = one SD of strain.**
 
-The construction follows the HRV–stress literature (RMSSD and HF power fall, heart rate rises under sympathetic load: Kim 2018 meta-analysis) and Firstbeat's stress/recovery framing without its proprietary model. Baevsky's stress index needs beat-to-beat intervals, which daily summaries do not carry; it is the natural extension once the app uploads `HKHeartbeatSeries`. Dashboard bands: **≥ 75 flag, 62.5–75 watch**.
+The construction follows the HRV–stress literature (RMSSD and HF power fall, heart rate rises under sympathetic load: Kim 2018 meta-analysis) and Firstbeat's stress/recovery framing without its proprietary model. Baevsky's stress index needs beat-to-beat intervals, which daily summaries do not carry; it is the natural extension once the app uploads `HKHeartbeatSeries`. Dashboard bands: **≥ 75 flag, 62.5–75 watch**; until seven baseline days exist the card is labelled an early estimate and is capped at watch.
 
 ## 13. From rows to the clinician's dashboard
 
@@ -229,6 +229,7 @@ These are self-consistency checks of the rules, not evidence about patients.
 - Larsen et al. Pocket-phone gait phase estimation. *Sensors* 2025. PMC12299727.
 - Menz HB, Lord SR, Fitzpatrick RC. Acceleration patterns of the head and pelvis when walking on level and irregular surfaces. *Gait Posture* 2003;18:35–46.
 - Micó-Amigo ME, et al. Assessing real-world gait with digital technology? Validation, insights and recommendations from the Mobilise-D consortium. *J NeuroEng Rehabil* 2023;20:78.
+- Plews DJ, Laursen PB, Stanley J, Kilding AE, Buchheit M. Training adaptation and heart rate variability in elite endurance athletes: opening the door to effective monitoring. *Sports Med* 2013;43:773–781.
 - Rispens SM, et al. Identification of fall risk predictors in daily life measurements: gait characteristics' reliability and association with self-reported fall history. *Neurorehabil Neural Repair* 2015;29:54–61.
 - Salvi D, et al. App-based versus standard six-minute walk test in pulmonary hypertension. *JMIR mHealth uHealth* 2020;8:e13756.
 - Soltani A, et al. Real-world gait speed estimation using wrist sensor: a personalized approach. *IEEE J Biomed Health Inform* 2020;24:658–668.
@@ -265,7 +266,8 @@ These are self-consistency checks of the rules, not evidence about patients.
 | ANCHORS / WEIGHTS / LOW / VERY_LOW | §8 table / 60 / 40 | stability.py | steadiness index |
 | ALT_FS / FLIGHT_MIN_M / MIN_V / V_RANGE / MIN_STEPS | 2 Hz / 2.5 m / 0.08 m/s / 0.10–1.50 m/s / 6 | stairs.py | stair detection |
 | GPS_MAX_ACCURACY_M / STEP_LENGTH_HEIGHT_RATIO / HOLD_MAX_SD | 12 m / 0.415 / 3° | active.py | six-minute walk and ROM |
-| BASELINE_DAYS / MIN_BASELINE_DAYS / WEIGHTS / SD_FLOORS / Z_CLIP | 42 / 3 / 0.4-0.4-0.2 / 0.06-1.5-0.6 / 3 | stress.py | stress index |
+| BASELINE_DAYS / MIN_BASELINE_DAYS / WEIGHTS / SD_FLOORS / Z_CLIP | 42 / 3 / 0.4-0.4-0.2 / 0.15-1.5-0.6 / 3 | stress.py | stress index |
+| STRESS_FIRM_DAYS | 7 | metrics_cards.py | baseline days before the stress band may flag |
 | STRESS_FLAG / STRESS_WATCH | 75 / 62.5 | metrics_cards.py | dashboard bands |
 | STEADINESS_LOW / VERY_LOW | 60 / 40 | metrics_cards.py | dashboard bands |
 | DOUBLE_SUPPORT_OK / FLAG | 28 % / 40 % (after post-op day 10) | metrics_cards.py | dashboard bands |

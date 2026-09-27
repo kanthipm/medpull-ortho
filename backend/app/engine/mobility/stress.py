@@ -43,7 +43,10 @@ from app.models.enums import MetricType as M
 BASELINE_DAYS = 42
 MIN_BASELINE_DAYS = 3
 WEIGHTS = {"hrv": 0.4, "rhr": 0.4, "rr": 0.2}
-SD_FLOORS = {"hrv": 0.06, "rhr": 1.5, "rr": 0.6}   # ln-units, bpm, breaths/min
+# ln-units, bpm, breaths/min. Day-to-day RMSSD varies by 10-20 % in healthy
+# adults (Plews 2013), so the HRV floor is 0.15 in ln-units, not the 6 % the
+# risk engine uses for a multi-week control chart of a nightly value.
+SD_FLOORS = {"hrv": 0.15, "rhr": 1.5, "rr": 0.6}
 Z_CLIP = 3.0
 
 
