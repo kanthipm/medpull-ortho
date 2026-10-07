@@ -23,4 +23,6 @@
 # panel the patient's sources actually report, and every card, care metric and
 # the trajectory carry a `readiness` countdown. Assessments stored by 1.4.x
 # carry none of that and must not survive.
-ENGINE_VERSION = "1.5.0"
+# 1.5.1: the headline is six fixed tiles per pathway plus an `attention`
+# list; stored bundles carry the old three and no attention list.
+ENGINE_VERSION = "1.5.1"
