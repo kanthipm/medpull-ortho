@@ -1,4 +1,4 @@
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Sparkles } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { CareMetric } from '../../../api/care'
 import { useCareMetrics } from '../../../api/care'
@@ -7,7 +7,7 @@ import ConfidenceChip from '../../../components/ConfidenceChip'
 import InfoTip from '../../../components/InfoTip'
 import SectionCard from '../../../components/SectionCard'
 import { RefreshOverlay, SkeletonCard } from '../../../components/Skeleton'
-import type { TileFamily } from '../../../components/Tile'
+import Tile, { type TileFamily } from '../../../components/Tile'
 import DotLine from '../DotLine'
 import { latestLabel } from './chartText'
 import { GUARDED_NOTE, statusChipText, tileChipClass } from './labels'
@@ -17,11 +17,24 @@ import { readinessLine, showsCountdown } from './readinessText'
 import TileArt from './TileArt'
 import { valueParts } from './valueParts'
 
-/** The headline metrics — the pathway's priority picks — as the medpull.org
+/** The headline metrics — the pathway's SIX fixed picks — as the medpull.org
  *  bento: grainy gradient tiles, the number in light Outfit, the metric's own
  *  chart as white line art, and a solid-glass caption with the status chip
- *  and the finding. The first tile spans two columns, like the site's
- *  "Daily steps" tile.
+ *  and the finding.
+ *
+ *  THE SQUARE. Four columns, two rows, six tiles that puzzle into one even
+ *  rectangle: slot 0 is wide (two columns), slots 1–2 single, slots 3–4
+ *  single, slot 5 wide, so the two rows mirror each other. Every tile in a
+ *  row shares the row's height (grid stretch, the caption pinned to the
+ *  bottom), and the same metric sits in the same slot for every patient on
+ *  the pathway — a knee patient's load ratio is always the second tile. A
+ *  tile with no data keeps its slot and counts down to its first reading
+ *  instead of handing the slot to something else.
+ *
+ *  Below the square, "Brought to your attention" is the engine's own
+ *  judgement: anything outside the six it flagged or is watching, as a
+ *  compact row that opens the metric in Full stats. The square never
+ *  reshuffles for it.
  *
  *  Hue follows the metric's category, never its state: activity and function
  *  sage, engagement amber, sleep and trajectory lilac, vitals and symptoms
@@ -66,7 +79,7 @@ function HeadlineTile({
   const countdown = nodata && showsCountdown(m.readiness)
   const line = readinessLine(m.readiness)
   return (
-    <div className={`relative ${wide ? 'lg:col-span-2' : ''}`}>
+    <div className={`relative flex ${wide ? 'sm:col-span-2' : ''}`}>
       <button
         type="button"
         onClick={() => onOpen(m.id)}
@@ -146,6 +159,57 @@ function HeadlineTile({
 
 const TITLE = 'Headline metrics'
 
+/** Slots 0 and 5 are the wide tiles of the 4×2 square. */
+const WIDE_SLOTS = new Set([0, 5])
+
+/** The engine's picks outside the six: one compact row per metric, the
+ *  state in words, the finding on one line, opening the card in Full stats. */
+function AttentionStrip({
+  metrics,
+  onOpen,
+  glossary,
+}: {
+  metrics: CareMetric[]
+  onOpen: (metricId: string) => void
+  glossary: ReturnType<typeof useExplain>['data']
+}) {
+  if (metrics.length === 0) return null
+  return (
+    <div className="card-group mt-3">
+      <div className="flex items-center gap-2 px-4 pb-1 pt-3">
+        <Sparkles aria-hidden size={14} className="text-cat-teal-ink" />
+        <h3 className="text-[15px] font-medium text-ink">Brought to your attention</h3>
+        <span className="meta">outside the six, picked by the engine</span>
+      </div>
+      <ul className="divide-y divide-hairline">
+        {metrics.map((m) => {
+          const tile = careMetricTile(m)
+          return (
+            <li key={m.id} className="relative flex items-center gap-3 px-4 py-2.5">
+              <Tile family={tile.family} icon={tile.icon} />
+              <button
+                type="button"
+                onClick={() => onOpen(m.id)}
+                className="stretched-link min-w-0 flex-1 text-left"
+              >
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-copy-lg font-medium text-ink">{m.name}</span>
+                  <span className={`chip ${tileChipClass(m.status)}`}>{statusChipText(m)}</span>
+                </span>
+                <span className="mt-0.5 line-clamp-1 block text-copy text-body">{m.finding}</span>
+              </button>
+              <span className="above-stretch shrink-0">
+                <InfoTip entry={explainMetric(glossary, m.id)} placement="bottom-end" />
+              </span>
+              <ChevronRight aria-hidden size={16} className="shrink-0 text-secondary" />
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 export default function HeadlineMetrics({
   patientId,
   refreshing,
@@ -164,6 +228,9 @@ export default function HeadlineMetrics({
 
   const byId = new Map((data?.metrics ?? []).map((m) => [m.id, m]))
   const tiles = (data?.headline ?? [])
+    .map((id) => byId.get(id))
+    .filter((m): m is CareMetric => !!m)
+  const attention = (data?.attention ?? [])
     .map((id) => byId.get(id))
     .filter((m): m is CareMetric => !!m)
 
@@ -190,20 +257,22 @@ export default function HeadlineMetrics({
         </button>
       </div>
       <RefreshOverlay show={refreshing} />
-      <div
-        className={`grid gap-3 sm:grid-cols-2 ${tiles.length >= 3 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}
-      >
+      {/* 4×2: every tile in a row stretches to the row's height, so the two
+          rows close into one rectangle. On narrow screens the wide tiles
+          span the two-column grid and the rest stack two across. */}
+      <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {tiles.map((m, i) => (
           <HeadlineTile
             key={m.id}
             m={m}
             index={i}
-            wide={i === 0 && tiles.length !== 2}
+            wide={WIDE_SLOTS.has(i)}
             onOpen={onOpen}
             glossary={glossary}
           />
         ))}
       </div>
+      <AttentionStrip metrics={attention} onOpen={onOpen} glossary={glossary} />
     </section>
   )
 }

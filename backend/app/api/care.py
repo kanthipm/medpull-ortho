@@ -45,6 +45,8 @@ def care_metrics(patient_id: str, db: Session = Depends(get_db)) -> dict:
         "version": care.get("version", "care-1"),
         "pathway": {"key": pathway.key, "name": pathway.name, "domain": pathway.domain},
         "headline": care.get("headline", []),
+        # The engine's own picks outside the six: flagged or worth a look.
+        "attention": care.get("attention", []),
         "metrics": care.get("metrics", []),
         "families": families_payload(),
         "computed_at": assessment.computed_at.isoformat(),

@@ -128,7 +128,7 @@ def test_empty_context_yields_nodata_for_everything_with_unlock_text():
         assert metric["unlock"], metric["id"]
         assert isinstance(metric["applicable"], bool)
         _assert_clean(metric)
-    assert len(bundle["headline"]) == 3
+    assert len(bundle["headline"]) == 6
 
 
 def test_compute_never_raises_and_replaces_a_failing_metric(monkeypatch):
@@ -146,7 +146,7 @@ def test_compute_never_raises_and_replaces_a_failing_metric(monkeypatch):
 def test_unavailable_bundle_has_the_full_shape():
     bundle = unavailable_bundle(PATHWAYS["copd"])
     assert bundle["pathway"] == "copd" and len(bundle["metrics"]) == 24
-    assert bundle["headline"] == ["C2", "M2", "M1"]
+    assert bundle["headline"] == ["C2", "M1", "M12", "M2", "M9", "M14"]
 
 
 def test_applicable_follows_the_pathway_domain():
@@ -179,19 +179,30 @@ def test_pathway_for_derives_from_procedure_and_honours_an_explicit_key():
     assert pathway_for(R()).key == "general_recovery"
 
 
-def test_headline_prefers_live_metrics_in_pathway_order_and_gates_on_m16():
+def test_headline_is_the_same_six_in_the_same_order_whatever_the_data():
+    from app.engine.care.headline import select_attention
+    from app.engine.care.pathways import ORTHO_SIX
+
     def stub(mid: str, status: MetricStatus) -> dict:
         return {"id": mid, "status": str(status)}
 
+    six = list(ORTHO_SIX)
     metrics = [stub(i, MetricStatus.NODATA) for i in ALL_IDS]
-    assert select_headline(PATHWAYS["ortho_tka"], metrics) == ["M1", "M2", "M12"]
-    live = {"M12": MetricStatus.OK, "M9": MetricStatus.WATCH}
+    assert select_headline(PATHWAYS["ortho_tka"], metrics) == six
+    live = {"M12": MetricStatus.OK, "M9": MetricStatus.WATCH, "M3": MetricStatus.FLAG,
+            "M13": MetricStatus.WATCH}
     metrics = [stub(i, live.get(i, MetricStatus.NODATA)) for i in ALL_IDS]
-    assert select_headline(PATHWAYS["ortho_tka"], metrics) == ["M12", "M9", "M1"]
-    assert select_headline(PATHWAYS["ortho_shoulder"], metrics) == ["M9", "M12", "M2"]
+    # data does not move a tile; every ortho archetype shares the set
+    assert select_headline(PATHWAYS["ortho_tka"], metrics) == six
+    assert select_headline(PATHWAYS["ortho_shoulder"], metrics) == six
+    assert select_headline(PATHWAYS["ortho_spine"], metrics) == six
+    # what the engine brings to attention: outside the six, flags before watches
+    assert select_attention(PATHWAYS["ortho_tka"], metrics) == ["M3", "M13"]
     live["M16"] = MetricStatus.FLAG
     metrics = [stub(i, live.get(i, MetricStatus.NODATA)) for i in ALL_IDS]
-    assert select_headline(PATHWAYS["ortho_tka"], metrics) == ["M12", "M9", "M16"]
+    assert select_attention(PATHWAYS["ortho_tka"], metrics) == ["M16", "M3", "M13"]
+    for pathway in PATHWAYS.values():
+        assert len(pathway.headline) == 6 and len(set(pathway.headline)) == 6, pathway.key
 
 
 # --- per-metric computable cases -----------------------------------------------------
@@ -626,7 +637,8 @@ def _by_id(care: dict) -> dict[str, dict]:
 def test_seeded_roster_bundle_shape_and_guardrails(db, patient_id):
     care = _care(db, patient_id)
     assert care["version"] == "care-1"
-    assert len(care["headline"]) == 3 and len(set(care["headline"])) == 3
+    assert len(care["headline"]) == 6 and len(set(care["headline"])) == 6
+    assert all(i not in care["headline"] for i in care["attention"])
     assert [m["id"] for m in care["metrics"]] == ALL_IDS
     for metric in care["metrics"]:
         _assert_clean(metric)
@@ -635,7 +647,8 @@ def test_seeded_roster_bundle_shape_and_guardrails(db, patient_id):
 def test_linda_night_disruption_is_a_finding(db):
     m = _by_id(_care(db, "linda"))["M9"]
     assert m["status"] in ("flag", "watch")
-    assert _care(db, "linda")["headline"][0] == "M9"
+    # nights are one of the six every orthopedic archetype shows, in a fixed slot
+    assert _care(db, "linda")["headline"][4] == "M9"
 
 
 def test_aisha_pain_cost_climbs_and_stairs_plateau(db):
@@ -658,7 +671,9 @@ def test_priya_cannot_be_seen_but_her_scale_and_cuff_report(db):
     assert by_id["M16"]["status"] == "flag"
     assert by_id["C1"]["status"] == "ok" and by_id["C4"]["status"] == "ok"
     assert by_id["C1"]["applicable"] is False  # computed, but not this pathway's metric
-    assert "M16" in _care(db, "priya")["headline"]
+    # the six never reshuffle; a data-confidence flag is brought to attention first
+    assert "M16" not in _care(db, "priya")["headline"]
+    assert _care(db, "priya")["attention"][0] == "M16"
 
 
 def test_input_hash_moves_with_checkins_and_tasks(db):
@@ -682,10 +697,11 @@ def test_input_hash_moves_with_checkins_and_tasks(db):
 
 def test_care_metrics_endpoint_shape(client):
     body = client.get("/api/patients/aisha/care-metrics").json()
-    assert set(body) == {"version", "pathway", "headline", "metrics", "families", "computed_at"}
+    assert set(body) == {"version", "pathway", "headline", "attention", "metrics", "families",
+                         "computed_at"}
     assert body["pathway"] == {"key": "ortho_tha", "name": "Total hip replacement recovery",
                                "domain": "ortho"}
-    assert len(body["metrics"]) == 24 and len(body["headline"]) == 3
+    assert len(body["metrics"]) == 24 and len(body["headline"]) == 6
     assert [f["key"] for f in body["families"]] == [key for key, _, _ in FAMILIES]
     assert client.get("/api/patients/ghost/care-metrics").status_code == 404
 

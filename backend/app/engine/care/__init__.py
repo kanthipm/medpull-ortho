@@ -23,7 +23,7 @@ from app.engine.care import chronic, engagement, function, load, recovery_qualit
 from app.engine.care import trajectory as trajectory_metrics
 from app.engine.care._common import unavailable
 from app.engine.care.catalog import CATALOG_ORDER
-from app.engine.care.headline import select_headline
+from app.engine.care.headline import select_attention, select_headline
 from app.engine.care.loaders import (
     device_last_sync,
     load_checkins,
@@ -141,6 +141,7 @@ def compute_care_metrics(ctx: CareContext) -> dict[str, Any]:
         "version": CARE_VERSION,
         "pathway": ctx.pathway.key,
         "headline": select_headline(ctx.pathway, metrics),
+        "attention": select_attention(ctx.pathway, metrics),
         "metrics": [m.to_dict() for m in metrics],
     }
 
@@ -152,11 +153,12 @@ def unavailable_bundle(pathway: Pathway) -> dict[str, Any]:
         "version": CARE_VERSION,
         "pathway": pathway.key,
         "headline": select_headline(pathway, metrics),
+        "attention": [],
         "metrics": [m.to_dict() for m in metrics],
     }
 
 
 __all__ = [
     "CARE_VERSION", "REGISTRY", "build_context", "compute_care_metrics", "unavailable_bundle",
-    "select_headline", "pathway_for",
+    "select_headline", "select_attention", "pathway_for",
 ]

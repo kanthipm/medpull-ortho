@@ -131,6 +131,9 @@ export interface CareMetricsResponse {
   pathway: CarePathway
   /** Metric ids in display order — the API already picks applicable ones. */
   headline: string[]
+  /** Metric ids OUTSIDE the six that the engine flagged or is watching —
+   *  the strip under the bento. Flags first, data confidence ahead of all. */
+  attention: string[]
   metrics: CareMetric[]
   families: CareFamily[]
   computed_at: string

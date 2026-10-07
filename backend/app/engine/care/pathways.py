@@ -7,14 +7,19 @@ patient-reported symptom for the symptom-load slope, and whether progress is
 judged against a procedure recovery curve (ortho) or only against the
 patient's own baseline (chronic).
 
-Headline rationale (ortho): load tolerance (M1) and the load→pain
-dose-response (M2) are the progression-vs-overload decision every
-orthopedic follow-up turns on; the deterioration index (M12) is the safety
-net; shoulder pivots to night pain (M9), spine to sitting/walking tolerance
-change-points (M18), fracture to asymmetry (M3). Chronic pathways lead with
-the condition's own vital (weight for heart failure, SpO₂ for COPD, glucose
-for diabetes, blood pressure for hypertension) and keep engagement and
-coverage close behind, because a chronic program lives or dies on both.
+Headline: SIX fixed tiles per archetype, in a fixed order, so a clinician
+who reads two knee patients finds the same stat in the same rectangle on
+both pages. Every orthopedic pathway shares one set — the recovery curve
+(M17), load this week (M1), the deterioration safety net (M12), the
+load→pain dose-response (M2), nights (M9) and adherence (M14) — because
+those are the six questions every post-surgical follow-up turns on
+whatever the joint. Chronic pathways lead with the condition's own vital
+(weight for heart failure, SpO₂ for COPD, glucose for diabetes, blood
+pressure for hypertension) and keep engagement and coverage close behind,
+because a chronic program lives or dies on both. The first and last slots
+are the wide tiles. Anything outside the six that the engine flags is
+brought to attention beside the grid (headline.select_attention), never by
+reshuffling it.
 """
 
 from __future__ import annotations
@@ -34,58 +39,43 @@ class Pathway:
     uses_expected_curve: bool = True  # ortho: compare to the procedure curve
 
 
+# The one orthopedic set. Slot 0 and slot 5 are the wide tiles: the recovery
+# curve (a band chart) and adherence (a task-by-day grid) are the two that
+# need the width.
+ORTHO_SIX = ("M17", "M1", "M12", "M2", "M9", "M14")
+HEADLINE_SIZE = 6
+
 PATHWAYS: dict[str, Pathway] = {
-    "ortho_tka": Pathway(
-        "ortho_tka", "Total knee replacement recovery", "ortho",
-        ["M1", "M2", "M12", "M3", "M17", "M9", "M10", "M14"],
-    ),
-    "ortho_tha": Pathway(
-        "ortho_tha", "Total hip replacement recovery", "ortho",
-        ["M1", "M2", "M12", "M3", "M17", "M9", "M10", "M14"],
-    ),
-    "ortho_acl": Pathway(
-        "ortho_acl", "ACL reconstruction recovery", "ortho",
-        ["M1", "M2", "M3", "M17", "M12", "M7", "M14"],
-    ),
-    "ortho_meniscus": Pathway(
-        "ortho_meniscus", "Meniscus repair recovery", "ortho",
-        ["M1", "M2", "M3", "M17", "M12", "M7", "M14"],
-    ),
-    "ortho_ankle": Pathway(
-        "ortho_ankle", "Ankle fracture recovery", "ortho",
-        ["M1", "M3", "M12", "M2", "M17", "M10", "M14"],
-    ),
-    "ortho_shoulder": Pathway(
-        "ortho_shoulder", "Rotator cuff repair recovery", "ortho",
-        ["M9", "M2", "M12", "M10", "M15", "M1", "M14"],
-    ),
-    "ortho_spine": Pathway(
-        "ortho_spine", "Lumbar decompression recovery", "ortho",
-        ["M1", "M2", "M18", "M9", "M12", "M17", "M14"],
-    ),
+    "ortho_tka": Pathway("ortho_tka", "Total knee replacement recovery", "ortho", list(ORTHO_SIX)),
+    "ortho_tha": Pathway("ortho_tha", "Total hip replacement recovery", "ortho", list(ORTHO_SIX)),
+    "ortho_acl": Pathway("ortho_acl", "ACL reconstruction recovery", "ortho", list(ORTHO_SIX)),
+    "ortho_meniscus": Pathway("ortho_meniscus", "Meniscus repair recovery", "ortho", list(ORTHO_SIX)),
+    "ortho_ankle": Pathway("ortho_ankle", "Ankle fracture recovery", "ortho", list(ORTHO_SIX)),
+    "ortho_shoulder": Pathway("ortho_shoulder", "Rotator cuff repair recovery", "ortho", list(ORTHO_SIX)),
+    "ortho_spine": Pathway("ortho_spine", "Lumbar decompression recovery", "ortho", list(ORTHO_SIX)),
     "heart_failure": Pathway(
         "heart_failure", "Heart failure program", "cardiac",
-        ["C1", "M12", "M1", "M15", "M10", "M16"], "breathlessness", False,
+        ["C1", "M1", "M12", "M10", "M14", "M15"], "breathlessness", False,
     ),
     "copd": Pathway(
         "copd", "COPD program", "pulmonary",
-        ["C2", "M2", "M1", "M9", "M15", "M12"], "breathlessness", False,
+        ["C2", "M1", "M12", "M2", "M9", "M14"], "breathlessness", False,
     ),
     "diabetes": Pathway(
         "diabetes", "Diabetes program", "metabolic",
-        ["C3", "M1", "M14", "M15", "M16"], "fatigue", False,
+        ["C3", "M1", "M12", "M17", "M14", "M15"], "fatigue", False,
     ),
     "hypertension": Pathway(
         "hypertension", "Hypertension program", "cardiac",
-        ["C4", "M1", "M14", "M15", "M16"], "fatigue", False,
+        ["C4", "M1", "M12", "M17", "M14", "M15"], "fatigue", False,
     ),
     "chronic_pain": Pathway(
         "chronic_pain", "Chronic pain and deconditioning program", "pain",
-        ["M2", "M1", "M9", "M15", "M14"], "pain", False,
+        ["M2", "M1", "C5", "M9", "M14", "M15"], "pain", False,
     ),
     "general_recovery": Pathway(
         "general_recovery", "General recovery", "general",
-        ["M1", "M12", "M15", "M16", "M17"], "fatigue", False,
+        ["M17", "M1", "M12", "C5", "M14", "M15"], "fatigue", False,
     ),
 }
 
