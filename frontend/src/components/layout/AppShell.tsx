@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, type RefObject } from 'react'
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useReveal, useSpotlight } from '../../lib/useReveal'
 import { useScrollEdge } from '../../lib/useScrollEdge'
+import DemoWelcome from '../DemoWelcome'
 import NotificationsPopover from '../NotificationsPopover'
 import { useActiveRoute, useSlidingIndicator } from '../segmented'
 import ThemeToggle from '../ThemeToggle'
@@ -202,6 +203,7 @@ export default function AppShell() {
       >
         <Outlet />
       </main>
+      <DemoWelcome />
     </div>
   )
 }
