@@ -119,31 +119,29 @@ def warm_caches() -> None:
 
     def _warm() -> None:
         try:
-            from app.database import SessionLocal
-            from app.engine.pipeline import run_all
-            from app.llm.insights import get_daily_briefing, get_patient_insight
-            from app.models.enums import InsightKind
-            from app.models.patient import Patient
-            from sqlalchemy import select
+            from app.api.narratives import warm_everything
 
-            db = SessionLocal()
-            try:
-                run_all(db)
-                for pid in db.scalars(select(Patient.id)).all():
-                    for kind in (
-                        InsightKind.WORKLIST_REASON,
-                        InsightKind.PATIENT_SUMMARY,
-                        InsightKind.SUGGESTED_ACTIONS,
-                    ):
-                        get_patient_insight(db, kind, pid)
-                get_daily_briefing(db)
-                logging.getLogger(__name__).info("Insight caches warmed")
-            finally:
-                db.close()
+            warm_everything()
+            logging.getLogger(__name__).info("Insight caches warmed")
         except Exception:  # noqa: BLE001 — warming must never take the app down
             logging.getLogger(__name__).exception("Cache warming failed")
 
+    def _loop() -> None:
+        # The periodic pass: assessments roll over at midnight and narratives
+        # re-key with them, so a console opened at 9am used to pay for the
+        # whole roster's model calls on its first request. Every interval the
+        # warmer does that work ahead of anyone asking.
+        import time
+
+        interval = settings.narrative_warm_interval_seconds
+        if interval <= 0:
+            return
+        while True:
+            time.sleep(interval)
+            _warm()
+
     threading.Thread(target=_warm, name="insight-warmer", daemon=True).start()
+    threading.Thread(target=_loop, name="insight-warmer-loop", daemon=True).start()
 
 # Dev convenience: the Vite dev server proxies /api, but allow direct calls too.
 # On AWS, CloudFront serves the SPA and the API from one origin, so no request

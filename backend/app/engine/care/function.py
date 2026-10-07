@@ -16,7 +16,9 @@ import pandas as pd
 from app.engine.care._common import (
     NO_RECENT_TEXT,
     build,
+    building,
     confidence_for,
+    established,
     last_n_days,
     nodata,
     points,
@@ -43,9 +45,11 @@ def _walks(ctx: CareContext, days: int = 28) -> list[dict[str, Any]]:
 def m4(ctx: CareContext) -> CareMetric:
     walks = [s for s in _walks(ctx) if s.get("hr_bpm") and (s.get("cadence_spm") or s.get("speed_mps"))]
     coverage = f"{len(walks)} walks with heart rate in 28 days"
-    if len(walks) < 3:
-        return nodata("M4", ctx, "Needs 3 walks" if walks else "No data yet",
-                      coverage_text=coverage)
+    if len(walks) < 2:
+        return nodata("M4", ctx, "Needs 2 walks" if walks else "No data yet",
+                      coverage_text=coverage,
+                      readiness=established(len(walks), 2, 6, unit="walks",
+                                            note="walks with heart rate"))
     base = ctx.baselines.get(str(M.RESTING_HR))
     unit = "bpm / spm"
     costs: list[tuple[int, float]] = []
@@ -60,8 +64,11 @@ def m4(ctx: CareContext) -> CareMetric:
             unit = "bpm / 0.1 m/s"
         if output > 0:
             costs.append((int(s["day"]), reserve / output))
-    if len(costs) < 3:
-        return nodata("M4", ctx, "Needs 3 walks", coverage_text=coverage)
+    if len(costs) < 2:
+        return nodata("M4", ctx, "Needs 2 walks", coverage_text=coverage,
+                      readiness=established(len(costs), 2, 6, unit="walks",
+                                            note="walks with heart rate"))
+    ready = established(len(costs), 2, 6, unit="walks", note="walks with heart rate")
     values = [c for _, c in costs]
     latest = values[-1]
     first3 = float(np.mean(values[:3]))
@@ -76,11 +83,16 @@ def m4(ctx: CareContext) -> CareMetric:
         status, text = MetricStatus.OK, "Effort cost falling"
     else:
         status, text = MetricStatus.OK, "Effort cost stable"
+    if len(costs) < 6 and status is MetricStatus.FLAG:
+        status, text = MetricStatus.WATCH, "Early read: effort cost rising"
     finding = (
         f"Heart-rate reserve per unit of walking output is {latest:.2f} {unit} on the latest "
         f"walk; the last three walks average {last3:.2f} against {first3:.2f} for the first "
         f"three ({(ratio - 1) * 100:+.0f}%, trend {slope:+.3f}/day)."
     )
+    if len(costs) < 6:
+        finding += f" Early read from {len(costs)} walks; settles after six."
+
     if status is MetricStatus.FLAG:
         finding += " A rising effort cost is an early sign of deconditioning or guarding."
     elif ratio <= 0.9:
@@ -93,7 +105,7 @@ def m4(ctx: CareContext) -> CareMetric:
         delta_text=f"{(ratio - 1) * 100:+.0f}% vs first walks", chart=chart,
         next_step="Ask about breathlessness, pain guarding and sleep; review with PT."
         if status is MetricStatus.FLAG else None,
-        confidence=confidence_for(ctx, len(costs), 6), coverage_text=coverage,
+        confidence=confidence_for(ctx, len(costs), 6), coverage_text=coverage, readiness=ready,
         method="Mean (heart rate − resting heart rate) divided by mean cadence per walk"
                + (" (resting HR from the pre-op baseline)" if base is not None
                   else " (resting HR estimated from the walk's minimum)")
@@ -117,7 +129,8 @@ def m5(ctx: CareContext) -> CareMetric:
              if s.get("cadence_spm") and len(s["cadence_spm"]) >= 6 and s["minutes"] >= 6]
     coverage = f"{len(walks)} walks of 6+ minutes with cadence in 28 days"
     if not walks:
-        return nodata("M5", ctx, coverage_text=coverage)
+        return nodata("M5", ctx, coverage_text=coverage,
+                      readiness=established(0, 1, 3, unit="walks", note="walks of 6+ minutes"))
     recent = walks[-3:]
     fades = [_fade(s["cadence_spm"]) for s in recent]
     index = float(np.mean([f for f, _ in fades]))
@@ -150,6 +163,7 @@ def m5(ctx: CareContext) -> CareMetric:
         next_step="Shorten walks and add a second bout rather than pushing one longer one."
         if status is MetricStatus.FLAG else None,
         confidence=confidence_for(ctx, len(walks), 3), coverage_text=coverage,
+        readiness=established(len(walks), 1, 3, unit="walks", note="walks of 6+ minutes"),
     )
 
 
@@ -164,8 +178,9 @@ def m6(ctx: CareContext) -> CareMetric:
                       finding=f"The latest sit-to-stand count is from {ctx.day_phrase(latest_day)}.")
     last14 = last_n_days(post, ctx.postop_day, 14)
     coverage = f"{len(last14)} of 14 days of chair-rise counts"
-    if len(last14) < 3:
-        return nodata("M6", ctx, "Building baseline", coverage_text=coverage)
+    if len(last14) < 2:
+        return building("M6", ctx, len(last14), 2, 7, note="days of chair-rise counts",
+                        coverage_text=coverage)
     last7 = last14[last14.index > ctx.postop_day - 7]
     prev7 = last14[last14.index <= ctx.postop_day - 7]
     l7 = float(last7.mean()) if len(last7) else float(last14.iloc[-1])
@@ -192,6 +207,7 @@ def m6(ctx: CareContext) -> CareMetric:
         value=f"{l7:.0f}", value_num=l7, unit="rises/day", value_label="chair rises",
         delta_text=delta, chart=chart, confidence=confidence_for(ctx, len(last7), 7),
         coverage_text=coverage,
+        readiness=established(len(last14), 2, 7, note="days of chair-rise counts"),
     )
 
 
@@ -220,9 +236,11 @@ def m7(ctx: CareContext) -> CareMetric:
     if stale(latest_day, ctx.postop_day):
         return nodata("M7", ctx, NO_RECENT_TEXT, name=name,
                       finding=f"The latest {label} reading is from {ctx.day_phrase(latest_day)}.")
-    if len(post) < 3:
-        return nodata("M7", ctx, "Building baseline", name=name,
-                      coverage_text=f"{len(post)} days of {label}")
+    if len(post) < 2:
+        return building("M7", ctx, len(post), 2, 7, note=f"days of {label}", name=name,
+                        coverage_text=f"{len(post)} days of {label}",
+                        extra_wait=max(0, 2 - ctx.postop_day))
+    ready = established(len(post), 2, 7, note=f"days of {label}")
     latest = float(post.iloc[-1])
     last3 = float(post.iloc[-3:].mean())
     prev7 = post.iloc[-10:-3]
@@ -264,12 +282,14 @@ def m7(ctx: CareContext) -> CareMetric:
         finding += " Pace sits below what the recovery curve expects at this point."
     elif status is MetricStatus.WATCH and "Dip" in text:
         finding += " A dip against the patient's own trend, the day it starts."
+    if len(post) < 7:
+        finding += f" Early read from {len(post)} days of {label}; settles after a week."
     chart = ChartSpec(kind="line", series=tail(points(last_n_days(post, ctx.postop_day, 28))),
                       reference=reference, y_label=unit)
     return build(
         "M7", ctx, name=name, status=status, status_text=text, finding=finding,
         value=num(latest), value_num=latest, unit=unit, value_label=label,
-        delta_text=f"3-day mean {fmt(last3)}", chart=chart, inputs=inputs,
+        delta_text=f"3-day mean {fmt(last3)}", chart=chart, inputs=inputs, readiness=ready,
         next_step="Review activity progression with PT." if status is not MetricStatus.OK else None,
         confidence=confidence_for(ctx, len(post.iloc[-7:]), 7),
         coverage_text=f"{len(last_n_days(post, ctx.postop_day, 7))} of 7 days of {label}",
@@ -345,6 +365,7 @@ def m8(ctx: CareContext) -> CareMetric:
         value=f"{l7:.1f}", value_num=l7, unit="flights/day", value_label="flights this week",
         delta_text=delta, chart=chart, confidence=confidence_for(ctx, len(last7), 7),
         coverage_text=coverage,
+        readiness=established(len(last7), 1, 7, note="days of flights climbed"),
         next_step="Add one flight a day with rail support; progress when pain-free."
         if status is MetricStatus.WATCH else None,
         method="First post-op day with a flight climbed, then the last 7 days' mean flights "

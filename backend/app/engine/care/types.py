@@ -74,6 +74,10 @@ class CareMetric:
     drivers: list[dict[str, Any]] = field(default_factory=list)
     domains: list[str] = field(default_factory=lambda: ["all"])
     applicable: bool = True        # domain ∈ pathway's domain or "all"
+    # How far the metric is from its first (and its established) reading, in
+    # the units it counts — the "x days left" every surface prints
+    # (engine/readiness.py). None when the metric is not time-gated at all.
+    readiness: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

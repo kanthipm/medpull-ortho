@@ -8,6 +8,8 @@ struct HealthView: View {
     @State private var linking = false
     @State private var link: URL?
     @State private var error: String?
+    @State private var infoMetric: PatientMetric?
+    @State private var infoSignal: PatientSignal?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Accessibility text sizes stack every tile-title-pill row, so a title
@@ -21,6 +23,7 @@ struct HealthView: View {
                     appleCard
                     if !app.isPersonal { MeasureCard() }
                     wearablesCard
+                    if !app.isPersonal { metricsSection }
                     portfolioSection
                     if let error { ErrorBanner(text: error) }
                 }
@@ -37,14 +40,18 @@ struct HealthView: View {
             .refreshable {
                 await app.refreshWearables(force: true)
                 await app.refreshPortfolio()
+                await app.refreshMetrics()
             }
             .ambientScreen()
             .mpErrorFeedback(error)
             .task {
                 await app.refreshWearables()
                 await app.refreshPortfolio()
+                await app.refreshMetrics()
             }
             .sheet(item: $link) { url in SafariView(url: url).ignoresSafeArea() }
+            .sheet(item: $infoMetric) { m in MetricInfoSheet(metric: m) }
+            .sheet(item: $infoSignal) { s in MetricInfoSheet(signal: s) }
         }
     }
 
@@ -228,6 +235,79 @@ struct HealthView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// Every care metric as the patient sees it: a section title, then one
+    /// card per metric — the row (tile, title, state pill, sentence, the
+    /// "i") over a small chart, or the countdown while it is collecting.
+    private var metricsSection: some View {
+        let metrics = app.metrics?.metrics ?? []
+        return VStack(alignment: .leading, spacing: 10) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    metricsTitle
+                    Spacer(minLength: 8)
+                    metricsMeta
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    metricsTitle
+                    metricsMeta
+                }
+            }
+            .padding(.top, 14)
+            .padding(.horizontal, 4)
+
+            if metrics.isEmpty {
+                Card(padding: 0) {
+                    EmptyRow(icon: "chart.bar", title: "Nothing to show yet",
+                             detail: app.metrics?.overall.blurb
+                             ?? "Connect Apple Health or a wearable and your first readings appear after about two days.")
+                }
+            } else {
+                if let blurb = app.metrics?.overall.blurb {
+                    Text(blurb)
+                        .mpFont(.copy).foregroundStyle(MP.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 4)
+                }
+                ForEach(Array(metrics.enumerated()), id: \.element.id) { i, m in
+                    Card(padding: 0) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            MetricRow(metric: m) { infoMetric = m }
+                            MetricMiniChart(metric: m)
+                        }
+                    }
+                    .mpRise(i)
+                }
+            }
+        }
+    }
+
+    private var metricsTitle: some View {
+        Text("Your metrics")
+            .mpFont(.subheadMedium)
+            .foregroundStyle(MP.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var metricsMeta: some View {
+        let overall = app.metrics?.overall
+        let showing = overall?.showing ?? 0
+        let waiting = overall?.waiting ?? 0
+        let text: String = {
+            guard let overall else { return "Your care team’s view, in your words" }
+            var parts = ["\(showing) showing"]
+            if waiting > 0 { parts.append("\(waiting) on the way") }
+            if let left = overall.daysUntilFullPicture, left > 0 {
+                parts.append("full picture in \(left) \(left == 1 ? "day" : "days")")
+            }
+            return parts.joined(separator: MP.dot)
+        }()
+        return Text(text)
+            .mpFont(.copy)
+            .foregroundStyle(MP.body)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     /// Apple Health's "Highlights" shape: a section title above the cards,
     /// then one card per signal, each led by its category tile.
     private var portfolioSection: some View {
@@ -255,7 +335,10 @@ struct HealthView: View {
                 }
             } else {
                 ForEach(Array(app.portfolio.enumerated()), id: \.element.id) { i, m in
-                    MetricChart(metric: m).mpRise(i)
+                    MetricChart(metric: m, signal: app.metrics?.signal(for: m.key)) {
+                        if let s = app.metrics?.signal(for: m.key) { infoSignal = s }
+                    }
+                    .mpRise(i)
                 }
             }
         }
@@ -326,6 +409,10 @@ extension PortfolioMetric {
 /// opaque capsule and in the tile's number.
 struct MetricChart: View {
     let metric: PortfolioMetric
+    /// The same signal as the care engine reads it, when the server has one:
+    /// its countdown and its explanation (the "i").
+    var signal: PatientSignal? = nil
+    var onInfo: (() -> Void)? = nil
     @State private var picked: Date?
     @State private var grown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -374,10 +461,24 @@ struct MetricChart: View {
                     Text("Avg \(metric.text(for: avg))")
                         .mpFont(.copyMedium).foregroundStyle(MP.ink)
                 }
-                Text([range, "\(metric.daysWithData) days of data"].compactMap { $0 }
-                        .joined(separator: MP.dot))
+                Text([range, "\(metric.daysWithData) days of data",
+                      signal?.daysLeftText.map(MetricRow.caption)]
+                        .compactMap { $0 }.joined(separator: MP.dot))
                     .mpFont(.label).foregroundStyle(MP.body)
                     .fixedSize(horizontal: false, vertical: true)
+                if signal?.explain != nil, let onInfo {
+                    Spacer(minLength: 4)
+                    Button(action: onInfo) {
+                        Image(systemName: "info.circle")
+                            .font(.systemGlyphs(MPSize.copyLarge, weight: .regular))
+                            .foregroundStyle(MP.brandInk)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("About \(metric.label)")
+                    .padding(.vertical, -12).padding(.trailing, -8)
+                }
             }
         }
         .accessibilityElement(children: .contain)

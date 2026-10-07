@@ -61,6 +61,25 @@ export interface MetricDriver {
   [key: string]: unknown
 }
 
+/** How far a metric is from its first (and its settled) reading, in the
+ *  units it counts — the "x days left" every card prints
+ *  (backend engine/readiness.py). `left` is 0 when the metric is ready, OR
+ *  when nothing is counting down: `have > 0` then means the source went
+ *  quiet ("waiting on new data"), `have === 0` that nothing reports the
+ *  signal yet ("needs a source"). `stage === 'provisional'` is an early
+ *  read: shown, but `firm_left` more units settle the reference. */
+export interface Readiness {
+  ready: boolean
+  stage: 'collecting' | 'provisional' | 'established'
+  have: number
+  need: number
+  firm: number
+  left: number
+  firm_left: number
+  unit: string
+  note: string | null
+}
+
 export interface CareMetric {
   id: string
   key: string
@@ -91,6 +110,8 @@ export interface CareMetric {
    *  the Full stats view folds those into a collapsed tail. */
   applicable: boolean
   domains: string[]
+  /** Null when the metric is not time-gated at all. */
+  readiness: Readiness | null
 }
 
 export interface CareFamily {
@@ -150,10 +171,15 @@ export interface RawDataResponse {
 /** Eager on purpose: the headline tiles sit above the fold. The key lives
  *  under the `['patient', id]` prefix so a Refresh analysis sweeps it up with
  *  the rest of the page (`recomputeKeys`). */
+export function fetchCareMetrics(id: string) {
+  return fetchJson<CareMetricsResponse>(`/api/patients/${id}/care-metrics`)
+}
+
 export function useCareMetrics(id: string) {
   return useQuery({
     queryKey: ['patient', id, 'care-metrics'],
-    queryFn: () => fetchJson<CareMetricsResponse>(`/api/patients/${id}/care-metrics`),
+    queryFn: () => fetchCareMetrics(id),
+    refetchInterval: 5 * 60_000,
   })
 }
 

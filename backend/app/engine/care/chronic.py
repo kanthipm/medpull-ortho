@@ -12,7 +12,9 @@ import pandas as pd
 from app.engine.care._common import (
     NO_RECENT_TEXT,
     build,
+    building,
     confidence_for,
+    established,
     last_n_days,
     nodata,
     points,
@@ -37,8 +39,9 @@ def c1(ctx: CareContext) -> CareMetric:
     latest = float(weight.iloc[-1])
     history = weight[(weight.index >= latest_day - 14) & (weight.index < latest_day)]
     coverage = f"{len(history)} of 14 prior days weighed"
-    if len(history) < 3:
-        return nodata("C1", ctx, "Building baseline", coverage_text=coverage)
+    if len(history) < 2:
+        return building("C1", ctx, len(history), 2, 7, note="prior days weighed",
+                        coverage_text=coverage)
     baseline = float(history.median())
     gain7 = latest - baseline
     previous = weight.get(latest_day - 1)
@@ -65,6 +68,7 @@ def c1(ctx: CareContext) -> CareMetric:
         value=f"{latest:.1f}", value_num=latest, unit="kg", value_label="latest weight",
         delta_text=delta, chart=chart, confidence=confidence_for(ctx, len(history), 14),
         coverage_text=coverage,
+        readiness=established(len(history), 2, 7, note="prior days weighed"),
         next_step="Ask about swelling, breathlessness lying flat and salt/fluid intake today."
         if status is MetricStatus.FLAG else None,
     )
@@ -82,7 +86,7 @@ def c2(ctx: CareContext) -> CareMetric:
     last7 = last_n_days(post, ctx.postop_day, 7)
     coverage = f"{len(last7)} of 7 days of SpO₂"
     if len(last7) < 2:
-        return nodata("C2", ctx, "Building baseline", coverage_text=coverage)
+        return building("C2", ctx, len(last7), 2, 7, note="days of SpO₂", coverage_text=coverage)
     n_low = int((last7 < 90).sum())
     n_92 = int((last7 < 92).sum())
     dev = ctx.deviations.get(str(M.SPO2))
@@ -110,6 +114,7 @@ def c2(ctx: CareContext) -> CareMetric:
         delta_text=f"{n_low} of {len(last7)} days < 90%"
                    + (f" · baseline {base.mean:.1f}%" if base else ""),
         chart=chart, confidence=confidence_for(ctx, len(last7), 7), coverage_text=coverage,
+        readiness=established(len(last7), 2, 7, note="days of SpO₂"),
         next_step="Ask about breathing comfort and cough; verify device fit; consider a same-day "
                   "call." if status is MetricStatus.FLAG else None,
     )
@@ -143,8 +148,9 @@ def c3(ctx: CareContext) -> CareMetric:
                 means.append(float(mean_value))
             hypos += int(detail.get("hypo_count") or 0)
         if not tirs:
-            return nodata("C3", ctx, "Building baseline",
-                          coverage_text=f"{len(readings)} readings; 10 needed")
+            return building("C3", ctx, len(readings), 10, 10, unit="readings",
+                            note="glucose readings",
+                            coverage_text=f"{len(readings)} readings; 10 needed")
         tir, hypo = float(np.mean(tirs)), hypos
         mean_g = float(np.mean(means)) if means else float("nan")
         daily = summaries.groupby("day")["value"].mean()
@@ -168,6 +174,7 @@ def c3(ctx: CareContext) -> CareMetric:
         delta_text=f"mean {mean_text} mg/dL · {hypo} readings < 70", chart=chart,
         drivers=[{"label": "Readings < 70 mg/dL", "count": hypo}],
         confidence=confidence_for(ctx, int(frame["day"].nunique()), 10), coverage_text=coverage,
+        readiness=established(int(frame["day"].nunique()), 1, 7, note="days with glucose"),
         next_step="Review medication timing and meals; ask about symptoms of lows."
         if status is not MetricStatus.OK else None,
     )
@@ -188,7 +195,8 @@ def c4(ctx: CareContext) -> CareMetric:
         window = last_n_days(sys, ctx.postop_day, 14)
     coverage = f"{len(window)} readings in {7 if len(last_n_days(sys, ctx.postop_day, 7)) >= 2 else 14} days"
     if len(window) < 2:
-        return nodata("C4", ctx, "Building baseline", coverage_text=coverage)
+        return building("C4", ctx, len(window), 2, 4, unit="readings",
+                        note="blood-pressure readings", coverage_text=coverage)
     dia_by_day = {int(d): float(v) for d, v in dia.items()} if dia is not None else {}
     above = 0
     for day, value in window.items():
@@ -221,6 +229,7 @@ def c4(ctx: CareContext) -> CareMetric:
         value=f"{mean_sys:.0f}/{dia_text}", value_num=mean_sys, unit="mmHg",
         value_label="mean blood pressure", delta_text=f"{pct * 100:.0f}% of readings ≥ 140/90",
         chart=chart, confidence=confidence_for(ctx, len(window), 4), coverage_text=coverage,
+        readiness=established(len(window), 2, 4, unit="readings", note="blood-pressure readings"),
         next_step="Confirm cuff technique and medication adherence; review the log at the next "
                   "visit." if status is not MetricStatus.OK else None,
     )
@@ -257,9 +266,9 @@ def c5(ctx: CareContext) -> CareMetric:
             scores[day] = float(np.mean(parts))
     series = pd.Series(scores, dtype=float).sort_index()
     coverage = f"{len(series)} of 14 days with a symptom log"
-    if len(series) < 3:
-        return nodata("C5", ctx, "Building baseline" if len(series) else "No data yet",
-                      coverage_text=coverage)
+    if len(series) < 2:
+        return building("C5", ctx, len(series), 2, 7, note="days with a symptom log",
+                        coverage_text=coverage)
     if stale(int(series.index.max()), ctx.postop_day):
         return nodata("C5", ctx, NO_RECENT_TEXT, coverage_text=coverage,
                       finding=f"The latest symptom log is from {ctx.day_phrase(int(series.index.max()))}.")
@@ -300,6 +309,7 @@ def c5(ctx: CareContext) -> CareMetric:
                                                      else ""),
         chart=chart, drivers=drivers, confidence=confidence_for(ctx, len(series), 14),
         coverage_text=coverage,
+        readiness=established(len(series), 2, 7, note="days with a symptom log"),
         next_step="Review analgesia and what the patient says is driving the score; consider a "
                   "call." if status is MetricStatus.FLAG else None,
     )
@@ -346,6 +356,7 @@ def c6(ctx: CareContext) -> CareMetric:
                 value_label="waking hours under 50 steps", delta_text=f"longest gap {gap} h",
                 chart=chart, confidence=confidence_for(ctx, len(complete), 7),
                 coverage_text=f"{len(complete)} of 7 days with hourly steps",
+                readiness=established(len(complete), 3, 7, note="days with hourly steps"),
                 next_step="Set an hourly move prompt; two-minute walks break up the long stretches."
                 if status is not MetricStatus.OK else None,
                 method="Waking hours (07–22) with under 50 steps per day from hourly buckets, "
@@ -360,8 +371,8 @@ def c6(ctx: CareContext) -> CareMetric:
                       finding=f"The latest step count is from {ctx.day_phrase(latest_day)}.")
     last7 = last_n_days(post, ctx.postop_day, 7)
     coverage = f"{len(last7)} of 7 days of steps"
-    if len(last7) < 3:
-        return nodata("C6", ctx, "Building baseline", coverage_text=coverage)
+    if len(last7) < 2:
+        return building("C6", ctx, len(last7), 2, 7, note="days of steps", coverage_text=coverage)
     # On an ortho pathway the early post-op weeks are expected to be quiet, so
     # the 1,500-step floor is scaled to the recovery curve; a chronic program
     # holds the flat threshold.
@@ -387,6 +398,7 @@ def c6(ctx: CareContext) -> CareMetric:
         value=f"{inactive}", value_num=inactive, unit="inactive days / 7",
         value_label="days under the activity floor", delta_text=f"floor {threshold:,.0f} steps",
         chart=chart, confidence=confidence_for(ctx, len(last7), 7), coverage_text=coverage,
+        readiness=established(len(last7), 2, 7, note="days of steps"),
         next_step="Ask what is limiting activity — pain, fatigue, fear of movement."
         if status is not MetricStatus.OK else None,
     )

@@ -15,6 +15,7 @@ import pandas as pd
 from app.engine.care.catalog import CATALOG, FAMILY_NAME, MetricDef
 from app.engine.care.types import CareContext, CareMetric, ChartSpec
 from app.engine.deviation import RECENCY_WINDOW_DAYS
+from app.engine.readiness import Readiness, readiness
 from app.models.enums import ConfidenceLevel, MetricStatus
 from app.models.enums import MetricType as M
 
@@ -63,12 +64,14 @@ def build(
     unlock: str | None = None,
     drivers: list[dict[str, Any]] | None = None,
     name: str | None = None,
+    readiness: Readiness | dict[str, Any] | None = None,
 ) -> CareMetric:
     d = CATALOG[metric_id]
     if confidence is None:
         confidence = ctx.confidence.level if ctx is not None else ConfidenceLevel.LOW
     if status is MetricStatus.NODATA:
         confidence = ConfidenceLevel.LOW
+    ready = readiness.to_dict() if isinstance(readiness, Readiness) else readiness
     return CareMetric(
         id=d.id, key=d.key, name=name or d.name, family=FAMILY_NAME[d.family],
         template=d.template, feasibility=d.feasibility, tier=d.tier,
@@ -82,6 +85,7 @@ def build(
         feeds_from_tasks=list(d.feeds_from_tasks), drivers=list(drivers or []),
         domains=list(d.domains),
         applicable=applicable(metric_id, ctx) if ctx is not None else True,
+        readiness=ready,
     )
 
 
@@ -93,6 +97,7 @@ def nodata(
     unlock: str | None = None,
     coverage_text: str = "",
     name: str | None = None,
+    readiness: Readiness | dict[str, Any] | None = None,
 ) -> CareMetric:
     d = CATALOG[metric_id]
     if ctx is not None and not applicable(metric_id, ctx) and status_text == "No data yet":
@@ -101,7 +106,43 @@ def nodata(
         metric_id, ctx, status=MetricStatus.NODATA, status_text=status_text,
         finding=finding or f"{d.name} needs data this patient's sources are not reporting yet.",
         unlock=unlock or d.unlock, coverage_text=coverage_text, name=name,
+        readiness=readiness,
     )
+
+
+def building(
+    metric_id: str,
+    ctx: CareContext | None,
+    have: int,
+    need: int,
+    firm: int | None = None,
+    *,
+    unit: str = "days",
+    note: str | None = None,
+    coverage_text: str = "",
+    name: str | None = None,
+    finding: str | None = None,
+    extra_wait: int = 0,
+) -> CareMetric:
+    """The NODATA object for "not enough history yet": a readiness countdown
+    plus a finding that says what is in hand and what is still needed."""
+    r = readiness(have, need, firm, unit=unit, note=note, extra_wait=extra_wait)
+    if finding is None:
+        unit_word = unit if r.left != 1 else unit[:-1] if unit.endswith("s") else unit
+        what = f" of {note}" if note else ""
+        finding = (f"{have} {unit if have != 1 else unit[:-1] if unit.endswith('s') else unit}"
+                   f"{what} so far; the first reading needs {need}. About {r.left} more "
+                   f"{unit_word} at one a day.")
+    return nodata(metric_id, ctx, "Building baseline", finding=finding,
+                  coverage_text=coverage_text, name=name, readiness=r)
+
+
+def established(
+    have: int, need: int, firm: int | None = None, *, unit: str = "days",
+    note: str | None = None, ready: bool | None = None,
+) -> Readiness:
+    """Readiness for a metric that IS computing: provisional below ``firm``."""
+    return readiness(have, need, firm, unit=unit, note=note, ready=ready)
 
 
 def unavailable(metric_id: str, ctx: CareContext | None = None) -> CareMetric:

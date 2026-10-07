@@ -3,12 +3,14 @@ import { useCallback, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useCareMetrics } from '../../api/care'
+import { explainSection, useExplain } from '../../api/explain'
 import { usePatientDelivery } from '../../api/plan'
-import { usePatient, useRecompute } from '../../api/queries'
+import { useNarrativeWarming, usePatient, useRecompute } from '../../api/queries'
 import { NarrativeTile } from '../../components/AIAttribution'
 import Avatar from '../../components/Avatar'
 import EmptyState from '../../components/EmptyState'
 import GuardrailFootnote from '../../components/GuardrailFootnote'
+import InfoTip from '../../components/InfoTip'
 import type { ReadoutTone } from '../../components/MetricCluster'
 import PriorityBadge from '../../components/PriorityBadge'
 import SectionCard from '../../components/SectionCard'
@@ -100,13 +102,24 @@ const STAT_TONE: Record<ReadoutTone, string> = {
 function Stats({
   items,
 }: {
-  items: { key: string; label: string; value: string; tone?: ReadoutTone; hint?: string }[]
+  items: {
+    key: string
+    label: string
+    value: string
+    tone?: ReadoutTone
+    hint?: string
+    /** An "i" beside the label, for a stat that has an explanation. */
+    info?: ReactNode
+  }[]
 }) {
   return (
     <dl className="mt-6 flex flex-wrap gap-x-12 gap-y-5 border-t border-hairline pt-5">
       {items.map((s) => (
         <div key={s.key} className="flex min-w-0 flex-col">
-          <dt className="text-copy text-secondary">{s.label}</dt>
+          <dt className="flex items-center gap-1 text-copy text-secondary">
+            {s.label}
+            {s.info}
+          </dt>
           <dd className="mt-0.5 flex items-baseline gap-1.5">
             <span className={`big-num text-[2.5rem] ${s.tone ? STAT_TONE[s.tone] : 'text-ink'}`}>
               {s.value}
@@ -156,6 +169,16 @@ export default function PatientDetailPage() {
   // invalidated queries have refetched, so this covers the whole round trip
   // without catching the background loads that share the ['patient', id] key.
   const refreshing = recompute.isPending || minHold
+  // The page read never waits on the model. When the summary or the actions
+  // are still rules-based, this asks the server to write the model version
+  // in the background and refetches the record when it lands; meanwhile the
+  // summary's aside shows the "Writing…" shimmer.
+  const writing = useNarrativeWarming(
+    p?.narratives_pending,
+    { patient_id: id, worklist: false },
+    [['patient', id], ['worklist']],
+  )
+  const { data: glossary } = useExplain()
 
   if (isLoading) {
     return (
@@ -302,11 +325,11 @@ export default function PatientDetailPage() {
               title="Recovery summary"
               icon={<NarrativeTile provider={p.summary.provider} />}
               aside={
-                refreshing ? (
+                refreshing || writing ? (
                   // Aside's AI signature, only while the summary is being
                   // rewritten; static secondary text under Reduce Motion.
                   <span role="status" className="shimmer-text text-label font-medium">
-                    {rulesBased ? 'Updating summary…' : 'Writing AI summary…'}
+                    {writing ? 'Writing AI summary…' : rulesBased ? 'Updating summary…' : 'Writing AI summary…'}
                   </span>
                 ) : (
                   <DotLine
@@ -345,6 +368,13 @@ export default function PatientDetailPage() {
                             '',
                           )
                         : undefined,
+                    info: (
+                      <InfoTip
+                        entry={explainSection(glossary, 'trajectory')}
+                        className="-my-2 !h-7 !w-7"
+                        placement="bottom-start"
+                      />
+                    ),
                   },
                   {
                     key: 'checkin',

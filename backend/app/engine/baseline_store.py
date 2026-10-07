@@ -100,7 +100,11 @@ def establish(db: Session, patient_id: str, baselines: dict[str, Baseline]) -> N
     }
     added = False
     for metric_type, baseline in baselines.items():
-        if not baseline.is_preop or metric_type in existing:
+        # A two-day pre-op norm is enough to start scoring against but not
+        # enough to be THE reference for the whole recovery: it stays open
+        # until a third pre-op day arrives (or never does, and it stays
+        # provisional for the record).
+        if not baseline.is_preop or baseline.provisional or metric_type in existing:
             continue
         db.add(
             EstablishedBaseline(

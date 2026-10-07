@@ -21,28 +21,33 @@ WINDOW_DAYS = 7
 MIN_METRICS_PER_DAY = 3
 GATE = 0.4
 HIGH_GATE = 0.75
+# The panel a patient is judged against is the key signals their own sources
+# have ever reported, floored at three: a phone that gives steps alone can
+# never clear the gate (one signal is not a picture of a patient), a watch
+# without a temperature sensor is judged on the five it has rather than the
+# six it never will, and a watch that goes quiet on half its signals is still
+# marked down for every one that went dark.
+MIN_PANEL = 3
 
 
 def coverage(series: dict[str, pd.Series], postop_day: int) -> ConfidenceResult:
     window = range(max(0, postop_day - WINDOW_DAYS + 1), postop_day + 1)
+    panel = [str(m) for m in KEY_METRICS if str(m) in series and len(series[str(m)]) > 0]
+    per_day = min(MIN_METRICS_PER_DAY, max(1, len(panel)))
     days_with_data = 0
     reporting: set[str] = set()
     for day in window:
-        present = [
-            str(m)
-            for m in KEY_METRICS
-            if str(m) in series and day in series[str(m)].index
-        ]
+        present = [m for m in panel if day in series[m].index]
         reporting.update(present)
-        if len(present) >= MIN_METRICS_PER_DAY:
+        if present and len(present) >= per_day:
             days_with_data += 1
 
     n_window = len(list(window))
-    dark = [str(m) for m in KEY_METRICS if str(m) not in reporting]
+    # A signal this patient's sources HAVE reported but not inside the
+    # window: the device stopped syncing, or stopped measuring it.
+    dark = [m for m in panel if m not in reporting]
     day_score = days_with_data / n_window if n_window else 0.0
-    # A signal that never appeared in the window is one we cannot speak to,
-    # whether the device stopped syncing or never measured it.
-    panel_score = (len(KEY_METRICS) - len(dark)) / len(KEY_METRICS)
+    panel_score = (len(panel) - len(dark)) / max(len(panel), MIN_PANEL)
     score = min(day_score, panel_score)
     level = (
         ConfidenceLevel.HIGH
@@ -57,4 +62,5 @@ def coverage(series: dict[str, pd.Series], postop_day: int) -> ConfidenceResult:
         days_with_data=days_with_data,
         window_days=n_window,
         dark_metrics=dark,
+        panel=panel,
     )

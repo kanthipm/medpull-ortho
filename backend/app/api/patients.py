@@ -34,12 +34,21 @@ def _get_patient(db: Session, patient_id: str) -> Patient:
 def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
     from app.llm.insights import get_patient_insight
 
+    from app.llm.insights import insight_is_cached
+
     patient = _get_patient(db, patient_id)
     assessment = ensure_fresh_assessment(db, patient_id)
     analytics = assessment.analytics
 
-    summary = get_patient_insight(db, InsightKind.PATIENT_SUMMARY, patient_id)
-    actions = get_patient_insight(db, InsightKind.SUGGESTED_ACTIONS, patient_id)
+    # The page never waits on the model: a cold cache is answered with the
+    # deterministic text and `narratives_pending` tells the console to ask
+    # for the model version through POST /api/narratives/warm.
+    pending = sum(
+        not insight_is_cached(db, kind, patient_id)
+        for kind in (InsightKind.PATIENT_SUMMARY, InsightKind.SUGGESTED_ACTIONS)
+    )
+    summary = get_patient_insight(db, InsightKind.PATIENT_SUMMARY, patient_id, allow_llm=False)
+    actions = get_patient_insight(db, InsightKind.SUGGESTED_ACTIONS, patient_id, allow_llm=False)
 
     last_checkin = db.scalar(
         select(Checkin.occurred_at)
@@ -103,6 +112,7 @@ def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
         },
         "actions": actions.content.get("actions", []),
         "last_checkin_at": last_checkin.isoformat() if last_checkin else None,
+        "narratives_pending": pending,
     }
 
 

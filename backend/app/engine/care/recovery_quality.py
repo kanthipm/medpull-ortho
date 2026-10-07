@@ -13,7 +13,9 @@ import numpy as np
 from app.engine.care._common import (
     NO_RECENT_TEXT,
     build,
+    building,
     confidence_for,
+    established,
     last_n_days,
     nodata,
     points,
@@ -76,6 +78,8 @@ def m9(ctx: CareContext) -> CareMetric:
             chart=chart, inputs=[str(M.SLEEP_DURATION)],
             coverage_text=f"{len(last_n_days(post, ctx.postop_day, 7))} of 7 nights",
             next_step="Ask about pain at night and sleeping position." if flagged else None,
+            readiness=established(len(last_n_days(post, ctx.postop_day, 7)), 1, 7, unit="nights",
+                                  note="nights of sleep"),
         )
 
     frame = stages[stages["total_h"] > 0].copy()
@@ -92,12 +96,15 @@ def m9(ctx: CareContext) -> CareMetric:
     else:
         early = frag[frag.index >= 2].iloc[:3]
         if early.empty:
-            return nodata("M9", ctx, "Building baseline")
+            return building("M9", ctx, 0, 2, 7, unit="nights", note="nights with sleep stages",
+                            extra_wait=max(0, 2 - ctx.postop_day))
         baseline, base_label = float(early.mean()), "first post-op nights"
     recent_nights = last_n_days(frag, ctx.postop_day, 7)
     if len(recent_nights) < 2:
-        return nodata("M9", ctx, "Building baseline",
-                      coverage_text=f"{len(recent_nights)} of 7 nights with stages")
+        return building("M9", ctx, len(recent_nights), 2, 7, unit="nights",
+                        note="nights with sleep stages",
+                        coverage_text=f"{len(recent_nights)} of 7 nights with stages")
+    ready = established(len(recent_nights), 2, 7, unit="nights", note="nights with sleep stages")
     recent = float(recent_nights.mean())
 
     symptom = ctx.symptom(symptom_key)
@@ -148,7 +155,7 @@ def m9(ctx: CareContext) -> CareMetric:
                       f"evening {symptom_key} logs",
         next_step="Ask about pain at night and sleeping position; review evening analgesia timing."
         if status is not MetricStatus.OK else None,
-        inputs=[str(M.SLEEP_STAGES), symptom_key],
+        inputs=[str(M.SLEEP_STAGES), symptom_key], readiness=ready,
     )
 
 
@@ -166,8 +173,11 @@ def m10(ctx: CareContext) -> CareMetric:
         return nodata("M10", ctx, NO_RECENT_TEXT,
                       finding="HRV or resting heart rate stopped reporting more than five days ago.")
     zh, zr, n = _aligned_z(hrv, rhr)
-    if n < 3:
-        return nodata("M10", ctx, "Building baseline", coverage_text=f"{n} scored nights")
+    if n < 2:
+        return building("M10", ctx, n, 2, 7, unit="nights", note="nights scored for HRV and "
+                        "resting heart rate", coverage_text=f"{n} scored nights",
+                        extra_wait=max(0, 2 - ctx.postop_day))
+    ready = established(n, 2, 7, unit="nights", note="scored nights")
     index_day = [(-a + b) / 2.0 for a, b in zip(zh, zr)]
     index = float(np.mean(index_day[-7:]))
     run = best = 0
@@ -195,6 +205,8 @@ def m10(ctx: CareContext) -> CareMetric:
                     "monitoring context for clinician review.")
     elif status is MetricStatus.WATCH:
         finding += " Autonomic recovery is lagging the patient's own baseline."
+    if n < 7:
+        finding += f" Early read from {n} nights; the index settles after a week."
     first_day = (hrv.last_day or ctx.postop_day) - (n - 1)
     chart = ChartSpec(
         kind="dual",
@@ -209,7 +221,7 @@ def m10(ctx: CareContext) -> CareMetric:
         inputs=[hrv_key, str(M.RESTING_HR)],
         next_step="Review alongside temperature, pain reports and the incision."
         if status is MetricStatus.FLAG else None,
-        confidence=confidence_for(ctx, n, 7), coverage_text=f"{n} scored nights",
+        confidence=confidence_for(ctx, n, 7), coverage_text=f"{n} scored nights", readiness=ready,
         method="Mean of the EWMA z-scores of HRV (sign flipped) and resting HR, last 7 nights; "
                "'sustained' is three consecutive nights with both beyond +1σ adverse.",
     )
@@ -229,8 +241,10 @@ def m11(ctx: CareContext) -> CareMetric:
     matrix = matrix.reindex(columns=range(24))
     complete = matrix[matrix.notna().sum(axis=1) >= 18]
     coverage = f"{len(complete)} of 14 days with hourly {label}"
-    if len(complete) < 5:
-        return nodata("M11", ctx, "Building baseline", coverage_text=coverage)
+    if len(complete) < 3:
+        return building("M11", ctx, len(complete), 3, 10, note=f"days with hourly {label}",
+                        coverage_text=coverage)
+    ready = established(len(complete), 3, 10, note=f"days with hourly {label}")
     latest_day = int(complete.index.max())
     if stale(latest_day, ctx.postop_day):
         return nodata("M11", ctx, NO_RECENT_TEXT, coverage_text=coverage)
@@ -283,5 +297,5 @@ def m11(ctx: CareContext) -> CareMetric:
         value=f"{ra_last:.2f}", value_num=ra_last, unit="rel. amplitude",
         value_label="rest–activity amplitude",
         delta_text=f"IS {stability:.2f} · peak {acro:.0f}:00", chart=chart, inputs=[key],
-        confidence=confidence_for(ctx, n, 10), coverage_text=coverage,
+        confidence=confidence_for(ctx, n, 10), coverage_text=coverage, readiness=ready,
     )

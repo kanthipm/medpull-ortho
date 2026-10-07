@@ -9,6 +9,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from app.engine.baseline import FIRM_BASELINE_DAYS, MIN_BASELINE_DAYS, baseline_readiness
 from app.engine.deviation import (
     CURVE_SCALED,
     RECENCY_WINDOW_DAYS,
@@ -201,6 +202,9 @@ def build_cards(
                 confidence=ConfidenceLevel.LOW,
                 coverage_text=f"0 of {confidence.window_days or 7} days of data",
                 next_step=None, guarded=guarded, unit=unit, series=[], baseline_mean=None,
+                # No countdown: nothing counts down until a source reports it.
+                readiness={**baseline_readiness(None, postop_day), "left": 0, "firm_left": 0,
+                           "note": "no source reports this signal yet"},
             ))
             continue
         post = s[s.index >= 0]
@@ -299,6 +303,19 @@ def build_cards(
                        "(healthy walking is near 20%"
                        + (f"; baseline {baseline.mean:.1f}%)." if baseline else ")."))
 
+        # "x days left": how far this card is from a reference, and whether
+        # the one it has is still a two-day provisional. A provisional
+        # reference may raise a Watch but never a Flag on its own.
+        ready = baseline_readiness(s, postop_day)
+        if status is MetricStatus.NODATA and not (baseline is None or dev is None):
+            ready = {**ready, "ready": False, "left": 0, "stage": "collecting"}
+        elif status is not MetricStatus.NODATA and baseline is not None and baseline.provisional:
+            ready = {**ready, "stage": "provisional"}
+            if status is MetricStatus.FLAG:
+                status, status_text = MetricStatus.WATCH, "Early read: " + status_text.lower()
+            finding += (f" Early read: the reference is {baseline.n_days} days deep and "
+                        f"settles at {FIRM_BASELINE_DAYS}.")
+
         window = confidence.window_days or 1
         covered = min(
             window, len(post[post.index > postop_day - window])
@@ -326,6 +343,7 @@ def build_cards(
                     for d, v in last14.items()
                 ],
                 baseline_mean=_reference(metric, baselines.get(key), procedure, postop_day),
+                readiness=ready,
             )
         )
     return cards
@@ -366,7 +384,8 @@ def _no_reading_text(
         latest = _fmt(float(post.iloc[-1]), metric)
         return (
             "Building baseline",
-            f"Latest {latest}; a comparison needs three readings from post-op day 2 on.",
+            f"Latest {latest}; a comparison starts at {MIN_BASELINE_DAYS} readings from "
+            f"post-op day 2 on and settles at {FIRM_BASELINE_DAYS}.",
         )
     if (
         has_recent

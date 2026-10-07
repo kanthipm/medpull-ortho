@@ -346,25 +346,51 @@ def get_patient_insight(
     return _persist(db, patient_id, kind, content, cache_hash, provider)
 
 
-def get_daily_briefing(db: Session) -> Insight:
-    from app.personal.scope import clinic_patients
-
-    patients = clinic_patients(db, order_by=Patient.id)
-    assessments = [(patient, _latest_assessment(db, patient.id)) for patient in patients]
-
-    provider = provider_name()
-    cache_hash = hashlib.sha256(
+def _briefing_key(assessments: list[tuple[Patient, RiskAssessment]], provider: str) -> str:
+    return hashlib.sha256(
         (
             ";".join(f"{p.id}:{a.input_hash}:{a.risk_level}" for p, a in assessments)
             + f":{PROMPT_VERSION}:{provider}"
         ).encode()
     ).hexdigest()
 
+
+def briefing_is_cached(db: Session) -> bool:
+    """Whether the next get_daily_briefing answers from the cache."""
+    from app.personal.scope import clinic_patients
+
+    provider = provider_name()
+    if provider == "fallback":
+        return True
+    patients = clinic_patients(db, order_by=Patient.id)
+    assessments = [(patient, _latest_assessment(db, patient.id)) for patient in patients]
+    return _cached(db, None, InsightKind.DAILY_BRIEFING, _briefing_key(assessments, provider),
+                   provider) is not None
+
+
+def get_daily_briefing(db: Session, *, allow_llm: bool = True) -> Insight:
+    """The roster briefing. ``allow_llm=False`` is the page read: a cold
+    cache is answered with the deterministic briefing, keyed as such, and the
+    model key is left for a warm call (api/narratives) to fill."""
+    from app.personal.scope import clinic_patients
+
+    patients = clinic_patients(db, order_by=Patient.id)
+    assessments = [(patient, _latest_assessment(db, patient.id)) for patient in patients]
+
+    provider = provider_name()
+    cache_hash = _briefing_key(assessments, provider)
+
     # The cache is consulted before the roster is built: each roster entry
     # costs a per-patient insight lookup, so a warm briefing has to be free.
     cached = _cached(db, None, InsightKind.DAILY_BRIEFING, cache_hash, provider)
     if cached is not None:
         return cached
+    if provider != "fallback" and not allow_llm:
+        provider = "fallback"
+        cache_hash = _briefing_key(assessments, provider)
+        cached = _cached(db, None, InsightKind.DAILY_BRIEFING, cache_hash, provider)
+        if cached is not None:
+            return cached
 
     roster: list[dict[str, Any]] = []
     for patient, assessment in assessments:

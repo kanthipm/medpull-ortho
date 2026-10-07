@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InvalidateQueryFilters, QueryKey } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { fetchCareMetrics } from './care'
 import { fetchJson } from './client'
 import type {
   AppNotification,
@@ -25,18 +27,46 @@ import type {
   ContactResult,
 } from './types'
 
+/** The pages that carry live numbers refresh themselves every five minutes
+ *  while open; everything else rides on the client's 5-minute staleTime. */
+const LIVE_REFETCH_MS = 5 * 60_000
+
+export function fetchWorklist() {
+  return fetchJson<WorklistResponse>('/api/worklist')
+}
+
 export function useWorklist() {
   return useQuery({
     queryKey: ['worklist'],
-    queryFn: () => fetchJson<WorklistResponse>('/api/worklist'),
+    queryFn: fetchWorklist,
+    refetchInterval: LIVE_REFETCH_MS,
   })
+}
+
+export function fetchPatient(id: string) {
+  return fetchJson<PatientDetail>(`/api/patients/${id}`)
 }
 
 export function usePatient(id: string) {
   return useQuery({
     queryKey: ['patient', id],
-    queryFn: () => fetchJson<PatientDetail>(`/api/patients/${id}`),
+    queryFn: () => fetchPatient(id),
+    refetchInterval: LIVE_REFETCH_MS,
   })
+}
+
+/** Warm the patient page's two eager queries before the row is clicked, so
+ *  the chart paints from the cache. Fired on hover/focus of a worklist row;
+ *  prefetchQuery is a no-op while the cache is fresh. */
+export function usePrefetchPatient() {
+  const qc = useQueryClient()
+  return (id: string) => {
+    void qc.prefetchQuery({ queryKey: ['patient', id], queryFn: () => fetchPatient(id) })
+    void qc.prefetchQuery({
+      queryKey: ['patient', id, 'care-metrics'],
+      queryFn: () => fetchCareMetrics(id),
+    })
+  }
 }
 
 export function usePatientMetrics(id: string, enabled = true) {
@@ -44,7 +74,79 @@ export function usePatientMetrics(id: string, enabled = true) {
     queryKey: ['patient', id, 'metrics'],
     queryFn: () => fetchJson<PatientMetrics>(`/api/patients/${id}/metrics`),
     enabled,
+    refetchInterval: LIVE_REFETCH_MS,
   })
+}
+
+export interface WarmNarrativesResult {
+  generated: { kind: string; patient_id: string | null; provider: string }[]
+  spent: number
+  /** Narratives still rules-based after this pass. */
+  pending: number
+  elapsed_ms: number
+}
+
+/** `POST /api/narratives/warm` — the one call allowed to spend model time.
+ *  Page reads answer from the cache or the deterministic renderer at once
+ *  and report `narratives_pending`; this fills the model versions in the
+ *  background and the caller refetches the page when it lands. Bounded
+ *  server-side at ~20 s, so the ordinary 30 s fetch deadline covers it. */
+export function useWarmNarratives() {
+  return useMutation({
+    mutationFn: (body: { patient_id?: string; worklist?: boolean; budget?: number }) =>
+      fetchJson<WarmNarrativesResult>('/api/narratives/warm', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+  })
+}
+
+/** Drive the warm call for one page: when `pending > 0`, call once, refetch
+ *  the given keys when it returns, and go again while the server still
+ *  reports pending work — at most `MAX_ROUNDS`, never two in flight at once,
+ *  and never again for the same page unless the data turns stale on its
+ *  own. Returns whether a warm is in flight (the "Writing…" shimmer). */
+const MAX_ROUNDS = 3
+
+export function useNarrativeWarming(
+  pending: number | undefined,
+  body: { patient_id?: string; worklist?: boolean },
+  keys: QueryKey[],
+): boolean {
+  const qc = useQueryClient()
+  const warm = useWarmNarratives()
+  const inFlight = useRef(false)
+  // rounds spent, keyed by the page they were spent on, so a new patient
+  // starts afresh and a return to the old one does not start over
+  const rounds = useRef<{ page: string; n: number }>({ page: '', n: 0 })
+  const pageKey = JSON.stringify(body)
+  const [busy, setBusy] = useState(false)
+  const keysKey = JSON.stringify(keys)
+
+  useEffect(() => {
+    if (!pending || pending <= 0) return
+    if (rounds.current.page !== pageKey) rounds.current = { page: pageKey, n: 0 }
+    if (inFlight.current || rounds.current.n >= MAX_ROUNDS) return
+    inFlight.current = true
+    rounds.current.n += 1
+    setBusy(true)
+    warm.mutate(body, {
+      onSuccess: () => {
+        for (const queryKey of JSON.parse(keysKey) as QueryKey[]) {
+          void qc.invalidateQueries({ queryKey })
+        }
+      },
+      onSettled: () => {
+        inFlight.current = false
+        setBusy(false)
+      },
+    })
+    // `warm` and `body` are stable for a page; the deps that matter are the
+    // pending count the server reported and which page this is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, pageKey, keysKey])
+
+  return busy
 }
 
 export function usePatientTimeline(id: string) {

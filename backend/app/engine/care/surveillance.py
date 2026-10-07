@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 
-from app.engine.care._common import build, confidence_for, nodata, stale
+from app.engine.care._common import build, building, confidence_for, established, nodata, stale
 from app.engine.care.recovery_quality import deviation_with_fallback
 from app.engine.care.stats import chi2_sf, mahalanobis, pearson, xcorr_lag
 from app.engine.care.types import CareContext, CareMetric, ChartSpec
@@ -49,9 +49,15 @@ def m12(ctx: CareContext) -> CareMetric:
     k = len(rows)
     coverage = f"{k} of {len(SIGNALS)} signals reporting"
     if k < 3:
-        return nodata("M12", ctx, "Needs 3 signals" if k else "No data yet", coverage_text=coverage)
+        # Gated by how many signals the device reports, not by days: the
+        # countdown is in signals, and "waiting on new data" when the
+        # signals exist but have gone quiet.
+        return nodata("M12", ctx, "Needs 3 signals" if k else "No data yet", coverage_text=coverage,
+                      readiness=established(k, 3, 3, unit="signals",
+                                            note="overnight vitals reporting"))
     z_today = [sign * float(dev.raw_z) for _, _, sign, dev in rows]
     n = min(len(dev.series_z) for *_, dev in rows)
+    ready = established(n, 1, 7, note="baseline days behind the distance")
     hist = [[rows[j][2] * float(rows[j][3].series_z[-n:][i]) * _EWMA_SCALE for j in range(k)]
             for i in range(n)]
     d, contributions = mahalanobis(z_today, hist)
@@ -85,6 +91,8 @@ def m12(ctx: CareContext) -> CareMetric:
                    f"{comp.index:.1f}, {comp.level}).")
     if early:
         finding += " Early post-op — physiologic settling can move these signals."
+    if n < 7:
+        finding += f" The baseline behind this distance is {n} day{'s' if n != 1 else ''} deep; it settles after a week."
     chart = ChartSpec(
         kind="bars",
         series=[{"x": item["label"], "y": round(item["contribution"] * 100, 1)} for item in drivers],
@@ -99,7 +107,7 @@ def m12(ctx: CareContext) -> CareMetric:
         next_step="Contact the patient today; ask about fever, chills, breathing, and the incision."
         if status is MetricStatus.FLAG else None,
         confidence=confidence_for(ctx, n, 7),
-        coverage_text=f"{coverage} · {n} baseline days",
+        coverage_text=f"{coverage} · {n} baseline days", readiness=ready,
         method="Mahalanobis distance of today's z-scores from the patient's own 14-day "
                "multivariate baseline (shrinkage covariance), read as a chi-square tail with one "
                "degree of freedom per signal, alongside the weighted composite used for the risk "
@@ -124,8 +132,12 @@ def m13(ctx: CareContext) -> CareMetric:
         zh = [float(z) for z in hrv.series_z[-n:]]
     zt7, zr7 = zt[-7:], zr[-7:]
     zh7 = zh[-7:] if zh is not None else None
-    if len(zt7) < 5:
-        return nodata("M13", ctx, "Building baseline", coverage_text=f"{len(zt7)} scored nights")
+    if len(zt7) < 3:
+        return building("M13", ctx, len(zt7), 3, 5, unit="nights",
+                        note="nights with temperature and heart rate scored",
+                        coverage_text=f"{len(zt7)} scored nights",
+                        extra_wait=max(0, 2 - ctx.postop_day))
+    ready = established(len(zt7), 3, 5, unit="nights", note="scored nights")
     r_tr = pearson(zt7, zr7)
     r_th = pearson(zt7, [-z for z in zh7]) if zh7 is not None else None
     lag, _ = xcorr_lag(zt, zr)
@@ -163,6 +175,8 @@ def m13(ctx: CareContext) -> CareMetric:
     else:
         finding = (f"No coupled movement: temperature and resting HR rose together on {shared} "
                    f"of the last {len(zt7)} nights (r={r_text}).")
+    if len(zt7) < 5:
+        finding += f" Early read from {len(zt7)} nights; the coupling test settles after five."
     first_day = (temp.last_day or ctx.postop_day) - (n - 1)
     chart = ChartSpec(
         kind="dual",
@@ -181,4 +195,5 @@ def m13(ctx: CareContext) -> CareMetric:
         next_step="Ask about fever, chills, warmth, redness or drainage at the incision; "
                   "consider bringing the follow-up forward." if status is MetricStatus.FLAG else None,
         confidence=confidence_for(ctx, len(zt7), 7), coverage_text=f"{len(zt7)} of 7 nights scored",
+        readiness=ready,
     )

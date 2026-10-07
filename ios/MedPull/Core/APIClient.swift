@@ -239,6 +239,8 @@ extension APIClient {
     }
 
     func me() async throws -> Me { try await get("/api/mobile/me") }
+    /// The patient's own metrics, worded for them (GET /api/mobile/metrics).
+    func metrics() async throws -> PatientMetricsResponse { try await get("/api/mobile/metrics") }
     func tasks() async throws -> TasksResponse { try await get("/api/mobile/tasks") }
 
     struct AnswersBody: Encodable { let answers: [String: AnswerValue]; let via: String }

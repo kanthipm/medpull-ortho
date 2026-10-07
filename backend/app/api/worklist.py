@@ -19,12 +19,13 @@ router = APIRouter(tags=["worklist"])
 
 TIER_ORDER = {RiskLevel.HIGH: 0, RiskLevel.MEDIUM: 1, RiskLevel.MISSING_DATA: 2, RiskLevel.LOW: 3}
 
-# How many patients on one worklist request may reach the model for their
-# one-line reason. A cold cache misses for every patient at once (an engine or
-# prompt version bump does that), and a dozen sequential Groq calls behind a
-# 30 s edge timeout is a worklist that times out rather than one that is slow.
-# The rest are served the deterministic line, keyed as such, so a later read
-# fills the real key. Highest tier first: that is where the words matter.
+# The worklist read never waits on the model. A cold cache (the first
+# request of a day re-keys every narrative at once) used to cost up to four
+# sequential Groq calls — fifteen seconds each at the deadline — before the
+# roster could render. Now every row is served the deterministic line the
+# moment the engine is done, the response says which narratives are still
+# pending, and the console asks `POST /api/narratives/warm` to fill them in
+# the background. LLM_BUDGET bounds that warm call per request instead.
 LLM_BUDGET = 4
 
 
@@ -73,20 +74,22 @@ def worklist(db: Session = Depends(get_db)) -> dict:
             broken.append(patient)
     scored.sort(key=lambda pair: TIER_ORDER.get(RiskLevel(pair[1].risk_level), 9))
 
+    from app.llm.insights import briefing_is_cached, insight_is_cached
+
     rows = []
     stats = {"total": len(patients), "high": 0, "medium": 0, "missing": 0, "low": 0}
-    llm_spent = 0
+    pending = 0
     for patient, assessment in scored:
         analytics = assessment.analytics
         level = RiskLevel(assessment.risk_level)
         stats_key = "missing" if level == RiskLevel.MISSING_DATA else str(level)
         stats[stats_key] += 1
         try:
+            if not insight_is_cached(db, InsightKind.WORKLIST_REASON, patient.id):
+                pending += 1
             reason = get_patient_insight(
-                db, InsightKind.WORKLIST_REASON, patient.id, allow_llm=llm_spent < LLM_BUDGET,
+                db, InsightKind.WORKLIST_REASON, patient.id, allow_llm=False,
             )
-            if reason.llm_provider != "fallback":
-                llm_spent += 1
             # The model sometimes echoes a tier code ("risk missing_data").
             reason_text = humanize_codes(reason.content.get("reason", ""))
         except Exception:  # noqa: BLE001 — a narrative is not worth a 500
@@ -172,7 +175,9 @@ def worklist(db: Session = Depends(get_db)) -> dict:
 
     try:
         briefing_text = ""
-        briefing = get_daily_briefing(db)
+        if not briefing_is_cached(db):
+            pending += 1
+        briefing = get_daily_briefing(db, allow_llm=False)
         briefing_text = briefing.content.get("briefing", "")
         briefing_view = {
             "text": briefing_text,
@@ -188,4 +193,8 @@ def worklist(db: Session = Depends(get_db)) -> dict:
         "stats": stats,
         "briefing": briefing_view,
         "patients": rows,
+        # How many narratives on this page are still the deterministic text
+        # with a model version to come. The console polls the warm endpoint
+        # while this is above zero and refetches when it drops.
+        "narratives_pending": pending,
     }

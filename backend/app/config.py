@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     ollama_url: str = ""
     ollama_model: str = "qwen3-vl-agent:latest"
     database_url: str = f"sqlite:///{BACKEND_DIR / 'data' / 'recovery.db'}"
+    # The laptop's background warmer: every this many seconds it brings every
+    # assessment up to date and fills any narrative the model has not written
+    # yet, so a page load finds everything ready. 0 disables the loop (the
+    # one-shot startup warm still runs). Off on Lambda with the startup warm.
+    narrative_warm_interval_seconds: int = 300
 
 
 settings = Settings()

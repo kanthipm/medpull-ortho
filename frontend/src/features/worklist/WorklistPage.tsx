@@ -16,7 +16,7 @@ import type { CSSProperties, MouseEvent, ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { NextStep, NextStepActionType, WorklistRowWithStep } from '../../api/plan'
 import { useCompleteNextStep, useExecuteNextStep } from '../../api/plan'
-import { useWorklist } from '../../api/queries'
+import { useNarrativeWarming, usePrefetchPatient, useWorklist } from '../../api/queries'
 import type { WorklistResponse } from '../../api/types'
 import DotLine from '../patient/DotLine'
 import MessageComposerModal from '../patient/plan/MessageComposerModal'
@@ -95,7 +95,7 @@ function prefersReducedMotion(): boolean {
 }
 
 export default function WorklistPage() {
-  const { data, isLoading, isError, isFetching } = useWorklist()
+  const { data, isLoading, isError } = useWorklist()
   const [filter, setFilter] = useState<Filter>('all')
   const askState = useAskState()
   const askResult = askState.result
@@ -130,9 +130,14 @@ export default function WorklistPage() {
     intro ? ({ animationDelay: `${ms}ms` } as CSSProperties) : undefined
   const settleCls = intro ? SETTLE : ''
 
-  // The briefing is written server-side with the worklist, so the worklist
-  // request IS the briefing being generated (first load and refreshes).
-  const generating = isLoading || (isFetching && !isError)
+  // The worklist read never waits on the model: it answers with the
+  // rules-based lines at once and says how many narratives are still
+  // pending. This asks the server to write the model versions in the
+  // background and refetches when they land; the badge shimmers meanwhile.
+  // (A background refetch on the 5-minute interval is not "writing" — only
+  // the first load and an in-flight warm are.)
+  const writing = useNarrativeWarming(data?.narratives_pending, { worklist: true }, [['worklist']])
+  const generating = isLoading || writing
 
   const hero = (
     <PageHead
@@ -709,6 +714,9 @@ function WorklistRow({
   onMessage: (step: NextStep) => void
 }) {
   const high = p.priority === 'high'
+  // Warm the patient page while the pointer is still on the row, so the
+  // chart paints from the cache on click.
+  const prefetch = usePrefetchPatient()
   const step = p.next_step && p.next_step.state.status === 'open' ? p.next_step : null
   const procedure = p.procedure_display.replace(/\s*\(.*\)$/, '')
   // "D6" means post-op day six, which says nothing true about a patient who
@@ -734,6 +742,8 @@ function WorklistRow({
     <li
       className={`card-row ${high ? 'row-risk-high' : ''} ${stateGuard} ${ROW_GRID} ${rise != null ? 'rise' : ''}`}
       style={rise != null ? ({ '--rise-delay': `${rise}ms` } as CSSProperties) : undefined}
+      onPointerEnter={() => prefetch(p.id)}
+      onFocus={() => prefetch(p.id)}
     >
       <span className="flex [grid-area:av]">
         <Avatar name={p.name} tier={p.priority} />

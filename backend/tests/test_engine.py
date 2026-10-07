@@ -500,23 +500,22 @@ def test_stale_gait_cannot_flag_even_with_no_baseline_to_go_stale():
     DeviationResult, so it is the only one that can miss the engine-wide
     recency window.
 
-    Two readings on days 3-4 are too few for a baseline, so walking asymmetry
-    never gets a DeviationResult at all — which means it appears in neither
-    `deviations` nor `stale`, and a `not in stale` check waves it straight
-    through. Twenty-six days later that limp is not news, and the pipeline
-    hands the rule the reading's own day so it can say so.
+    One reading on day 3 is too few for a baseline (two is the floor, see
+    engine/baseline.MIN_BASELINE_DAYS), so walking asymmetry never gets a
+    DeviationResult at all — which means it appears in neither `deviations`
+    nor `stale`, and a `not in stale` check waves it straight through.
+    Twenty-seven days later that limp is not news, and the pipeline hands the
+    rule the reading's own day so it can say so.
     """
     postop_day = 30
     series = _healthy_series(postop_day, ProcedureType.TKA)
-    series[str(M.WALKING_ASYMMETRY_PCT)] = pd.Series(
-        [22.0, 22.0], index=[3, 4], dtype=float
-    )
+    series[str(M.WALKING_ASYMMETRY_PCT)] = pd.Series([22.0], index=[3], dtype=float)
 
     _, deviations_and_more = None, _score(series, ProcedureType.TKA, postop_day)
     deviations, _, _, risk, _ = deviations_and_more
 
     assert str(M.WALKING_ASYMMETRY_PCT) not in deviations, (
-        "two readings should not produce a baseline — the premise of this test"
+        "one reading should not produce a baseline — the premise of this test"
     )
     assert "GAIT_ASYMMETRY_HIGH" not in {r.code for r in risk.reasons}
 

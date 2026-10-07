@@ -1,11 +1,15 @@
 import type { CareMetric } from '../../../api/care'
+import { explainMetric, useExplain } from '../../../api/explain'
 import ConfidenceChip from '../../../components/ConfidenceChip'
+import InfoTip from '../../../components/InfoTip'
 import Tile from '../../../components/Tile'
 import DotLine from '../DotLine'
 import CareChart from './CareChart'
 import { latestLabel } from './chartText'
 import { GUARDED_NOTE, statusChipText, taskKindLabel, tileChipClass } from './labels'
 import { careMetricTile } from './metricTiles'
+import { EarlyReadChip, ReadinessValue } from './Readiness'
+import { readinessLine, showsCountdown } from './readinessText'
 import { valueParts } from './valueParts'
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -30,6 +34,11 @@ import { valueParts } from './valueParts'
    --soft, so a "Needs data" chip would lose its capsule on the tile. On a
    soft tile it is drawn panel-filled instead (missing ink on panel 7.222 /
    6.650).
+
+   A metric still collecting its first reading shows the days left as its
+   big figure, and the line under it says what has to arrive. An early read
+   (a two-day reference) carries the "Early read" chip beside its state.
+   The "i" beside the name opens the metric's explanation (InfoTip).
    ════════════════════════════════════════════════════════════════════════ */
 
 /** Full stats tile for one care metric. `id="metric-M12"` is the anchor the
@@ -40,6 +49,9 @@ export default function MetricCard({ m }: { m: CareMetric }) {
   const when = latestLabel(m.chart)
   const valueId = `metric-${m.id}-name`
   const { value, unit } = valueParts(m)
+  const { data: glossary } = useExplain()
+  const countdown = nodata && showsCountdown(m.readiness)
+  const line = readinessLine(m.readiness)
   return (
     <article
       id={`metric-${m.id}`}
@@ -55,16 +67,26 @@ export default function MetricCard({ m }: { m: CareMetric }) {
             </h4>
             <p className="meta tabular-nums">{m.id}</p>
           </div>
+          <InfoTip entry={explainMetric(glossary, m.id)} className="-my-1 shrink-0" />
         </div>
-        <span className={`chip shrink-0 ${tileChipClass(m.status)}`}>{statusChipText(m)}</span>
+        <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          <span className={`chip ${tileChipClass(m.status)}`}>{statusChipText(m)}</span>
+          <EarlyReadChip r={m.readiness} />
+        </span>
       </div>
 
-      <p className="mt-3 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-        <span className="big-num text-[2.25rem] text-ink">{value}</span>
-        {unit && <span className="text-copy text-secondary">{unit}</span>}
-        {m.value_label && <span className="text-copy text-secondary">{m.value_label}</span>}
-      </p>
-      <DotLine as="p" className="meta mt-0.5" parts={[when, m.delta_text]} />
+      {countdown ? (
+        <div className="mt-3">
+          <ReadinessValue r={m.readiness!} />
+        </div>
+      ) : (
+        <p className="mt-3 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+          <span className="big-num text-[2.25rem] text-ink">{value}</span>
+          {unit && <span className="text-copy text-secondary">{unit}</span>}
+          {m.value_label && <span className="text-copy text-secondary">{m.value_label}</span>}
+        </p>
+      )}
+      <DotLine as="p" className="meta mt-0.5" parts={countdown ? [line] : [when, m.delta_text]} />
 
       <div className="mt-3 rounded-control-sm bg-panel p-2">
         <CareChart spec={m.chart} sigma={m.unit === 'σ' ? m.value_num : null} />
@@ -72,7 +94,10 @@ export default function MetricCard({ m }: { m: CareMetric }) {
 
       {nodata ? (
         <div className="mt-3">
-          <p className="text-copy text-body">{m.unlock ?? m.finding}</p>
+          <p className="text-copy text-body">{m.finding || m.unlock}</p>
+          {m.unlock && m.finding && m.unlock !== m.finding && (
+            <p className="mt-1.5 text-copy text-secondary">{m.unlock}</p>
+          )}
           {m.feeds_from_tasks.length > 0 && (
             <div className="mt-2.5">
               <p className="meta mb-1.5">What unlocks it</p>
@@ -102,6 +127,7 @@ export default function MetricCard({ m }: { m: CareMetric }) {
           as="p"
           className="meta"
           parts={[
+            !countdown && !nodata && line,
             m.inputs.length > 0 && m.inputs.join(', '),
             m.coverage_text,
             m.confidence !== 'high' && <ConfidenceChip level={m.confidence} variant="meta" />,

@@ -1,8 +1,10 @@
 import { Activity, CalendarCheck, Radar, TrendingUp } from 'lucide-react'
 import type { CSSProperties } from 'react'
+import { explainSection, explainSignal, useExplain, type Glossary } from '../../../api/explain'
 import type { MetricInsight, PatientMetrics } from '../../../api/types'
 import AdherenceDots from '../../../components/AdherenceDots'
 import ConfidenceChip from '../../../components/ConfidenceChip'
+import InfoTip from '../../../components/InfoTip'
 import Sparkline from '../../../components/charts/Sparkline'
 import TrajectoryChart from '../../../components/charts/TrajectoryChart'
 import SectionCard from '../../../components/SectionCard'
@@ -13,6 +15,8 @@ import { METRIC_STATUS } from '../../../lib/risk'
 import DotLine from '../DotLine'
 import { GUARDED_NOTE, tileChipClass } from './labels'
 import { signalTile } from './metricTiles'
+import { EarlyReadChip, ReadinessValue } from './Readiness'
+import { readinessLine, showsCountdown } from './readinessText'
 
 /** The Signals tab of Full stats: trajectory, multi-signal deviation, the
  *  wearable trends and adherence. Its data comes from the lazy
@@ -39,8 +43,18 @@ function latest(m: MetricInsight): { value: string; date: string } | null {
   }
 }
 
-function SignalTile({ m, index }: { m: MetricInsight; index: number }) {
+function SignalTile({
+  m,
+  index,
+  glossary,
+}: {
+  m: MetricInsight
+  index: number
+  glossary: Glossary | undefined
+}) {
   const tile = signalTile(m.metric_key)
+  const countdown = m.status === 'nodata' && showsCountdown(m.readiness)
+  const line = readinessLine(m.readiness)
   const chip =
     m.status === 'flag' || m.status === 'watch'
       ? m.status_text || METRIC_STATUS[m.status].label
@@ -61,15 +75,29 @@ function SignalTile({ m, index }: { m: MetricInsight; index: number }) {
           <h4 id={nameId} className="min-w-0 text-copy-lg font-medium text-ink">
             {m.name}
           </h4>
+          <InfoTip entry={explainSignal(glossary, m.metric_key)} className="-my-1 shrink-0" />
         </div>
-        <span className={`chip shrink-0 ${tileChipClass(m.status)}`}>{chip}</span>
+        <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          <span className={`chip ${tileChipClass(m.status)}`}>{chip}</span>
+          <EarlyReadChip r={m.readiness} />
+        </span>
       </div>
 
-      <p className="mt-3 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-        <span className="big-num text-[2.25rem] text-ink">{now?.value ?? '—'}</span>
-        {m.unit && <span className="text-copy text-secondary">{m.unit}</span>}
-      </p>
-      {now && <p className="meta mt-0.5">Latest · {now.date}</p>}
+      {countdown ? (
+        <div className="mt-3">
+          <ReadinessValue r={m.readiness!} />
+        </div>
+      ) : (
+        <p className="mt-3 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+          <span className="big-num text-[2.25rem] text-ink">{now?.value ?? '—'}</span>
+          {m.unit && <span className="text-copy text-secondary">{m.unit}</span>}
+        </p>
+      )}
+      {countdown ? (
+        <p className="meta mt-0.5">{line}</p>
+      ) : (
+        now && <p className="meta mt-0.5">Latest · {now.date}</p>
+      )}
 
       <div className="mt-3 rounded-control-sm bg-panel px-2 py-1.5">
         <Sparkline series={m.series} baseline={m.baseline_mean} unit={m.unit} label={m.name} />
@@ -86,6 +114,7 @@ function SignalTile({ m, index }: { m: MetricInsight; index: number }) {
         as="p"
         className="meta mt-auto pt-3"
         parts={[
+          !countdown && line,
           m.coverage_text,
           m.confidence !== 'high' && <ConfidenceChip level={m.confidence} variant="meta" />,
           m.guarded && <span className="text-risk-med-ink">{GUARDED_NOTE}</span>,
@@ -112,14 +141,34 @@ export default function SignalsBody({
     data.composite.level === 'high' || data.composite.level === 'elevated'
       ? COMPOSITE[data.composite.level]
       : COMPOSITE.normal
+  const { data: glossary } = useExplain()
+  const trajectoryReady = data.trajectory.readiness
+  const trajectoryLine = readinessLine(trajectoryReady)
 
   return (
     <div className="space-y-stack">
       <SectionCard
         title="Recovery trajectory"
         icon={<Tile size="sm" family="indigo" icon={<TrendingUp />} />}
+        aside={
+          trajectoryReady && !trajectoryReady.ready ? (
+            <span className="chip bg-risk-missing-tint text-risk-missing-ink normal-case tracking-label">
+              {trajectoryReady.left > 0
+                ? `Comparison starts in ${trajectoryReady.left} more ${trajectoryReady.left === 1 ? 'day' : 'days'}`
+                : trajectoryReady.have > 0
+                  ? 'Waiting on new data'
+                  : 'Needs daily steps'}
+            </span>
+          ) : (
+            <EarlyReadChip r={trajectoryReady} />
+          )
+        }
+        action={<InfoTip entry={explainSection(glossary, 'trajectory')} />}
       >
         <RefreshOverlay show={refreshing} />
+        {trajectoryLine && (!trajectoryReady?.ready || trajectoryReady.stage === 'provisional') && (
+          <p className="meta mb-2">{trajectoryLine}</p>
+        )}
         <TrajectoryChart
           actual={data.trajectory.actual}
           expected={data.trajectory.expected}
@@ -132,6 +181,7 @@ export default function SignalsBody({
           title="Multi-signal deviation"
           icon={<Tile size="sm" family="violet" icon={<Radar />} />}
           aside={<span className={`chip ${level.pill}`}>{level.label}</span>}
+          action={<InfoTip entry={explainSection(glossary, 'composite')} />}
         >
           <RefreshOverlay show={refreshing} />
           <ul className="space-y-3">
@@ -176,7 +226,7 @@ export default function SignalsBody({
           <RefreshOverlay show={refreshing} />
           <div className="grid gap-3 sm:grid-cols-2">
             {data.metrics.map((m, i) => (
-              <SignalTile key={m.metric_key} m={m} index={i} />
+              <SignalTile key={m.metric_key} m={m} index={i} glossary={glossary} />
             ))}
           </div>
         </SectionCard>
@@ -185,6 +235,7 @@ export default function SignalsBody({
       <SectionCard
         title="Adherence and monitoring"
         icon={<Tile size="sm" family="blue" icon={<CalendarCheck />} />}
+        action={<InfoTip entry={explainSection(glossary, 'adherence')} />}
       >
         <RefreshOverlay show={refreshing} />
         <div className="flex flex-wrap items-center justify-between gap-4">

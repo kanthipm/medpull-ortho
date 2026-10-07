@@ -17,4 +17,10 @@
 # 1.4.2: stale cards show pre-op history too, the band-read cards judge any
 # current reading, and a stress reading on under a week of baseline is an
 # early estimate that cannot flag.
-ENGINE_VERSION = "1.4.2"
+# 1.5.0: metrics with less data. A personal baseline starts at two days
+# (provisional until three), the trajectory compares from three days of index,
+# every care metric carries a provisional minimum, data confidence judges the
+# panel the patient's sources actually report, and every card, care metric and
+# the trajectory carry a `readiness` countdown. Assessments stored by 1.4.x
+# carry none of that and must not survive.
+ENGINE_VERSION = "1.5.0"

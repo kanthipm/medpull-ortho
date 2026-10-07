@@ -28,7 +28,10 @@ from app.models.enums import ProcedureType, TrajectoryState
 WEIGHTS = {M.STEPS: 0.7, M.WALKING_SPEED: 0.3}
 BEHIND_PCT = -12.0
 AHEAD_PCT = 10.0
-MIN_DAYS = 4
+# Three days of index is the first comparison (a 2-day anchor from day 2 and
+# the day after); five is where the last-5-day mean is a real mean.
+MIN_DAYS = 3
+FIRM_DAYS = 5
 
 
 def functional_index(
@@ -100,8 +103,16 @@ def compare(
     normal, which is too thin to hang a reassuring AHEAD on. Such an index
     reports ON_TRACK at worst-case best.
     """
+    from app.engine.readiness import readiness
+
     all_days = np.arange(0, max(postop_day, 1) + 1)
     expected = expected_curve(procedure, all_days)
+    ready = readiness(
+        int(len(index)), MIN_DAYS, FIRM_DAYS, note="days of functional index",
+        # the index cannot start before a baseline exists, which is two
+        # scored days from post-op day 2 on when there is no pre-op history
+        extra_wait=(max(0, 2 - postop_day) + 2) if len(index) == 0 else 0,
+    ).to_dict()
 
     if len(index) < MIN_DAYS:
         return TrajectoryResult(
@@ -111,6 +122,7 @@ def compare(
             actual=[{"day": int(d), "v": round(float(v), 3)} for d, v in index.items()],
             expected=expected,
             anchored=anchored,
+            readiness=ready,
         )
 
     all_mids = pd.Series(
@@ -136,4 +148,5 @@ def compare(
         actual=[{"day": int(d), "v": round(float(v), 3)} for d, v in index.items()],
         expected=expected,
         anchored=anchored,
+        readiness=ready,
     )

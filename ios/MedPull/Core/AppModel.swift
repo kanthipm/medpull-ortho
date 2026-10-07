@@ -20,6 +20,8 @@ final class AppModel {
     var messages: [ChatMessage] = []
     var progress: [ProgressDay] = []
     var portfolio: [PortfolioMetric] = []
+    /// The patient's own metrics, in their words (Home card, Health section).
+    var metrics: PatientMetricsResponse?
     var wearables: WearableSummary?
     var lastError: String?
 
@@ -122,6 +124,7 @@ final class AppModel {
             tasks = TasksResponse(open: [], recent: [])
             messages = []
             portfolio = []
+            metrics = nil
             selectedTab = .home
             await refreshAll()
         } catch {
@@ -167,6 +170,7 @@ final class AppModel {
         messages = []
         progress = []
         portfolio = []
+        metrics = nil
         wearables = nil
         phase = .onboarding
     }
@@ -264,6 +268,9 @@ final class AppModel {
                 self.portfolio = try await self.api.portfolio(days: 14).metrics
             },
         ]
+        if !isPersonal {
+            outcomes.append(await refreshMetrics(surface: false))
+        }
         if outcomes.contains(.ok) {
             clearError()
         } else if outcomes.contains(.failed) {
@@ -302,6 +309,16 @@ final class AppModel {
     func refreshPortfolio(surface: Bool = true) async -> Outcome {
         await refresh(surface: surface) {
             self.portfolio = try await self.api.portfolio(days: 14).metrics
+        }
+    }
+
+    /// The care metrics as the patient sees them. A subscriber's space has
+    /// none (the personal dashboard is its own thing), so it is skipped.
+    @discardableResult
+    func refreshMetrics(surface: Bool = true) async -> Outcome {
+        guard !isPersonal else { return .ok }
+        return await refresh(surface: surface) {
+            self.metrics = try await self.api.metrics()
         }
     }
 

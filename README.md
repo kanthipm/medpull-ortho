@@ -51,6 +51,45 @@ functions, constants, what was verified and the validation plan are in
 **[docs/methods/custom-metrics-methodology.md](docs/methods/custom-metrics-methodology.md)**
 (PDF beside it, rebuilt with `python3 docs/methods/build_pdf.py`).
 
+## Readiness, explanations and warm narratives
+
+Every metric says how far it is from its first reading. The engine attaches a
+`readiness` object (`backend/app/engine/readiness.py`) to each care metric,
+each wearable signal card and the trajectory: units in hand, units the first
+reading needs, units an established reading needs, and `left` — the "x days
+left" the console and the patient app print. The gates were lowered so a
+patient sees their first readings on the second or third day of wearing a
+watch: a personal baseline starts at two days (three settles it and, for a
+pre-op norm, freezes it — `engine/baseline.py`, `engine/baseline_store.py`),
+the trajectory compares from three days of index, and the care metrics each
+carry a provisional minimum (M1 at five days of load with a 3-day window, M2
+at four paired days, M3 at three, M17 at four, M18 at six, and so on; the
+numbers are the `*_MIN_*` / `*_FIRM_*` constants in `engine/care/`). A
+provisional read is shown, labelled "early read", and may raise a Watch but
+never a Flag on its own. Data confidence judges a patient against the key
+signals their own sources have ever reported (floored at three), so a watch
+with no temperature sensor is not held to a six-signal panel it cannot meet.
+
+Every chart and metric has an "i" icon. The text behind it lives beside the
+code in `backend/app/engine/explain.py` — what the number measures, the data
+it takes in, how it is computed, how to read it, and how much history it needs
+— with a patient-facing version in everyday words; `GET /api/explain` serves
+the glossary once per session. The patient app reads the same assessment
+through `GET /api/mobile/metrics` (`engine/patient_view.py`): each metric in
+the patient's words, a patient-safe state (looking steady / worth keeping an
+eye on / your care team is taking a look / not showing yet), the countdown,
+and the explanation. Nothing a clinician has not seen is said there.
+
+Page reads never wait on the model. The worklist and the patient page answer
+from the cache or the deterministic renderer and report `narratives_pending`;
+the console then calls `POST /api/narratives/warm`, which spends a bounded
+number of model calls (highest tier first) and says what is still missing.
+On a laptop a background warmer also runs every five minutes
+(`NARRATIVE_WARM_INTERVAL_SECONDS`), so a page load finds everything ready; on
+Lambda the warm call is what fills the caches after the day rolls over. The
+deterministic renderer itself (`llm/fallback.py`) now writes the way a
+colleague talks at handoff rather than reading the signals off one per line.
+
 ## Quickstart
 
 Requirements: [uv](https://docs.astral.sh/uv/) and Node 20+.

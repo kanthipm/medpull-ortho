@@ -1,4 +1,5 @@
 import type { ConfidenceLevel, MetricStatus, Priority, TrajectoryState, Urgency } from '../lib/risk'
+import type { Readiness } from './care'
 
 export interface DataConfidence {
   score: number
@@ -35,6 +36,10 @@ export interface WorklistResponse {
   stats: { total: number; high: number; medium: number; missing: number; low: number }
   briefing: { text: string; generated_at: string; provider: string }
   patients: WorklistPatient[]
+  /** Narratives on this page still rules-based with a model version to
+   *  come; the console asks `POST /api/narratives/warm` while it is > 0.
+   *  Page reads never wait on the model themselves. */
+  narratives_pending: number
 }
 
 export interface RiskReason {
@@ -86,6 +91,8 @@ export interface PatientDetail {
   summary: { text: string; generated_at: string; provider: string }
   actions: SuggestedAction[]
   last_checkin_at: string | null
+  /** The summary and/or actions are still rules-based; see WorklistResponse. */
+  narratives_pending: number
 }
 
 export interface MetricInsight {
@@ -101,6 +108,8 @@ export interface MetricInsight {
   unit: string
   series: { date: string; value: number }[]
   baseline_mean: number | null
+  /** "x days left" until this card can say something. */
+  readiness: Readiness | null
 }
 
 export interface PatientMetrics {
@@ -112,6 +121,8 @@ export interface PatientMetrics {
     // true when the index carries no pre-op norm: the verdict is about pace
     // rather than capacity, and `ahead` is withheld
     anchored: boolean
+    /** Days of functional index in hand vs the minimum the comparison needs. */
+    readiness: Readiness | null
   }
   composite: {
     index: number

@@ -351,6 +351,18 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
     signal_days = _signal_days(db, patient.id)
     if level == RiskLevel.MISSING_DATA and signal_days > 0:
         label, blurb = EARLY_SIGNAL_LABEL, early_signal_blurb(signal_days)
+    # The blurb says what the data says, when there is data to say it with:
+    # which readings look steady, which the care team is watching, and how
+    # many days until the rest show. The canned tier line is the fallback.
+    from app.engine.patient_view import overall_line
+
+    try:
+        data_blurb, days_until_full = overall_line(analytics, surgical, signal_days=signal_days)
+    except Exception:  # noqa: BLE001 — a sentence is never worth a failed /me
+        logger.exception("overall line failed for %s", patient.id)
+        data_blurb, days_until_full = None, None
+    if data_blurb:
+        blurb = data_blurb
     days_with_data = max((analytics.get("confidence") or {}).get("days_with_data") or 0, signal_days)
     open_tasks = tasks.open_tasks(db, patient.id)
     unread = db.scalars(
@@ -427,6 +439,7 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
                 "pct": assessment.trajectory_pct,
             },
             "days_with_data": days_with_data,
+            "days_until_full_picture": days_until_full,
             "computed_at": _iso(assessment.computed_at),
         },
         "tasks_open": len(open_tasks),
@@ -863,6 +876,22 @@ def signout(authorization: str | None = Header(default=None), db: Session = Depe
 @router.get("/me")
 def me(patient: Patient = Depends(current_patient), db: Session = Depends(get_db)) -> dict:
     return me_view(db, patient)
+
+
+@router.get("/metrics")
+def metrics(patient: Patient = Depends(current_patient), db: Session = Depends(get_db)) -> dict:
+    """The patient's own metrics, in their own words: every care metric and
+    wearable signal from the stored assessment, each with a patient-safe
+    state and sentence, how many days until it shows, and a plain-English
+    explanation. The same numbers the console reads — nothing is recomputed,
+    and nothing a clinician has not seen is said."""
+    from app.engine.patient_view import metrics_view
+    from app.personal.scope import data_patient
+
+    owner = data_patient(db, patient)
+    assessment = ensure_fresh_assessment(db, owner.id)
+    return metrics_view(assessment.analytics or {}, is_surgical(owner),
+                        signal_days=_signal_days(db, owner.id))
 
 
 @router.get("/tasks")

@@ -5,9 +5,11 @@ from app.api import (
     attachments,
     care,
     checkin,
+    explain,
     integrations,
     mobile,
     mobility,
+    narratives,
     notifications,
     patients,
     plan,
@@ -36,6 +38,8 @@ api_router.include_router(mobile.public_router)
 api_router.include_router(mobility.router)
 api_router.include_router(sendblue_webhook.router)
 api_router.include_router(care.router)
+api_router.include_router(explain.router)
+api_router.include_router(narratives.router)
 api_router.include_router(plan.router)
 api_router.include_router(attachments.router)
 api_router.include_router(attachments.console_router)

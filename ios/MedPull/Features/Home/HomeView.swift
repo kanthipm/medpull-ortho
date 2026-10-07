@@ -6,6 +6,8 @@ struct HomeView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showProfile = false
     @State private var openTask: RecoveryTask?
+    /// The metric whose "i" was tapped; presents MetricInfoSheet.
+    @State private var infoMetric: PatientMetric?
     /// True once the two-line greeting has scrolled under the bar. Until
     /// then the bar has no background and no title (R6); after, the bar
     /// material (or the iOS 26 hard edge) comes in with an inline "Home".
@@ -25,9 +27,10 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header.mpRise(0)
                     if let me = app.me { recoveryCard(me).mpRise(1) }
-                    portfolioCard.mpRise(2)
-                    todayCard.mpRise(3)
-                    quickRow.mpRise(4)
+                    if !app.isPersonal { metricsCard.mpRise(2) }
+                    portfolioCard.mpRise(3)
+                    todayCard.mpRise(4)
+                    quickRow.mpRise(5)
                     if let me = app.me, !me.wearables.appleHealth.connected, me.features.appleHealth {
                         healthNudge
                     }
@@ -63,6 +66,7 @@ struct HomeView: View {
             }
             .animation(MPMotion.gated(MPMotion.state, reduceMotion: reduceMotion), value: greetingGone)
             .sheet(isPresented: $showProfile) { ProfileView() }
+            .sheet(item: $infoMetric) { m in MetricInfoSheet(metric: m) }
             // Same router as Tasks, so a check-in opens CheckinView from either tab.
             .navigationDestination(item: $openTask) { task in TaskDestination(task: task) }
         }
@@ -216,6 +220,42 @@ struct HomeView: View {
         }
         if let days = me.recovery.daysWithData {
             stat("Days of data", "\(days)", value: Double(days))
+        }
+        if let left = me.recovery.daysUntilFullPicture, left > 0 {
+            stat("Full picture in", "\(left) \(left == 1 ? "day" : "days")", value: Double(left))
+        }
+    }
+
+    // MARK: Metrics
+
+    /// The first three of the patient's own metrics (the pathway's headline
+    /// picks), each a row with its state in words and a countdown while it
+    /// is still collecting. "All metrics" opens the Health tab.
+    private var metricsCard: some View {
+        let metrics = Array(app.metrics?.metrics.prefix(3) ?? [])
+        return Card(padding: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                CardHeader("Your metrics", actionTitle: metrics.isEmpty ? nil : "All metrics") {
+                    app.selectedTab = .health
+                }
+                if metrics.isEmpty {
+                    EmptyRow(icon: "chart.bar", title: "Nothing to show yet",
+                             detail: app.metrics?.overall.blurb
+                             ?? "Connect Apple Health or a wearable and your first readings appear after about two days.")
+                } else {
+                    ForEach(metrics) { m in
+                        MetricRow(metric: m) { infoMetric = m }
+                        if m.id != metrics.last?.id { InsetDivider() }
+                    }
+                    if let blurb = app.metrics?.overall.blurb {
+                        InsetDivider(leading: 16)
+                        Text(blurb)
+                            .mpFont(.label).mpSecondary()
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 16).padding(.vertical, 12)
+                    }
+                }
+            }
         }
     }
 

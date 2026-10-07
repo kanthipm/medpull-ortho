@@ -2,7 +2,9 @@ import { ChevronRight } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { CareMetric } from '../../../api/care'
 import { useCareMetrics } from '../../../api/care'
+import { explainMetric, useExplain } from '../../../api/explain'
 import ConfidenceChip from '../../../components/ConfidenceChip'
+import InfoTip from '../../../components/InfoTip'
 import SectionCard from '../../../components/SectionCard'
 import { RefreshOverlay, SkeletonCard } from '../../../components/Skeleton'
 import type { TileFamily } from '../../../components/Tile'
@@ -10,6 +12,8 @@ import DotLine from '../DotLine'
 import { latestLabel } from './chartText'
 import { GUARDED_NOTE, statusChipText, tileChipClass } from './labels'
 import { careMetricTile } from './metricTiles'
+import { EarlyReadChip, ReadinessValue } from './Readiness'
+import { readinessLine, showsCountdown } from './readinessText'
 import TileArt from './TileArt'
 import { valueParts } from './valueParts'
 
@@ -24,7 +28,14 @@ import { valueParts } from './valueParts'
  *  clay. The state is the chip, in words, on the opaque caption. White text
  *  only sits in the dark top band of each gradient (7.1:1 or better).
  *
- *  Each tile is a button that opens Full stats on that metric's card. */
+ *  Each tile is a button that opens Full stats on that metric's card. The
+ *  "i" that explains the metric is a SIBLING placed over the tile's top-right
+ *  corner — a button inside a button is invalid, and its popover must not
+ *  open Full stats underneath itself.
+ *
+ *  A metric that is still collecting shows the days left as its big figure
+ *  ("2 / more days") instead of a dash, and the caption says what has to
+ *  arrive; an early read carries the "Early read" chip beside its state. */
 
 const GRADIENT: Record<TileFamily, string> = {
   teal: 'g-sage',
@@ -40,74 +51,96 @@ function HeadlineTile({
   index,
   wide,
   onOpen,
+  glossary,
 }: {
   m: CareMetric
   index: number
   wide: boolean
   onOpen: (metricId: string) => void
+  glossary: ReturnType<typeof useExplain>['data']
 }) {
   const nodata = m.status === 'nodata'
   const tile = careMetricTile(m)
   const when = latestLabel(m.chart)
   const { value, unit } = valueParts(m)
+  const countdown = nodata && showsCountdown(m.readiness)
+  const line = readinessLine(m.readiness)
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(m.id)}
-      data-loop
-      style={{ '--d': index } as CSSProperties}
-      className={`gtile ${GRADIENT[tile.family]} spotlight reveal group/tile min-h-[22rem] w-full cursor-pointer text-left transition-[transform,box-shadow] duration-spring ease-spring hover:-translate-y-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus active:scale-[.985] motion-reduce:transform-none ${
-        wide ? 'lg:col-span-2' : ''
-      }`}
-    >
-      <span className="gtile-top">
-        <span className="min-w-0">
-          <span className="gtile-kicker block">{m.name}</span>
-          <span className="gtile-num big-num">
-            {value}
-            {unit && <small>{unit}</small>}
+    <div className={`relative ${wide ? 'lg:col-span-2' : ''}`}>
+      <button
+        type="button"
+        onClick={() => onOpen(m.id)}
+        data-loop
+        style={{ '--d': index } as CSSProperties}
+        className={`gtile ${GRADIENT[tile.family]} spotlight reveal group/tile min-h-[22rem] w-full cursor-pointer text-left transition-[transform,box-shadow] duration-spring ease-spring hover:-translate-y-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus active:scale-[.985] motion-reduce:transform-none`}
+      >
+        <span className="gtile-top">
+          <span className="min-w-0 pr-9">
+            <span className="gtile-kicker block">{m.name}</span>
+            {countdown ? (
+              <span className="mt-1.5 block">
+                <ReadinessValue r={m.readiness!} onTile size="text-[48px] leading-none" />
+              </span>
+            ) : (
+              <span className="gtile-num big-num">
+                {value}
+                {unit && <small>{unit}</small>}
+              </span>
+            )}
+            {!countdown && m.value_label && (
+              <span className="mt-1 block text-label text-white/90">{m.value_label}</span>
+            )}
           </span>
-          {m.value_label && <span className="mt-1 block text-label text-white/90">{m.value_label}</span>}
+          {when && !countdown && (
+            <span className="gtile-side shrink-0">
+              <b>{when.replace(/^Post-op day /i, 'Day ').replace(/^D(\d+)$/, 'Day $1')}</b>
+              latest
+            </span>
+          )}
         </span>
-        {when && (
-          <span className="gtile-side shrink-0">
-            <b>{when.replace(/^Post-op day /i, 'Day ').replace(/^D(\d+)$/, 'Day $1')}</b>
-            latest
+
+        <span className="gtile-art">
+          {nodata ? (
+            <span className="text-copy text-white/90">
+              {countdown ? 'Collecting' : 'Not enough data yet'}
+            </span>
+          ) : (
+            <TileArt spec={m.chart} sigma={m.unit === 'σ' ? m.value_num : null} />
+          )}
+        </span>
+
+        <span className="gtile-cap block">
+          <span className="flex items-center justify-between gap-2">
+            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className={`chip ${tileChipClass(m.status)}`}>{statusChipText(m)}</span>
+              <EarlyReadChip r={m.readiness} />
+            </span>
+            <ChevronRight
+              aria-hidden
+              size={16}
+              className="shrink-0 text-secondary transition-transform duration-spring ease-spring group-hover/tile:translate-x-0.5 motion-reduce:transform-none"
+            />
           </span>
-        )}
-      </span>
-
-      <span className="gtile-art">
-        {nodata ? (
-          <span className="text-copy text-white/90">Not enough data yet</span>
-        ) : (
-          <TileArt spec={m.chart} sigma={m.unit === 'σ' ? m.value_num : null} />
-        )}
-      </span>
-
-      <span className="gtile-cap block">
-        <span className="flex items-center justify-between gap-2">
-          <span className={`chip ${tileChipClass(m.status)}`}>{statusChipText(m)}</span>
-          <ChevronRight
-            aria-hidden
-            size={16}
-            className="shrink-0 text-secondary transition-transform duration-spring ease-spring group-hover/tile:translate-x-0.5 motion-reduce:transform-none"
+          <span className={`mt-2 block text-copy text-body ${wide ? 'line-clamp-2' : 'line-clamp-3'}`}>
+            {nodata ? (m.unlock ?? m.finding) : m.finding}
+          </span>
+          <DotLine
+            className="meta mt-1.5 block"
+            parts={[
+              nodata && line,
+              !nodata && m.delta_text,
+              m.confidence !== 'high' && <ConfidenceChip level={m.confidence} variant="meta" />,
+              m.coverage_text,
+              m.guarded && <span className="text-risk-med-ink">{GUARDED_NOTE}</span>,
+            ]}
           />
         </span>
-        <span className={`mt-2 block text-copy text-body ${wide ? 'line-clamp-2' : 'line-clamp-3'}`}>
-          {nodata ? (m.unlock ?? m.finding) : m.finding}
-        </span>
-        <DotLine
-          className="meta mt-1.5 block"
-          parts={[
-            m.confidence !== 'high' && <ConfidenceChip level={m.confidence} variant="meta" />,
-            m.coverage_text,
-            m.guarded && <span className="text-risk-med-ink">{GUARDED_NOTE}</span>,
-          ]}
-        />
+        <span className="sr-only">. Open in Full stats</span>
+      </button>
+      <span className="absolute right-3 top-3 z-[1]">
+        <InfoTip entry={explainMetric(glossary, m.id)} onTile placement="bottom-end" />
       </span>
-      <span className="sr-only">. Open in Full stats</span>
-    </button>
+    </div>
   )
 }
 
@@ -123,6 +156,7 @@ export default function HeadlineMetrics({
   onOpen: (metricId: string) => void
 }) {
   const { data, isLoading, isError } = useCareMetrics(patientId)
+  const { data: glossary } = useExplain()
 
   if (isLoading) {
     return <SkeletonCard lines={5} />
@@ -166,6 +200,7 @@ export default function HeadlineMetrics({
             index={i}
             wide={i === 0 && tiles.length !== 2}
             onOpen={onOpen}
+            glossary={glossary}
           />
         ))}
       </div>

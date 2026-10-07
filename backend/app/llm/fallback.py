@@ -4,6 +4,13 @@ Everything here is templated from the engine's typed reason codes and
 analytics values, so the app is fully functional (and safe) with no LLM at
 all. It is also the replacement of last resort when LLM output fails
 validation.
+
+The register is a colleague at handoff, not a read-out: the facts are woven
+into sentences ("James needs a call today: his heart rate and temperature
+have both climbed above his baseline, and he has moved less with it"), the
+signals that belong together share a sentence, and nothing is stated one
+metric per line. A reader should not be able to tell from the prose alone
+whether a model or this file wrote it.
 """
 
 from typing import Any
@@ -78,57 +85,180 @@ def _reason_texts(reasons: list[dict[str, Any]], limit: int) -> list[str]:
 
 
 def worklist_reason(analytics: dict[str, Any]) -> dict[str, str]:
+    """The one-line scan text. Shorthand on purpose — it is read in a second
+    on a list — so it keeps the engine's fragments joined by dots."""
     reasons = analytics.get("risk", {}).get("reasons", [])
     text = " · ".join(_reason_texts(reasons, 2)) or "Recovery tracking as expected"
     return {"reason": text[:90]}
 
 
+# --- the hallway summary ----------------------------------------------------------
+
+_PRONOUNS = {
+    "M": ("he", "his", "him", "is", "has"),
+    "F": ("she", "her", "her", "is", "has"),
+}
+_THEY = ("they", "their", "them", "are", "have")
+
+# Which flagged signal is which, and the direction that is the finding.
+_RISING = {
+    "RHR_RISING": "resting heart rate",
+    "TEMP_RISING": "skin temperature",
+    "RR_RISING": "breathing rate",
+}
+_FALLING = {
+    "HRV_FALLING": "heart rate variability",
+    "SPO2_LOW": "blood oxygen",
+}
+
+
+def _pronouns(header: dict[str, Any]) -> tuple[str, str, str, str, str]:
+    return _PRONOUNS.get(str(header.get("sex") or "").upper(), _THEY)
+
+
+def _procedure_phrase(header: dict[str, Any]) -> str | None:
+    """"a total knee replacement" from "Total Knee Replacement (TKA)"."""
+    raw = str(header.get("procedure") or "").split("(")[0].strip()
+    if not raw or raw.lower() in ("general care", "none"):
+        return None
+    words = raw.lower()
+    article = "an" if words[0] in "aeiou" else "a"
+    return f"{article} {words}"
+
+
+def _join(parts: list[str]) -> str:
+    parts = [p for p in parts if p]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    return ", ".join(parts[:-1]) + f" and {parts[-1]}"
+
+
+def _cap(text: str) -> str:
+    return text[:1].upper() + text[1:] if text else text
+
+
+_DRIFT_LABELS = {
+    "resting hr": "resting heart rate", "hrv": "heart rate variability", "activity": "activity",
+    "sleep": "sleep", "skin temperature": "skin temperature", "walking speed": "walking speed",
+    "blood oxygen": "blood oxygen", "respiratory rate": "breathing rate",
+}
+
+
+def _signal_sentences(
+    reasons: list[dict[str, Any]], subj: str, pos: str, verb_is: str, verb_has: str, day: Any
+) -> list[str]:
+    """The flagged signals, grouped the way a clinician would say them."""
+    codes = {r["code"]: r for r in reasons}
+    out: list[str] = []
+
+    rising = [label for code, label in _RISING.items() if code in codes]
+    falling = [label for code, label in _FALLING.items() if code in codes]
+    vitals = ""
+    if rising:
+        both = " both" if len(rising) == 2 else ""
+        vitals = (f"{_cap(pos)} {_join(rising)} {verb_has if len(rising) == 1 else 'have'}"
+                  f"{both} climbed above {pos} baseline")
+    if falling:
+        drop = f"{pos} {_join(falling)} {verb_has if len(falling) == 1 else 'have'} dropped"
+        vitals = f"{vitals}, and {drop}" if vitals else _cap(drop) + f" below {pos} baseline"
+    if "COMPOSITE_HIGH" in codes:
+        vitals = (f"{vitals} — several signals moving together" if vitals
+                  else "Several signals have moved away from " + pos + " baseline together")
+    if vitals:
+        out.append(vitals + ".")
+
+    activity: list[str] = []
+    anchored = any("post-op start" in r["text"] for r in reasons
+                   if r["code"] in ("STEPS_FALLING", "WALKING_SLOWING"))
+    when = f" for day {day}" if day is not None and not anchored else ""
+    if "STEPS_FALLING" in codes:
+        activity.append(f"moved less than expected{when}" if not anchored
+                        else "not picked up activity since the first days")
+    if "WALKING_SLOWING" in codes:
+        activity.append("walked more slowly than expected" if not anchored
+                        else "not picked up walking speed since the first days")
+    if "GAIT_ASYMMETRY_HIGH" in codes:
+        activity.append("kept favouring one side when walking")
+    if activity:
+        lead = f"{_cap(subj)} {verb_has} also" if out else f"{_cap(subj)} {verb_has}"
+        out.append(f"{lead} {_join(activity)}.")
+
+    if "SLEEP_DISRUPTED" in codes:
+        out.append(f"Sleep is well under {pos} usual{' too' if out else ''}.")
+    drifts = [r["text"] for r in reasons if r["code"] == "DRIFT_DETECTED"]
+    if drifts:
+        # "Resting HR sliding gradually day over day" -> "resting heart rate"
+        raw = [t.split(" sliding")[0].strip().lower() for t in drifts]
+        names = _join([_DRIFT_LABELS.get(n, n) for n in raw])
+        out.append(f"{_cap(names)} {'is' if len(drifts) == 1 else 'are'} sliding a little each day, "
+                   "not enough to flag yet.")
+    dark = [r for r in reasons if r["code"] == "LOW_COVERAGE" and "no longer reporting" in r["text"]]
+    if dark:
+        out.append(f"{_cap(dark[0]['text'].replace(' no longer reporting', ''))} "
+                   f"{'has' if ',' not in dark[0]['text'] else 'have'} stopped reporting, so "
+                   "part of the picture is missing.")
+    return out
+
+
 def patient_summary(patient_header: dict[str, Any], analytics: dict[str, Any]) -> dict[str, str]:
     name = patient_header.get("name", "The patient").split()[0]
+    subj, pos, _obj, verb_is, verb_has = _pronouns(patient_header)
     day = analytics.get("postop_day")
-    # "N days post-op" is false about a patient who did not have surgery; for
-    # them the same number counts days on the programme.
     surgical = patient_header.get("surgical", True)
-    since = f"{day} days post-op" if surgical else f"{day} days into monitoring"
+    procedure = _procedure_phrase(patient_header) if surgical else None
     level = analytics.get("risk", {}).get("level")
-    reasons = analytics.get("risk", {}).get("reasons", [])
+    reasons = [r for r in analytics.get("risk", {}).get("reasons", []) if r["code"] != "ON_TRACK"]
     trajectory = analytics.get("trajectory", {})
     confidence = analytics.get("confidence", {})
     adherence = analytics.get("adherence", {})
+
+    if procedure and day is not None:
+        since = f"on post-op day {day} after {procedure}"
+    elif surgical and day is not None:
+        since = f"{day} days post-op"
+    else:
+        since = f"{day} days into monitoring" if day is not None else "being monitored"
 
     parts: list[str] = []
     if level == RiskLevel.MISSING_DATA:
         pct = int(round((confidence.get("score") or 0) * 100))
         seen = ("there is no recent device data" if pct <= 0
-                else f"only {pct}% of recent days have device data")
-        parts.append(
-            f"{name} is {since}, but {seen}, "
-            f"so {'recovery' if surgical else 'their baseline'} cannot be assessed reliably."
-        )
-        parts.append("Confirm the wearable is charged, worn, and syncing before reading trends.")
+                else f"only about {pct}% of recent days have device data")
+        parts.append(f"{name} can't be assessed yet: {seen}. {_cap(subj)} {verb_is} {since}, "
+                     f"so the picture should fill in quickly once the watch is charged, worn "
+                     f"and syncing.")
     else:
-        opener = {
-            RiskLevel.HIGH: f"{name} is {since} and several monitoring signals have moved away from baseline together.",
-            RiskLevel.MEDIUM: f"{name} is {since} with findings worth a look this week.",
-            RiskLevel.LOW: (f"{name} is {since} and recovering as expected." if surgical
-                            else f"{name} is {since} and tracking at their usual baseline."),
-        }[RiskLevel(level)]
-        parts.append(opener)
-        texts = _reason_texts([r for r in reasons if r["code"] != "ON_TRACK"], 4)
-        if texts:
-            parts.append("; ".join(texts) + ".")
+        signals = _signal_sentences(reasons, subj, pos, verb_is, verb_has, day)
         pct = trajectory.get("pct")
         state = trajectory.get("state")
-        # The expected curve is a post-surgical construct; a general patient
-        # has no procedure to be behind or ahead of.
-        if surgical and state == "behind" and pct is not None:
-            parts.append(f"Functional recovery is tracking {abs(round(pct))}% behind the expected curve for this procedure.")
-        elif surgical and state == "ahead" and pct is not None:
-            parts.append(f"Functional recovery is tracking {abs(round(pct))}% ahead of the expected curve.")
-        if adherence.get("assigned") and adherence.get("rate", 1) < 0.7:
-            parts.append(f"Task adherence is {int(round(adherence['rate'] * 100))}% over the last two weeks.")
         if level == RiskLevel.HIGH:
-            parts.append("Consider contacting the patient to determine whether earlier clinical follow-up is appropriate.")
+            parts.append(f"{name} needs a call today.")
+            parts.extend(signals)
+        elif level == RiskLevel.MEDIUM:
+            parts.append(f"{name} is worth a look this week.")
+            parts.extend(signals)
+        else:
+            if surgical:
+                parts.append(f"{name} is {since} and recovering as expected.")
+            else:
+                parts.append(f"{name} is {since} and tracking at {pos} usual baseline.")
+            parts.extend(signals)
+        if surgical and state == "behind" and pct is not None:
+            parts.append(f"Overall {subj} {verb_is} running about {abs(round(pct))}% behind the "
+                         f"expected curve for {procedure or 'this procedure'}.")
+        elif surgical and state == "ahead" and pct is not None:
+            parts.append(f"Overall {subj} {verb_is} about {abs(round(pct))}% ahead of the expected "
+                         f"curve.")
+        if adherence.get("assigned") and adherence.get("rate", 1) < 0.7:
+            done = int(round(adherence["rate"] * 100))
+            parts.append(f"{_cap(subj)} {verb_has} finished about {done}% of {pos} tasks over the "
+                         "last two weeks.")
+        if level in (RiskLevel.HIGH, RiskLevel.MEDIUM):
+            parts.append(f"{_cap(subj)} {verb_is} {since}.")
+        if level == RiskLevel.HIGH:
+            parts.append("A short call would settle whether to bring the follow-up forward.")
 
     parts.append(GUARDRAIL_SENTENCE)
     return {"summary": " ".join(parts)}
@@ -155,24 +285,41 @@ def _stable_sentence(n: int, everyone: bool) -> str:
             else f"The other {n} patients are recovering as expected.")
 
 
+def _lower_reason(reason: str) -> str:
+    """"Resting HR rising vs baseline · Activity below expected range" -> a
+    clause: "resting HR rising vs baseline and activity below expected range"."""
+    bits = [b.strip() for b in reason.split("·") if b.strip()]
+    bits = [b[:1].lower() + b[1:] for b in bits]
+    return _join(bits)
+
+
 def daily_briefing(roster: list[dict[str, Any]]) -> dict[str, str]:
     high = [p for p in roster if p["priority"] == RiskLevel.HIGH]
     medium = [p for p in roster if p["priority"] == RiskLevel.MEDIUM]
     missing = [p for p in roster if p["priority"] == RiskLevel.MISSING_DATA]
     stable = [p for p in roster if p["priority"] == RiskLevel.LOW]
 
-    def names(patients: list[dict[str, Any]], with_reason: bool = False) -> str:
-        if with_reason:
-            return "; ".join(f"{p['name']} ({p['reason']})" for p in patients)
-        return ", ".join(p["name"] for p in patients)
-
     parts: list[str] = []
     if high:
-        parts.append(f"{names(high, with_reason=True)} — review first.")
+        first = high[0]
+        lead = f"Start with {first['name']}"
+        if first.get("reason"):
+            lead += f": {_lower_reason(first['reason'])}"
+        parts.append(lead + ".")
+        for p in high[1:]:
+            line = f"{p['name']} needs a call today too"
+            if p.get("reason"):
+                line += f", with {_lower_reason(p['reason'])}"
+            parts.append(line + ".")
     if medium:
-        parts.append(f"Worth a look: {names(medium)}.")
+        names = _join([p["name"] for p in medium])
+        verb = "is" if len(medium) == 1 else "are"
+        parts.append(f"{names} {verb} worth a look when you have a moment.")
     if missing:
-        parts.append(f"{names(missing)} " + ("has" if len(missing) == 1 else "have") + " too little device data to assess — check the connection.")
+        names = _join([p["name"] for p in missing])
+        has = "has" if len(missing) == 1 else "have"
+        parts.append(f"{names} {has} too little device data to assess; worth a nudge about "
+                     "wearing and syncing.")
     if stable:
         parts.append(_stable_sentence(len(stable), everyone=len(stable) == len(roster)))
     if not parts:

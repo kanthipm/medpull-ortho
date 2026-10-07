@@ -233,6 +233,131 @@ struct PortfolioMetric: Codable, Hashable, Identifiable {
     }
 }
 
+// MARK: - The patient's own metrics (GET /api/mobile/metrics)
+
+/// How far a metric is from its first reading, in the units it counts.
+struct MetricReadiness: Codable, Hashable {
+    let ready: Bool
+    let stage: String          // collecting | provisional | established
+    let have: Int
+    let need: Int
+    let firm: Int
+    let left: Int
+    let firmLeft: Int
+    let unit: String
+    let note: String?
+
+    /// "Needs 5 days of steps; you have 3." for the info sheet.
+    var sentence: String? {
+        let what = note.map { " of \($0)" } ?? ""
+        if ready {
+            if stage == "provisional", firmLeft > 0 {
+                return "Showing from \(have) \(unitWord(have))\(what); settles after \(firm)."
+            }
+            return nil
+        }
+        return "Needs \(need) \(unitWord(need))\(what); you have \(have)."
+    }
+
+    private func unitWord(_ n: Int) -> String {
+        if n == 1, unit.hasSuffix("s") { return String(unit.dropLast()) }
+        return unit
+    }
+}
+
+/// Plain-words explanation of one metric, for the patient.
+struct MetricExplain: Codable, Hashable {
+    let title: String
+    let what: String
+    let why: String
+    let help: String
+}
+
+struct MetricChartPoint: Codable, Hashable {
+    let x: Double
+    let y: Double
+}
+
+struct PatientMetricChart: Codable, Hashable {
+    let kind: String   // line | bars
+    let points: [MetricChartPoint]
+    let xLabel: String?
+}
+
+/// One care metric as the patient sees it: a title in their words, a state
+/// that never carries a verdict, a sentence, and the countdown until it shows.
+struct PatientMetric: Codable, Identifiable, Hashable {
+    let id: String
+    let key: String?
+    let title: String
+    let state: String         // good | watch | reviewing | waiting
+    let stateLabel: String
+    let headline: String
+    let value: String?
+    let unit: String?
+    let readiness: MetricReadiness?
+    let daysLeftText: String?
+    let explain: MetricExplain?
+    let chart: PatientMetricChart?
+
+    var isWaiting: Bool { state == "waiting" }
+}
+
+/// One wearable signal as the patient sees it (steps, sleep, heart rate...).
+struct PatientSignal: Codable, Identifiable, Hashable {
+    var id: String { key }
+    let key: String
+    let title: String
+    let state: String
+    let stateLabel: String
+    let headline: String
+    let latest: PortfolioPoint?
+    let unit: String?
+    let readiness: MetricReadiness?
+    let daysLeftText: String?
+    let explain: MetricExplain?
+    let series: [PortfolioPoint]?
+}
+
+struct PatientMetricOverall: Codable {
+    let blurb: String?
+    let daysUntilFullPicture: Int?
+    let showing: Int
+    let waiting: Int
+}
+
+struct PatientMetricTrajectory: Codable {
+    let state: String?
+    let pct: Double?
+    let readiness: MetricReadiness?
+    let daysLeftText: String?
+    let explain: MetricExplain?
+}
+
+struct PatientMetricsResponse: Codable {
+    let postopDay: Int?
+    let mode: String
+    let overall: PatientMetricOverall
+    let trajectory: PatientMetricTrajectory?
+    let metrics: [PatientMetric]
+    let signals: [PatientSignal]
+
+    func signal(for key: String) -> PatientSignal? { signals.first { $0.key == key } }
+}
+
+/// The tone a patient-facing state takes. `reviewing` is sage, not clay:
+/// "your care team is taking a look" is reassurance, never an alarm.
+extension MP {
+    static func tone(forMetricState state: String) -> Tone {
+        switch state {
+        case "good": return .low
+        case "watch": return .med
+        case "reviewing": return .brand
+        default: return .missing
+        }
+    }
+}
+
 struct PortfolioResponse: Codable {
     let days: Int
     let since: String
@@ -250,6 +375,9 @@ struct Recovery: Codable {
     let blurb: String
     let trajectory: Trajectory
     let daysWithData: Int?
+    /// Days of data until every metric has shown; nil when nothing is
+    /// waiting (or the server predates the field).
+    let daysUntilFullPicture: Int?
     let computedAt: String?
 }
 

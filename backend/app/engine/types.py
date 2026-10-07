@@ -30,6 +30,10 @@ class Baseline:
     # post-op anchor is only interpretable next to where the expected curve
     # says the patient already was on those days, so the days travel with it.
     window_days: list[int] = field(default_factory=list)
+    # Two days is enough to START comparing against (the SD floors carry the
+    # spread); three is where the reference is trusted and, for a pre-op
+    # norm, frozen (engine/baseline_store.py). Until then the cards say so.
+    provisional: bool = False
 
 
 @dataclass
@@ -74,6 +78,8 @@ class MetricInsight:
     unit: str
     series: list[dict[str, Any]] = field(default_factory=list)  # [{date, value}]
     baseline_mean: float | None = None
+    # "x days left" until this card can say something (engine/readiness.py).
+    readiness: dict[str, Any] | None = None
 
 
 @dataclass
@@ -86,6 +92,8 @@ class TrajectoryResult:
     # True when the index was built without any pre-op norm, so the verdict is
     # about pace rather than capacity — and AHEAD is withheld.
     anchored: bool = False
+    # Days of functional index in hand vs the minimum the comparison needs.
+    readiness: dict[str, Any] | None = None
 
 
 @dataclass
@@ -105,6 +113,10 @@ class ConfidenceResult:
     days_with_data: int
     window_days: int
     dark_metrics: list[str] = field(default_factory=list)  # silent all window
+    # The key signals this patient's sources have ever reported — the panel
+    # the score is judged against. A phone-only patient is judged on what a
+    # phone can give, not on the six a watch would.
+    panel: list[str] = field(default_factory=list)
 
 
 @dataclass

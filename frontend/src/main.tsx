@@ -10,7 +10,16 @@ import './index.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 60_000, retry: shouldRetry },
+    // Five minutes fresh, half an hour kept: navigating back to a page paints
+    // from the cache at once, the page refetches in the background only when
+    // it is actually stale, and the per-page refetchInterval keeps the
+    // numbers moving every five minutes while a tab stays open.
+    queries: {
+      staleTime: 5 * 60_000,
+      gcTime: 30 * 60_000,
+      refetchOnWindowFocus: true,
+      retry: shouldRetry,
+    },
   },
 })
 

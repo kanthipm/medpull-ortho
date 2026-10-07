@@ -13,7 +13,16 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 
-from app.engine.care._common import build, confidence_for, nodata, points, signed_pct, stale
+from app.engine.care._common import (
+    build,
+    building,
+    confidence_for,
+    established,
+    nodata,
+    points,
+    signed_pct,
+    stale,
+)
 from app.engine.care.stats import binary_segmentation, fit_saturating, ols
 from app.engine.care.types import CareContext, CareMetric, ChartSpec, tail
 from app.engine.curves import curve_mid
@@ -23,6 +32,10 @@ from app.models.enums import ProcedureType, TrajectoryState
 
 FUNCTIONAL_LABELS = {str(M.STEPS): "Steps", str(M.WALKING_SPEED): "Walking speed",
                      "index": "Functional index"}
+# A CUSUM split needs two segments of at least three points: six days for a
+# first (provisional) read, eight for the four-point segments it settles on.
+M18_MIN_DAYS = 6
+M18_FIRM_DAYS = 8
 VITAL_ADVERSE = {str(M.RESTING_HR): ("up", "Resting HR"), str(M.SLEEP_DURATION): ("down", "Sleep")}
 
 
@@ -43,9 +56,13 @@ def m17(ctx: CareContext) -> CareMetric:
     traj = ctx.trajectory
     actual = [(int(p["day"]), float(p["v"])) for p in traj.actual]
     coverage = f"{len(actual)} days of functional index"
-    if len(actual) < 6:
-        return nodata("M17", ctx, "Building baseline" if actual else "No data yet",
-                      coverage_text=coverage)
+    # The index itself needs a steps baseline (two post-op days from day 2
+    # without pre-op history), then the fit needs four points of it.
+    if len(actual) < 4:
+        return building("M17", ctx, len(actual), 4, 8, note="days of functional index",
+                        coverage_text=coverage,
+                        extra_wait=max(0, 2 - ctx.postop_day) + (2 if not actual else 0))
+    ready = established(len(actual), 4, 8, note="days of functional index")
     days = np.asarray([d for d, _ in actual], dtype=float)
     values = np.asarray([v for _, v in actual], dtype=float)
     fit = fit_saturating(days, values, seed=ctx.seed)
@@ -54,7 +71,9 @@ def m17(ctx: CareContext) -> CareMetric:
     state = TrajectoryState(traj.state)
     if state == TrajectoryState.UNKNOWN or traj.pct is None:
         return nodata("M17", ctx, "Not yet comparable", coverage_text=coverage,
-                      finding="The functional index cannot be compared to the curve yet.")
+                      finding="The functional index cannot be compared to the curve yet.",
+                      readiness=established(len(actual), 4, 8, note="days of functional index",
+                                            ready=False))
     if stale(int(days.max()), ctx.postop_day):
         return nodata("M17", ctx, "No recent data", coverage_text=coverage)
     if state == TrajectoryState.BEHIND:
@@ -87,6 +106,8 @@ def m17(ctx: CareContext) -> CareMetric:
         finding += " No pre-op norm, so this tracks pace, not capacity."
     if status is MetricStatus.FLAG:
         finding += " Recovery is running behind the curve for this procedure."
+    if len(actual) < 8:
+        finding += f" Early read from {len(actual)} days; the fit settles after eight."
     fitted = [{"x": int(d), "y": round(fit["y0"] + fit["A"] * (1 - float(np.exp(-fit["k"] * d))), 3)}
               for d in days]
     band = [{"x": int(p["day"]), "lo": p["lo"], "hi": p["hi"]} for p in traj.expected
@@ -100,7 +121,7 @@ def m17(ctx: CareContext) -> CareMetric:
         "M17", ctx, status=status, status_text=text, finding=finding,
         value=signed_pct(traj.pct), value_num=traj.pct, unit="vs expected",
         value_label="functional index vs curve", delta_text=delta, chart=chart,
-        confidence=confidence_for(ctx, len(actual), 10), coverage_text=coverage,
+        confidence=confidence_for(ctx, len(actual), 10), coverage_text=coverage, readiness=ready,
         drivers=[{"label": "Fitted rate k", "value": round(fit["k"], 4)},
                  {"label": "Expected rate k", "value": round(k_exp, 4)},
                  {"label": "Fit r²", "value": round(fit["r2"], 3)}],
@@ -117,9 +138,10 @@ def _own_baseline_trend(ctx: CareContext) -> CareMetric:
         return nodata("M17", ctx, name="Trend vs own baseline",
                       unlock="Needs daily activity (steps) to trend against the patient's own baseline.")
     window = steps[steps.index > ctx.postop_day - 28].astype(float)
-    if len(window) < 8:
-        return nodata("M17", ctx, "Building baseline", name="Trend vs own baseline",
-                      coverage_text=f"{len(window)} of 28 days of steps")
+    if len(window) < 4:
+        return building("M17", ctx, len(window), 4, 8, note="days of steps",
+                        name="Trend vs own baseline",
+                        coverage_text=f"{len(window)} of 28 days of steps")
     if stale(int(window.index.max()), ctx.postop_day):
         return nodata("M17", ctx, "No recent data", name="Trend vs own baseline")
     median = float(window.median())
@@ -142,6 +164,7 @@ def _own_baseline_trend(ctx: CareContext) -> CareMetric:
         value_label="trend vs own baseline", delta_text=f"median {median:,.0f} steps",
         chart=chart, confidence=confidence_for(ctx, n, 14),
         coverage_text=f"{n} of 28 days of steps",
+        readiness=established(len(window), 4, 8, note="days of steps"),
         method="OLS slope of daily steps over the last 28 days, as % of the 28-day median per "
                "week, with a 90% CI.",
     )
@@ -165,10 +188,11 @@ def _events(ctx: CareContext) -> list[dict]:
     for key, series, kind in candidates:
         window = series[(series.index >= 2) & (series.index > ctx.postop_day - 28)].astype(float)
         window = window.dropna()
-        if len(window) < 8:
+        if len(window) < M18_MIN_DAYS:
             continue
         values = window.to_numpy(dtype=float)
-        splits = binary_segmentation(values, min_seg=4, min_shift_sd=1.0)
+        splits = binary_segmentation(values, min_seg=4 if len(window) >= M18_FIRM_DAYS else 3,
+                                     min_shift_sd=1.0)
         if not splits:
             continue
         k = splits[-1]
@@ -220,6 +244,17 @@ def m18(ctx: CareContext) -> CareMetric:
     if steps is not None and stale(int(steps[steps.index >= 0].index.max())
                                   if len(steps[steps.index >= 0]) else None, ctx.postop_day):
         return nodata("M18", ctx, "No recent data")
+    longest = 0
+    for metric in (M.STEPS, M.WALKING_SPEED):
+        s = ctx.series.get(str(metric))
+        if s is not None:
+            longest = max(longest, int(((s.index >= 2) & (s.index > ctx.postop_day - 28)).sum()))
+    if longest < M18_MIN_DAYS:
+        return building("M18", ctx, longest, M18_MIN_DAYS, M18_FIRM_DAYS,
+                        note="days of steps or walking speed",
+                        coverage_text=f"{longest} of {M18_MIN_DAYS} days needed",
+                        extra_wait=max(0, 2 - ctx.postop_day))
+    ready = established(longest, M18_MIN_DAYS, M18_FIRM_DAYS, note="days of steps or walking speed")
     events = _events(ctx)
     functional = [e for e in events if e["metric"] in FUNCTIONAL_LABELS]
     pick = max(functional or events, key=lambda e: e["day"]) if events else None
@@ -230,6 +265,8 @@ def m18(ctx: CareContext) -> CareMetric:
     if pick is None:
         status, text = MetricStatus.OK, "No plateau"
         finding = "No sustained mean shift in steps, walking speed, sleep or resting HR over the last 28 days."
+        if longest < M18_FIRM_DAYS:
+            finding += f" Early read from {longest} days; a split needs eight to settle."
         value, delta = "None", None
         series = steps[(steps.index >= 2) & (steps.index > ctx.postop_day - 28)] if steps is not None else None
         chart = ChartSpec(kind="line", series=tail(points(series)) if series is not None else [],
@@ -259,4 +296,5 @@ def m18(ctx: CareContext) -> CareMetric:
         if status is not MetricStatus.OK else None,
         confidence=ctx.confidence.level,
         coverage_text=f"{len(events)} shift{'s' if len(events) != 1 else ''} found in 28 days",
+        readiness=ready,
     )

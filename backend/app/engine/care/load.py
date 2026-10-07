@@ -13,7 +13,9 @@ import numpy as np
 from app.engine.care._common import (
     NO_RECENT_TEXT,
     build,
+    building,
     confidence_for,
+    established,
     grid,
     load_source,
     nodata,
@@ -35,6 +37,19 @@ from app.models.enums import MetricType as M
 GAIT_OK_PCT = 8.0
 GAIT_FLAG_PCT = 10.0
 GAIT_FLAG_AFTER_DAY = 10
+
+# M1's history gates. The first reading comes off five days of load with a
+# 3-day acute window (two or three days of wear from post-op day 2), is
+# labelled provisional, and never flags on its own; the 7-day window and a
+# full verdict arrive at ten days.
+M1_MIN_DAYS = 5
+M1_FIRM_DAYS = 10
+# M2: a day-adjusted slope needs four pairs to exist and six to mean much.
+M2_MIN_PAIRS = 4
+M2_FIRM_PAIRS = 6
+# M3: an exponential decay fits through three points; a week settles it.
+M3_MIN_DAYS = 3
+M3_FIRM_DAYS = 7
 
 SYMPTOM_NAMES = {
     "pain": ("Pain–load sensitivity", "pain", "0–10"),
@@ -59,22 +74,34 @@ def m1(ctx: CareContext) -> CareMetric:
         )
     day = ctx.postop_day
     full = grid(post, 2, day)
-    acute = full[full.index > day - 7]
     short = day < 30
     chronic = full if short else full[full.index > day - 28]
-    n_acute, n_chronic = int(acute.notna().sum()), int(chronic.notna().sum())
-    coverage = f"{n_acute} of 7 days of {label} · {n_chronic}-day chronic window"
-    if n_acute < 4 or n_chronic < 8 or n_chronic <= n_acute:
-        return nodata(
-            "M1", ctx, "Building baseline",
-            finding=f"Only {n_chronic} days of {label} so far — the 28-day chronic window needs "
-                    "at least eight.",
-            coverage_text=coverage,
+    n_chronic = int(chronic.notna().sum())
+    # A patient a few days in has no 7-day window to set against a longer
+    # one, so the first reading uses a 3-day acute window inside whatever
+    # history exists and stays provisional until ten days are on file.
+    provisional = n_chronic < M1_FIRM_DAYS
+    acute_len = 3 if provisional else 7
+    acute = full[full.index > day - acute_len]
+    n_acute = int(acute.notna().sum())
+    coverage = f"{n_acute} of {acute_len} days of {label} · {n_chronic}-day chronic window"
+    wait = max(0, 2 - day)
+    note = f"days of {label}"
+    if n_chronic < M1_MIN_DAYS or n_acute < 2 or n_chronic <= n_acute:
+        return building(
+            "M1", ctx, n_chronic, M1_MIN_DAYS, M1_FIRM_DAYS, note=note,
+            coverage_text=coverage, extra_wait=wait,
+            finding=f"{n_chronic} day{'s' if n_chronic != 1 else ''} of {label} so far; the "
+                    f"first load ratio needs {M1_MIN_DAYS} (about "
+                    f"{max(0, M1_MIN_DAYS - n_chronic) + wait} more at one a day) and settles "
+                    f"after {M1_FIRM_DAYS}.",
         )
+    ready = established(n_chronic, M1_MIN_DAYS, M1_FIRM_DAYS, note=note)
     acute_mean = float(acute.mean())
     chronic_mean = float(chronic.mean())
     if chronic_mean <= 0:
-        return nodata("M1", ctx, "Building baseline", coverage_text=coverage)
+        return building("M1", ctx, n_chronic, M1_MIN_DAYS, M1_FIRM_DAYS, note=note,
+                        coverage_text=coverage, extra_wait=wait)
     ratio = acute_mean / chronic_mean
 
     if ctx.uses_expected_curve:
@@ -96,16 +123,23 @@ def m1(ctx: CareContext) -> CareMetric:
         status, text = MetricStatus.WATCH, "Stalled progression"
     else:
         status, text = MetricStatus.OK, "Within tolerance band"
+    if provisional and status is MetricStatus.FLAG:
+        # Three days against five is a hint, not a finding: shown, never flagged.
+        status = MetricStatus.WATCH
+        text = "Early read: " + text.lower()
 
     expected_clause = (
         f"expected ≈{ratio_exp:.2f}× at {ctx.day_phrase()}"
         if ctx.uses_expected_curve else "band 0.8–1.3× of the patient's own 28-day mean"
     )
     finding = (
-        f"The last 7 days averaged {acute_mean:,.0f} {label}/day against a "
+        f"The last {acute_len} days averaged {acute_mean:,.0f} {label}/day against a "
         f"{n_chronic}-day mean of {chronic_mean:,.0f} — ratio {ratio:.2f}× ({expected_clause})."
     )
-    if short and ctx.uses_expected_curve:
+    if provisional:
+        finding += (f" Early read from {n_chronic} days of history; the full 7-day window "
+                    f"arrives after {M1_FIRM_DAYS}.")
+    elif short and ctx.uses_expected_curve:
         finding += f" Short chronic window ({n_chronic} days)."
     if status is MetricStatus.FLAG and adjusted > 1.5:
         finding += " Load has run well past the tolerance band."
@@ -140,11 +174,12 @@ def m1(ctx: CareContext) -> CareMetric:
     )
     return build(
         "M1", ctx, status=status, status_text=text, finding=finding,
-        value=f"{ratio:.2f}×", value_num=ratio, unit="ratio", value_label="7-day ÷ 28-day load",
+        value=f"{ratio:.2f}×", value_num=ratio, unit="ratio",
+        value_label=f"{acute_len}-day ÷ {n_chronic}-day load",
         delta_text=expected_clause, next_step=next_step,
-        confidence=confidence_for(ctx, n_acute, 7), coverage_text=coverage, chart=chart,
-        inputs=[key],
-        method=f"7-day mean {label} divided by the {n_chronic}-day mean"
+        confidence=confidence_for(ctx, n_acute, acute_len), coverage_text=coverage, chart=chart,
+        inputs=[key], readiness=ready,
+        method=f"{acute_len}-day mean {label} divided by the {n_chronic}-day mean"
                + (", with the same ratio taken along the expected recovery curve as the "
                   "reference." if ctx.uses_expected_curve else ", judged against a 0.8–1.3 band."),
     )
@@ -190,7 +225,9 @@ def m2(ctx: CareContext) -> CareMetric:
     n = len(pairs)
     coverage = (f"{n} paired {'day' if n == 1 else 'days'} of {label} and next-day {noun} "
                 "in the last 21 days")
-    if n < 6:
+    ready = established(n, M2_MIN_PAIRS, M2_FIRM_PAIRS, unit="paired days",
+                        note=f"{label} with a next-day {noun} log")
+    if n < M2_MIN_PAIRS:
         if n == 0:
             have = f"No day yet pairs a {label} count with a next-day {noun} score"
         elif n == 1:
@@ -199,8 +236,11 @@ def m2(ctx: CareContext) -> CareMetric:
             have = f"Only {n} days pair a {label} count with a next-day {noun} score"
         return nodata(
             "M2", ctx, "Needs more pairs", unlock=unlock, name=name, coverage_text=coverage,
-            finding=f"{have}; six are needed.",
+            finding=f"{have}; {M2_MIN_PAIRS} are needed for a first read and {M2_FIRM_PAIRS} "
+                    f"to settle it (about {ready.left} more at one log a day).",
+            readiness=ready,
         )
+    provisional = n < M2_FIRM_PAIRS
     latest_pair_day = max(p[0] for p in pairs) + 1
     if stale(latest_pair_day, ctx.postop_day):
         return nodata("M2", ctx, NO_RECENT_TEXT, unlock=unlock, name=name, coverage_text=coverage,
@@ -255,6 +295,9 @@ def m2(ctx: CareContext) -> CareMetric:
         status, text = MetricStatus.OK, "Tolerance improving"
     else:
         status, text = MetricStatus.OK, "Tolerance stable"
+    if provisional and status is MetricStatus.FLAG:
+        status = MetricStatus.WATCH
+        text = "Early read: " + text.lower()
 
     if text == "Slope not yet resolved":
         lead = (f"The day-to-day spread of {label} is too small to measure the {noun} cost of "
@@ -278,6 +321,9 @@ def m2(ctx: CareContext) -> CareMetric:
             lead += f" — irritability is rising (t={t:.1f})."
         else:
             lead += "."
+    if provisional:
+        lead += (f" Early read from {n} paired days; the slope settles after "
+                 f"{M2_FIRM_PAIRS}.")
     next_step = None
     if status is MetricStatus.FLAG:
         next_step = "Hold or reduce the load prescription and keep progression pain-limited."
@@ -296,8 +342,8 @@ def m2(ctx: CareContext) -> CareMetric:
         delta_text=(f"was {slope_early:.2f} two weeks ago" if slope_early is not None and delta_resolved
                     else f"±{ci:.1f} (90% CI)" if ci != float("inf") else None),
         next_step=next_step, confidence=confidence_for(ctx, len(pairs), 14),
-        coverage_text=coverage, chart=chart, inputs=[key, str(M.PAIN_NRS) if symptom_key == "pain"
-                                                     else symptom_key, "checkins"],
+        coverage_text=coverage, chart=chart, readiness=ready,
+        inputs=[key, str(M.PAIN_NRS) if symptom_key == "pain" else symptom_key, "checkins"],
         method=f"OLS regression of next-day {noun} ({scale_text}) on same-day {label} with the "
                "post-op day held fixed, last 21 days; the slope over the earlier half is compared "
                "with the later half.",
@@ -322,9 +368,11 @@ def m3(ctx: CareContext) -> CareMetric:
     if stale(latest_day, ctx.postop_day):
         return nodata("M3", ctx, NO_RECENT_TEXT, name=name,
                       finding=f"The latest {label} reading is from {ctx.day_phrase(latest_day)}.")
-    if len(post) < 4:
-        return nodata("M3", ctx, "Building baseline", name=name,
-                      coverage_text=f"{len(post)} days of {label}")
+    if len(post) < M3_MIN_DAYS:
+        return building("M3", ctx, len(post), M3_MIN_DAYS, M3_FIRM_DAYS, note=f"days of {label}",
+                        name=name, coverage_text=f"{len(post)} days of {label}",
+                        extra_wait=max(0, 2 - ctx.postop_day))
+    ready = established(len(post), M3_MIN_DAYS, M3_FIRM_DAYS, note=f"days of {label}")
     days = post.index.to_numpy(dtype=float)
     values = post.to_numpy(dtype=float)
     fit = fit_exp_decay(days, values)
@@ -366,6 +414,8 @@ def m3(ctx: CareContext) -> CareMetric:
                 if fit["k"] > 0 else ".")
     if status is MetricStatus.FLAG:
         finding += " A plateau at an elevated level is a stalled weight-bearing trend worth a look."
+    if len(post) < M3_FIRM_DAYS:
+        finding += f" Early read from {len(post)} days; the decay fit settles after a week."
     next_step = ("Consider a gait review with PT; weight-shift drills."
                  if status is MetricStatus.FLAG else None)
 
@@ -380,4 +430,5 @@ def m3(ctx: CareContext) -> CareMetric:
         delta_text=delta_text, next_step=next_step,
         confidence=confidence_for(ctx, len(last7), 7),
         coverage_text=f"{len(last7)} of 7 days of {label}", chart=chart, inputs=[key],
+        readiness=ready,
     )

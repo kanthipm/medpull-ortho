@@ -44,6 +44,16 @@ SD_FLOORS_REL: dict[str, float] = {
 # finding: neither a fallback baseline nor deviation scoring (which imports
 # this) starts before day 2.
 SKIP_EARLY_DAYS = 2
+# Days a reference needs. Two is enough to start comparing against — the SD
+# floors above carry the day-to-day spread a two-point sample cannot — so a
+# patient who starts wearing a watch sees their cards on the third day of
+# wear rather than the fourth. Three is where the reference is trusted: a
+# pre-op norm is frozen then (engine/baseline_store.py), and until then every
+# consumer is told the baseline is provisional.
+MIN_BASELINE_DAYS = 2
+FIRM_BASELINE_DAYS = 3
+# How many post-op days a no-pre-op anchor is taken from, at most.
+ANCHOR_DAYS = 3
 
 
 def compute_baseline(metric_type: str, series: pd.Series) -> Baseline | None:
@@ -55,23 +65,44 @@ def compute_baseline(metric_type: str, series: pd.Series) -> Baseline | None:
     = 1.0. Consumers that compare against a curve must check it.
     """
     pre = series[series.index < 0]
-    if len(pre) >= 3:
+    if len(pre) >= MIN_BASELINE_DAYS:
         window = f"pre-op days {int(pre.index.min())}..{int(pre.index.max())}"
         return _summarize(metric_type, pre, window, is_preop=True)
 
     # No pre-op data (device connected after surgery). Days 0-1 are an expected
-    # physiological perturbation, so anchor on the first three days from day 2
-    # — whenever those happen to fall, which for a late-connected device is not
+    # physiological perturbation, so anchor on the first days from day 2 —
+    # whenever those happen to fall, which for a late-connected device is not
     # days 2-4 at all.
     post = series[series.index >= SKIP_EARLY_DAYS]
-    if len(post) < 3:
+    if len(post) < MIN_BASELINE_DAYS:
         return None
-    values = post.iloc[:3]
+    values = post.iloc[:ANCHOR_DAYS]
     window = (
         f"post-op days {int(values.index.min())}-{int(values.index.max())} "
         "(no pre-op data)"
     )
     return _summarize(metric_type, values, window, is_preop=False)
+
+
+def baseline_readiness(series: pd.Series | None, postop_day: int) -> dict:
+    """How far one metric is from having a reference at all: the days in
+    hand that could anchor it, the two it needs, and the three that settle
+    it — counting from post-op day 2, so a day-0 patient is told three days,
+    not one."""
+    from app.engine.readiness import readiness
+
+    if series is None or len(series) == 0:
+        return readiness(0, MIN_BASELINE_DAYS, FIRM_BASELINE_DAYS,
+                         note="days of readings from post-op day 2",
+                         extra_wait=max(0, SKIP_EARLY_DAYS - postop_day)).to_dict()
+    pre = series[series.index < 0]
+    if len(pre) >= MIN_BASELINE_DAYS:
+        return readiness(int(len(pre)), MIN_BASELINE_DAYS, FIRM_BASELINE_DAYS,
+                         note="pre-op days").to_dict()
+    post = series[series.index >= SKIP_EARLY_DAYS]
+    return readiness(int(len(post)), MIN_BASELINE_DAYS, FIRM_BASELINE_DAYS,
+                     note="days of readings from post-op day 2",
+                     extra_wait=max(0, SKIP_EARLY_DAYS - postop_day)).to_dict()
 
 
 def _summarize(
@@ -93,4 +124,5 @@ def _summarize(
         # only usable as a reference once you know where on the recovery curve
         # it was taken, and deviation.py reads them back to work that out.
         window_days=[int(d) for d in values.index],
+        provisional=int(len(values)) < FIRM_BASELINE_DAYS,
     )
