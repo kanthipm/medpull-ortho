@@ -1,67 +1,52 @@
 import SwiftUI
 
-struct TasksView: View {
+/// Every task, open and done: pushed from Today's "All tasks". Today owns
+/// the day; this is the record.
+struct TaskHistoryView: View {
     @Environment(AppModel.self) private var app
     @State private var openTask: RecoveryTask?
-    /// Tasks marked done straight from a row's context menu. Drives the
-    /// success haptic and a row error banner; the detail view has its own.
     @State private var quickDone = 0
     @State private var quickError: String?
 
     private var nothingAtAll: Bool { app.tasks.open.isEmpty && app.tasks.recent.isEmpty }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let quickError { ErrorBanner(text: quickError) }
-                    if app.tasks.open.isEmpty {
-                        caughtUp
-                    } else {
-                        section("To do", app.tasks.open)
-                    }
-                    if !app.tasks.recent.isEmpty {
-                        section("Recently done", app.tasks.recent)
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if let quickError { ErrorBanner(text: quickError) }
+                if app.tasks.open.isEmpty {
+                    caughtUp
+                } else {
+                    section("To do", app.tasks.open)
                 }
-                .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 24)
+                if !app.tasks.recent.isEmpty {
+                    section("Done", app.tasks.recent)
+                }
             }
-            // Hard scroll edge (R13): rows stop at a definite line under the
-            // bars rather than fading under them. Passthrough below iOS 26.
-            .mpHardScrollEdge()
-            .refreshable { await app.refreshTasks() }
-            .ambientScreen()
-            // A real large title (600, from the UIKit proxy) that collapses
-            // to an inline "Tasks" on scroll, and names TaskDetail's back
-            // button.
-            .mpNavigationTitle(app.isPersonal ? "Plan" : "Tasks")
-            .navigationBarTitleDisplayMode(.large)
-            .navigationDestination(item: $openTask) { task in TaskDestination(task: task) }
-            .task { await app.refreshTasks() }
-            .onChange(of: app.pendingTaskId, initial: true) { _, id in openPending(id) }
-            .onChange(of: app.tasks) { _, _ in openPending(app.pendingTaskId) }
-            .mpCompletionFeedback(count: quickDone)
-            .mpErrorFeedback(quickError)
+            .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 24)
         }
+        .mpHardScrollEdge()
+        .refreshable { await app.refreshTasks() }
+        .ambientScreen(height: 300)
+        .mpNavigationTitle(app.isPersonal ? "Plan" : "Tasks")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $openTask) { task in TaskDestination(task: task) }
+        .task { await app.refreshTasks() }
+        .mpCompletionFeedback(count: quickDone)
+        .mpErrorFeedback(quickError)
     }
 
-    /// The friendly empty state. When nothing has ever arrived it is the
-    /// whole screen; otherwise it sits above "Recently done".
     private var caughtUp: some View {
         ContentUnavailableView {
             Label {
                 Text("You’re all caught up").mpFont(.subheadSemibold).foregroundStyle(MP.ink)
             } icon: {
-                // Decorative (the title says the same thing), so riskLow
-                // on the canvas is fine at any ratio; it is 5.2:1 anyway.
                 Image(systemName: "checkmark.circle")
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(MP.riskLow)
                     .accessibilityHidden(true)
             }
         } description: {
-            // Explicit `muted`: the system description colour is secondary
-            // label, 3.44:1 on the light canvas.
             Text(app.isPersonal ? "Your plan is written each morning from the night’s numbers."
                  : "New tasks from your care team show up here.")
                 .mpFont(.copy).foregroundStyle(MP.muted)
@@ -70,36 +55,29 @@ struct TasksView: View {
         .padding(.vertical, nothingAtAll ? 72 : 8)
     }
 
-    private func openPending(_ id: Int?) {
-        guard let id, let task = (app.tasks.open + app.tasks.recent).first(where: { $0.id == id }) else { return }
-        app.pendingTaskId = nil
-        openTask = task
-    }
-
     private func section(_ title: String, _ tasks: [RecoveryTask]) -> some View {
         Card(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                CardHeader(title)
+                CardTitleRow(title)
                 ForEach(tasks) { t in
                     if t.isOpen {
-                        Button { openTask = t } label: { TaskListRow(task: t) }
+                        Button { openTask = t } label: { PlanRow(task: t) }
                             .buttonStyle(.mpRow)
                             .contextMenu { rowMenu(t) }
                     } else {
-                        TaskListRow(task: t)
+                        PlanRow(task: t)
                     }
-                    if t.id != tasks.last?.id { InsetDivider() }
+                    if t.id != tasks.last?.id { RowDivider() }
                 }
             }
             .padding(.bottom, 4)
+            .clipShape(MP.surfaceShape)
         }
     }
 
     @ViewBuilder
     private func rowMenu(_ t: RecoveryTask) -> some View {
         Button { openTask = t } label: { Label("Open", systemImage: "arrow.up.forward.app") }
-        // Only a task with nothing to answer can be finished without
-        // opening it; a check-in always goes through its own flow.
         if t.questions.isEmpty && t.kind != "checkin" {
             Button { markDone(t) } label: { Label("Mark done", systemImage: "checkmark.circle") }
         }
@@ -130,125 +108,6 @@ struct TaskDestination: View {
             CheckinView(task: task)
         } else {
             TaskDetailView(task: task)
-        }
-    }
-}
-
-/// A task row for the Tasks list: category tile, title, one meta line, and a
-/// trailing chevron (open) or state glyph (done / skipped).
-struct TaskListRow: View {
-    let task: RecoveryTask
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    private var isDone: Bool { task.status == "done" }
-
-    private var icon: String {
-        switch task.kind {
-        case "checkin": return "text.bubble.fill"
-        case "exercise": return "figure.strengthtraining.functional"
-        case "walk": return "figure.walk"
-        case "medication": return "pills.fill"
-        case "wound_check": return "bandage.fill"
-        case "sleep": return "bed.double.fill"
-        default: return "checklist"
-        }
-    }
-
-    private var family: MP.Category {
-        switch task.kind {
-        case "exercise", "walk": return .teal
-        case "medication", "wound_check": return .violet
-        case "sleep": return .indigo
-        default: return .blue
-        }
-    }
-
-    var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                // AX sizes: the tile and the state glyph share a top row, and
-                // the title and meta get the full card width underneath, so a
-                // title is never one word per line and the status wraps.
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .center) {
-                        IconTile(icon, family: family)
-                        Spacer(minLength: 8)
-                        trailing
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        titleText
-                        meta
-                    }
-                }
-            } else {
-                HStack(spacing: 14) {
-                    IconTile(icon, family: family)
-                    VStack(alignment: .leading, spacing: 2) {
-                        titleText
-                        meta
-                    }
-                    Spacer(minLength: 8)
-                    trailing
-                }
-            }
-        }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(Text(isDone ? "Done" : task.isOpen ? "" : "Skipped"))
-    }
-
-    private var titleText: some View {
-        Text(task.title)
-            .mpFont(.copyLargeMedium)
-            .foregroundStyle(MP.ink)
-            .strikethrough(isDone, color: MP.muted)
-            .multilineTextAlignment(.leading)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    /// The state after the kind, or nil. riskMed on "in progress by text":
-    /// the words carry the state, not the hue.
-    private var status: (String, Color)? {
-        if isDone, let via = task.completedVia { return ("done by \(via)", MP.muted) }
-        if task.inSmsConversation { return ("in progress by text", MP.riskMed) }
-        if let due = task.dueAt { return ("due \(Dates.relative(due))", MP.muted) }
-        if let schedule = task.scheduleLabel { return (schedule, MP.muted) }
-        return nil
-    }
-
-    /// One Text (interpolated, not an HStack), so the line wraps as prose
-    /// instead of truncating each piece to "Che… · du…". Two lines at the
-    /// standard sizes, unlimited at accessibility sizes.
-    private var meta: some View {
-        let kind = Text(task.kindLabel).foregroundStyle(MP.muted)
-        let line: Text
-        if let status {
-            line = Text("\(kind)\(Text(MP.dot).foregroundStyle(MP.muted))\(Text(status.0).foregroundStyle(status.1))")
-        } else {
-            line = kind
-        }
-        return line
-            .mpFont(.label)
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    @ViewBuilder
-    private var trailing: some View {
-        if task.isOpen {
-            Image(systemName: "chevron.right")
-                .font(.copyMedium)
-                .foregroundStyle(MP.muted)
-                .accessibilityHidden(true)
-        } else {
-            Image(systemName: isDone ? "checkmark.circle.fill" : "minus.circle")
-                .symbolRenderingMode(.hierarchical)
-                .contentTransition(.symbolEffect(.replace))
-                .font(.copyLarge)
-                .foregroundStyle(isDone ? MP.riskLow : MP.muted)
-                .accessibilityHidden(true)
         }
     }
 }

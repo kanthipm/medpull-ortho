@@ -32,11 +32,17 @@ final class AppModel {
     /// True while a space switch is in flight, so the tabs can hold still.
     private(set) var switching = false
 
-    /// Set by a `medpull://tasks/<id>` link; the Tasks tab opens it.
+    /// Set by a `medpull://tasks/<id>` link; Today opens it.
     var pendingTaskId: Int?
-    var selectedTab: Tab = .home
+    var selectedTab: Tab = .today
+    /// Opens the Connections screen (Apple Health, wearables) from wherever
+    /// the person is: the Today nudge, a `medpull://wearables` link.
+    var showConnections = false
 
-    enum Tab: Hashable { case home, tasks, talk, messages, health, stats }
+    /// The four tabs of a hospital record (Today, Progress, Measure, Care)
+    /// and the three of a personal space (Today, Trends, Coach): the
+    /// personal space reuses `progress` for Trends and `care` for Coach.
+    enum Tab: Hashable { case today, progress, measure, care }
 
     /// Whether the signed-in row is a subscriber's own space.
     var isPersonal: Bool { me?.isPersonal ?? false }
@@ -61,13 +67,13 @@ final class AppModel {
             Keychain.set(injected, for: Self.tokenKey)
             stored = injected
         }
-        // And the tab to open on (`-MP_TAB stats|tasks|talk|health`).
+        // And the tab to open on (`-MP_TAB progress|measure|care`; the old
+        // names still map).
         switch AppConfig.debugFlag("MP_TAB") {
-        case "stats": selectedTab = .stats
-        case "tasks": selectedTab = .tasks
-        case "talk": selectedTab = .talk
-        case "health": selectedTab = .health
-        case "messages": selectedTab = .messages
+        case "progress", "stats", "health": selectedTab = .progress
+        case "measure": selectedTab = .measure
+        case "care", "talk", "messages": selectedTab = .care
+        case "connections": showConnections = true
         default: break
         }
         #endif
@@ -125,7 +131,7 @@ final class AppModel {
             messages = []
             portfolio = []
             metrics = nil
-            selectedTab = .home
+            selectedTab = .today
             await refreshAll()
         } catch {
             note(error)
@@ -145,7 +151,7 @@ final class AppModel {
         adoptSession(token: r.sessionToken, me: r.me)
         tasks = TasksResponse(open: [], recent: [])
         messages = []
-        selectedTab = .home
+        selectedTab = .today
         await refreshAll()
     }
 
@@ -380,11 +386,11 @@ final class AppModel {
         case "tasks":
             if let id = Int(url.lastPathComponent) {
                 pendingTaskId = id
-                selectedTab = .tasks
+                selectedTab = .today
                 Task { await refreshTasks() }
             }
         case "wearables":
-            selectedTab = .health
+            showConnections = true
             Task { await refreshWearables(force: true) }
         default:
             break

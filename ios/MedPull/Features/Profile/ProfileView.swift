@@ -19,6 +19,7 @@ struct ProfileView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var serverURL = AppConfig.baseURL.absoluteString
     @State private var signingOut = false
+    @State private var showConnections = false
 
     var body: some View {
         @Bindable var appearance = appearance
@@ -45,14 +46,17 @@ struct ProfileView: View {
                               footer: me.isPersonal
                                 ? "Your morning brief and check-in come from MedPull’s number when texts are on. Reply 1 to do the check-in by text."
                                 : "Task texts come from your care team’s MedPull number. Reply 1 to any of them to do the task by text, or open it here.") {
+                            Button { showConnections = true } label: {
+                                ListRow("Apple Health and wearables",
+                                        subtitle: connectionsLine(me),
+                                        symbol: "heart.fill", family: .violet)
+                            }
+                            .buttonStyle(.mpRow)
+                            InsetDivider(leading: 16)
                             row("Texts from MedPull", me.features.sms ? "On" : "Not set up on this server",
                                 icon: "message.fill", family: .blue)
-                            InsetDivider()
-                            row("Apple Health",
-                                app.health.isConnected || me.wearables.appleHealth.connected ? "Connected" : "Not connected",
-                                icon: "heart.fill", family: .violet)
                             if !me.isPersonal, me.consent?.acceptedAt != nil {
-                                InsetDivider()
+                                InsetDivider(leading: 16)
                                 ConsentRow()
                             }
                         }
@@ -132,6 +136,7 @@ struct ProfileView: View {
             .tint(MP.brandInk)
             .mpNavigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showConnections) { ConnectionsView() }
             #if DEBUG
             .task {
                 if let target = AppConfig.debugFlag("MP_SCROLL_PROFILE") {
@@ -158,6 +163,14 @@ struct ProfileView: View {
     }
 
     // MARK: Pieces
+
+    private func connectionsLine(_ me: Me) -> String {
+        let apple = app.health.isConnected || me.wearables.appleHealth.connected
+        let n = me.wearables.devices.count
+        var parts: [String] = [apple ? "Apple Health connected" : "Apple Health not connected"]
+        if n > 0 { parts.append("\(n) wearable\(n == 1 ? "" : "s")") }
+        return parts.joined(separator: MP.dot)
+    }
 
     /// Identity on top, then the facts about this patient's enrolment, in one
     /// card.
@@ -234,7 +247,7 @@ struct ProfileView: View {
     private func row(_ label: String, _ value: String,
                      icon: String? = nil, family: MP.Category = .blue) -> some View {
         let labelView = HStack(spacing: 14) {
-            if let icon { IconTile(icon, family: family) }
+            if let icon { Glyph(systemName: icon, family: family) }
             Text(label)
                 .mpFont(.copyLarge)
                 .foregroundStyle(MP.ink)

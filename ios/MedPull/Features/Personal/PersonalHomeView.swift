@@ -11,7 +11,7 @@ struct PersonalHomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showProfile = false
-    @State private var showThread = false
+    @State private var showHistory = false
     @State private var showBrief = false
     @State private var loggingSession = false
     @State private var openTask: RecoveryTask?
@@ -28,6 +28,7 @@ struct PersonalHomeView: View {
     private var learning: Bool { (board?.panel("readiness")?.hasData ?? false) == false }
 
     var body: some View {
+        @Bindable var app = app
         NavigationStack {
             ScrollViewReader { proxy in
             ScrollView {
@@ -72,12 +73,13 @@ struct PersonalHomeView: View {
                         .opacity(greetingGone ? 1 : 0)
                         .accessibilityHidden(!greetingGone)
                 }
-                brandItem
-                avatarItem
+                BrandLockupItem(hidden: greetingGone, badge: "Personal beta")
+                AvatarItem(initials: app.me?.patient.initials ?? "··") { showProfile = true }
             }
             .animation(MPMotion.gated(MPMotion.state, reduceMotion: reduceMotion), value: greetingGone)
             .sheet(isPresented: $showProfile) { ProfileView() }
-            .sheet(isPresented: $showThread) { MessagesView() }
+            .sheet(isPresented: $app.showConnections) { ConnectionsView() }
+            .navigationDestination(isPresented: $showHistory) { TaskHistoryView() }
             .sheet(isPresented: $showBrief) { BriefSheet() }
             .sheet(isPresented: $loggingSession) { LogSessionSheet() }
             .navigationDestination(item: $openTask) { task in TaskDestination(task: task) }
@@ -95,66 +97,6 @@ struct PersonalHomeView: View {
             }
             }
         }
-    }
-
-    // MARK: Toolbar
-
-    @ToolbarContentBuilder private var avatarItem: some ToolbarContent {
-        if #available(iOS 26, *) {
-            ToolbarItem(placement: .topBarTrailing) { avatarButton }
-                .sharedBackgroundVisibility(.hidden)
-        } else {
-            ToolbarItem(placement: .topBarTrailing) { avatarButton }
-        }
-    }
-
-    @ToolbarContentBuilder private var brandItem: some ToolbarContent {
-        if #available(iOS 26, *) {
-            ToolbarItem(placement: .topBarLeading) { brandLockup }
-                .sharedBackgroundVisibility(.hidden)
-        } else {
-            ToolbarItem(placement: .topBarLeading) { brandLockup }
-        }
-    }
-
-    private var brandLockup: some View {
-        HStack(spacing: 9) {
-            Image("MedPullMark")
-                .resizable().scaledToFit()
-                .frame(width: 21, height: 21)
-                .frame(width: 30, height: 30)
-                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.white)
-                    .shadow(color: .black.opacity(0.08), radius: 1, y: 1))
-                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
-            HStack(spacing: 6) {
-                Text("MedPull")
-                    .font(.mp(19, weight: .medium, relativeTo: .headline))
-                    .kerning(-0.5)
-                    .foregroundStyle(MP.ink)
-                Text("Personal beta")
-                    .mpFont(.labelMedium)
-                    .foregroundStyle(MP.brandInk)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(MP.capsuleShape.fill(MP.brandTint))
-            }
-            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-            .fixedSize()
-        }
-        .opacity(greetingGone ? 0 : 1)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("MedPull Personal beta")
-        .accessibilityHidden(greetingGone)
-    }
-
-    private var avatarButton: some View {
-        Button { showProfile = true } label: {
-            Initials(text: app.me?.patient.initials ?? "··", size: 36)
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Profile")
     }
 
     // MARK: Greeting
@@ -187,7 +129,7 @@ struct PersonalHomeView: View {
             let score = readiness?.number("score")
             let values = readiness?.series.map(\.value) ?? []
             let headline = app.dashboard?.brief.headline
-            Button { app.selectedTab = .stats } label: {
+            Button { app.selectedTab = .progress } label: {
                 GradientTile(verdict.gradient,
                              kicker: "Today",
                              value: score.map { String(format: "%.0f", $0) } ?? "—",
@@ -207,7 +149,7 @@ struct PersonalHomeView: View {
                                 .accessibilityHidden(true)
                             StatusPill(text: verdict.title, tone: verdict.tone)
                             Spacer()
-                            Text("Stats").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
+                            Text("Trends").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
                             Image(systemName: "chevron.right")
                                 .font(.systemGlyphs(11, weight: .semibold)).foregroundStyle(MP.brandInk)
                                 .accessibilityHidden(true)
@@ -293,9 +235,9 @@ struct PersonalHomeView: View {
                     EmptyRow(icon: "checkmark.circle", title: "All done for today",
                              detail: "Tomorrow’s plan is written in the morning from tonight’s numbers.")
                 } else {
-                    CardHeader("Your plan", actionTitle: "All") { app.selectedTab = .tasks }
+                    CardHeader("Your plan", actionTitle: "All") { showHistory = true }
                     ForEach(open) { t in
-                        Button { openTask = t } label: { TaskRow(task: t) }
+                        Button { openTask = t } label: { PlanRow(task: t) }
                             .buttonStyle(.mpRow)
                         if t.id != open.last?.id { InsetDivider() }
                     }
@@ -335,10 +277,10 @@ struct PersonalHomeView: View {
             if !panels.isEmpty {
                 Card(padding: 0) {
                     VStack(alignment: .leading, spacing: 0) {
-                        CardHeader("Your numbers", actionTitle: "All stats") { app.selectedTab = .stats }
+                        CardHeader("Your numbers", actionTitle: "All trends") { app.selectedTab = .progress }
                         LazyVGrid(columns: gridColumns, spacing: 10) {
                             ForEach(Array(panels), id: \.key) { p in
-                                Button { app.selectedTab = .stats } label: { MiniStatTile(panel: p) }
+                                Button { app.selectedTab = .progress } label: { MiniStatTile(panel: p) }
                                     .buttonStyle(.plain)
                             }
                         }
@@ -350,10 +292,10 @@ struct PersonalHomeView: View {
     }
 
     private func alertCard(_ panel: Panel, title: String) -> some View {
-        Button { app.selectedTab = .stats } label: {
+        Button { app.selectedTab = .progress } label: {
             Card {
                 HStack(alignment: .top, spacing: 14) {
-                    IconTile(panel.symbol, family: panel.family, size: 34)
+                    Glyph(systemName: panel.symbol, family: panel.family, size: 36)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text(title).mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
@@ -416,7 +358,7 @@ struct PersonalHomeView: View {
                   subtitle: "Minutes and how hard") { loggingSession = true }
             quick("Ask your coach", "waveform", family: .indigo,
                   subtitle: unread > 0 ? "\(unread) new" : "Why is my readiness \(readinessWord)?") {
-                app.selectedTab = .talk
+                app.selectedTab = .care
             }
         }
     }
@@ -431,7 +373,7 @@ struct PersonalHomeView: View {
         Button(action: action) {
             Card(padding: 14) {
                 VStack(alignment: .leading, spacing: 10) {
-                    IconTile(icon, family: family, size: 34)
+                    Glyph(systemName: icon, family: family, size: 36)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(title).mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
                         Text(subtitle).mpFont(.label).mpSecondary().lineLimit(2)
@@ -444,10 +386,10 @@ struct PersonalHomeView: View {
     }
 
     private var healthNudge: some View {
-        Button { app.selectedTab = .health } label: {
+        Button { app.showConnections = true } label: {
             Card {
                 HStack(spacing: 14) {
-                    IconTile("heart.fill", family: .violet, size: 34)
+                    Glyph(systemName: "heart.fill", family: .violet, size: 36)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Connect Apple Health").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
                         Text("Readiness needs overnight HRV, resting heart rate and sleep. One tap.")

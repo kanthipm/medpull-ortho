@@ -13,8 +13,9 @@ import SwiftUI
 // FOUR HELPERS. What is here is exactly what the app is allowed to render:
 //   * `mpTabBarMinimizeOnScroll()` — RootView's TabView.
 //   * `mpHardScrollEdge(_:)`       — the tab roots whose clinical content
-//     scrolls under system chrome: HomeView, TasksView, HealthView, and
-//     TaskDetailView (inside TasksView.swift). Kept on all of them (R13).
+//     scrolls under system chrome: TodayView, ProgressTab, MeasureTab, the
+//     detail screens and TaskDetailView (inside TasksView.swift). Kept on
+//     all of them (R13).
 //   * `mpGlassActionBar(isPresented:content:)` — TaskDetailView, the one
 //     custom glass surface in the app.
 //   * `mpGlassButton(prominent:)` — the buttons INSIDE that bar. On iOS 26

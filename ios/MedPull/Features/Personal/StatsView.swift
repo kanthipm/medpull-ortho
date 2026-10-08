@@ -53,7 +53,7 @@ struct StatsView: View {
                     }
                     .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 24)
                 }
-                .mpNavigationTitle("Stats")
+                .mpNavigationTitle("Trends")
                 .toolbarTitleDisplayMode(.large)
                 .mpHardScrollEdge()
                 .refreshable { await app.refreshDashboard() }

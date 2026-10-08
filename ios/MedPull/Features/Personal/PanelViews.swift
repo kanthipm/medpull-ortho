@@ -626,16 +626,3 @@ struct PersonalGuardrail: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 }
-
-/// A whole card as a button: the gated 0.97 press scale, nothing else.
-struct CardTapStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .contentShape(MP.surfaceShape)
-            .scaleEffect(MPMotion.pressScale(configuration.isPressed, reduceMotion: reduceMotion))
-            .animation(MPMotion.gated(MPMotion.press, reduceMotion: reduceMotion),
-                       value: configuration.isPressed)
-    }
-}

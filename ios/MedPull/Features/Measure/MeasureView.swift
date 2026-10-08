@@ -1,62 +1,9 @@
 import SwiftUI
 
-/// The Measure card on the Health tab: MedPull's own measurements, taken
-/// with the phone and computed on the server the same way for every patient
-/// — a guided walk (gait), the six-minute walk (endurance) and a joint
-/// range-of-motion test (the phone as an inclinometer).
-struct MeasureCard: View {
-    @Environment(AppModel.self) private var app
-    @State private var flow: MeasureFlow?
-
-    var body: some View {
-        Card(padding: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 14) {
-                    IconTile("figure.walk.motion", family: .teal)
-                    Text("Measure")
-                        .mpFont(.copyLargeMedium)
-                        .foregroundStyle(MP.ink)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 8)
-                }
-                .padding(16)
-                Text("Your phone measures how you walk, how far you can go, and how far your joint bends. The results go to your care team’s console alongside your wearable data.")
-                    .mpFont(.copy).foregroundStyle(MP.body)
-                    .padding(.horizontal, 16).padding(.bottom, 12)
-                InsetDivider()
-                ForEach(MeasureFlow.allCases) { item in
-                    Button { flow = item } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: item.symbol).foregroundStyle(MP.categoryInk(.teal))
-                                .frame(width: 24)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title).mpFont(.copyMedium).foregroundStyle(MP.ink)
-                                Text(item.subtitle).mpFont(.label).mpSecondary()
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right").mpFont(.label).mpSecondary()
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 12)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(MPRowButtonStyle())
-                    if item != MeasureFlow.allCases.last { InsetDivider() }
-                }
-            }
-        }
-        .sheet(item: $flow) { item in
-            NavigationStack {
-                switch item {
-                case .guidedWalk: GuidedWalkView(sixMinute: false)
-                case .sixMinuteWalk: GuidedWalkView(sixMinute: true)
-                case .rangeOfMotion: RangeOfMotionView()
-                }
-            }
-            .environment(app)
-        }
-    }
-}
-
+/// MedPull's own measurements, taken with the phone and computed on the
+/// server the same way for every patient: a guided walk (gait), the
+/// six-minute walk (endurance) and a joint range-of-motion test (the phone
+/// as an inclinometer). The Measure tab (MeasureTab.swift) lists them.
 enum MeasureFlow: String, CaseIterable, Identifiable {
     case guidedWalk, sixMinuteWalk, rangeOfMotion
     var id: String { rawValue }
