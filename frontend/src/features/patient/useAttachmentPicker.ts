@@ -8,8 +8,20 @@ import { useToast } from '../../components/Toast'
  *  (app/storage/blobs.ALLOWED_TYPES): HEIC is left out deliberately, because
  *  no browser but Safari can draw it, so a clinician would attach a photo
  *  and then watch this page fail to show it. The patient's app still sends
- *  HEIC — it transcodes to JPEG before upload. */
-export const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf'
+ *  HEIC — it transcodes to JPEG before upload. Video and audio are the
+ *  formats a phone and a browser can both play. */
+export const ACCEPT = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+  'video/mp4',
+  'video/quicktime',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/mpeg',
+  'audio/wav',
+].join(',')
 
 /** More than a handful on one message is a folder, not a message. Matches
  *  the cap the message endpoint enforces. */

@@ -122,3 +122,11 @@ export function fileSize(bytes: number): string {
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
   return `${bytes} B`
 }
+
+/** What to call one of these in a sentence: "Photo", "Video", "Recording"
+ *  or "File". */
+export function attachmentNoun(a: Pick<MessageAttachment, 'kind'>, capital = true): string {
+  const noun =
+    a.kind === 'image' ? 'photo' : a.kind === 'video' ? 'video' : a.kind === 'audio' ? 'recording' : 'file'
+  return capital ? noun[0].toUpperCase() + noun.slice(1) : noun
+}

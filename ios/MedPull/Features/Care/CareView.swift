@@ -27,6 +27,12 @@ struct CareView: View {
     @State private var uploading = false
     @State private var choosingPhotos = false
     @State private var choosingFile = false
+    @State private var takingCamera = false
+    @State private var recorder = VoiceNoteRecorder()
+    @State private var finishingNote = false
+    /// What the upload chip says while a clip is being shrunk, which takes
+    /// long enough to need a word.
+    @State private var preparing: String?
 
     /// Quick logs. They FILL the field, never send it: a tapped "my pain is
     /// a 4" that went straight to the chart would be a score nobody gave.
@@ -85,15 +91,26 @@ struct CareView: View {
             .navigationTitle(app.isPersonal ? "Coach" : "Care team")
             .navigationBarTitleDisplayMode(.inline)
             .photosPicker(isPresented: $choosingPhotos, selection: $photoPicks,
-                          maxSelectionCount: 4, matching: .images)
+                          maxSelectionCount: 4, matching: .any(of: [.images, .videos]))
             .fileImporter(isPresented: $choosingFile,
                           allowedContentTypes: AttachmentPrep.acceptedFiles,
                           allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result { attach(files: urls) }
             }
+            #if canImport(UIKit)
+            .fullScreenCover(isPresented: $takingCamera) {
+                CameraCapture(onImage: { data in attach(cameraImage: data) },
+                              onMovie: { url in attach(cameraMovie: url) })
+                    .ignoresSafeArea()
+            }
+            #endif
             .onChange(of: photoPicks) { _, picks in
                 guard !picks.isEmpty else { return }
                 attach(photos: picks)
+            }
+            .onChange(of: recorder.isRecording) { was, now in
+                // The time limit ran out: treat it as the person tapping stop.
+                if was && !now && !finishingNote { finishVoiceNote() }
             }
             .onChange(of: draft) { _, new in if new.isEmpty { draftToAssistant = false } }
             .sensoryFeedback(.impact(weight: .light), trigger: app.messages.count) { old, new in
@@ -156,7 +173,7 @@ struct CareView: View {
                     .mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
                 Text(app.isPersonal
                      ? "Your morning brief lands here, and anything you write goes to your coach."
-                     : "Anything you type goes to your care team. Tap the mic, or one of the quick logs, to tell MedPull how you feel: it logs it for you, answers straight away, and passes anything serious to the team.")
+                     : "Anything you type goes to your care team, and the plus button sends them a photo, a short video, a voice note or a file. Tap the mic, or one of the quick logs, to tell MedPull how you feel: it logs it for you, answers straight away, and passes anything serious to the team.")
                     .mpFont(.copy).foregroundStyle(MP.body).lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -182,11 +199,24 @@ struct CareView: View {
                 .mpFont(.label).foregroundStyle(MP.brandInk)
                 .padding(.horizontal, 6)
             }
+            if recorder.isRecording {
+                recordingBar
+            } else {
             HStack(alignment: .bottom, spacing: 8) {
                 if !app.isPersonal {
                     Menu {
+                        #if canImport(UIKit)
+                        if CameraCapture.available {
+                            Button { takingCamera = true } label: {
+                                Label("Take a photo or video", systemImage: "camera")
+                            }
+                        }
+                        #endif
                         Button { choosingPhotos = true } label: {
                             Label("Photo library", systemImage: "photo.on.rectangle")
+                        }
+                        Button { startVoiceNote() } label: {
+                            Label("Record a voice note", systemImage: "waveform")
                         }
                         Button { choosingFile = true } label: {
                             Label("Choose a file", systemImage: "doc")
@@ -195,7 +225,7 @@ struct CareView: View {
                         ComposerRoundButton(systemName: "plus")
                     }
                     .disabled(uploading || pending.count >= 4 || speech.isListening || draftToAssistant)
-                    .accessibilityLabel("Attach a photo or file")
+                    .accessibilityLabel("Attach a photo, video, voice note or file")
                 }
                 ComposerField(placeholder: speech.isListening ? "Listening…"
                                 : app.isPersonal ? "Ask your coach"
@@ -216,6 +246,7 @@ struct CareView: View {
                 .accessibilityLabel(speech.isListening ? "Stop and send" : "Talk")
                 .accessibilityHint(speech.isListening ? "Sends what you said"
                                    : app.isPersonal ? "Speak to your coach" : "Speak to MedPull; it logs it for you")
+            }
             }
             if speech.isListening {
                 Text("Listening. Tap stop to send.")
@@ -249,8 +280,49 @@ struct CareView: View {
     }
 
     private var canSend: Bool {
-        !uploading && !speech.isListening && !thinking
+        !uploading && !speech.isListening && !thinking && !recorder.isRecording
             && (!draft.trimmingCharacters(in: .whitespaces).isEmpty || !pending.isEmpty)
+    }
+
+    /// The composer while a voice note is being recorded: the clock, a
+    /// level meter, cancel, and the stop that attaches it.
+    private var recordingBar: some View {
+        HStack(spacing: 10) {
+            Button { recorder.cancel() } label: {
+                ComposerRoundButton(systemName: "xmark")
+            }
+            .buttonStyle(ComposerSendStyle())
+            .accessibilityLabel("Cancel the voice note")
+            HStack(spacing: 10) {
+                Circle().fill(MP.riskHigh).frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+                Text(recorder.elapsedText).font(.figuresCopyLarge).foregroundStyle(MP.ink)
+                    .monospacedDigit()
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        MP.capsuleShape.fill(MP.track)
+                        MP.capsuleShape.fill(MP.brand)
+                            .frame(width: max(4, proxy.size.width * recorder.level))
+                    }
+                }
+                .frame(height: 6)
+                .accessibilityHidden(true)
+                Text("Recording").mpFont(.label).foregroundStyle(MP.muted)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(MP.panel))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(MP.lineStrong, lineWidth: 1))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Recording, \(recorder.elapsedText)")
+            .accessibilityAddTraits(.updatesFrequently)
+            Button { finishVoiceNote() } label: {
+                ComposerRoundButton(systemName: "stop.fill", active: true)
+            }
+            .buttonStyle(ComposerSendStyle())
+            .accessibilityLabel("Stop and attach the voice note")
+        }
     }
 
     private var pendingStrip: some View {
@@ -258,7 +330,7 @@ struct CareView: View {
             HStack(spacing: 6) {
                 ForEach(pending) { a in
                     HStack(spacing: 5) {
-                        Image(systemName: a.isImage ? "photo" : "doc")
+                        Image(systemName: a.symbol)
                             .font(.labelMedium).foregroundStyle(MP.brandInk)
                         Text(a.displayName).font(.labelMedium)
                             .foregroundStyle(MP.ink).lineLimit(1)
@@ -275,7 +347,7 @@ struct CareView: View {
                 if uploading {
                     HStack(spacing: 5) {
                         ProgressView().controlSize(.mini)
-                        Text("Adding…").font(.labelMedium).foregroundStyle(MP.muted)
+                        Text(preparing ?? "Adding…").font(.labelMedium).foregroundStyle(MP.muted)
                     }
                     .padding(.horizontal, 9).padding(.vertical, 6)
                     .background(MP.pillShape.fill(MP.soft))
@@ -345,22 +417,44 @@ struct CareView: View {
 
     // MARK: attaching
 
+    /// Store one prepared file on the chart and add it to the composer.
+    private func upload(_ ready: AttachmentPrep.Ready) async {
+        do {
+            let stored = try await app.api.upload(ready.data, contentType: ready.contentType,
+                                                  filename: ready.filename)
+            pending.append(stored)
+        } catch {
+            self.error = AppModel.message(for: error)
+        }
+    }
+
     private func attach(photos picks: [PhotosPickerItem]) {
         photoPicks = []
         uploading = true
         error = nil
         Task {
-            defer { uploading = false }
+            defer { uploading = false; preparing = nil }
             for pick in picks.prefix(4 - pending.count) {
+                let isMovie = pick.supportedContentTypes.contains { $0.conforms(to: .movie) }
                 do {
-                    guard let raw = try await pick.loadTransferable(type: Data.self),
-                          let ready = AttachmentPrep.photo(raw) else {
-                        error = "That photo could not be read."
-                        continue
+                    if isMovie {
+                        preparing = "Shrinking video…"
+                        guard let movie = try await pick.loadTransferable(type: PickedMovie.self),
+                              let ready = await AttachmentPrep.video(at: movie.url) else {
+                            error = "That video could not be read, or is too long to send."
+                            continue
+                        }
+                        try? FileManager.default.removeItem(at: movie.url)
+                        preparing = "Uploading video…"
+                        await upload(ready)
+                    } else {
+                        guard let raw = try await pick.loadTransferable(type: Data.self),
+                              let ready = AttachmentPrep.photo(raw) else {
+                            error = "That photo could not be read."
+                            continue
+                        }
+                        await upload(ready)
                     }
-                    let stored = try await app.api.upload(ready.data, contentType: ready.contentType,
-                                                          filename: ready.filename)
-                    pending.append(stored)
                 } catch {
                     self.error = AppModel.message(for: error)
                 }
@@ -372,22 +466,75 @@ struct CareView: View {
         uploading = true
         error = nil
         Task {
-            defer { uploading = false }
+            defer { uploading = false; preparing = nil }
             for url in urls.prefix(4 - pending.count) {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                guard let ready = AttachmentPrep.file(at: url) else {
-                    error = "That file can’t be sent — photos and PDFs only."
+                preparing = "Preparing…"
+                guard let ready = await AttachmentPrep.file(at: url) else {
+                    error = "That file can’t be sent — photos, videos, recordings and PDFs only, under 48 MB."
                     continue
                 }
-                do {
-                    let stored = try await app.api.upload(ready.data, contentType: ready.contentType,
-                                                          filename: ready.filename)
-                    pending.append(stored)
-                } catch {
-                    self.error = AppModel.message(for: error)
-                }
+                preparing = "Uploading…"
+                await upload(ready)
             }
+        }
+    }
+
+    private func attach(cameraImage data: Data) {
+        guard pending.count < 4 else { return }
+        uploading = true
+        error = nil
+        Task {
+            defer { uploading = false }
+            guard let ready = AttachmentPrep.photo(data) else {
+                error = "That photo could not be read."
+                return
+            }
+            await upload(ready)
+        }
+    }
+
+    private func attach(cameraMovie url: URL) {
+        guard pending.count < 4 else { return }
+        uploading = true
+        error = nil
+        Task {
+            defer { uploading = false; preparing = nil }
+            preparing = "Shrinking video…"
+            guard let ready = await AttachmentPrep.video(at: url) else {
+                error = "That video could not be read, or is too long to send."
+                return
+            }
+            preparing = "Uploading video…"
+            await upload(ready)
+        }
+    }
+
+    // MARK: voice notes
+
+    private func startVoiceNote() {
+        guard pending.count < 4, !speech.isListening else { return }
+        focused = false
+        error = nil
+        Task {
+            await recorder.start()
+            if let e = recorder.errorText { error = e }
+        }
+    }
+
+    private func finishVoiceNote() {
+        finishingNote = true
+        defer { finishingNote = false }
+        guard let url = recorder.stop() else { return }
+        uploading = true
+        Task {
+            defer { uploading = false; try? FileManager.default.removeItem(at: url) }
+            guard let ready = AttachmentPrep.voiceNote(at: url) else {
+                error = "That recording could not be read."
+                return
+            }
+            await upload(ready)
         }
     }
 

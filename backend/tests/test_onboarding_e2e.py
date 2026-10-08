@@ -30,18 +30,22 @@ class Sendblue:
 
     def __init__(self, monkeypatch, *, fail_for: set[str] | None = None):
         self.sent: list[tuple[str, str]] = []
+        # The media link handed over with each send (None for words alone),
+        # in the same order as ``sent``.
+        self.media: list[str | None] = []
         self.fail_for = fail_for or set()
         monkeypatch.setattr(settings, "sendblue_api_key", "k")
         monkeypatch.setattr(settings, "sendblue_api_secret", "s")
         monkeypatch.setattr(settings, "sendblue_webhook_secret", SECRET)
         monkeypatch.setattr(sendblue, "_post_message", self._post)
 
-    def _post(self, phone, content):
+    def _post(self, phone, content, media_url=None):
         if phone in self.fail_for:
             import httpx
 
             raise httpx.ConnectError("provider down")
         self.sent.append((phone, content))
+        self.media.append(media_url)
         return _FakeResponse()
 
     def last(self) -> str:

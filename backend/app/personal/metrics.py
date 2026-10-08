@@ -1355,7 +1355,10 @@ def verdict(goal: str, readiness: Panel, load: Panel, sleep: Panel, body: Panel,
                 "reason": "Readiness needs a few nights of HRV, resting heart rate and sleep.",
                 "detail": "Wear your watch overnight and check back in a couple of days."}
     if body.status == "flag" or band == "red":
-        return {"kind": "rest", "title": "Recover today",
+        # "Recover" is the rehab word; everyone else is simply resting. A
+        # subscriber on an everyday goal read "recover" as the app thinking
+        # they were injured.
+        return {"kind": "rest", "title": "Recover today" if rehab else "Rest today",
                 "reason": (body.finding.split(".")[0] + "." if body.status == "flag"
                            else readiness.finding.split(".")[0] + "."),
                 "detail": ("Light movement, food, water and an early night. "
@@ -1372,8 +1375,9 @@ def verdict(goal: str, readiness: Panel, load: Panel, sleep: Panel, body: Panel,
     if band == "green" and (form is None or form > -0.25 * max(load.extra.get("fitness") or 1, 1)) \
             and (acwr is None or acwr < ACWR_HIGH):
         title = "Progress your rehab" if rehab else "Green light" if train else "Good day to push"
+        signals = "recovery signals" if rehab else "overnight signals"
         return {"kind": "push", "title": title,
-                "reason": f"Readiness {score:.0f}: recovery signals are above your normal.",
+                "reason": f"Readiness {score:.0f}: {signals} are above your normal.",
                 "detail": ("Add a small step to today's rehab load and watch tomorrow's soreness."
                            if rehab else "Quality session if one is planned; your body is ready for it.")}
     if band == "green":

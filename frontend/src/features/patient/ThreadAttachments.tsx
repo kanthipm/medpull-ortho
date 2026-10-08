@@ -1,17 +1,18 @@
-import { FileText, ImageOff, Paperclip, Trash2, X } from 'lucide-react'
+import { FileText, ImageOff, Mic, Paperclip, Trash2, VideoOff, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { attachmentSrc, fileSize } from '../../api/attachments'
+import { attachmentNoun, attachmentSrc, fileSize } from '../../api/attachments'
 import { useWithdrawAttachment } from '../../api/queries'
 import type { MessageAttachment } from '../../api/types'
 import Tile from '../../components/Tile'
 import { useToast } from '../../components/Toast'
 
 /**
- * Images and files under a thread line.
+ * Images, clips, recordings and files under a thread line.
  *
  * A photograph of an incision is the point of the message, so an image is
- * shown rather than listed. A document is a filename and a size, because
+ * shown rather than listed; a clip of a knee bending plays in place, and a
+ * voice note plays in place. A document is a filename and a size, because
  * that is what decides whether a clinician opens it now.
  *
  * Links are short-lived and minted per request, so the bytes are cached by
@@ -24,7 +25,7 @@ import { useToast } from '../../components/Toast'
 // re-download every image on it.
 const CACHE = new Map<string, string>()
 
-function useImage(patientId: string, a: MessageAttachment) {
+function useSource(patientId: string, a: MessageAttachment) {
   const key = a.sha256 ?? `id:${a.id}`
   const [src, setSrc] = useState<string | null>(() => CACHE.get(key) ?? null)
   const [failed, setFailed] = useState(false)
@@ -62,12 +63,16 @@ export default function ThreadAttachments({
       {items.map((a) =>
         a.withdrawn ? (
           <p key={a.id} className="text-label font-medium text-secondary">
-            {a.kind === 'image' ? 'Photo' : 'File'} taken back
+            {attachmentNoun(a)} taken back
           </p>
         ) : (
           <div key={a.id} className="flex items-end gap-1.5">
             {a.kind === 'image' ? (
               <Thumb patientId={patientId} a={a} />
+            ) : a.kind === 'video' ? (
+              <Clip patientId={patientId} a={a} />
+            ) : a.kind === 'audio' ? (
+              <Recording patientId={patientId} a={a} />
             ) : (
               <FileRow patientId={patientId} a={a} />
             )}
@@ -104,8 +109,58 @@ function Withdraw({ patientId, a }: { patientId: string; a: MessageAttachment })
   )
 }
 
+/** A clip, played in place. `preload="metadata"` so the thread does not
+ *  pull every video on it down the moment it renders. */
+function Clip({ patientId, a }: { patientId: string; a: MessageAttachment }) {
+  const { src, failed } = useSource(patientId, a)
+  if (failed) {
+    return (
+      <span className="flex max-w-[260px] items-center gap-2 rounded-control bg-soft px-3 py-2 text-label font-medium text-body">
+        <VideoOff size={14} aria-hidden className="shrink-0" />
+        That video could not be loaded
+      </span>
+    )
+  }
+  if (!src) {
+    return <span className="block h-36 w-56 animate-pulse rounded-[18px] bg-soft motion-reduce:animate-none" />
+  }
+  return (
+    <video
+      controls
+      preload="metadata"
+      playsInline
+      src={src}
+      aria-label={a.filename ?? 'Video from the thread'}
+      className="max-h-64 max-w-[280px] rounded-[18px] border border-line bg-ink"
+    />
+  )
+}
+
+/** A voice note or other recording: a labelled row with the player in it. */
+function Recording({ patientId, a }: { patientId: string; a: MessageAttachment }) {
+  const { src, failed } = useSource(patientId, a)
+  return (
+    <div className="flex max-w-[320px] flex-col gap-1.5 rounded-control border border-line bg-panel py-2 pl-2 pr-3">
+      <div className="flex items-center gap-2.5">
+        <Tile family="violet" icon={<Mic />} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-copy font-medium text-ink">
+            {a.filename ?? 'Voice note'}
+          </span>
+          <span className="block text-label tabular-nums text-secondary">
+            {failed ? 'Could not be loaded' : fileSize(a.byte_size)}
+          </span>
+        </span>
+      </div>
+      {src && !failed && (
+        <audio controls preload="metadata" src={src} className="h-9 w-full" />
+      )}
+    </div>
+  )
+}
+
 function Thumb({ patientId, a }: { patientId: string; a: MessageAttachment }) {
-  const { src, failed } = useImage(patientId, a)
+  const { src, failed } = useSource(patientId, a)
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -264,13 +319,11 @@ export function PendingAttachments({
           className="flex min-h-7 items-center gap-1.5 rounded-pill bg-soft py-0.5 pl-2.5 pr-1 text-label font-medium text-ink"
         >
           <Paperclip size={12} aria-hidden className="shrink-0 text-body" />
-          <span className="max-w-[140px] truncate">
-            {a.filename ?? (a.kind === 'image' ? 'Photo' : 'File')}
-          </span>
+          <span className="max-w-[140px] truncate">{a.filename ?? attachmentNoun(a)}</span>
           <span className="font-normal tabular-nums text-body">{fileSize(a.byte_size)}</span>
           <button
             type="button"
-            aria-label={`Remove ${a.filename ?? (a.kind === 'image' ? 'photo' : 'file')}`}
+            aria-label={`Remove ${a.filename ?? attachmentNoun(a, false)}`}
             className="grid h-6 w-6 cursor-pointer place-items-center rounded-pill text-body transition-colors duration-state ease-apple hover:bg-panel hover:text-risk-high-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             onClick={() => onRemove(a.id)}
           >

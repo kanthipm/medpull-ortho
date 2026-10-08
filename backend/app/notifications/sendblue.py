@@ -175,9 +175,18 @@ class SendblueChannel:
         return NotificationStatus.SENT
 
 
-def _post_message(phone: str, content: str) -> httpx.Response:
-    """One bounded attempt; raises httpx.HTTPError on any failure."""
-    payload = {"number": phone, "content": content}
+def _post_message(phone: str, content: str, media_url: str | None = None) -> httpx.Response:
+    """One bounded attempt; raises httpx.HTTPError on any failure.
+
+    ``media_url`` is a link Sendblue fetches and delivers as the message's
+    picture, clip or recording (an MMS, or an iMessage attachment). A
+    message may be media alone, so ``content`` is omitted when empty.
+    """
+    payload: dict[str, str] = {"number": phone}
+    if content:
+        payload["content"] = content
+    if media_url:
+        payload["media_url"] = media_url
     if settings.sendblue_from_number:
         payload["from_number"] = settings.sendblue_from_number
     response = httpx.post(
@@ -301,16 +310,21 @@ def normalize_phone(phone_number: str) -> str | None:
     return _e164(phone_number)
 
 
-def send_sms(phone_number: str, content: str) -> CheckinSendResult:
+def send_sms(phone_number: str, content: str, *, media_url: str | None = None) -> CheckinSendResult:
     """Text a patient. With either key unset, sends nothing and says so.
 
     The one outbound primitive every patient-facing text goes through; the
     result is a value, never an exception, because a failed text must not
     fail the request that produced it — the task, message or code it
     carried is already stored and reachable in the app.
+
+    ``media_url`` attaches a picture, clip or recording: a short-lived
+    signed link to the stored file, which Sendblue fetches as it sends.
     """
     if not configured():
         return CheckinSendResult(sent=False, detail="Sendblue keys not configured")
+    if not content and not media_url:
+        return CheckinSendResult(sent=False, detail="nothing to send")
 
     phone = _e164(phone_number)
     if phone is None:
@@ -319,7 +333,10 @@ def send_sms(phone_number: str, content: str) -> CheckinSendResult:
         )
 
     try:
-        response = _post_message(phone, content)
+        # Two call shapes on purpose: the plain text keeps the two-argument
+        # form every fake in the suite was written against.
+        response = (_post_message(phone, content, media_url=media_url) if media_url
+                    else _post_message(phone, content))
     except httpx.HTTPStatusError as exc:
         reason = _error_reason(exc.response)
         logger.warning("Sendblue send to %s failed: %s %s", phone, exc, reason or "")
@@ -514,18 +531,26 @@ def send_care_team_message(
     patient_name: str | None = None,
     link: str | None = None,
     link_label: str = "Get the app",
+    media_url: str | None = None,
 ) -> CheckinSendResult:
     """A message written in the console, or by the copilot on the thread.
 
     The one send path where the body is free text somebody typed, so it is
     also the one most likely to carry the patient's name — ``compose`` takes
-    it back out.
+    it back out. ``media_url`` rides along as the message's attachment.
     """
     return send_sms(
         phone_number,
         compose(text, patient_name=patient_name, member=member, link=link,
                 link_label=link_label),
+        media_url=media_url,
     )
+
+
+def send_media_message(phone_number: str, media_url: str) -> CheckinSendResult:
+    """A file on its own: the second and later attachments of one console
+    message, each delivered as its own picture message with no words."""
+    return send_sms(phone_number, "", media_url=media_url)
 
 
 def send_verification_code(phone_number: str, code: str) -> CheckinSendResult:

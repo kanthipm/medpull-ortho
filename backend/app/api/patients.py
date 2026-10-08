@@ -424,10 +424,11 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
     )
     db.add(message)
     db.flush()
-    from app.api.attachments import attachments_for, claim
+    from app.api.attachments import attachments_for, claim, text_media_links
 
     attached = claim(db, patient, body.attachment_ids, message)
     delivery = None
+    media_texted = 0
     if patient.phone:
         # The link is only worth sending when it goes somewhere the patient
         # can use. Someone already on the app has this message in their thread
@@ -436,23 +437,41 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
         from app.identity import app_status
 
         enrolled = app_status(db, patient)["ever_enrolled"]
-        # A file is never sent as provider media: that publishes a patient's
-        # photograph to an unauthenticated URL. The text says one arrived and
-        # the app is where it can be seen, which is also why an enrolled
-        # patient needs no link — it is already in their thread.
+        # The files go with the text as picture messages where the
+        # deployment can mint a short-lived signed link for the provider to
+        # fetch (object storage). Where it cannot, the text says they
+        # arrived and the app is where they can be seen.
+        links = text_media_links(db, message) if attached else []
+        unsent = attached - len(links)
         body_text = text
-        if attached and not text:
-            body_text = "Your care team sent you a file." if attached == 1 else (
-                f"Your care team sent you {attached} files.")
-        elif attached:
-            body_text = f"{text} ({attached} attached)"
+        if unsent and not text:
+            body_text = ("Your care team sent you a file." if attached == 1 else
+                         f"Your care team sent you {attached} files.")
+            if links:
+                body_text += " The rest are in the app."
+        elif unsent:
+            body_text = f"{text} ({unsent} more in the app)" if links else \
+                f"{text} ({attached} attached)"
         delivery = sendblue.send_care_team_message(
             patient.phone, body_text, member=member, patient_name=patient.name,
             link=None if enrolled else settings.app_download_url,
+            media_url=links[0] if links else None,
         )
         message.delivery_status = "sent" if delivery.sent else "failed"
         message.delivery_detail = None if delivery.sent else delivery.detail
         message.external_handle = delivery.message_handle
+        if delivery.sent and links:
+            media_texted = 1
+            # The second and third files as their own picture messages. A
+            # refusal here does not fail the message: the words went, and
+            # every file is already on the thread.
+            for link in links[1:]:
+                extra = sendblue.send_media_message(patient.phone, link)
+                if extra.sent:
+                    media_texted += 1
+                else:
+                    logger.warning("A file for %s did not go by text: %s", patient.id,
+                                   extra.detail)
     db.commit()
     if delivery is not None and delivery.sent:
         status = "sent_sms"
@@ -463,6 +482,10 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
     return {
         "status": status,
         "detail": delivery.detail if delivery else "patient has no phone number on file",
+        # How many of the files went out as picture messages, so the console
+        # can say whether the patient has them in the text or only in the app.
+        "media_texted": media_texted,
+        "files_attached": attached,
         "message": _message_view(message, db, attachments_for(db, [message])),
     }
 

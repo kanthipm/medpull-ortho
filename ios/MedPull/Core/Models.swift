@@ -511,7 +511,7 @@ struct ChatAttachment: Codable, Identifiable, Hashable {
     let byteSize: Int
     /// What the sender called it. Nil for a photo, which needs no name.
     let filename: String?
-    let kind: String            // image | file
+    let kind: String            // image | video | audio | file
     /// Content hash: the bytes are the same wherever the link points, so
     /// this is what an image cache keys on.
     let sha256: String?
@@ -523,7 +523,29 @@ struct ChatAttachment: Codable, Identifiable, Hashable {
     let withdrawn: Bool?
 
     var isImage: Bool { kind == "image" }
+    var isVideo: Bool { kind == "video" }
+    var isAudio: Bool { kind == "audio" }
     var isWithdrawn: Bool { withdrawn == true }
+
+    /// The glyph for a composer chip or a strip placeholder.
+    var symbol: String {
+        switch kind {
+        case "image": return "photo"
+        case "video": return "video"
+        case "audio": return "waveform"
+        default: return "doc"
+        }
+    }
+
+    /// "photo", "video", "recording" or "file", for a sentence.
+    var noun: String {
+        switch kind {
+        case "image": return "photo"
+        case "video": return "video"
+        case "audio": return "recording"
+        default: return "file"
+        }
+    }
 
     var sizeLabel: String {
         if byteSize >= 1_048_576 {
@@ -533,7 +555,10 @@ struct ChatAttachment: Codable, Identifiable, Hashable {
         return "\(byteSize) B"
     }
 
-    var displayName: String { filename ?? (isImage ? "Photo" : "File") }
+    var displayName: String {
+        if let filename { return filename }
+        return isAudio ? "Voice note" : noun.prefix(1).uppercased() + noun.dropFirst()
+    }
 }
 
 struct ChatMessage: Codable, Identifiable, Hashable {

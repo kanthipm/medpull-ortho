@@ -352,7 +352,9 @@ export interface MessageAttachment {
   content_type: string
   byte_size: number
   filename: string | null
-  kind: 'image' | 'file'
+  /** How to draw it: a picture, a clip with controls, a recording with
+   *  controls, or a named file to open. */
+  kind: 'image' | 'video' | 'audio' | 'file'
   /** Content hash: safe to cache bytes against across rotating links. */
   sha256: string | null
   uploaded_by: 'patient' | 'care_team' | 'copilot'
@@ -416,6 +418,10 @@ export interface AssignTaskResult {
 export interface MessagePatientResult {
   status: 'sent_sms' | 'stored_sms_failed' | 'stored_app_only'
   detail: string
+  /** How many of the files went with the text as picture messages. Absent
+   *  from an older server. */
+  media_texted?: number
+  files_attached?: number
   message: PatientMessage
 }
 

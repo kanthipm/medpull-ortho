@@ -317,6 +317,12 @@ struct StartDayResponse: Codable {
     let profile: PersonalProfile
     let subscription: SubscriptionState
     let profiles: [SpaceProfile]
+    /// Whether this call sent the brief by text, and whether today's brief
+    /// has gone out by text at all. Absent from an older server.
+    let texted: Bool?
+    let textedToday: Bool?
+    /// The provider's reason when the text did not go.
+    let textDetail: String?
 }
 
 struct AppleTransactionResponse: Codable {

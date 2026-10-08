@@ -70,7 +70,7 @@ def _view(a: Attachment, *, with_url: bool = False) -> dict[str, Any]:
         "content_type": a.content_type,
         "byte_size": a.byte_size,
         "filename": a.filename,
-        "kind": "image" if a.is_image else "file",
+        "kind": a.kind,
         # Content-addressed, so a client can cache the bytes across the
         # rotating short-lived URLs that serve them.
         "sha256": a.sha256,
@@ -129,12 +129,49 @@ def claim(db: Session, patient: Patient, attachment_ids: list[int], message: Mes
     ).all()
     for row in rows:
         row.message_id = message.id
+    # The session does not autoflush: a reader in the same request (the
+    # text's media links) must see the claim.
+    db.flush()
     if len(rows) != len(set(attachment_ids)):
         logger.info(
             "Message %s claimed %d of %d attachment ids for %s",
             message.id, len(rows), len(set(attachment_ids)), patient.id,
         )
     return len(rows)
+
+
+# How many of one message's files go out by text. Each is its own delivery
+# under the request's write lock, so the count is small on purpose.
+TEXT_MEDIA_LIMIT = 3
+
+
+def text_media_links(db: Session, message: Message) -> list[str]:
+    """Short-lived signed links the texting provider can fetch a message's
+    files from, in thread order.
+
+    This is how a photo, clip or recording a clinician sends reaches a
+    patient's phone as a picture message rather than as a sentence saying
+    one exists. The link is a presigned read that dies in minutes and is
+    handed only to the provider that is already carrying the words; it is
+    never written to the thread. Empty with no object store (``download_url``
+    mints nothing): the API's own byte route needs a session, which a
+    provider does not have.
+    """
+    rows = db.scalars(
+        select(Attachment)
+        .where(
+            Attachment.message_id == message.id,
+            Attachment.confirmed_at.is_not(None),
+            Attachment.deleted_at.is_(None),
+        )
+        .order_by(Attachment.id)
+    ).all()
+    links: list[str] = []
+    for row in rows[:TEXT_MEDIA_LIMIT]:
+        url = blobs.download_url(row.storage_key, row.content_type, row.filename)
+        if url:
+            links.append(url)
+    return links
 
 
 # --- minting, confirming, reading: shared by both callers -------------------------
@@ -149,15 +186,15 @@ def _personal(patient: Patient) -> bool:
 def _ticket(patient: Patient, content_type: str, byte_size: int) -> dict[str, Any]:
     try:
         content_type = blobs.check_type(content_type)
-        blobs.check_size(byte_size)
+        blobs.check_size(byte_size, content_type)
     except blobs.BlobError as e:
         raise HTTPException(status_code=422, detail=str(e))
     key = blobs.new_key(patient.id, content_type, personal=_personal(patient))
     ticket = blobs.upload_ticket(key, content_type)
     if ticket is None:
         # No object store to send the bytes to: this deployment takes them.
-        return {"storage_key": key, "direct": True, "max_bytes": blobs.MAX_BYTES,
-                "upload": None}
+        return {"storage_key": key, "direct": True,
+                "max_bytes": blobs.max_bytes_for(content_type), "upload": None}
     return {
         "storage_key": key,
         "direct": False,
@@ -194,7 +231,7 @@ def _confirm(
     if stored is None:
         raise HTTPException(status_code=409, detail="The file has not arrived yet — try again")
     try:
-        blobs.check_size(stored)
+        blobs.check_size(stored, content_type)
         if byte_size and stored != byte_size:
             raise blobs.BlobError("The file that arrived is not the size that was declared")
         blobs.sniff(blobs.head_bytes(storage_key), content_type)
@@ -238,13 +275,14 @@ def _store_body(
         checked = blobs.check_type(content_type)
     except blobs.BlobError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    if len(data) > blobs.MAX_BYTES:
+    cap = blobs.max_bytes_for(checked)
+    if len(data) > cap:
         raise HTTPException(
             status_code=413,
-            detail=f"That file is larger than {blobs.MAX_BYTES // (1024 * 1024)} MB",
+            detail=f"That file is larger than {cap // (1024 * 1024)} MB",
         )
     try:
-        blobs.check_size(len(data))
+        blobs.check_size(len(data), checked)
         blobs.sniff(data[:1024], checked)
         stored = blobs.put(blobs.new_key(patient.id, checked, personal=_personal(patient)),
                            data, checked)
@@ -282,7 +320,7 @@ def _bytes_response(row: Attachment) -> Response:
         data = blobs.read(row.storage_key)
     except blobs.BlobError as e:
         raise HTTPException(status_code=410, detail=str(e))
-    disposition = "inline" if row.is_image else "attachment"
+    disposition = "inline" if row.is_media else "attachment"
     if row.filename:
         disposition = f'{disposition}; filename="{row.filename}"'
     return Response(

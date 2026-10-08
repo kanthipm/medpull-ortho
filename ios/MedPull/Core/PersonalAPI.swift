@@ -183,8 +183,13 @@ extension APIClient {
 
     struct DayBody: Encodable { let text: Bool }
 
-    func startDay() async throws -> StartDayResponse {
-        try await post("/api/mobile/personal/day", body: DayBody(text: false))
+    /// Start the day. `text` asks the server to send the brief by text now
+    /// if it has not gone out today: the scheduler runs at one UTC hour for
+    /// everyone and cannot know this phone's morning, so the app says when
+    /// the person's own brief hour has passed. Sent once a day server-side,
+    /// however often this is called.
+    func startDay(text: Bool = false) async throws -> StartDayResponse {
+        try await post("/api/mobile/personal/day", body: DayBody(text: text))
     }
 
     func deepDive(_ domain: String) async throws -> DeepDive {

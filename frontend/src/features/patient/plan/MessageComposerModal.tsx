@@ -96,15 +96,22 @@ export default function MessageComposerModal({
     if (!body && files.ids.length === 0) return
     send.mutate({ text: body, attachment_ids: files.ids }, {
       onSuccess: (r) => {
-        if (r.status === 'sent_sms')
+        if (r.status === 'sent_sms') {
+          const n = files.ids.length
+          const texted = r.media_texted ?? 0
           toast(
-            files.ids.length
-              // A file is never attached to the text: an MMS link is a
-              // public URL, and this is a patient's own record.
-              ? `Texted ${first} — the ${files.ids.length === 1 ? 'file is' : 'files are'} in the app`
-              : `Texted ${first} — also in the app`,
+            n === 0
+              ? `Texted ${first} — also in the app`
+              : texted >= n
+                // The files went with the text as picture messages (a
+                // short-lived signed link the provider fetched as it sent).
+                ? `Texted ${first} with the ${n === 1 ? 'file' : 'files'} — also in the app`
+                : texted > 0
+                  ? `Texted ${first} with ${texted} of ${n} files — the rest are in the app`
+                  : `Texted ${first} — the ${n === 1 ? 'file is' : 'files are'} in the app`,
             'success',
           )
+        }
         else if (r.status === 'stored_sms_failed')
           toast(
             // Carry the provider's reason: "the text didn't go through" sent
@@ -131,14 +138,17 @@ export default function MessageComposerModal({
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <p className="meta min-w-0 flex-1 basis-56">
         {phone ? `Texts ${phone} and shows in the app.` : `No phone on file — ${first} sees it in the app.`}
-        {files.ids.length > 0 && ` Files open in the app, never in the text.`}
+        {files.ids.length > 0 &&
+          (phone
+            ? ` Photos, clips and recordings go with the text where storage allows; everything is in the app.`
+            : ` Files open in the app.`)}
       </p>
       <input {...files.inputProps} />
       <div className="ml-auto flex items-center gap-2">
         <button
           type="button"
           className="btn-gray"
-          title="Attach a photo or file"
+          title="Attach a photo, video, recording or file"
           disabled={files.busy}
           onClick={files.open}
         >

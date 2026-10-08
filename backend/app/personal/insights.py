@@ -314,7 +314,7 @@ def fallback_deep(digest: dict[str, Any], domain: str) -> dict[str, str]:
         body = " ".join(_first_sentence((digest.get(k) or {}).get("finding"))
                         for k in ("readiness", "load", "sleep", "hrv", "resting_hr", "body"))
     else:
-        title = (digest.get("readiness") or {}).get("status_text") or "Recovery"
+        title = (digest.get("readiness") or {}).get("status_text") or "Readiness"
         body = " ".join(x for x in ((digest.get("readiness") or {}).get("finding"),
                                    (digest.get("hrv") or {}).get("finding"),
                                    (digest.get("resting_hr") or {}).get("finding"),

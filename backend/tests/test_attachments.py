@@ -507,3 +507,121 @@ def test_a_clinician_can_take_back_a_file_they_sent(client, db, joined):
     # and the patient cannot read bytes that are gone
     assert client.get(f"/api/mobile/attachments/{a['id']}/raw",
                       headers=headers).status_code == 404
+
+
+# --- video and audio -------------------------------------------------------------------
+
+# ISO-BMFF headers: a box length, "ftyp", then the major brand that says what
+# is inside. The same four bytes open a HEIC photo, an MP4 clip and an M4A
+# voice note, so the brand is the whole test.
+MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2mp41" + b"\x00" * 64
+MOV = b"\x00\x00\x00\x14ftypqt  \x00\x00\x00\x00qt  " + b"\x00" * 64
+M4A = b"\x00\x00\x00\x18ftypM4A \x00\x00\x00\x00M4A mp42isom" + b"\x00" * 64
+HEIC = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic" + b"\x00" * 64
+MP3 = b"ID3\x04\x00\x00\x00\x00\x00\x00" + b"\xff\xfb" + b"\x00" * 64
+
+
+def test_a_clip_and_a_voice_note_are_stored_and_played_in_place(client, joined):
+    _pid, headers = joined
+    clip = _upload(client, headers, data=MP4, content_type="video/mp4", name="knee.mp4")
+    assert clip.status_code == 200, clip.text
+    a = clip.json()["attachment"]
+    assert a["kind"] == "video" and a["content_type"] == "video/mp4"
+    raw = client.get(f"/api/mobile/attachments/{a['id']}/raw", headers=headers)
+    assert raw.headers["content-type"].startswith("video/mp4")
+    assert raw.headers["content-disposition"].startswith("inline")
+
+    # A QuickTime clip straight off an iPhone's camera roll.
+    mov = _upload(client, headers, data=MOV, content_type="video/quicktime", name="knee.mov")
+    assert mov.status_code == 200 and mov.json()["attachment"]["kind"] == "video"
+
+    # The app's voice note arrives as audio/x-m4a; it is stored as audio/mp4.
+    note = _upload(client, headers, data=M4A, content_type="audio/x-m4a", name="note.m4a")
+    assert note.status_code == 200, note.text
+    n = note.json()["attachment"]
+    assert n["kind"] == "audio" and n["content_type"] == "audio/mp4"
+    raw = client.get(f"/api/mobile/attachments/{n['id']}/raw", headers=headers)
+    assert raw.headers["content-disposition"].startswith("inline")
+
+    mp3 = _upload(client, headers, data=MP3, content_type="audio/mpeg", name="note.mp3")
+    assert mp3.status_code == 200 and mp3.json()["attachment"]["kind"] == "audio"
+
+    # The bigger cap is for clips and recordings only.
+    ticket = client.get("/api/mobile/attachments/upload-ticket",
+                        params={"content_type": "video/mp4", "byte_size": 20_000_000},
+                        headers=headers)
+    assert ticket.status_code == 200 and ticket.json()["max_bytes"] == blobs.MAX_MEDIA_BYTES
+    photo_ticket = client.get("/api/mobile/attachments/upload-ticket",
+                              params={"content_type": "image/jpeg", "byte_size": 20_000_000},
+                              headers=headers)
+    assert photo_ticket.status_code == 422
+
+
+def test_the_container_brand_keeps_a_clip_from_passing_as_a_photo(client, joined):
+    """HEIC, MP4 and M4A all begin "....ftyp". A clip declared as an image
+    would be served under an image header; the brand refuses it."""
+    _pid, headers = joined
+    assert _upload(client, headers, data=MP4, content_type="image/heic", name="x.heic").status_code == 422
+    assert _upload(client, headers, data=HEIC, content_type="video/mp4", name="x.mp4").status_code == 422
+    assert _upload(client, headers, data=HEIC, content_type="image/heic", name="x.heic").status_code == 200
+    # An M4A declared as video is harmless (a player with no picture) and a
+    # recorder that writes the generic brand still gets through as audio.
+    assert _upload(client, headers, data=MP4, content_type="audio/mp4", name="x.m4a").status_code == 200
+
+
+def test_a_texted_clip_is_recognised_whatever_the_provider_calls_it(client, db, joined, monkeypatch):
+    pid, _ = joined
+    Sendblue(monkeypatch)
+    assert blobs.detect_type(MOV[:1024], "application/octet-stream") == "video/quicktime"
+    assert blobs.detect_type(M4A[:1024], None) == "audio/mp4"
+    assert blobs.detect_type(HEIC[:1024], None) == "image/heic"
+    assert blobs.detect_type(MP4[:1024], "audio/x-m4a") == "audio/mp4"
+    monkeypatch.setattr(blobs, "fetch_remote", lambda url: (MP4, "video/mp4"))
+    r = _mms(client, "+15125550910", ["https://cdn.sendblue.co/m/knee.mp4"])
+    assert r["handled"] is True and r["attachments"] == 1
+    db.expire_all()
+    row = db.scalars(select(Attachment).where(Attachment.patient_id == pid)
+                     .order_by(Attachment.id.desc())).first()
+    assert row.content_type == "video/mp4" and row.kind == "video"
+
+
+def test_a_clinicians_files_go_with_the_text_when_storage_can_link_them(client, db, joined, monkeypatch):
+    """With an object store the server mints a short-lived signed link per
+    file and hands it to the provider as the message's media. The first
+    rides with the words; the next two go as their own picture messages."""
+    pid, headers = joined
+    sb = Sendblue(monkeypatch)
+    minted: list[str] = []
+
+    def fake_link(key, content_type, filename=None):
+        minted.append(key)
+        return f"https://bucket.example/{key}?sig=short-lived"
+
+    # Only the read link is faked: uploads still go to the directory backend.
+    monkeypatch.setattr(blobs, "download_url", fake_link)
+
+    ids = []
+    for data, ct, name in ((JPEG, "image/jpeg", "wound.jpg"), (MP4, "video/mp4", "knee.mp4"),
+                           (M4A, "audio/x-m4a", "note.m4a"), (PDF, "application/pdf", "sheet.pdf")):
+        r = client.post(f"/api/patients/{pid}/attachments/direct?filename={name}",
+                        headers={"Content-Type": ct}, content=data)
+        assert r.status_code == 200, r.text
+        ids.append(r.json()["attachment"]["id"])
+
+    sent = client.post(f"/api/patients/{pid}/actions/message",
+                       json={"text": "Here is the clip we talked about", "attachment_ids": ids})
+    assert sent.status_code == 200, sent.text
+    body = sent.json()
+    assert body["status"] == "sent_sms"
+    assert body["files_attached"] == 4 and body["media_texted"] == 3
+    # Three sends: the words with the first file, then two files on their own.
+    assert len(sb.sent) == 3
+    assert sb.media[0] and sb.media[0].endswith("?sig=short-lived")
+    assert all(m for m in sb.media) and len(set(sb.media)) == 3
+    assert sb.sent[1][1] == "" and sb.sent[2][1] == ""
+    # The fourth is named as being in the app, and no link ever reaches the thread.
+    assert "1 more in the app" in sb.sent[0][1]
+    thread = client.get("/api/mobile/messages", headers=headers).json()["messages"]
+    line = next(m for m in thread if len(m["attachments"]) == 4)
+    assert "sig=" not in line["text"]
+    assert all("url" not in f for f in line["attachments"])

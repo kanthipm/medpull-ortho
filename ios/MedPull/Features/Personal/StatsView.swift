@@ -15,12 +15,13 @@ struct StatsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    private static let dives: [(String, String, String)] = [
-        ("recovery", "Recovery", "waveform.path.ecg"),
-        ("training", "Training", "flame.fill"),
-        ("sleep", "Sleep", "bed.double.fill"),
-        ("weekly", "The week", "calendar"),
-    ]
+    /// The readiness read is called "Recovery" only on a recovery goal.
+    private var dives: [(String, String, String)] {
+        [("recovery", app.dashboard?.dashboard.goal == "recovery" ? "Recovery" : "Readiness", "waveform.path.ecg"),
+         ("training", "Training", "flame.fill"),
+         ("sleep", "Sleep", "bed.double.fill"),
+         ("weekly", "The week", "calendar")]
+    }
 
     var body: some View {
         NavigationStack {
@@ -29,6 +30,7 @@ struct StatsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         if let response = app.dashboard {
                             glance(response.dashboard, proxy: proxy)
+                            allMetricsRow
                             if let week = response.dashboard.week { WeekCard(week: week) { open("weekly") }.id("week") }
                             if let trends = response.dashboard.trends, !trends.isEmpty { TrendsCard(trends: trends).id("trends") }
                             divesRow
@@ -72,6 +74,31 @@ struct StatsView: View {
                 .sheet(item: $dive) { d in DeepDiveSheet(dive: d) }
             }
         }
+    }
+
+    /// Every readout and every raw signal, one per row, each opening in
+    /// full. The weekly cards below are the aggregates; this is the way to
+    /// the individual numbers.
+    private var allMetricsRow: some View {
+        NavigationLink { PersonalMetricsView() } label: {
+            HStack(spacing: 12) {
+                IconTile("list.bullet.rectangle.portrait", family: .teal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("All metrics").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                    Text("Every readout and every signal, day by day")
+                        .mpFont(.label).foregroundStyle(MP.muted)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.systemGlyphs(13, weight: .semibold))
+                    .foregroundStyle(MP.faint)
+                    .accessibilityHidden(true)
+            }
+            .padding(14)
+            .glassSurface(MP.surfaceShape, solid: true)
+            .contentShape(MP.surfaceShape)
+        }
+        .buttonStyle(CardTapStyle())
     }
 
     private func binding(for key: String) -> Binding<Bool> {
@@ -119,7 +146,7 @@ struct StatsView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 Text("Deep dives").mpFont(.labelMedium).foregroundStyle(MP.muted).padding(.trailing, 2)
-                ForEach(Self.dives, id: \.0) { domain, label, symbol in
+                ForEach(dives, id: \.0) { domain, label, symbol in
                     Button {
                         open(domain)
                     } label: {

@@ -919,3 +919,103 @@ def test_plan_items_follow_the_verdict(goal):
         assert all(i["kind"] in ("exercise", "walk", "workout", "custom", "sleep") for i in items)
         if goal == "sleep":
             assert items[0]["kind"] == "sleep" and "Lights out by" in items[0]["title"]
+
+
+# --- the morning text ------------------------------------------------------------------
+
+
+def test_the_brief_is_texted_once_even_when_the_app_opened_first(client, db, monkeypatch):
+    """The app opening before the scheduler writes the brief line; the
+    scheduled run that follows used to see the line and skip the text, so
+    anyone who opened the app early never got one."""
+    from tests.test_onboarding_e2e import Sendblue
+
+    from app.personal import daily
+
+    sb = Sendblue(monkeypatch)
+    headers, data = _join(client, phone="+15125559021", email="brief@example.com")
+    pid = data["me"]["patient"]["id"]
+    try:
+        db.expire_all()
+        db.get(Patient, pid).phone = "+15125559021"
+        db.commit()
+        _seed_stream(db, pid, days=12)
+        # The app, early: the plan and the line, no text asked for.
+        first = client.post("/api/mobile/personal/day", headers=headers, json={"text": False})
+        assert first.status_code == 200, first.text
+        assert first.json()["texted"] is False and first.json()["texted_today"] is False
+        texts_before = len(sb.sent)
+        # The scheduler, later the same morning.
+        run = daily.run(db, text=True)
+        assert pid in run["done"] and run["texted"] == 1
+        assert len(sb.sent) == texts_before + 1
+        assert "Reply 1 for your morning check-in" in sb.last()
+        # Once is enough: neither another run nor another open sends it again.
+        again = daily.run(db, text=True)
+        assert again["texted"] == 0
+        reopened = client.post("/api/mobile/personal/day", headers=headers, json={"text": True}).json()
+        assert reopened["texted"] is False and reopened["texted_today"] is True
+        assert len(sb.sent) == texts_before + 1
+        briefs = db.scalars(select(Message).where(Message.patient_id == pid,
+                                                  Message.action_kind == "personal_brief")).all()
+        assert len(briefs) == 1 and briefs[0].channel == "sms"
+        # Turning the text off is honoured.
+        client.patch("/api/mobile/personal/profile", headers=headers, json={"sms_briefs": False})
+    finally:
+        _forget(db, pid)
+
+
+def test_the_app_texts_the_brief_itself_after_the_brief_hour(client, db, monkeypatch):
+    from tests.test_onboarding_e2e import Sendblue
+
+    sb = Sendblue(monkeypatch)
+    headers, data = _join(client, phone="+15125559022", email="brief2@example.com")
+    pid = data["me"]["patient"]["id"]
+    try:
+        db.expire_all()
+        db.get(Patient, pid).phone = "+15125559022"
+        db.commit()
+        _seed_stream(db, pid, days=12)
+        before = len(sb.sent)
+        day = client.post("/api/mobile/personal/day", headers=headers, json={"text": True}).json()
+        assert day["texted"] is True and day["texted_today"] is True
+        assert len(sb.sent) == before + 1
+    finally:
+        _forget(db, pid)
+
+
+# --- switching the goal ----------------------------------------------------------------
+
+
+def test_switching_the_goal_rewrites_the_plan_and_the_check_in(client, db):
+    """A person who picks everyday health must stop seeing the recovery
+    plan: today's rehab items retire, the new goal's items are written, and
+    the check-in stops asking about pain."""
+    headers, data = _join(client, phone=None, email="switch@example.com", goal="recovery",
+                          procedure_type="ACL", injury="ACL, left",
+                          anchor_date=(date.today() - timedelta(days=20)).isoformat())
+    pid = data["me"]["patient"]["id"]
+    try:
+        _seed_stream(db, pid, days=19)
+        first = client.post("/api/mobile/personal/day", headers=headers, json={}).json()
+        assert first["dashboard"]["goal"] == "recovery"
+        open_tasks = client.get("/api/mobile/tasks", headers=headers).json()["open"]
+        assert any("rehab" in t["title"].lower() for t in open_tasks)
+        checkin = next(t for t in open_tasks if t["kind"] == "checkin")
+        assert any(q["id"] == "pain" for q in checkin["questions"])
+
+        patched = client.patch("/api/mobile/personal/profile", headers=headers,
+                               json={"goal": "everyday"})
+        assert patched.status_code == 200, patched.text
+        second = client.post("/api/mobile/personal/day", headers=headers, json={}).json()
+        assert second["dashboard"]["goal"] == "everyday"
+        assert "care" not in second["dashboard"]["sections"] and second["care"] is None
+        assert "recovery signals" not in second["dashboard"]["verdict"]["reason"]
+        assert second["dashboard"]["verdict"]["title"] != "Recover today"
+        open_tasks = client.get("/api/mobile/tasks", headers=headers).json()["open"]
+        assert not any("rehab" in t["title"].lower() for t in open_tasks)
+        assert any(t["kind"] in ("walk", "workout") for t in open_tasks)
+        checkin = next(t for t in open_tasks if t["kind"] == "checkin")
+        assert not any(q["id"] == "pain" for q in checkin["questions"])
+    finally:
+        _forget(db, pid)

@@ -738,6 +738,10 @@ def dashboard(patient: Patient = Depends(entitled_patient), db: Session = Depend
 
 
 class DayBody(BaseModel):
+    # Text the brief now if it has not gone out today. The app sends true
+    # once the person's own brief hour has passed, which is how a subscriber
+    # whose phone is in a time zone the scheduler does not know still gets
+    # the text on the morning it was written for.
     text: bool = False
 
 
@@ -753,6 +757,7 @@ def start_day(body: DayBody | None = None, patient: Patient = Depends(entitled_p
     return {
         "dashboard": {k: v for k, v in board.items() if k not in ("digest", "notes")},
         "brief": result["brief"], "plan": result["plan"], "texted": result["texted"],
+        "texted_today": result["texted_today"], "text_detail": result["text_detail"],
         "care": _care_section(db, patient, profile),
         "profile": _profile_view(profile),
         "subscription": subscription.status(db, patient),

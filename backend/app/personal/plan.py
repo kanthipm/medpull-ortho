@@ -42,13 +42,24 @@ def _existing(db: Session, patient_id: str) -> list[AdherenceTask]:
     ).all())
 
 
+def _checkin_qset(profile: Any) -> str:
+    return "checkin_personal_recovery" if getattr(profile, "goal", "") == "recovery" \
+        else "checkin_personal"
+
+
 def ensure_checkin(db: Session, patient: Patient, profile: Any) -> AdherenceTask:
-    """The one recurring morning check-in, created on first call."""
+    """The one recurring morning check-in, created on first call.
+
+    The question set follows the goal: a person who switches from a
+    recovery goal to everyday health stops being asked about their rehab.
+    """
+    qset = _checkin_qset(profile)
     for task in _existing(db, patient.id):
         if _personal(task).get("key") == CHECKIN_KEY:
+            if (task.payload or {}).get("qset") != qset:
+                task.payload = {**(task.payload or {}), "qset": qset}
+                db.commit()
             return task
-    qset = "checkin_personal_recovery" if getattr(profile, "goal", "") == "recovery" \
-        else "checkin_personal"
     task, _ = tasks.create_task(
         db, patient, title="Morning check-in",
         why="Two minutes on how you feel, read beside your wearable numbers.",
@@ -156,8 +167,21 @@ def ensure_daily_plan(db: Session, patient: Patient, profile: Any,
                       dashboard: dict[str, Any], today: date | None = None) -> dict[str, Any]:
     """Write today's plan if it is not there yet. Returns what is open today."""
     today = today or date.today()
+    goal = getattr(profile, "goal", None) or "everyday"
     checkin = ensure_checkin(db, patient, profile)
     existing = _existing(db, patient.id)
+    # Today's items written under another goal are retired first: a person
+    # who switched from recovery to everyday health this morning must not
+    # keep "Rehab set as written" on their plan beside the new items. (Rows
+    # written before the goal was tagged carry no goal and are left alone.)
+    retired = 0
+    for task in existing:
+        tag = _personal(task)
+        if tag.get("date") == today.isoformat() and tag.get("goal") and tag["goal"] != goal \
+                and task.status in tasks.OPEN_STATUSES:
+            task.active = False
+            retired += 1
+    existing = [t for t in existing if t.active]
     have = {(_personal(t).get("date"), _personal(t).get("key")) for t in existing}
     created: list[AdherenceTask] = []
     for item in _items_for(dashboard, profile):
@@ -169,14 +193,13 @@ def ensure_daily_plan(db: Session, patient: Patient, profile: Any,
         )
         task.payload = {
             **(task.payload or {}),
-            "personal": {"key": item["key"], "date": today.isoformat(),
+            "personal": {"key": item["key"], "date": today.isoformat(), "goal": goal,
                          "verdict": (dashboard.get("verdict") or {}).get("kind")},
             "care": {"schedule": "once", "assigned_by": "personal_plan"},
         }
         created.append(task)
     # Yesterday's unanswered one-shot items are retired rather than left to
     # pile up: a plan is for a day.
-    retired = 0
     for task in existing:
         tag = _personal(task)
         if tag.get("date") and tag["date"] < today.isoformat() and task.status in tasks.OPEN_STATUSES:

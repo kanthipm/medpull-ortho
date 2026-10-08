@@ -77,7 +77,10 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         NSHealthShareUsageDescription: MedPull shares your activity, sleep, heart and walking data with your care team so they can follow your recovery between visits.
         NSHealthUpdateUsageDescription: MedPull does not write to Health, but the Health SDK it uses declares this capability.
-        NSMicrophoneUsageDescription: Talk to MedPull instead of typing — the microphone is only on while you hold the button.
+        NSMicrophoneUsageDescription: Talk to MedPull instead of typing, or record a voice note for your care team — the microphone is only on while you are recording.
+        # The chat's "Take a photo or video": a picture of an incision, a
+        # clip of a joint moving, straight to the care team's thread.
+        NSCameraUsageDescription: MedPull uses the camera only when you choose to send your care team a photo or a short video from the chat.
         NSSpeechRecognitionUsageDescription: MedPull turns what you say into text so it can log your pain, mark tasks done, or pass a note to your care team.
         # The Measure screen (Health tab): a walk or a joint test records the
         # phone's motion sensors; an outdoor walk may use GPS for distance.

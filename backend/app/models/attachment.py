@@ -76,5 +76,19 @@ class Attachment(Base):
         return self.content_type.startswith("image/")
 
     @property
+    def kind(self) -> str:
+        """image | video | audio | file: how a client draws it."""
+        for prefix in ("image", "video", "audio"):
+            if self.content_type.startswith(f"{prefix}/"):
+                return prefix
+        return "file"
+
+    @property
+    def is_media(self) -> bool:
+        """Shown in place (a picture, a clip, a recording) rather than
+        offered as a download."""
+        return self.kind != "file"
+
+    @property
     def available(self) -> bool:
         return self.confirmed_at is not None and self.deleted_at is None

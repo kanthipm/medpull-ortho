@@ -46,8 +46,9 @@ PREFIX = "attachments"
 PERSONAL_PREFIX = "personal"
 
 # What a patient or a clinician may attach. Deliberately short: an image of a
-# wound, a document from the clinic. Anything executable or scriptable is
-# refused at the door rather than sanitised later.
+# wound, a short video of a joint moving, a voice note, a document from the
+# clinic. Anything executable or scriptable is refused at the door rather
+# than sanitised later.
 ALLOWED_TYPES: dict[str, str] = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -55,8 +56,48 @@ ALLOWED_TYPES: dict[str, str] = {
     "image/heif": ".heif",
     "image/webp": ".webp",
     "application/pdf": ".pdf",
+    # Video comes off a phone as MP4 or QuickTime; the app shrinks it before
+    # upload (AttachmentPrep), so a clip is tens of megabytes, not hundreds.
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    # Audio: the app's voice notes (AAC in an MP4 container), and the files
+    # a person is likely to already have.
+    "audio/mp4": ".m4a",
+    "audio/mpeg": ".mp3",
+    "audio/wav": ".wav",
+}
+# The spellings a client or a provider may use for a type we store under one
+# name. Normalised before anything else looks at them.
+TYPE_ALIASES: dict[str, str] = {
+    "image/jpg": "image/jpeg",
+    "audio/x-m4a": "audio/mp4",
+    "audio/m4a": "audio/mp4",
+    "audio/aac": "audio/mp4",
+    "audio/mp3": "audio/mpeg",
+    "audio/x-wav": "audio/wav",
+    "audio/wave": "audio/wav",
+    "audio/vnd.wave": "audio/wav",
+    "video/x-m4v": "video/mp4",
 }
 MAX_BYTES = 12 * 1024 * 1024  # 12 MB: a modern phone photo with room to spare
+# A clip or a recording is bigger than a picture by nature. The app recodes
+# video to 540p before upload, so a minute is well under this.
+MAX_MEDIA_BYTES = 48 * 1024 * 1024
+
+
+def kind_of(content_type: str) -> str:
+    """How a client should draw it: image | video | audio | file."""
+    for prefix in ("image", "video", "audio"):
+        if content_type.startswith(f"{prefix}/"):
+            return prefix
+    return "file"
+
+
+def max_bytes_for(content_type: str | None) -> int:
+    """The size cap for a type: pictures and documents are small by nature,
+    video and audio are not."""
+    return MAX_MEDIA_BYTES if content_type and kind_of(content_type) in ("video", "audio") \
+        else MAX_BYTES
 # How long a download link is good for. Long enough to open an image in a
 # browser or app, short enough that a leaked URL in a log or a history entry
 # stops working before anyone finds it.
@@ -103,6 +144,7 @@ def check_type(content_type: str | None) -> str:
     on download, the ``Content-Type`` header a browser will act on.
     """
     normalized = (content_type or "").split(";")[0].strip().lower()
+    normalized = TYPE_ALIASES.get(normalized, normalized)
     if normalized not in ALLOWED_TYPES:
         allowed = ", ".join(sorted(ALLOWED_TYPES))
         raise BlobError(f"{content_type or 'that file type'} is not one we accept ({allowed})")
@@ -116,12 +158,49 @@ def check_type(content_type: str | None) -> str:
 _MAGIC: dict[str, tuple[tuple[int, bytes], ...]] = {
     "image/jpeg": (((0, b"\xff\xd8\xff"),),),
     "image/png": (((0, b"\x89PNG\r\n\x1a\n"),),),
-    # ISO-BMFF: a box length, then "ftyp", then a brand.
+    # ISO-BMFF: a box length, then "ftyp", then a brand. The brand decides
+    # whether it is a picture, a clip or a recording (``_bmff_kind``).
     "image/heic": (((4, b"ftyp"),),),
     "image/heif": (((4, b"ftyp"),),),
     "image/webp": (((0, b"RIFF"), (8, b"WEBP")),),
     "application/pdf": (((0, b"%PDF-"),),),
+    "video/mp4": (((4, b"ftyp"),),),
+    # A QuickTime file nearly always opens with ftyp too; the old atom-first
+    # layouts are accepted because a camera roll still holds some.
+    "video/quicktime": (((4, b"ftyp"),), ((4, b"moov"),), ((4, b"mdat"),), ((4, b"wide"),),
+                        ((4, b"free"),)),
+    "audio/mp4": (((4, b"ftyp"),),),
+    # MP3: an ID3 tag, or straight into a frame sync.
+    "audio/mpeg": (((0, b"ID3"),), ((0, b"\xff\xfb"),), ((0, b"\xff\xf3"),), ((0, b"\xff\xf2"),)),
+    "audio/wav": (((0, b"RIFF"), (8, b"WAVE")),),
 }
+
+# ISO-BMFF major brands, by what they carry. Everything in this family
+# starts with the same four bytes, so the brand is the only thing that tells
+# a HEIC photograph from an MP4 clip from an M4A recording.
+_BMFF_BRANDS: dict[str, str] = {
+    "heic": "image", "heix": "image", "hevc": "image", "hevx": "image", "mif1": "image",
+    "msf1": "image", "heim": "image", "heis": "image", "avif": "image",
+    "qt  ": "video", "isom": "video", "iso2": "video", "iso4": "video", "iso5": "video",
+    "iso6": "video", "mp41": "video", "mp42": "video", "avc1": "video", "M4V ": "video",
+    "M4VP": "video", "mp71": "video", "dash": "video", "3gp4": "video", "3gp5": "video",
+    "M4A ": "audio", "M4B ": "audio", "M4P ": "audio",
+}
+# Brands that legitimately hold an audio-only file too (what ffmpeg and
+# some recorders write for an .m4a).
+_BMFF_AUDIO_OK = {"isom", "iso2", "mp42", "M4A ", "M4B ", "M4P "}
+
+
+def _bmff_kind(head: bytes) -> str | None:
+    """image | video | audio for an ISO-BMFF header, or None if the brand
+    is one we do not know."""
+    if head[4:8] != b"ftyp":
+        return None
+    try:
+        major = head[8:12].decode("latin-1")
+    except UnicodeDecodeError:
+        return None
+    return _BMFF_BRANDS.get(major)
 
 
 def sniff(head: bytes, content_type: str) -> None:
@@ -135,11 +214,48 @@ def sniff(head: bytes, content_type: str) -> None:
         raise BlobError(f"{content_type} is not one we accept")
     for alternative in patterns:
         if all(head[offset:offset + len(marker)] == marker for offset, marker in alternative):
+            if head[4:8] == b"ftyp":
+                # One container, three kinds of content: the declared kind
+                # has to agree with the brand, or a clip could be served
+                # under an image header and the other way round.
+                declared = kind_of(content_type)
+                actual = _bmff_kind(head)
+                major = head[8:12].decode("latin-1", "replace")
+                if actual == declared or (declared == "audio" and major in _BMFF_AUDIO_OK) \
+                        or (declared == "video" and actual == "audio"):
+                    return
+                break
             return
     raise BlobError(
         f"That file does not look like {content_type}. Try exporting it again, "
-        "or send it as a JPEG or PDF."
+        "or send it as a JPEG, MP4, M4A or PDF."
     )
+
+
+def detect_type(head: bytes, declared: str | None = None) -> str | None:
+    """The stored type for bytes whose declared type is missing or wrong, or
+    None. ``declared`` is tried first; after that, every type we accept,
+    with the brand check settling the ISO-BMFF family."""
+    candidates: list[str] = []
+    if declared:
+        normalized = TYPE_ALIASES.get(declared, declared)
+        if normalized in ALLOWED_TYPES:
+            candidates.append(normalized)
+    if head[4:8] == b"ftyp":
+        kind = _bmff_kind(head)
+        major = head[8:12].decode("latin-1", "replace")
+        preferred = "video/quicktime" if major == "qt  " else \
+            {"image": "image/heic", "video": "video/mp4", "audio": "audio/mp4"}.get(kind or "")
+        if preferred:
+            candidates.append(preferred)
+    candidates.extend(t for t in ALLOWED_TYPES if t not in candidates)
+    for candidate in candidates:
+        try:
+            sniff(head, candidate)
+            return candidate
+        except BlobError:
+            continue
+    return None
 
 
 def head_bytes(key: str, count: int = 1024) -> bytes:
@@ -161,11 +277,12 @@ def head_bytes(key: str, count: int = 1024) -> bytes:
         return fh.read(count)
 
 
-def check_size(byte_size: int) -> int:
+def check_size(byte_size: int, content_type: str | None = None) -> int:
     if byte_size <= 0:
         raise BlobError("That file is empty")
-    if byte_size > MAX_BYTES:
-        raise BlobError(f"That file is larger than {MAX_BYTES // (1024 * 1024)} MB")
+    cap = max_bytes_for(content_type)
+    if byte_size > cap:
+        raise BlobError(f"That file is larger than {cap // (1024 * 1024)} MB")
     return byte_size
 
 
@@ -189,7 +306,7 @@ def owned_by(key: str, patient_id: str) -> bool:
 def put(key: str, data: bytes, content_type: str) -> StoredBlob:
     """Store bytes under ``key``. Overwrites, so a retry of the same upload
     is idempotent rather than a second object."""
-    check_size(len(data))
+    check_size(len(data), content_type)
     digest = hashlib.sha256(data).hexdigest()
     if enabled_s3():
         from app.aws.storage import client
@@ -228,18 +345,19 @@ def put_json(key: str, data: bytes) -> StoredBlob:
 
 
 def put_stream(key: str, stream: BinaryIO, content_type: str) -> StoredBlob:
-    """Store from a file-like object, refusing anything over ``MAX_BYTES``
+    """Store from a file-like object, refusing anything over the type's cap
     without holding the whole of an oversized upload in memory."""
     digest = hashlib.sha256()
     total = 0
     chunks: list[bytes] = []
+    cap = max_bytes_for(content_type)
     while True:
         chunk = stream.read(256 * 1024)
         if not chunk:
             break
         total += len(chunk)
-        if total > MAX_BYTES:
-            raise BlobError(f"That file is larger than {MAX_BYTES // (1024 * 1024)} MB")
+        if total > cap:
+            raise BlobError(f"That file is larger than {cap // (1024 * 1024)} MB")
         digest.update(chunk)
         chunks.append(chunk)
     if total == 0:
@@ -275,10 +393,11 @@ def download_url(key: str, content_type: str, filename: str | None = None) -> st
 
     # The type the server validated, never whatever is stored on the object:
     # a file that reached S3 with a scriptable type must not come back as
-    # one. Images are shown inline; anything else is a download.
+    # one. Pictures, clips and recordings are shown inline; anything else
+    # is a download.
     served_type = content_type if content_type in ALLOWED_TYPES or content_type == "application/json" \
         else "application/octet-stream"
-    disposition = "inline" if served_type.startswith("image/") else "attachment"
+    disposition = "inline" if kind_of(served_type) in ("image", "video", "audio") else "attachment"
     if filename:
         # Quotes, newlines and paths out: this lands in a response header.
         safe = "".join(c for c in filename if c.isalnum() or c in " ._-")[:80]
@@ -326,20 +445,21 @@ def upload_ticket(key: str, content_type: str) -> UploadTicket | None:
         return None
     from app.aws.storage import client
 
+    cap = max_bytes_for(content_type)
     signed = client().generate_presigned_post(
         Bucket=bucket_for(key),
         Key=key,
         Fields={"Content-Type": content_type},
         Conditions=[
             {"Content-Type": content_type},
-            ["content-length-range", 1, MAX_BYTES],
+            ["content-length-range", 1, cap],
         ],
         ExpiresIn=UPLOAD_TTL_S,
     )
     return UploadTicket(
         url=signed["url"],
         fields={str(k): str(v) for k, v in signed["fields"].items()},
-        max_bytes=MAX_BYTES,
+        max_bytes=cap,
         expires_in=UPLOAD_TTL_S,
     )
 
@@ -406,17 +526,16 @@ def fetch_remote(url: str) -> tuple[bytes, str]:
     except httpx.HTTPError as exc:
         raise BlobError(f"Could not fetch that file ({exc.__class__.__name__})") from exc
     data = response.content
-    if len(data) > MAX_BYTES:
-        raise BlobError(f"That file is larger than {MAX_BYTES // (1024 * 1024)} MB")
+    if len(data) > MAX_MEDIA_BYTES:
+        raise BlobError(f"That file is larger than {MAX_MEDIA_BYTES // (1024 * 1024)} MB")
     declared = (response.headers.get("content-type") or "").split(";")[0].strip().lower()
     # The provider's own header is a claim like any other; the bytes decide.
-    for candidate in ([declared] if declared in ALLOWED_TYPES else list(ALLOWED_TYPES)):
-        try:
-            sniff(data[:1024], candidate)
-            return data, candidate
-        except BlobError:
-            continue
-    raise BlobError("That file is not an image or document we can accept")
+    found = detect_type(data[:1024], declared)
+    if found is None:
+        raise BlobError("That file is not an image, video, recording or document we can accept")
+    if len(data) > max_bytes_for(found):
+        raise BlobError(f"That file is larger than {max_bytes_for(found) // (1024 * 1024)} MB")
+    return data, found
 
 
 # --- removing ------------------------------------------------------------------

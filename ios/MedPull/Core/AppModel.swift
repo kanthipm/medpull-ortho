@@ -46,6 +46,10 @@ final class AppModel {
 
     /// Whether the signed-in row is a subscriber's own space.
     var isPersonal: Bool { me?.isPersonal ?? false }
+    /// Whether today's brief has gone out by text (a personal space), and
+    /// the provider's reason when it did not. From the last start-of-day call.
+    var briefTextedToday: Bool?
+    var briefTextDetail: String?
 
     private static let tokenKey = "session_token"
     /// One token per space, so switching back needs no new session.
@@ -229,7 +233,15 @@ final class AppModel {
         guard isPersonal else { return .ok }
         let outcome = await refresh(surface: surface) {
             if startDay {
-                let r = try await self.api.startDay()
+                // Ask for the text once the person's brief hour (local) has
+                // passed. The server sends it at most once a day, so this is
+                // safe to send on every open.
+                let briefHour = self.dashboard?.profile.briefHour ?? 7
+                let wantsText = (self.dashboard?.profile.smsBriefs ?? true)
+                    && Calendar.current.component(.hour, from: Date()) >= briefHour
+                let r = try await self.api.startDay(text: wantsText)
+                self.briefTextedToday = r.textedToday
+                self.briefTextDetail = r.textDetail
                 self.dashboard = DashboardResponse(dashboard: r.dashboard, brief: r.brief, care: r.care,
                                                    profile: r.profile, subscription: r.subscription,
                                                    profiles: r.profiles)

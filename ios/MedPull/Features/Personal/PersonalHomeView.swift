@@ -13,6 +13,8 @@ struct PersonalHomeView: View {
     @State private var showProfile = false
     @State private var showHistory = false
     @State private var showBrief = false
+    @State private var showMetrics = false
+    @State private var openPanel: Panel?
     @State private var loggingSession = false
     @State private var openTask: RecoveryTask?
     @State private var greetingGone = false
@@ -80,6 +82,8 @@ struct PersonalHomeView: View {
             .sheet(isPresented: $showProfile) { ProfileView() }
             .sheet(isPresented: $app.showConnections) { ConnectionsView() }
             .navigationDestination(isPresented: $showHistory) { TaskHistoryView() }
+            .navigationDestination(isPresented: $showMetrics) { PersonalMetricsView() }
+            .navigationDestination(item: $openPanel) { panel in PanelDetailView(panel: panel) }
             .sheet(isPresented: $showBrief) { BriefSheet() }
             .sheet(isPresented: $loggingSession) { LogSessionSheet() }
             .navigationDestination(item: $openTask) { task in TaskDestination(task: task) }
@@ -89,6 +93,7 @@ struct PersonalHomeView: View {
                 if AppConfig.debugFlag("MP_SHOW") == "profile" { showProfile = true }
                 if AppConfig.debugFlag("MP_SHOW") == "session" { loggingSession = true }
                 if AppConfig.debugFlag("MP_SHOW") == "brief" { showBrief = true }
+                if AppConfig.debugFlag("MP_SHOW") == "metrics" { showMetrics = true }
                 if let target = AppConfig.debugFlag("MP_SCROLL") {
                     try? await Task.sleep(for: .seconds(2))
                     proxy.scrollTo(target, anchor: .top)
@@ -129,12 +134,17 @@ struct PersonalHomeView: View {
             let score = readiness?.number("score")
             let values = readiness?.series.map(\.value) ?? []
             let headline = app.dashboard?.brief.headline
-            Button { app.selectedTab = .progress } label: {
+            // "Recovery state" is the rehab goal's phrase. Everyone else is
+            // reading how they are today; calling it recovery made an
+            // everyday-health subscriber think the app had them injured.
+            let sideCaption = board.goal == "recovery" ? "recovery state"
+                : board.goal == "sleep" ? "overnight" : "today’s state"
+            Button { showMetrics = true } label: {
                 GradientTile(verdict.gradient,
                              kicker: "Today",
                              value: score.map { String(format: "%.0f", $0) } ?? "—",
                              unit: score == nil ? "learning you" : "readiness",
-                             side: (readiness?.statusText ?? "Learning", "recovery state")) {
+                             side: (readiness?.statusText ?? "Learning", sideCaption)) {
                     if values.count > 1 {
                         CurveArt(points: unitPoints(values), height: 92)
                     } else {
@@ -149,7 +159,7 @@ struct PersonalHomeView: View {
                                 .accessibilityHidden(true)
                             StatusPill(text: verdict.title, tone: verdict.tone)
                             Spacer()
-                            Text("Trends").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
+                            Text("All metrics").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
                             Image(systemName: "chevron.right")
                                 .font(.systemGlyphs(11, weight: .semibold)).foregroundStyle(MP.brandInk)
                                 .accessibilityHidden(true)
@@ -277,11 +287,12 @@ struct PersonalHomeView: View {
             if !panels.isEmpty {
                 Card(padding: 0) {
                     VStack(alignment: .leading, spacing: 0) {
-                        CardHeader("Your numbers", actionTitle: "All trends") { app.selectedTab = .progress }
+                        CardHeader("Your numbers", actionTitle: "All metrics") { showMetrics = true }
                         LazyVGrid(columns: gridColumns, spacing: 10) {
                             ForEach(Array(panels), id: \.key) { p in
-                                Button { app.selectedTab = .progress } label: { MiniStatTile(panel: p) }
+                                Button { openPanel = p } label: { MiniStatTile(panel: p) }
                                     .buttonStyle(.plain)
+                                    .accessibilityHint("Opens this readout in full")
                             }
                         }
                         .padding(.horizontal, 12).padding(.top, 4).padding(.bottom, 12)
@@ -292,7 +303,7 @@ struct PersonalHomeView: View {
     }
 
     private func alertCard(_ panel: Panel, title: String) -> some View {
-        Button { app.selectedTab = .progress } label: {
+        Button { openPanel = panel } label: {
             Card {
                 HStack(alignment: .top, spacing: 14) {
                     Glyph(systemName: panel.symbol, family: panel.family, size: 36)
@@ -334,6 +345,12 @@ struct PersonalHomeView: View {
                             .mpFont(.copyLarge).foregroundStyle(MP.ink).lineSpacing(3)
                             .lineLimit(4)
                             .multilineTextAlignment(.leading)
+                        if let detail = app.briefTextDetail, app.dashboard?.profile.smsBriefs == true {
+                            Text("Not texted: \(detail)").mpFont(.label).foregroundStyle(MP.riskMed)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else if app.briefTextedToday == true {
+                            Text("Also sent by text").mpFont(.label).mpSecondary()
+                        }
                         HStack(spacing: 4) {
                             Text("Read it all").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
                             Image(systemName: "chevron.right")
@@ -430,7 +447,8 @@ struct BriefSheet: View {
                             .mpFont(.label).foregroundStyle(MP.muted)
                     }
                     Text("Go deeper").mpFont(.labelMedium).foregroundStyle(MP.muted).padding(.top, 6)
-                    ForEach([("recovery", "Recovery", "waveform.path.ecg"), ("training", "Training", "flame.fill"),
+                    let readinessLabel = app.dashboard?.dashboard.goal == "recovery" ? "Recovery" : "Readiness"
+                    ForEach([("recovery", readinessLabel, "waveform.path.ecg"), ("training", "Training", "flame.fill"),
                              ("sleep", "Sleep", "bed.double.fill"), ("weekly", "The week", "calendar")], id: \.0) { domain, label, symbol in
                         Button {
                             loading = domain

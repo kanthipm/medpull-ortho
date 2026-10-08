@@ -60,30 +60,43 @@ def start_day(db: Session, patient: Patient, profile: PersonalProfile, *,
     brief = insights.get_brief(db, patient, profile, dashboard, allow_llm=allow_llm)
     line = _brief_today(db, patient.id, today)
     delivery: sendblue.CheckinSendResult | None = None
-    if line is None:
-        from app.models.adherence import AdherenceTask
+    from app.models.adherence import AdherenceTask
 
-        checkin = db.get(AdherenceTask, written["checkin_id"])
-        body = brief["brief"]
+    checkin = db.get(AdherenceTask, written["checkin_id"])
+    body = brief["brief"]
+    if line is None:
         line = Message(
             patient_id=patient.id, sender="copilot", channel="app", text=body,
             authored_by="ai", action_kind=BRIEF_TAG, action_task_id=checkin.id if checkin else None,
             action_label="Start check-in",
         )
         db.add(line)
-        if text and profile.sms_briefs and patient.phone and sendblue.configured():
-            sms = sendblue.compose(f"{body}\n\nReply 1 for your morning check-in.",
-                                   patient_name=patient.name)
-            delivery = sendblue.send_sms(patient.phone, sms)
+        db.flush()
+    # The text is decided apart from the line. The app opening early writes
+    # the line (channel "app"); the scheduled run that follows must still
+    # text it, so "texted today" is the line's channel, not its existence.
+    # Once texted it stays texted: a second open never sends it again.
+    if text and line.channel != "sms" and profile.sms_briefs and patient.phone \
+            and sendblue.configured():
+        sms = sendblue.compose(f"{body}\n\nReply 1 for your morning check-in.",
+                               patient_name=patient.name)
+        delivery = sendblue.send_sms(patient.phone, sms)
+        if delivery.sent:
             line.channel = "sms"
-            line.delivery_status = "sent" if delivery.sent else "failed"
-            line.delivery_detail = None if delivery.sent else delivery.detail
+            line.delivery_status = "sent"
+            line.delivery_detail = None
             line.external_handle = delivery.message_handle
-            if delivery.sent and checkin is not None:
+            if checkin is not None:
                 # "1" starts the most recently texted task by text.
                 checkin.status = "sent"
                 checkin.sent_at = datetime.now()
-        db.commit()
+        else:
+            # Left on "app" so the next run tries again; the reason is
+            # kept on the line so the thread can say the text did not go.
+            line.delivery_status = "failed"
+            line.delivery_detail = delivery.detail
+            logger.warning("Brief text for %s failed: %s", patient.id, delivery.detail)
+    db.commit()
     # The day's record for the lake: readouts, verdict, brief, plan, the
     # log so far. Overwritten by the next call the same day.
     archive.archive_day(
@@ -92,7 +105,11 @@ def start_day(db: Session, patient: Patient, profile: PersonalProfile, *,
                     if d >= today - timedelta(days=7)] for key, s in data.logs.items()},
     )
     return {"dashboard": dashboard, "brief": brief, "plan": written,
-            "texted": bool(delivery and delivery.sent)}
+            "texted": bool(delivery and delivery.sent),
+            # Whether today's brief has gone out by text at all (now or on
+            # an earlier call), so the app can say so.
+            "texted_today": line.channel == "sms",
+            "text_detail": None if not delivery or delivery.sent else delivery.detail}
 
 
 def run(db: Session, today: date | None = None, *, text: bool = True) -> dict[str, Any]:
