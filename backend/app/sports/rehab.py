@@ -313,12 +313,16 @@ def compute_rehab(data: SportsData) -> dict[str, Any]:
 
 def _engine_availability(active: list[dict[str, Any]]) -> str:
     """Out until the sport-specific progression phase, modified in the last
-    one; an overuse injury that is managed in training caps at modified."""
+    one until every return-to-sport criterion is met; an overuse injury
+    that is managed in training caps at modified."""
     status = "available"
     for b in active:
         ph = b.get("phase")
         if not ph:
             continue
+        rts = b.get("rts") or {}
+        if ph["number"] >= ph["of"] and rts.get("total", 0) > 0 and rts.get("met") == rts.get("total"):
+            continue  # the gates are the clearance; the staff can still say otherwise
         spec = INJURIES.get(b["injury_key"])
         sidelines = spec.sidelines if spec else True
         here = "out" if ph["number"] < max(ph["of"] - 1, 1) else "modified"

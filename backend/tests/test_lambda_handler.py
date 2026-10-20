@@ -331,6 +331,17 @@ def test_seed_sports_action_is_additive_and_uploads(monkeypatch, tmp_path):
     assert aws_settings.s3_lock_key not in fake.objects  # released
 
 
+def test_fill_athlete_action_needs_a_real_athlete(monkeypatch, tmp_path):
+    handler, fake = _import_handler(monkeypatch, tmp_path)
+
+    result = handler.handler({"action": "fill_athlete", "patient_id": "nobody-ath"}, None)
+    assert result["ok"] is False and "nobody-ath" in result["error"]
+    assert aws_settings.s3_lock_key not in fake.objects  # released on the way out
+
+    result = handler.handler({"action": "fill_athlete"}, None)
+    assert result["ok"] is False
+
+
 def test_comp_action_needs_a_known_email(monkeypatch, tmp_path):
     handler, fake = _import_handler(monkeypatch, tmp_path)
 

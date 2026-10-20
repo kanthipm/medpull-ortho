@@ -143,6 +143,35 @@ def _seed_sports(event: dict) -> dict:
     return {"ok": True, "uploaded": uploaded, "counts": counts}
 
 
+def _fill_athlete(event: dict) -> dict:
+    """Fill one athlete's account with the showcase (app/sports/showcase.py):
+    ``{"action": "fill_athlete", "patient_id": "...", "org_id": "rockets", "team_id": "rockets-nba"}``.
+    The account itself is untouched; the generated streams are replaced."""
+    from app.database import SessionLocal
+    from app.sports.showcase import fill_pro_athlete
+
+    patient_id = str(event.get("patient_id") or "").strip()
+    if not patient_id:
+        return {"ok": False, "error": "patient_id is required"}
+    org_id = event.get("org_id", "rockets") or None
+    team_id = event.get("team_id", "rockets-nba") or None
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        ensure_schema()
+        db = SessionLocal()
+        try:
+            try:
+                counts = fill_pro_athlete(db, patient_id, org_id=org_id, team_id=team_id)
+            except ValueError as e:
+                db.rollback()
+                return {"ok": False, "error": str(e)}
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False)
+    logger.info("Showcase filled for %s: %s (uploaded=%s)", patient_id, counts, uploaded)
+    return {"ok": True, "uploaded": uploaded, "patient_id": patient_id, "counts": counts}
+
+
 def _comp(event: dict) -> dict:
     """An operator's complimentary grant for one personal space, named by
     its email login or its patient id (a space opened by phone number has
@@ -192,6 +221,8 @@ def handler(event, context):
             return _seed_sports(event)
         if action == "comp":
             return _comp(event)
+        if action == "fill_athlete":
+            return _fill_athlete(event)
         if action == "personal_daily":
             return _personal_daily(event)
         return {"ok": False, "error": f"Unknown action: {action}"}
