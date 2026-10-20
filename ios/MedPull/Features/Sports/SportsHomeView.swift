@@ -73,7 +73,8 @@ struct SportsHomeView: View {
                         .opacity(greetingGone ? 1 : 0)
                         .accessibilityHidden(!greetingGone)
                 }
-                BrandLockupItem(hidden: greetingGone, badge: "Sports")
+                BrandLockupItem(hidden: greetingGone, badge: app.me?.sports?.org?.shortName ?? "Sports",
+                                badgeColor: app.me?.sports?.accent)
                 AvatarItem(initials: app.me?.patient.initials ?? "··") { showProfile = true }
             }
             .animation(MPMotion.gated(MPMotion.state, reduceMotion: reduceMotion), value: greetingGone)
@@ -110,6 +111,11 @@ struct SportsHomeView: View {
             Text(greeting).title(MPSize.displayM).accessibilityAddTraits(.isHeader)
             if let p = home?.profile ?? app.me?.sports {
                 HStack(spacing: 8) {
+                    if let accent = p.accent {
+                        Circle().fill(accent).frame(width: 10, height: 10)
+                            .overlay(Circle().strokeBorder(p.org?.accentSecondary ?? .clear, lineWidth: 1.5))
+                            .accessibilityHidden(true)
+                    }
                     Text([p.teamLine ?? p.sportLabel, p.position, p.jersey.map { "#\($0)" }]
                         .compactMap { $0 }.joined(separator: MP.dot))
                         .mpFont(.copyLarge).foregroundStyle(MP.body).lineLimit(2)

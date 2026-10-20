@@ -30,10 +30,12 @@ from app.models.sports import (
     SportsProfile,
     SportsRehabMeasure,
     SportsSession,
+    SportsStaff,
     SportsTeam,
     SportsTest,
     SportsWellness,
 )
+from app.sports.identity import STAFF_ROLE_LABELS
 from app.sports.catalog.injuries import MEASURES
 from app.sports.catalog.tests import TESTS
 from app.sports.seed import (
@@ -87,7 +89,7 @@ def pro_schedule(today: date) -> list[dict[str, Any]]:
     return out
 
 
-def _spec(patient: Patient, profile: SportsProfile, org_id: str | None, team_id: str | None) -> AthleteSpec:
+def _spec(patient: Patient, profile: SportsProfile, org_id: str | None, team_id: str | None, level: str) -> AthleteSpec:
     age = 24
     if patient.date_of_birth:
         born = patient.date_of_birth
@@ -99,7 +101,7 @@ def _spec(patient: Patient, profile: SportsProfile, org_id: str | None, team_id:
         (profile.wingspan_cm / 2.54) if profile.wingspan_cm else None,
         (profile.standing_reach_cm / 2.54) if profile.standing_reach_cm else None,
         profile.dominant_side or "right", "whoop", "star", org_id=org_id, team_id=team_id, starter=True,
-        athleticism=0.7, level="pro",
+        athleticism=0.7, level=level,
     )
 
 
@@ -173,8 +175,10 @@ def fill_pro_athlete(db: Session, patient_id: str, today: date | None = None, *,
     counts: dict[str, int] = {"events": 0, "observations": 0, "sessions": 0, "wellness": 0, "tests": 0,
                               "measures": 0, "messages": 0}
 
-    # The athlete: a professional, on the team, with the team's systems.
-    profile.level = "pro"
+    # The athlete: on the team, at the team's level, with the team's systems.
+    org = db.get(SportsOrg, org_id) if org_id else None
+    level = org.level if org is not None and org.level else "pro"
+    profile.level = level
     profile.position = profile.position or "Guard"
     profile.org_id = org_id
     profile.team_id = team_id
@@ -182,7 +186,7 @@ def fill_pro_athlete(db: Session, patient_id: str, today: date | None = None, *,
     profile.status = "available"
     profile.status_note = None
     stamp = datetime.now().isoformat()
-    org_name = db.get(SportsOrg, org_id).name if org_id else "your program"
+    org_name = org.name if org is not None else "your program"
     profile.settings = {**(profile.settings or {}), "devices": {
         "catapult": {"mode": "sample", "detail": f"Connected by {org_name} — sample data", "at": stamp},
         "hawkin": {"mode": "sample", "detail": f"Connected by {org_name} — sample data", "at": stamp},
@@ -204,23 +208,31 @@ def fill_pro_athlete(db: Session, patient_id: str, today: date | None = None, *,
                       connected_at=datetime.combine(today - timedelta(days=8), time(19, 30)),
                       last_sync_at=datetime.combine(today, time(7, 5))))
 
-    # The team calendar.
+    # The team calendar: the team's own when it has one (the seeded Rice
+    # schedule), else an NBA-shaped one written for it.
     events: list[dict[str, Any]] = []
     if team_id:
-        db.execute(delete(SportsEvent).where(SportsEvent.team_id == team_id))
-        events = pro_schedule(today)
-        for e in events:
-            db.add(SportsEvent(team_id=team_id, **e))
-        counts["events"] = len(events)
+        existing = db.scalars(select(SportsEvent).where(SportsEvent.team_id == team_id)).all()
+        if existing:
+            events = [dict(date=e.date, kind=e.kind, title=e.title, opponent=e.opponent, home=e.home,
+                           start_time=e.start_time, location=e.location) for e in existing]
+        else:
+            events = pro_schedule(today)
+            for e in events:
+                db.add(SportsEvent(team_id=team_id, **e))
+            counts["events"] = len(events)
     db.commit()
 
     # A clean slate for the generated streams; the account itself stays.
     for model in (SportsSession, SportsWellness, SportsTest, SportsRehabMeasure):
         db.execute(delete(model).where(model.patient_id == patient_id))
     db.execute(delete(SportsInjury).where(SportsInjury.patient_id == patient_id))
+    # The staff line this writes, from an earlier run.
+    db.execute(delete(Message).where(Message.patient_id == patient_id, Message.sender == "care_team",
+                                     Message.channel == "console"))
     db.commit()
 
-    spec = _spec(patient, profile, org_id, team_id)
+    spec = _spec(patient, profile, org_id, team_id, level)
     injury_day = today - timedelta(days=INJURY_DAYS_AGO)
 
     rows = _wearable_rows(spec, patient_id, today, events)
@@ -239,6 +251,9 @@ def fill_pro_athlete(db: Session, patient_id: str, today: date | None = None, *,
                                               note="Bike, pool and band work; ankle rehab block"))
             continue
         if 7 <= since <= 11 and s.kind == "game":
+            continue
+        if level != "pro":
+            sessions.append(s)
             continue
         if s.kind == "practice":
             # In-season pro practices run shorter and lighter than a college
@@ -298,8 +313,13 @@ def fill_pro_athlete(db: Session, patient_id: str, today: date | None = None, *,
         db.add(t)
     counts["tests"] = len(tests)
 
-    # The ankle, a month on.
-    clinician = "Team athletic trainer"
+    # The ankle, a month on. The staff who sign the plan and the note are
+    # the organisation's own, when it lists any.
+    staff = db.scalars(select(SportsStaff).where(SportsStaff.org_id == org_id, SportsStaff.athlete_facing.is_(True))
+                       .order_by(SportsStaff.name)).all() if org_id else []
+    trainer = next((x for x in staff if x.role == "athletic_trainer"), None)
+    coach = next((x for x in staff if x.role in ("strength", "sports_scientist")), None) or (staff[0] if staff else None)
+    clinician = trainer.name if trainer else "Team athletic trainer"
     inj, measures = _ankle_sprain(patient_id, today, clinician)
     db.add(inj)
     db.flush()
@@ -310,8 +330,9 @@ def fill_pro_athlete(db: Session, patient_id: str, today: date | None = None, *,
 
     # A line from the staff on the thread, two days ago.
     if org_id:
+        signed = f"{coach.name} ({STAFF_ROLE_LABELS.get(coach.role, coach.role)})" if coach else "Performance staff"
         note = Message(patient_id=patient_id, sender="care_team", channel="console",
-                       text="Performance staff (Sports scientist): Hop symmetry cleared 90% on Friday, 92% both "
+                       text=f"{signed}: Hop symmetry cleared 90% on Friday, 92% both "
                             "ways. Full minutes from here. Keep the balance block in warm-ups three times a week "
                             "for the season, and the tape stays on for practice through November.",
                        authored_by="care_team", sender_id=patient.assigned_provider_id)

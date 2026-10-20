@@ -113,8 +113,16 @@ struct OrgStep: View {
                                     model.go(.team)
                                 } label: {
                                     HStack(spacing: 14) {
-                                        IconTile(o.kind == "pro" ? "trophy.fill" : o.kind == "college" ? "building.columns.fill" : "building.2.fill",
-                                                 family: o.kind == "pro" ? .violet : .blue)
+                                        ZStack(alignment: .bottomTrailing) {
+                                            IconTile(o.kind == "pro" ? "trophy.fill" : o.kind == "college" ? "building.columns.fill" : "building.2.fill",
+                                                     family: o.kind == "pro" ? .violet : .blue)
+                                            if let accent = o.accent {
+                                                Circle().fill(accent).frame(width: 12, height: 12)
+                                                    .overlay(Circle().strokeBorder(MP.panel, lineWidth: 2))
+                                                    .offset(x: 4, y: 4)
+                                                    .accessibilityHidden(true)
+                                            }
+                                        }
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(o.name).mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
                                                 .multilineTextAlignment(.leading)

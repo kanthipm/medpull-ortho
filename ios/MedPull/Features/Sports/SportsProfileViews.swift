@@ -24,7 +24,17 @@ struct SportsProfileCard: View {
                         InsetDivider(leading: 16)
                         row("Sport", p.sportLabel)
                         InsetDivider(leading: 16)
-                        row("Team", p.teamLine ?? "Just me")
+                        HStack(spacing: 12) {
+                            Text("Team").mpFont(.copyLarge).foregroundStyle(MP.ink)
+                            Spacer(minLength: 12)
+                            if let accent = p.accent {
+                                Circle().fill(accent).frame(width: 10, height: 10).accessibilityHidden(true)
+                            }
+                            Text(p.teamLine ?? "Just me").mpFont(.copyLarge).foregroundStyle(MP.muted).multilineTextAlignment(.trailing)
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .frame(minHeight: 48)
+                        .accessibilityElement(children: .combine)
                         if let pos = p.position {
                             InsetDivider(leading: 16)
                             row("Position", [pos, p.jersey.map { "#\($0)" }, p.classYear].compactMap { $0 }.joined(separator: MP.dot))
@@ -373,7 +383,13 @@ struct JoinOrgSheet: View {
                                         Button { org = o; team = o.teams.first { $0.sport == sport } } label: {
                                             ListRow(o.name, subtitle: "\(o.kindLabel)\(MP.dot)\(o.city), \(o.state)",
                                                     symbol: o.kind == "pro" ? "trophy.fill" : "building.columns.fill",
-                                                    family: o.kind == "pro" ? .violet : .blue) { EmptyView() }
+                                                    family: o.kind == "pro" ? .violet : .blue) {
+                                                if let accent = o.accent {
+                                                    Circle().fill(accent).frame(width: 12, height: 12)
+                                                        .overlay(Circle().strokeBorder(o.accentSecondary ?? .clear, lineWidth: 2))
+                                                        .accessibilityHidden(true)
+                                                }
+                                            }
                                         }
                                         .buttonStyle(.mpRow)
                                         if o.id != filtered.last?.id { InsetDivider(leading: 16 + 32 + 12) }

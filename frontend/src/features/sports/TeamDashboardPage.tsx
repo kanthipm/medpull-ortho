@@ -93,13 +93,30 @@ export default function TeamDashboardPage() {
           </Link>
           {org && (
             <div className="mt-4">
-              <span className="badge-ring max-w-full">
-                <span aria-hidden className="dot-lime" />
+              <span
+                className="badge-ring max-w-full"
+                style={
+                  org.colors
+                    ? ({ backgroundColor: org.colors.primary, color: '#fff', borderColor: org.colors.primary } as CSSProperties)
+                    : undefined
+                }
+              >
+                <span
+                  aria-hidden
+                  className="dot-lime"
+                  style={org.colors ? ({ backgroundColor: org.colors.secondary, boxShadow: 'none' } as CSSProperties) : undefined}
+                />
                 <span className="min-w-0 truncate">{org.name}</span>
               </span>
             </div>
           )}
           <h1 className="display-title mt-3 text-section text-ink lg:text-display">{team.name}</h1>
+          {org?.colors && (
+            <div aria-hidden className="mt-3 flex h-1.5 w-24 overflow-hidden rounded-full">
+              <span className="flex-1" style={{ backgroundColor: org.colors.primary }} />
+              <span className="flex-1" style={{ backgroundColor: org.colors.secondary }} />
+            </div>
+          )}
           <DotLine
             as="p"
             className="mt-2 text-copy-lg text-body"

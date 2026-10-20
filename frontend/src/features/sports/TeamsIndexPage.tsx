@@ -103,6 +103,12 @@ function OrgCard({ org, index }: { org: SportsOrg; index: number }) {
         />
       }
     >
+      {org.colors && (
+        <div aria-hidden className="mx-4 mb-1 mt-3 flex h-1.5 w-20 overflow-hidden rounded-full">
+          <span className="flex-1" style={{ backgroundColor: org.colors.primary }} />
+          <span className="flex-1" style={{ backgroundColor: org.colors.secondary }} />
+        </div>
+      )}
       <ListGroup embedded inset="tile" aria-label={`${org.name} teams`}>
         {org.teams.map((t) => {
           const n = t.roster ?? 0

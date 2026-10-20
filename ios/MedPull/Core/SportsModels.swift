@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // Wire types for MedPull Sports (/api/mobile/sports). Keys are snake_case
 // on the wire; the decoder converts. The readiness panels reuse `Panel`
@@ -18,6 +19,12 @@ struct SportsOrg: Codable, Identifiable, Hashable {
     let levelLabel: String
     let requiresCode: Bool
     let teams: [SportsTeam]
+    /// The program's colours as hex strings ("#00205B"), when it has them.
+    let colors: [String: String]?
+
+    /// The program's primary colour, for the badge and the team dot.
+    var accent: Color? { colors?["primary"].flatMap(Color.init(hex:)) }
+    var accentSecondary: Color? { colors?["secondary"].flatMap(Color.init(hex:)) }
 
     var kindLabel: String {
         switch kind {
@@ -77,11 +84,15 @@ struct SportsProfile: Codable, Hashable {
     let staff: [SportsStaffMember]
 
     var isImperial: Bool { units == "imperial" }
+    /// "Rice Men's Basketball", or "Houston Rockets" for a club whose team
+    /// is the club itself.
     var teamLine: String? {
         guard let org else { return nil }
-        if let team { return "\(org.shortName) \(team.name)" }
-        return org.shortName
+        guard let team else { return org.shortName }
+        if team.name == org.shortName || team.name == org.name || org.name.hasSuffix(team.name) { return org.name }
+        return "\(org.shortName) \(team.name)"
     }
+    var accent: Color? { org?.accent }
 }
 
 // MARK: - The catalog
@@ -1055,5 +1066,16 @@ enum SportsUnits {
     static func weight(kg: Double?, imperial: Bool) -> String? {
         guard let kg else { return nil }
         return imperial ? String(format: "%.0f lb", kg / 0.4536) : String(format: "%.1f kg", kg)
+    }
+}
+
+extension Color {
+    /// "#RRGGBB" or "RRGGBB" to a colour; anything else is nil.
+    init?(hex: String) {
+        var raw = hex.trimmingCharacters(in: .whitespaces)
+        if raw.hasPrefix("#") { raw.removeFirst() }
+        guard raw.count == 6, let value = UInt32(raw, radix: 16) else { return nil }
+        self.init(red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
+                  blue: Double(value & 0xFF) / 255)
     }
 }
