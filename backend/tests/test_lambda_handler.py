@@ -341,6 +341,9 @@ def test_comp_action_needs_a_known_email(monkeypatch, tmp_path):
     result = handler.handler({"action": "comp", "email": ""}, None)
     assert result["ok"] is False
 
+    result = handler.handler({"action": "comp", "patient_id": "nobody-me", "days": 30}, None)
+    assert result["ok"] is False and "nobody-me" in result["error"]
+
 
 def test_unknown_admin_action_is_reported(monkeypatch, tmp_path):
     handler, _ = _import_handler(monkeypatch, tmp_path)

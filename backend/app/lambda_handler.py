@@ -144,33 +144,41 @@ def _seed_sports(event: dict) -> dict:
 
 
 def _comp(event: dict) -> dict:
-    """An operator's complimentary grant for one email login:
-    ``{"action": "comp", "email": "...", "days": 365, "note": "..."}``."""
+    """An operator's complimentary grant for one personal space, named by
+    its email login or its patient id (a space opened by phone number has
+    no email): ``{"action": "comp", "email": "...", "days": 365}`` or
+    ``{"action": "comp", "patient_id": "...", "days": 365}``."""
     from app.database import SessionLocal
     from app.models.patient import Patient
     from app.personal import auth, subscription
+    from app.personal.scope import PERSONAL
 
     email = auth.normalize_email(str(event.get("email") or ""))
-    if email is None:
-        return {"ok": False, "error": "email is required"}
+    patient_id = str(event.get("patient_id") or "").strip()
+    if email is None and not patient_id:
+        return {"ok": False, "error": "email or patient_id is required"}
     days = int(event.get("days") or 365)
     with storage.write_lock():
         storage.hydrate(force=True)
         ensure_schema()
         db = SessionLocal()
         try:
-            cred = auth.credential_for_email(db, email)
-            if cred is None:
-                return {"ok": False, "error": f"No account uses {email}"}
-            patient = db.get(Patient, cred.patient_id)
+            if email is not None:
+                cred = auth.credential_for_email(db, email)
+                if cred is None:
+                    return {"ok": False, "error": f"No account uses {email}"}
+                patient_id = cred.patient_id
+            patient = db.get(Patient, patient_id)
+            if patient is None or patient.account_kind != PERSONAL:
+                return {"ok": False, "error": f"No personal space with id {patient_id!r}"}
             row = subscription.grant_comp(db, patient, days, note=str(event.get("note") or "operator"))
             db.commit()
             expires = row.expires_at.isoformat() if row.expires_at else None
         finally:
             db.close()
         uploaded = storage.persist(conditional=False)
-    logger.info("Comp granted to %s until %s (uploaded=%s)", email, expires, uploaded)
-    return {"ok": True, "uploaded": uploaded, "email": email, "expires_at": expires}
+    logger.info("Comp granted to %s until %s (uploaded=%s)", patient_id, expires, uploaded)
+    return {"ok": True, "uploaded": uploaded, "patient_id": patient_id, "email": email, "expires_at": expires}
 
 
 def handler(event, context):
