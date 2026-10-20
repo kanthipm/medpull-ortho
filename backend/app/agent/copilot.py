@@ -380,6 +380,7 @@ def respond(
     system_prompt: str | None = None,
     extra_context: str | None = None,
     care_team: bool = True,
+    allow_log_metric: bool | None = None,
 ) -> dict[str, Any]:
     """One turn. Records the patient's line and the reply on the thread
     (unless the caller does that itself) and returns what happened.
@@ -422,7 +423,8 @@ def respond(
             )
             active = provider_name()
             intent = _validate_model_output(raw, {t.id for t in open_tasks},
-                                            allow_log_metric=not care_team)
+                                            allow_log_metric=(not care_team) if allow_log_metric is None
+                                            else allow_log_metric)
             if intent is None:
                 note_invalid_output(active)
             else:

@@ -23,6 +23,10 @@ from app.models.patient import Patient
 
 PERSONAL = "personal"
 CLINIC = "clinic"
+# The third variant (app/sports): an athlete, no hospital, never on a
+# clinician's worklist. Declared here because the clinic filter below is the
+# one gate every console enumeration goes through.
+SPORTS = "sports"
 
 # The synthetic care-team row every personal profile is assigned to: the
 # schema requires a surgeon and an assigned provider, and a subscriber has
@@ -36,10 +40,20 @@ def is_personal(patient: Patient | None) -> bool:
     return patient is not None and (patient.account_kind or CLINIC) == PERSONAL
 
 
+def is_sports(patient: Patient | None) -> bool:
+    return patient is not None and (patient.account_kind or CLINIC) == SPORTS
+
+
+def is_clinic(patient: Patient | None) -> bool:
+    return patient is not None and (patient.account_kind or CLINIC) == CLINIC
+
+
 def clinic_filter(stmt: Select) -> Select:
     """Restrict a ``select(Patient…)`` to clinic charts. NULL counts as
     clinic: every row written before the column existed is one."""
-    return stmt.where((Patient.account_kind.is_(None)) | (Patient.account_kind != PERSONAL))
+    return stmt.where(
+        (Patient.account_kind.is_(None)) | (Patient.account_kind.not_in([PERSONAL, SPORTS]))
+    )
 
 
 def clinic_patients(db: Session, order_by=None) -> list[Patient]:

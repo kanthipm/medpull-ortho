@@ -18,6 +18,18 @@ from app.models.personal import (
     PersonalLog,
     PersonalProfile,
 )
+from app.models.sports import (
+    SportsEvent,
+    SportsInjury,
+    SportsOrg,
+    SportsProfile,
+    SportsRehabMeasure,
+    SportsSession,
+    SportsStaff,
+    SportsTeam,
+    SportsTest,
+    SportsWellness,
+)
 
 __all__ = [
     "AdherenceRecord",
@@ -49,4 +61,14 @@ __all__ = [
     "PersonalCredential",
     "PersonalLog",
     "PersonalProfile",
+    "SportsEvent",
+    "SportsInjury",
+    "SportsOrg",
+    "SportsProfile",
+    "SportsRehabMeasure",
+    "SportsSession",
+    "SportsStaff",
+    "SportsTeam",
+    "SportsTest",
+    "SportsWellness",
 ]

@@ -17,6 +17,12 @@ const NAV = [
     match: (pathname: string) => pathname === '/' || pathname.startsWith('/patients/'),
   },
   {
+    key: 'teams',
+    label: 'Teams',
+    to: '/sports',
+    match: (pathname: string) => pathname === '/sports' || pathname.startsWith('/sports/'),
+  },
+  {
     key: 'integrations',
     label: 'Integrations',
     to: '/integrations',

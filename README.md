@@ -36,6 +36,58 @@ Subscribers never appear on a console screen. They sign up with an email and
 password behind a beta consent form; the form, their daily snapshots and the
 model's outputs are archived per person in the personal bucket.
 
+## MedPull Sports
+
+The third variant of the same app, for athletes: a college program (the
+first demo is Rice men's basketball), a professional club, or a player on
+their own. Basketball, tennis and soccer. One account kind
+(`account_kind="sports"`) on the personal credential and wearable stream,
+with its own tables and engines in `backend/app/sports/`:
+
+- **Performance** (`Stats` tab): ~85 tests per sport (the NBA combine
+  battery, force-plate jump metrics, sprints, agility, strength, conditioning,
+  mobility, body, skill) with level-and-sex benchmarks (p25/p50/p75/p90), the
+  athlete's own 6-week baseline and smallest worthwhile change, left-against-
+  right symmetry with flag lines, and a weekly neuromuscular read from the
+  countermovement jump (height, RSI-modified, time to takeoff). Phone tests
+  with no equipment: jump height by flight time, single-leg balance, reaction
+  time, joint angles.
+- **Game recovery** (`Recovery` tab): readiness from the personal engine,
+  the morning wellness check-in scored as z-scores against the athlete's
+  month (Hooper index), HRV week-to-week variation with the saturation check,
+  session-RPE load (this week against the mean of the previous three,
+  monotony, strain, acute:chronic as context only), the team schedule
+  (back-to-backs, three-in-four, travel), illness, hydration and cycle
+  watches, and evidence-graded suggestions.
+- **Injury recovery** (`Injury` tab): 28 injuries with criteria-based phases
+  and return-to-sport gates from the published protocols (ACL: Aspetar,
+  Melbourne, Delaware-Oslo; ankle, hamstring, groin, tendon, concussion and
+  more), measures with limb symmetry over time, the block of work that moves
+  the next gate, and the sport progression in order.
+- **Coach** tab: the same assistant, answering from the athlete's board; an
+  athlete on a team also messages the staff there.
+- **Devices**: Apple Health and the wearables through Junction, plus the
+  team systems (Catapult, Kinexon, Hawkin, VALD, timing gates, Noah,
+  ShotTracker, video) as partner connections that run on labelled sample
+  data until a credential is keyed.
+- **Team dashboard** (console, `/sports/teams/rice-mbb`): roster
+  availability, readiness, flags, injury board with phases and gates, team
+  load, staff notes and a message to the athlete's thread.
+
+Onboarding asks for the sport, then the organisation (search, or "just
+me"), then the team, position and join code, then the athlete's numbers.
+Athletes never appear on a clinic console; staff see them only on the team
+board.
+
+`make seed` also seeds the demo roster (fictional athletes, emails on
+`athletes.medpull.demo`). Demo logins, password `owls-2026`:
+`jalen.okoro@athletes.medpull.demo` (the star), `mateo.reyes.vega@…` (sleep
+debt), `devin.marsh@…` (load spike), `kwame.asante@…` (ACL, phase 4 of 6).
+Rice's join code is `OWLS26`. Routes `/api/mobile/sports/*` (athlete) and
+`/api/sports/*` (staff); iOS screens `ios/MedPull/Features/Sports/`; tests
+`backend/tests/test_sports.py`. The guardrail on every screen: performance
+and recovery guidance, return-to-play is the medical staff's call.
+
 ## MedPull's own mobility metrics
 
 Gait (walking speed, step length, cadence, signed asymmetry, double support),
@@ -96,7 +148,7 @@ Requirements: [uv](https://docs.astral.sh/uv/) and Node 20+.
 
 ```bash
 make setup     # install backend (uv) + frontend (npm) dependencies
-make seed      # create + populate the demo database (6 patients, 1,199 observations)
+make seed      # create + populate the demo database (6 patients, 1,199 observations, plus the Rice sports roster)
 make dev       # API on :8000 + Vite dev server on :5173
 ```
 

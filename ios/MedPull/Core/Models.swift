@@ -47,8 +47,11 @@ struct Me: Codable {
     let subscription: SubscriptionState?
     /// Whether the beta consent has been accepted at its current version.
     let consent: ConsentStatus?
+    /// The athlete's sport and team, on a MedPull Sports account; nil otherwise.
+    let sports: SportsProfile?
 
     var isPersonal: Bool { patient.isPersonal }
+    var isSports: Bool { patient.isSports }
     var needsConsent: Bool { consent?.needsConsent ?? false }
     var otherSpace: SpaceProfile? { profiles?.first { !$0.current } }
 }
@@ -78,6 +81,7 @@ struct PatientProfile: Codable {
 
     var isRecovery: Bool { mode == "recovery" }
     var isPersonal: Bool { mode == "personal" || accountKind == "personal" }
+    var isSports: Bool { mode == "sports" || accountKind == "sports" }
 }
 
 struct Procedure: Codable, Identifiable, Hashable {

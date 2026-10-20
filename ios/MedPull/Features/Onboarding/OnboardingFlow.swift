@@ -54,6 +54,11 @@ struct OnboardingFlow: View {
         case "goals": model.path = .personal; model.goal = "performance"; model.sport = "running"
             model.email = "ada@example.com"; model.password = "run-fast-sleep-well"
             model.route = [.mode, .consent, .personalAbout, .goals]
+        case "sport": model.path = .sports; model.route = [.mode, .consent, .personalAbout, .sport]
+        case "org": model.path = .sports; model.route = [.mode, .consent, .personalAbout, .sport, .org]
+        case "team": model.path = .sports; model.route = [.mode, .consent, .personalAbout, .sport, .org, .team]
+        case "athlete": model.path = .sports; model.email = "ada@example.com"; model.password = "run-fast-sleep-well"
+            model.route = [.mode, .consent, .personalAbout, .sport, .org, .athlete]
         default: break
         }
         #endif
@@ -72,6 +77,10 @@ struct OnboardingFlow: View {
             case .join: JoinStep(model: model)
             case .personalAbout: PersonalAboutStep(model: model)
             case .goals: GoalsStep(model: model)
+            case .sport: SportStep(model: model)
+            case .org: OrgStep(model: model)
+            case .team: TeamStep(model: model)
+            case .athlete: AthleteStep(model: model)
             case .verify: VerifyStep(model: model)
             case .plan: PlanStep(model: model)
             case .health: HealthStep(model: model)
@@ -114,6 +123,10 @@ struct OnboardingFlow: View {
         case .join: return "About you"
         case .personalAbout: return "About you"
         case .goals: return "Your goal"
+        case .sport: return "Your sport"
+        case .org: return "Your team"
+        case .team: return "Team"
+        case .athlete: return "About you"
         case .verify: return "Code"
         case .plan: return "Your plan"
         case .health: return "Health"
@@ -148,7 +161,7 @@ private struct StepDots: View {
 
 /// Every form step: eyebrow, a light display title, a lede, the content, and
 /// a footer pinned above the keyboard / home indicator.
-private struct StepScaffold<Content: View, Footer: View>: View {
+struct StepScaffold<Content: View, Footer: View>: View {
     let eyebrow: String
     let title: String
     var subtitle: String? = nil
@@ -213,7 +226,7 @@ private struct OnboardingFooter<Content: View>: View {
 
 /// The quiet tertiary action — Skip / Send a new code. A full-width plain
 /// sage capsule with a 44pt target and a soft press fill.
-private struct QuietAction: View {
+struct QuietAction: View {
     let title: String
     let action: () -> Void
 
@@ -224,7 +237,7 @@ private struct QuietAction: View {
 }
 
 /// A whole card as a button: the gated 0.97 press scale, nothing else.
-private struct CardPressStyle: ButtonStyle {
+struct CardPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         CardPressBody(configuration: configuration)
     }
@@ -244,7 +257,7 @@ private struct CardPressBody: View {
 
 /// A feature line in the Apple "welcome sheet" pattern: a category tile, a
 /// title and one sentence.
-private struct FeatureRow: View {
+struct FeatureRow: View {
     let icon: String
     let family: MP.Category
     let title: String
@@ -425,7 +438,7 @@ private struct ModeStep: View {
 
     var body: some View {
         StepScaffold(eyebrow: "First", title: "How will you use MedPull?",
-                     subtitle: "Both read the same watch. One shares the picture with your care team; the other keeps it to you, with readouts built for training, sleep and recovery.") {
+                     subtitle: "All three read the same watch. With a care team after an operation, on your own for training and sleep, or as an athlete with your team's staff and systems.") {
             VStack(spacing: 12) {
                 modeCard(icon: "building.2.fill", family: .blue,
                          title: "With my care team",
@@ -441,6 +454,7 @@ private struct ModeStep: View {
                     model.selected = nil
                     model.go(model.consent == nil ? .consent : .personalAbout)
                 }
+                SportsModeCard(model: model)
             }
         } footer: {
             EmptyView()
@@ -767,6 +781,8 @@ private struct HealthStep: View {
         StepScaffold(eyebrow: model.eyebrow(.health), title: "Connect Apple Health",
                      subtitle: model.isPersonal
                         ? "One tap, and your readiness, load and sleep readouts build themselves from overnight HRV, resting heart rate, sleep and workouts."
+                        : model.isSports
+                        ? "Apple Watch and every band that writes to Health: one tap, and readiness builds itself from overnight HRV, resting heart rate, sleep and workouts."
                         : "One tap, and your activity, sleep and heart data fill in on their own. Nothing to type.") {
             VStack(spacing: 12) {
                 Card(padding: 0, tint: true) {
@@ -845,11 +861,16 @@ private struct WearableStep: View {
     @State private var working = false
     @State private var failure: String?
 
-    private let brands = ["Oura", "Garmin", "WHOOP", "Fitbit", "Withings", "Polar"]
+    private var brands: [String] {
+        model.isSports ? ["WHOOP", "Oura", "Garmin", "Polar", "Fitbit", "Ultrahuman", "Catapult", "Kinexon", "VALD", "Hawkin"]
+            : ["Oura", "Garmin", "WHOOP", "Fitbit", "Withings", "Polar"]
+    }
 
     var body: some View {
-        StepScaffold(eyebrow: "Almost done", title: "Wear something else?",
-                     subtitle: "Sign in once and it syncs on its own. Apple Watch is already covered by Health.") {
+        StepScaffold(eyebrow: "Almost done", title: model.isSports ? "Anything else you wear?" : "Wear something else?",
+                     subtitle: model.isSports
+                        ? "Sign in once and it syncs on its own. Apple Watch is already covered by Health; team systems connect through your program, from Devices."
+                        : "Sign in once and it syncs on its own. Apple Watch is already covered by Health.") {
             VStack(alignment: .leading, spacing: 12) {
                 // Non-interactive tags: 14/500 `body` on `panel` (7.22 /
                 // 6.65) with a `line` edge, so they read as labels, not chips.
@@ -894,7 +915,7 @@ private struct WearableStep: View {
 
 /// A wrapping row of tags (iOS 16 `Layout`), so six brand names never
 /// overflow a narrow or AX-sized screen.
-private struct BrandFlow: Layout {
+struct BrandFlow: Layout {
     var spacing: CGFloat = 8
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -982,7 +1003,16 @@ private struct DoneStep: View {
                         .entrance(shown, order: 1)
 
                         VStack(alignment: .leading, spacing: 18) {
-                            if app.me?.isPersonal == true {
+                            if app.me?.isSports == true {
+                                FeatureRow(icon: "gauge.with.dots.needle.67percent", family: .teal,
+                                           title: "Readiness every morning",
+                                           detail: "Wear your watch tonight and answer six sliders tomorrow. You'll see where you stand before practice, and why.")
+                                    .entrance(shown, order: 2)
+                                FeatureRow(icon: "chart.bar.xaxis", family: .blue,
+                                           title: "Your numbers, against your level",
+                                           detail: "Log a jump on the phone or let your staff's force plates and trackers feed the Stats tab.")
+                                    .entrance(shown, order: 3)
+                            } else if app.me?.isPersonal == true {
                                 FeatureRow(icon: "gauge.with.dots.needle.67percent", family: .teal,
                                            title: "Readiness every morning",
                                            detail: "Wear your watch tonight. Tomorrow you’ll see where you stand and why, against your own baseline.")
@@ -1012,7 +1042,7 @@ private struct DoneStep: View {
                             }
                             FeatureRow(icon: "waveform", family: .indigo,
                                        title: "Talk any time",
-                                       detail: app.me?.isPersonal == true
+                                       detail: app.me?.isPersonal == true || app.me?.isSports == true
                                         ? "Ask your coach why a number moved and get the actual values back. Log how you feel in a sentence."
                                         : "Tell MedPull how you’re doing in your own words. Anything important goes to your care team.")
                                 .entrance(shown, order: 4)
@@ -1127,7 +1157,7 @@ private struct JoinStep: View {
 }
 
 /// Tile + title, vertically centred, 14pt apart (the InsetDivider indent).
-private struct TileLabelStyle: LabelStyle {
+struct TileLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 14) {
             configuration.icon
@@ -1167,7 +1197,7 @@ private struct ConsentStep: View {
         ConsentLoader(onAgree: { accepted in
             model.consent = accepted
             if model.name.isEmpty, let name = accepted.signature { model.name = name }
-            model.go(model.isPersonal ? .personalAbout : .hospital)
+            model.go(model.usesEmailLogin ? .personalAbout : .hospital)
         }) {
             EmptyView()
         }
@@ -1270,6 +1300,8 @@ private struct PersonalAboutStep: View {
                      title: model.personalSignin ? "Welcome back" : "Set up your login",
                      subtitle: model.personalSignin
                         ? "The mobile number on your personal space. We’ll text a code when this server can."
+                        : model.isSports
+                        ? "Your name, an email and a password get you back in on any phone. A mobile number is optional: it turns on the morning brief by text."
                         : "Your name, an email and a password get you back in on any phone. A mobile number is optional: it turns on the morning brief by text.") {
             VStack(spacing: 14) {
                 if !model.personalSignin {
@@ -1354,7 +1386,7 @@ private struct PersonalAboutStep: View {
                 if model.personalSignin {
                     Task { await model.personalJoin(api: app.api, app: app) }
                 } else {
-                    model.go(.goals)
+                    model.go(model.isSports ? .sport : .goals)
                 }
             }
         }

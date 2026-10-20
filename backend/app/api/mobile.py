@@ -378,10 +378,25 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
     from app.personal import auth as personal_auth
     from app.personal import identity as personal_identity
     from app.personal import subscription as personal_subscription
-    from app.personal.scope import is_personal
+    from app.personal.scope import is_personal, is_sports
 
     personal = is_personal(patient)
+    sports = is_sports(patient)
     email = None
+    sports_team: list[dict[str, Any]] = []
+    if sports:
+        # An athlete's status line comes from the sports boards; the staff
+        # behind them stand where a care team would.
+        label, blurb = "Your season", "Readiness, performance, recovery and your injury plan live here."
+        from app.models.personal import PersonalCredential
+        from app.sports import identity as sports_identity
+
+        credential = db.get(PersonalCredential, patient.id)
+        email = credential.email if credential else None
+        sprofile = sports_identity.profile_of(db, patient)
+        if sprofile is not None:
+            sports_team = [{"name": s.name, "role": sports_identity.STAFF_ROLE_LABELS.get(s.role, s.role)}
+                           for s in sports_identity.staff_for(db, sprofile)]
     if personal:
         # A subscriber's tier and blurb come from their readouts, not the
         # clinic risk engine; the app reads /mobile/personal/dashboard for
@@ -400,8 +415,8 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
             # recovery: had surgery, followed along a recovery curve.
             # general: joined their hospital's programme; no operation.
             # personal: a subscriber's own space (app/personal).
-            "mode": "personal" if personal else "recovery" if surgical else "general",
-            "account_kind": "personal" if personal else "clinic",
+            "mode": "sports" if sports else "personal" if personal else "recovery" if surgical else "general",
+            "account_kind": "sports" if sports else "personal" if personal else "clinic",
             "procedure_display": patient.procedure_display,
             "surgery_date": patient.surgery_date.isoformat() if surgical else None,
             "joined_date": patient.surgery_date.isoformat(),
@@ -412,7 +427,7 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
             # The login email, for a personal space; a chart has none.
             "email": email,
             "hospital": _hospital_view(patient.hospital),
-            "care_team": [] if personal else [
+            "care_team": sports_team if sports else [] if personal else [
                 {"name": patient.surgeon.name, "role": str(patient.surgeon.role)},
                 *(
                     [{"name": patient.assigned_provider.name,
@@ -427,6 +442,8 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
         # personal one.
         "profiles": personal_identity.profiles_view(db, patient),
         "subscription": personal_subscription.status(db, patient) if personal else None,
+        # The third variant (app/sports): the athlete's sport and team.
+        "sports": sports_identity.profile_view(db, patient, sprofile) if sports and sprofile is not None else None,
         # The beta consent on file (app/personal/auth.py): the app shows the
         # form again when the version moved or nothing was ever accepted.
         "consent": personal_auth.consent_view(db, patient),
@@ -1032,9 +1049,21 @@ def agent(
     from app.agent.copilot import respond
 
     channel = body.channel if body.channel in ("app", "voice") else "app"
-    from app.personal.scope import is_personal
+    from app.personal.scope import is_personal, is_sports
 
-    if is_personal(patient):
+    if is_sports(patient):
+        from app.sports import api as sports_api
+        from app.sports import coach as sports_coach
+        from app.sports import identity as sports_identity
+
+        sprofile = sports_identity.profile_of(db, patient)
+        home = None
+        try:
+            home = sports_api.compute_home(db, patient, sprofile) if sprofile is not None else None
+        except Exception:  # noqa: BLE001 — the coach answers without numbers if it must
+            logger.exception("sports home for coach failed for %s", patient.id)
+        result = sports_coach.respond(db, patient, sprofile, home, body.text, channel=channel)
+    elif is_personal(patient):
         # A subscriber talks to the coach: same machinery, its own voice,
         # the day's readouts in context, nobody to alert.
         from app.personal import coach, identity as personal_identity

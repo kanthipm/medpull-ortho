@@ -15,11 +15,11 @@ struct Bubble: View {
     /// on everything would make the one that matters invisible.
     private var who: String {
         if message.fromClinician && !app.isPersonal {
-            return message.authorName ?? "Care team"
+            return message.authorName ?? (app.isSports ? "Staff" : "Care team")
         }
         switch message.sender {
-        case "care_team": return "Care team"
-        case "copilot": return message.channel == "sms" ? "MedPull\(MP.dot)text" : (app.isPersonal ? "Coach" : "MedPull")
+        case "care_team": return app.isSports ? "Staff" : "Care team"
+        case "copilot": return message.channel == "sms" ? "MedPull\(MP.dot)text" : (app.isPersonal || app.isSports ? "Coach" : "MedPull")
         default: return message.channel == "sms" ? "You\(MP.dot)by text" : message.channel == "voice" ? "You\(MP.dot)by voice" : "You"
         }
     }
@@ -51,7 +51,7 @@ struct Bubble: View {
             }
             HStack(spacing: 4) {
                 Text(who)
-                if message.fromClinician && !app.isPersonal {
+                if message.fromClinician && !app.isPersonal && !app.isSports {
                     Text("Care team approved")
                         .font(.labelMedium)
                         .padding(.horizontal, 6).padding(.vertical, 2)

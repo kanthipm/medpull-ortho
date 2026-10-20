@@ -29,6 +29,11 @@ final class AppModel {
     var dashboard: DashboardResponse?
     /// Set when the server answered 402: access lapsed, show the paywall.
     var paywall: SubscriptionState?
+    /// MedPull Sports: the athlete's home board (verdict, readiness, plan,
+    /// schedule, suggestions). The tabs fetch their own full boards.
+    var sportsHome: SportsHome?
+    /// The sport's catalog (tests, injuries, wellness, devices), loaded once.
+    var sportsCatalog: SportsCatalog?
     /// True while a space switch is in flight, so the tabs can hold still.
     private(set) var switching = false
 
@@ -42,10 +47,12 @@ final class AppModel {
     /// The four tabs of a hospital record (Today, Progress, Measure, Care)
     /// and the three of a personal space (Today, Trends, Coach): the
     /// personal space reuses `progress` for Trends and `care` for Coach.
-    enum Tab: Hashable { case today, progress, measure, care }
+    enum Tab: Hashable { case today, progress, measure, care, recovery, rehab }
 
     /// Whether the signed-in row is a subscriber's own space.
     var isPersonal: Bool { me?.isPersonal ?? false }
+    /// Whether the signed-in row is an athlete (MedPull Sports).
+    var isSports: Bool { me?.isSports ?? false }
     /// Whether today's brief has gone out by text (a personal space), and
     /// the provider's reason when it did not. From the last start-of-day call.
     var briefTextedToday: Bool?
@@ -77,6 +84,8 @@ final class AppModel {
         case "progress", "stats", "health": selectedTab = .progress
         case "measure": selectedTab = .measure
         case "care", "talk", "messages": selectedTab = .care
+        case "recovery": selectedTab = .recovery
+        case "rehab", "injury": selectedTab = .rehab
         case "connections": showConnections = true
         default: break
         }
@@ -99,6 +108,7 @@ final class AppModel {
         api.token = token
         self.me = me
         dashboard = nil
+        sportsHome = nil
         paywall = nil
     }
 
@@ -175,6 +185,8 @@ final class AppModel {
         api.token = nil
         me = nil
         dashboard = nil
+        sportsHome = nil
+        sportsCatalog = nil
         paywall = nil
         tasks = TasksResponse(open: [], recent: [])
         messages = []
@@ -253,6 +265,20 @@ final class AppModel {
         return outcome
     }
 
+    /// The athlete's home. `startDay` writes today's plan and the brief (a
+    /// mutating call the app makes once per open).
+    @discardableResult
+    func refreshSports(startDay: Bool = false, surface: Bool = false) async -> Outcome {
+        guard isSports else { return .ok }
+        let outcome = await refresh(surface: surface) {
+            self.sportsHome = startDay ? try await self.api.sportsStartDay() : try await self.api.sportsHome()
+        }
+        if sportsCatalog == nil, let sport = me?.sports?.sport {
+            sportsCatalog = try? await api.sportsCatalog(sport: sport)
+        }
+        return outcome
+    }
+
     /// A purchase or restore answered with a new state: drop the paywall and
     /// reload the readouts.
     func subscriptionChanged(_ state: SubscriptionState) async {
@@ -279,6 +305,9 @@ final class AppModel {
             // are read, so the Plan tab shows today rather than yesterday.
             outcomes.append(await refreshDashboard(startDay: true))
         }
+        if isSports {
+            outcomes.append(await refreshSports(startDay: true))
+        }
         outcomes += [
             await refresh(surface: false) { self.tasks = try await self.api.tasks() },
             await refresh(surface: false) { self.messages = try await self.api.messages() },
@@ -286,7 +315,7 @@ final class AppModel {
                 self.portfolio = try await self.api.portfolio(days: 14).metrics
             },
         ]
-        if !isPersonal {
+        if !isPersonal && !isSports {
             outcomes.append(await refreshMetrics(surface: false))
         }
         if outcomes.contains(.ok) {
@@ -298,7 +327,7 @@ final class AppModel {
         // reached the console when the patient pressed "Send walking data".
         // Every refresh now sends the last two weeks in the background; the
         // server dedupes, so a repeat costs nothing.
-        if health.isConnected && !isPersonal {
+        if health.isConnected && !isPersonal && !isSports {
             Task { try? await self.health.uploadGait(api: self.api) }
         }
     }
@@ -334,7 +363,7 @@ final class AppModel {
     /// none (the personal dashboard is its own thing), so it is skipped.
     @discardableResult
     func refreshMetrics(surface: Bool = true) async -> Outcome {
-        guard !isPersonal else { return .ok }
+        guard !isPersonal, !isSports else { return .ok }
         return await refresh(surface: surface) {
             self.metrics = try await self.api.metrics()
         }

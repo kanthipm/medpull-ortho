@@ -29,12 +29,16 @@ struct ProfileView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     if let me = app.me {
                         aboutCard(me)
-                        SpacesCard()
+                        if !me.isSports { SpacesCard() }
                         if me.isPersonal {
                             PersonalCard()
                             AccountCard().id("account")
                         }
-                        if !me.patient.careTeam.isEmpty {
+                        if me.isSports {
+                            SportsProfileCard().id("sports")
+                            AccountCard().id("account")
+                        }
+                        if !me.patient.careTeam.isEmpty && !me.isSports {
                             group("Care team") {
                                 ForEach(Array(me.patient.careTeam.enumerated()), id: \.offset) { i, m in
                                     if i > 0 { InsetDivider(leading: 16) }
@@ -43,11 +47,13 @@ struct ProfileView: View {
                             }
                         }
                         group("Connections",
-                              footer: me.isPersonal
+                              footer: me.isSports
+                                ? "Apple Health, your ring or band, and your program's force plates, trackers and timing gates, all in one list."
+                                : me.isPersonal
                                 ? "Your morning brief and check-in come from MedPull’s number when texts are on. Reply 1 to do the check-in by text."
                                 : "Task texts come from your care team’s MedPull number. Reply 1 to any of them to do the task by text, or open it here.") {
                             Button { showConnections = true } label: {
-                                ListRow("Apple Health and wearables",
+                                ListRow(me.isSports ? "Devices" : "Apple Health and wearables",
                                         subtitle: connectionsLine(me),
                                         symbol: "heart.fill", family: .violet)
                             }
@@ -136,7 +142,9 @@ struct ProfileView: View {
             .tint(MP.brandInk)
             .mpNavigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showConnections) { ConnectionsView() }
+            .sheet(isPresented: $showConnections) {
+                if app.isSports { SportsDevicesView() } else { ConnectionsView() }
+            }
             #if DEBUG
             .task {
                 if let target = AppConfig.debugFlag("MP_SCROLL_PROFILE") {
@@ -182,7 +190,8 @@ struct ProfileView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(me.patient.name)
                             .mpFont(.subheadSemibold).foregroundStyle(MP.ink)
-                        Text(me.isPersonal ? (app.dashboard?.profile.goalLabel ?? "MedPull Personal")
+                        Text(me.isSports ? [me.sports?.teamLine ?? "MedPull Sports", me.sports?.levelLabel].compactMap { $0 }.joined(separator: MP.dot)
+                             : me.isPersonal ? (app.dashboard?.profile.goalLabel ?? "MedPull Personal")
                              : me.patient.procedureDisplay)
                             .mpFont(.copy).foregroundStyle(MP.muted)
                     }
@@ -193,7 +202,17 @@ struct ProfileView: View {
                 .accessibilityElement(children: .combine)
 
                 InsetDivider(leading: 16)
-                if me.isPersonal {
+                if me.isSports {
+                    row("Account", "Athlete")
+                    if let p = me.patient.phoneMasked {
+                        InsetDivider(leading: 16)
+                        row("Mobile", p)
+                    }
+                    if let e = me.patient.email {
+                        InsetDivider(leading: 16)
+                        row("Email", e)
+                    }
+                } else if me.isPersonal {
                     row("Space", "Personal")
                     if let p = me.patient.phoneMasked {
                         InsetDivider(leading: 16)
@@ -206,11 +225,11 @@ struct ProfileView: View {
                 } else {
                     row("Joined", Self.displayDate(me.patient.joinedDate))
                 }
-                if let h = me.patient.hospital {
+                if let h = me.patient.hospital, !me.isSports {
                     InsetDivider(leading: 16)
                     row("Hospital", h.name)
                 }
-                if let p = me.patient.phoneMasked, !me.isPersonal {
+                if let p = me.patient.phoneMasked, !me.isPersonal, !me.isSports {
                     InsetDivider(leading: 16)
                     row("Mobile", p)
                 }

@@ -109,6 +109,16 @@ QUESTION_SETS: dict[str, list[dict[str, Any]]] = {
     "checkin_general": GENERAL_CHECKIN_QUESTIONS,
     "checkin_personal": PERSONAL_CHECKIN_QUESTIONS,
     "checkin_personal_recovery": PERSONAL_RECOVERY_CHECKIN_QUESTIONS,
+    # MedPull Sports: the morning wellness questionnaire (app/sports/plan.py).
+    "checkin_sports": [
+        {"id": "sleep_quality", "prompt": "How did you sleep? 0 terrible, 10 great.", "kind": "scale"},
+        {"id": "fatigue", "prompt": "How tired are you right now? 0 fresh, 10 exhausted.", "kind": "scale"},
+        {"id": "soreness", "prompt": "How sore are your muscles? 0 none, 10 very sore.", "kind": "scale"},
+        {"id": "stress", "prompt": "How stressed do you feel? 0 relaxed, 10 very.", "kind": "scale"},
+        {"id": "mood", "prompt": "How is your mood? 0 low, 10 great.", "kind": "scale"},
+        {"id": "pain", "prompt": "Any pain? Rate the worst spot, 0 to 10.", "kind": "scale"},
+        {"id": "note", "prompt": "Anything your staff should know?", "kind": "text"},
+    ],
     "workout": [
         {"id": "minutes", "prompt": "How many minutes was the session?", "kind": "number",
          "min": 0, "max": 600},
@@ -676,7 +686,13 @@ def complete_task(
         record.status = status
 
     qset = question_set_key(task)
-    if qset in ("checkin_personal", "checkin_personal_recovery", "workout", "sleep"):
+    if qset == "checkin_sports":
+        # An athlete's answers land in the sports wellness log, which the
+        # recovery board scores against their own four-week baseline.
+        from app.sports.wellness import record_task_answers as record_sports_answers
+
+        record_sports_answers(db, task, answers, today)
+    elif qset in ("checkin_personal", "checkin_personal_recovery", "workout", "sleep"):
         # A subscriber's answers also land in their subjective log, where the
         # personal readouts read them beside the wearable stream. Their
         # profile has no care team, so no alert is raised for them.
