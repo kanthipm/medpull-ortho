@@ -190,6 +190,9 @@ class InsightKind(StrEnum):
     # staff-facing team briefing.
     SPORTS_BRIEF = "sports_brief"
     SPORTS_TEAM_BRIEF = "sports_team_brief"
+    # The Stats tab's read of the battery, and the injury plan's read.
+    SPORTS_PERFORMANCE_BRIEF = "sports_performance_brief"
+    SPORTS_INJURY_READ = "sports_injury_read"
 
 
 class NotificationChannel(StrEnum):

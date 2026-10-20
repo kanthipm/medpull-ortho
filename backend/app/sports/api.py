@@ -400,15 +400,23 @@ def recovery(patient: Patient = Depends(athlete), db: Session = Depends(get_db))
 def performance(patient: Patient = Depends(athlete), db: Session = Depends(get_db)) -> dict:
     profile = _profile(db, patient)
     h = compute_home(db, patient, profile)
-    return h["performance"]
+    perf = h["performance"]
+    brief = insights.get_performance_brief(db, patient, profile, perf, patient.sex)
+    return perf | {"brief": brief}
+
+
+def _with_reads(db: Session, patient: Patient, profile: SportsProfile, rehab: dict[str, Any]) -> dict[str, Any]:
+    active = [b | {"read": insights.get_injury_read(db, patient, profile, b)} for b in rehab.get("active") or []]
+    return rehab | {"active": active}
 
 
 @router.get("/rehab")
 def rehab(patient: Patient = Depends(athlete), db: Session = Depends(get_db)) -> dict:
     profile = _profile(db, patient)
     h = compute_home(db, patient, profile)
-    return h["rehab"] | {"availability": h["availability"],
-                         "catalog": [injury_view(i, full=False) for i in injuries_for(profile.sport)]}
+    return _with_reads(db, patient, profile, h["rehab"]) | {
+        "availability": h["availability"],
+        "catalog": [injury_view(i, full=False) for i in injuries_for(profile.sport)]}
 
 
 # --- logging -----------------------------------------------------------------------------------------

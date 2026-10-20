@@ -170,6 +170,9 @@ struct PhaseStepper: View {
     let phases: [RehabPhase]
     let current: Int
     var total: Int? = nil
+    /// The "Phase n of m · name · window" line under the bars; off when the
+    /// card above already says it.
+    var showsCaption: Bool = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var count: Int { max(total ?? 0, phases.count, current) }
@@ -186,7 +189,7 @@ struct PhaseStepper: View {
                 }
             }
             .animation(MPMotion.gated(MPMotion.layout, reduceMotion: reduceMotion), value: current)
-            if let p = phases.first(where: { $0.number == current }) {
+            if showsCaption, let p = phases.first(where: { $0.number == current }) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Phase \(p.number) of \(count)").mpFont(.labelMedium).foregroundStyle(MP.muted)
                     Text(MP.dotLead + p.name).mpFont(.label).foregroundStyle(MP.body)

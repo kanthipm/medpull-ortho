@@ -267,6 +267,7 @@ struct InjuryDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             headerCard.mpRise(0)
+            if let read = injury.read, isActive { readCard(read).mpRise(1).id("read") }
             if let ph = injury.phase, !injury.phases.isEmpty { phaseCard(ph).mpRise(1).id("phase") }
             if let rts = injury.rts { rtsCard(rts).mpRise(2).id("rts") }
             if isActive && !injury.focus.isEmpty { focusCard.mpRise(3).id("focus") }
@@ -388,26 +389,56 @@ struct InjuryDetail: View {
         }
     }
 
+    // MARK: The read
+
+    /// The coach's read of the plan: the phase, the gate that matters, this week.
+    private func readCard(_ read: InjuryRead) -> some View {
+        Card(tint: true) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    IconTile("sparkles", family: .indigo)
+                    Text("Where this stands").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer()
+                    Text(read.provider == nil || read.provider == "fallback" ? "from your numbers" : "your coach")
+                        .mpFont(.label).mpSecondary()
+                }
+                Text(read.headline.typeset).mpFont(.ledeMedium).foregroundStyle(MP.ink).lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(read.read.typeset).mpFont(.copy).foregroundStyle(MP.ink).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     // MARK: Phase
 
     private func phaseCard(_ ph: CurrentPhase) -> some View {
-        Card(padding: 0) {
+        let final = ph.number >= ph.of
+        return Card(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text(ph.name).mpFont(.copyLargeMedium).foregroundStyle(MP.ink).accessibilityAddTraits(.isHeader)
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Phase \(ph.number) of \(ph.of)").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                                .accessibilityAddTraits(.isHeader)
+                            Text("\(ph.name)\(MP.dot)\(ph.window)").mpFont(.label).foregroundStyle(MP.muted)
+                        }
                         Spacer()
                         if ph.override != nil {
                             Text("Set by staff").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
+                        } else if ph.total > 0 {
+                            Text("\(ph.met) of \(ph.total) gates").font(.figuresLabel)
+                                .foregroundStyle(ph.met == ph.total ? MP.riskLow : MP.ink)
                         }
                     }
-                    PhaseStepper(phases: injury.phases, current: ph.number, total: ph.of)
+                    PhaseStepper(phases: injury.phases, current: ph.number, total: ph.of, showsCaption: false)
                 }
                 .padding(16)
                 if !ph.goals.isEmpty {
                     InsetDivider(leading: 16)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("This phase").mpFont(.labelMedium).foregroundStyle(MP.muted)
+                        Text(final ? "The work from here" : "What this phase is for").mpFont(.labelMedium).foregroundStyle(MP.muted)
                         ForEach(Array(ph.goals.enumerated()), id: \.offset) { _, g in
                             HStack(alignment: .top, spacing: 8) {
                                 LimeDot(size: 6).padding(.top, 7)
@@ -419,8 +450,8 @@ struct InjuryDetail: View {
                     .padding(.horizontal, 16).padding(.vertical, 12)
                 }
                 if !ph.avoid.isEmpty {
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("Not yet").mpFont(.labelMedium).foregroundStyle(MP.riskMed).padding(.top, 4)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Hold off on").mpFont(.labelMedium).foregroundStyle(MP.riskMed)
                         FlowTags(ph.avoid)
                     }
                     .padding(.horizontal, 16).padding(.bottom, 12)
@@ -429,11 +460,15 @@ struct InjuryDetail: View {
                     InsetDivider(leading: 16)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text(ph.number < ph.of ? "Gates to phase \(ph.number + 1)" : "Gates to clearance")
+                            Text(ph.number < ph.of ? "To move to phase \(ph.number + 1)" : "To be cleared")
                                 .mpFont(.labelMedium).foregroundStyle(MP.muted)
                             Spacer()
-                            Text("\(ph.met) of \(ph.total)").font(.figuresLabel).foregroundStyle(ph.met == ph.total ? MP.riskLow : MP.ink)
+                            Text("\(ph.met) of \(ph.total) met").font(.figuresLabel).foregroundStyle(ph.met == ph.total ? MP.riskLow : MP.ink)
                         }
+                        Text(ph.met == ph.total ? "Every gate for this phase is met. The time floor and your staff decide the step."
+                             : "Each gate is a measurement against a published cut-off; log the measure and it re-reads.")
+                            .mpFont(.label).foregroundStyle(MP.muted).padding(.bottom, 4)
+                            .fixedSize(horizontal: false, vertical: true)
                         ForEach(ph.criteria) { c in
                             Button {
                                 if c.measureKey != "__days", let m = injury.measures.first(where: { $0.key == c.measureKey }) {
@@ -445,6 +480,12 @@ struct InjuryDetail: View {
                         }
                     }
                     .padding(.horizontal, 16).padding(.vertical, 12)
+                } else if final {
+                    InsetDivider(leading: 16)
+                    Text("No gates are left in this phase. The work now is keeping the next one from happening.")
+                        .mpFont(.label).foregroundStyle(MP.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16).padding(.vertical, 12)
                 }
             }
         }
@@ -470,7 +511,9 @@ struct InjuryDetail: View {
                     }
                     .frame(height: 8)
                     .accessibilityHidden(true)
-                    Text(injury.targetReturnDate != nil
+                    Text(rts.total > 0 && rts.met == rts.total
+                         ? "Every return criterion is met. Clearance and minutes are your staff's call."
+                         : injury.targetReturnDate != nil
                          ? "Target \(ProfileView.displayDate(rts.projected)), set by you or your staff."
                          : "Projected \(ProfileView.displayDate(rts.projected)), from the typical window and the criteria met so far.")
                         .mpFont(.copy).foregroundStyle(MP.ink).lineSpacing(2)
@@ -521,7 +564,7 @@ struct InjuryDetail: View {
 
     private var focusCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle("This week", note: "what moves the next gate")
+            SectionTitle("This week", note: (injury.phase.map { $0.number >= $0.of } ?? false) ? "the prevention block" : "what moves the next gate")
             ForEach(injury.focus) { f in
                 Card {
                     VStack(alignment: .leading, spacing: 10) {

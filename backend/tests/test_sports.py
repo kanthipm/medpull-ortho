@@ -167,6 +167,21 @@ def test_roster_boards_read_as_designed(client):
     assert perf["neuromuscular"]["status"] == "ok"
 
 
+def test_stats_read_and_category_summaries(client):
+    h = _login(client, "jalen.okoro@athletes.medpull.demo")
+    perf = client.get("/api/mobile/sports/performance", headers=h).json()
+    jump = next(c for c in perf["categories"] if c["key"] == "jump")
+    assert jump["percentile"] is not None and jump["word"] and jump["best"]["key"]
+    assert perf["strengths"] and all(x["percentile"] >= 50 for x in perf["strengths"])
+    brief = perf["brief"]
+    assert brief["provider"] == "fallback"
+    assert brief["headline"] and brief["strengths"] and brief["improve"] and len(brief["brief"].split()) >= 10
+    h = _login(client, "kwame.asante@athletes.medpull.demo")
+    board = client.get("/api/mobile/sports/rehab", headers=h.copy()).json()["active"][0]
+    assert board["read"]["headline"] and "phase 4 of 6" in board["read"]["read"].lower()
+    assert all(isinstance(g, str) and len(g) > 3 for g in board["phase"]["goals"])
+
+
 def test_acl_athlete_is_in_phase_four_and_out(client):
     h = _login(client, "kwame.asante@athletes.medpull.demo")
     rehab = client.get("/api/mobile/sports/rehab", headers=h).json()

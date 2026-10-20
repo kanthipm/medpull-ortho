@@ -6,9 +6,7 @@ struct RootView: View {
     var body: some View {
         switch app.phase {
         case .launching:
-            // The launch spinner takes the brand FILL explicitly (R10): the
-            // root tint is `brandInk`, a text colour.
-            ProgressView().tint(MP.brand).ambientScreen()
+            LaunchOrbitView(sport: app.launchSport)
         case .onboarding:
             OnboardingFlow()
         case .home:
@@ -31,7 +29,7 @@ struct MainTabs: View {
             // The account kind decides which tab tree mounts, so until /me has
             // answered (or failed) the launch spinner stays: no flash of the
             // hospital Today for an athlete or a subscriber.
-            ProgressView().tint(MP.brand).ambientScreen()
+            LaunchOrbitView(sport: app.launchSport, caption: "Reading your signals")
         } else {
         TabView(selection: $app.selectedTab) {
             if app.isSports {

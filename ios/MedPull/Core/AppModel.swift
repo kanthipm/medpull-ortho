@@ -46,6 +46,11 @@ final class AppModel {
     /// Where onboarding opens after a deliberate sign-out from Profile:
     /// "sports" (set up an athlete account) or "login" (sign in as one).
     var onboardingHint: String?
+    /// The sport of the last signed-in athlete, kept across launches so the
+    /// loading screen can orbit the right ball before /me has answered.
+    var launchSport: String? = UserDefaults.standard.string(forKey: "last_sport") {
+        didSet { UserDefaults.standard.set(launchSport, forKey: "last_sport") }
+    }
 
     /// The four tabs of a hospital record (Today, Progress, Measure, Care)
     /// and the three of a personal space (Today, Trends, Coach): the
@@ -69,6 +74,12 @@ final class AppModel {
 
     func bootstrap() async {
         store.start(api: api)
+        #if DEBUG
+        // Simulator verification of the loading screen: hold it for N seconds.
+        if let hold = AppConfig.debugFlag("MP_HOLD_LAUNCH"), let seconds = Double(hold) {
+            try? await Task.sleep(for: .seconds(seconds))
+        }
+        #endif
         var stored = Keychain.get(Self.tokenKey)
         #if DEBUG
         // Simulator verification: a session token handed in as a launch
@@ -105,11 +116,17 @@ final class AppModel {
 
     /// Enrollment succeeded: keep the credential and act as this patient,
     /// but stay in onboarding so the Health and wearable steps can run.
+    /// Keeps `launchSport` in step with whoever is signed in.
+    private func rememberSport() {
+        if let me { launchSport = me.sports?.sport }
+    }
+
     func adoptSession(token: String, me: Me) {
         Keychain.set(token, for: Self.tokenKey)
         Keychain.set(token, for: Self.tokenKey(for: me.patient.id))
         api.token = token
         self.me = me
+        rememberSport()
         dashboard = nil
         sportsHome = nil
         paywall = nil
@@ -195,6 +212,7 @@ final class AppModel {
         if let id = me?.patient.id { Keychain.delete(Self.tokenKey(for: id)) }
         api.token = nil
         me = nil
+        launchSport = nil
         dashboard = nil
         sportsHome = nil
         sportsCatalog = nil
@@ -311,6 +329,7 @@ final class AppModel {
         var outcomes = [
             await refresh(surface: false) { self.me = try await self.api.me() },
         ]
+        rememberSport()
         if isPersonal {
             // A subscriber's open writes the day's plan before the tasks
             // are read, so the Plan tab shows today rather than yesterday.

@@ -26,6 +26,10 @@ struct RecoveryView: View {
                         verdictCard(board).mpRise(0)
                         wellnessCard(board.wellness).mpRise(1).id("wellness")
                         if !board.suggestions.isEmpty { suggestions(board.suggestions).mpRise(2).id("suggestions") }
+                        if let week = board.week {
+                            WeekCard(week: week) { app.selectedTab = .care }
+                                .mpRise(2).id("week")
+                        }
                         overnight(board).mpRise(3).id("overnight")
                         training(board).mpRise(4).id("training")
                         scheduleCard(board.schedule).mpRise(5).id("schedule")

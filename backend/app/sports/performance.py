@@ -246,7 +246,9 @@ def compute_performance(data: SportsData, sex: str | None) -> dict[str, Any]:
             **cat, "cards": items,
             "available": [{"key": t.key, "label": t.label, "unit": t.unit, "core": t.core,
                            "phone": t.phone, "sided": t.sided} for t in available],
+            **_category_summary(items, len(items) + len(available)),
         })
+    strengths, gaps = _standouts(cards)
     # The headline strip: the core tests this sport leads with, logged or not.
     core = [t for t in tests_for(profile.sport, core_only=True)]
     headline = []
@@ -275,9 +277,61 @@ def compute_performance(data: SportsData, sex: str | None) -> dict[str, Any]:
                           "date": c["latest_date"]} for c in bests],
         "headline": headline,
         "categories": categories,
+        "strengths": strengths,
+        "gaps": gaps,
         "cards": cards,
         "jumps": _jump_load(data),
     }
+
+
+def _word(pct: float) -> str:
+    return ("Elite" if pct >= 90 else "Strong" if pct >= 75 else "Solid" if pct >= 50
+            else "Developing" if pct >= 25 else "Below level")
+
+
+def _standout(c: dict[str, Any], note: str | None = None) -> dict[str, Any]:
+    band = c.get("band") or {}
+    return {"key": c["key"], "label": c["label"], "latest_text": c["latest_text"], "unit": c["unit"],
+            "percentile": band.get("percentile"), "word": band.get("word"), "category": c["category"], "note": note}
+
+
+def _category_summary(items: list[dict[str, Any]], total: int) -> dict[str, Any]:
+    """Where a category sits: the mean percentile of its benchmarked tests,
+    the word for it, the direction of its trends, its best and weakest test."""
+    banded = [c for c in items if c.get("band")]
+    pct = round(float(np.mean([c["band"]["percentile"] for c in banded]))) if banded else None
+    signed = [(c["trend"]["pct"] if c["higher_is_better"] else -c["trend"]["pct"])
+              for c in items if c.get("trend") and c["trend"].get("pct") is not None]
+    trend = round(float(np.mean(signed)), 1) if signed else None
+    best = max(banded, key=lambda c: c["band"]["percentile"]) if banded else None
+    weak = min(banded, key=lambda c: c["band"]["percentile"]) if len(banded) > 1 else None
+    return {"percentile": pct, "word": _word(pct) if pct is not None else None, "trend_pct": trend,
+            "logged_count": len(items), "total": total,
+            "best": _standout(best) if best else None, "weakest": _standout(weak) if weak else None}
+
+
+def _standouts(cards: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The three tests that stand highest against the level and the three
+    that sit lowest, plus any symmetry flag and a fatigued jump as gaps."""
+    banded = sorted([c for c in cards.values() if c.get("band") and c["category"] != "body"],
+                    key=lambda c: c["band"]["percentile"], reverse=True)
+    strengths = [_standout(c) for c in banded[:3] if c["band"]["percentile"] >= 50]
+    gaps: list[dict[str, Any]] = []
+    for c in cards.values():
+        a = c.get("asymmetry")
+        if a and c.get("asymmetry_status") in ("watch", "flag"):
+            gaps.append(_standout(c, note=f"{a['weaker']} side {a['pct']:.0f}% weaker"))
+    for c in reversed(banded):
+        if len(gaps) >= 3:
+            break
+        if c["band"]["percentile"] < 60 and all(g["key"] != c["key"] for g in gaps):
+            gaps.append(_standout(c))
+    if not gaps:
+        # Nothing under the level: the lowest of the battery still has the
+        # most room, and a coach would say so.
+        for c in reversed(banded[-2:]):
+            gaps.append(_standout(c, note="lowest of your battery"))
+    return strengths, gaps[:3]
 
 
 def _jump_load(data: SportsData) -> dict[str, Any] | None:

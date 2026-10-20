@@ -12,7 +12,8 @@ struct PerformanceView: View {
     @State private var logging: LogTestTarget?
     @State private var phoneTest: PhoneTest?
     @State private var openCard: TestCard?
-    @State private var filter = "all"
+    @State private var openCategory: PerformanceCategory?
+    @State private var showRead = false
 
     private var catalog: SportsCatalog? { app.sportsCatalog }
 
@@ -28,15 +29,12 @@ struct PerformanceView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let board {
-                        heroTile(board).mpRise(0)
-                        if board.neuromuscular.hasData { neuroCard(board).mpRise(1).id("neuro") }
-                        if !board.asymmetries.isEmpty { asymmetryCard(board.asymmetries).mpRise(2).id("asymmetry") }
-                        coreCard(board).mpRise(3).id("core")
-                        filterRow(board).mpRise(4).id("categories")
-                        ForEach(board.categories.filter { filter == "all" || $0.key == filter }) { cat in
-                            categorySection(cat).id("cat-\(cat.key)")
-                        }
-                        phoneCard.mpRise(6).id("phone")
+                        if let brief = board.brief { readCard(brief).mpRise(0).id("read") }
+                        scorecard(board).mpRise(1).id("scorecard")
+                        if board.neuromuscular.hasData { neuroCard(board).mpRise(2).id("neuro") }
+                        if !board.asymmetries.isEmpty { asymmetryCard(board.asymmetries).mpRise(3).id("asymmetry") }
+                        recentCard(board).mpRise(4).id("recent")
+                        phoneCard.mpRise(5).id("phone")
                     } else if let error {
                         ErrorBanner(text: error)
                         SecondaryButton(title: "Try again", icon: "arrow.clockwise") { Task { await load() } }
@@ -83,15 +81,24 @@ struct PerformanceView: View {
             .sheet(item: $phoneTest) { test in
                 PhoneTestHost(test: test) { Task { await load() } }
             }
+            .sheet(isPresented: $showRead) {
+                if let brief = board?.brief { PerformanceReadSheet(brief: brief, board: board) }
+            }
             .navigationDestination(item: $openCard) { card in
                 TestDetailView(card: card, onLogged: { board = $0 }, onPhone: { phoneTest = $0 })
+            }
+            .navigationDestination(item: $openCategory) { cat in
+                CategoryDetailView(category: cat, levelLine: levelLine,
+                                   onOpen: { openCard = $0 }, onLog: { logging = $0 }, onPhone: { phoneTest = $0 })
             }
             .task {
                 if board == nil { await load() }
                 #if DEBUG
                 if AppConfig.debugFlag("MP_SHOW") == "logtest" { logging = LogTestTarget() }
                 if AppConfig.debugFlag("MP_SHOW") == "jump" { phoneTest = .jump(testKey: "phone_jump_height", side: nil) }
+                if AppConfig.debugFlag("MP_SHOW") == "read" { showRead = true }
                 if let key = AppConfig.debugFlag("MP_OPEN_TEST"), let card = board?.cards[key] { openCard = card }
+                if let key = AppConfig.debugFlag("MP_OPEN_CATEGORY"), let cat = board?.categories.first(where: { $0.key == key }) { openCategory = cat }
                 if let target = AppConfig.debugFlag("MP_SCROLL") {
                     try? await Task.sleep(for: .seconds(1.5))
                     withAnimation(nil) { proxy.scrollTo(target, anchor: .top) }
@@ -112,36 +119,106 @@ struct PerformanceView: View {
         }
     }
 
-    // MARK: Hero
+    // MARK: The read
 
-    private func heroTile(_ board: PerformanceBoard) -> some View {
-        let pct = board.overallPercentile
-        let bars = board.headline.compactMap { $0.band.map { Double($0.percentile) } }
-        return GradientTile(pct == nil ? .lilac : pct! >= 75 ? .sage : .meadow,
-                            kicker: "Core battery",
-                            value: pct.map { String($0) } ?? "—",
-                            unit: pct != nil ? "percentile" : "not yet",
-                            side: ("\(board.logged)", "tests on file")) {
-            if bars.count > 1 {
-                BarsArt(values: bars, height: 92)
-            } else {
-                ArtGrid().frame(height: 92)
-            }
-        } caption: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(pct.map { "Your logged core tests sit at the \(ordinal($0)) percentile for \(levelLine)." }
-                     ?? "Log the core battery and this reads where you sit for \(levelLine).")
-                    .mpFont(.copyLarge).foregroundStyle(MP.ink).lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !board.recentBests.isEmpty {
-                    Text("New best: " + board.recentBests.prefix(2).map { "\($0.label) \($0.latestText) \($0.unit)" }
-                            .joined(separator: MP.dot))
-                        .mpFont(.label).foregroundStyle(MP.brandInk)
+    /// The coach's read of the battery: what stands out, what to build.
+    private func readCard(_ brief: PerformanceBrief) -> some View {
+        Button { showRead = true } label: {
+            Card(tint: true) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        IconTile("sparkles", family: .indigo)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Your read").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                                .accessibilityAddTraits(.isHeader)
+                            Text(levelLine).mpFont(.label).mpSecondary()
+                        }
+                        Spacer()
+                        if let pct = board?.overallPercentile {
+                            VStack(alignment: .trailing, spacing: 0) {
+                                Text("\(pct)").font(.figuresSubheadSemibold).foregroundStyle(MP.ink)
+                                Text("percentile").mpFont(.label).mpSecondary()
+                            }
+                        }
+                    }
+                    Text(brief.headline.typeset).mpFont(.ledeMedium).foregroundStyle(MP.ink).lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                    readList("Strengths", brief.strengths, tone: .low)
+                    readList("Build next", brief.improve, tone: .med)
+                    HStack(spacing: 4) {
+                        Text("Read the whole take").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
+                        Image(systemName: "chevron.right")
+                            .font(.systemGlyphs(11, weight: .semibold)).foregroundStyle(MP.brandInk)
+                    }
                 }
             }
         }
-        .accessibilityElement(children: .contain)
+        .buttonStyle(CardTapStyle())
+    }
+
+    private func readList(_ title: String, _ lines: [String], tone: MP.Tone) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).mpFont(.labelMedium).foregroundStyle(MP.foreground(tone))
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .top, spacing: 8) {
+                    Circle().fill(MP.foreground(tone)).frame(width: 6, height: 6).padding(.top, 7)
+                        .accessibilityHidden(true)
+                    Text(line.typeset).mpFont(.copy).foregroundStyle(MP.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+        }
+    }
+
+    // MARK: Scorecard
+
+    private var gridColumns: [GridItem] {
+        let n = dynamicTypeSize.isAccessibilitySize ? 1 : 2
+        return Array(repeating: GridItem(.flexible(), spacing: 10, alignment: .top), count: n)
+    }
+
+    /// One tile per quality, with where it sits for the level. Tap for the tests.
+    private func scorecard(_ board: PerformanceBoard) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle("Where you stand", note: "\(board.logged) of \(board.available) tests")
+            LazyVGrid(columns: gridColumns, spacing: 10) {
+                ForEach(board.categories) { cat in
+                    Button { openCategory = cat } label: { CategoryTile(category: cat) }
+                        .buttonStyle(CardTapStyle())
+                        .accessibilityHint("Opens the tests in this group")
+                }
+            }
+        }
+    }
+
+    // MARK: Recent
+
+    private func recentCard(_ board: PerformanceBoard) -> some View {
+        let recent = board.cards.values
+            .filter { $0.latestDate != nil }
+            .sorted { ($0.latestDate ?? "") > ($1.latestDate ?? "") }
+            .prefix(5)
+        return VStack(alignment: .leading, spacing: 10) {
+            SectionTitle("Latest results", note: recent.first?.latestDate.map { Dates.agoWords($0) })
+            Card(padding: 0) {
+                VStack(spacing: 0) {
+                    if recent.isEmpty {
+                        EmptyRow(icon: "square.and.pencil", title: "Nothing logged yet",
+                                 detail: "Log a result, or do a phone test below, and it shows here.")
+                    }
+                    ForEach(Array(recent)) { card in
+                        Button { openCard = card } label: {
+                            TestRow(card: card, symbol: categorySymbol(for: card.key), family: categoryFamily(for: card.key))
+                        }
+                        .buttonStyle(.mpRow)
+                        if card.id != recent.last?.id { InsetDivider(leading: 16 + 32 + 12) }
+                    }
+                }
+                .clipShape(MP.surfaceShape)
+            }
+        }
     }
 
     private func ordinal(_ n: Int) -> String {
@@ -252,61 +329,6 @@ struct PerformanceView: View {
         }
     }
 
-    // MARK: Core battery
-
-    private func coreCard(_ board: PerformanceBoard) -> some View {
-        Card(padding: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                CardTitleRow("Core battery", note: levelLine)
-                ForEach(board.headline) { h in
-                    Button {
-                        if h.logged, let card = board.cards[h.key] {
-                            openCard = card
-                        } else {
-                            logging = LogTestTarget(testKey: h.key)
-                        }
-                    } label: {
-                        HStack(spacing: 12) {
-                            Glyph(systemName: categorySymbol(for: h.key), family: categoryFamily(for: h.key))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(h.label).mpFont(.copyLargeMedium).foregroundStyle(MP.ink).lineLimit(1)
-                                if h.logged, let band = h.band {
-                                    HStack(spacing: 6) {
-                                        Text("\(band.word)\(MP.dot)\(ordinal(band.percentile))")
-                                            .mpFont(.label).foregroundStyle(MP.muted)
-                                        if let t = TrendText.line(h.trend, higherIsBetter: true) {
-                                            Text(t.0).mpFont(.label).foregroundStyle(t.1)
-                                        }
-                                    }
-                                } else if h.logged {
-                                    Text(h.daysAgo.map { $0 == 0 ? "Today" : "\($0) days ago" } ?? "Logged")
-                                        .mpFont(.label).foregroundStyle(MP.muted)
-                                } else {
-                                    Text(h.phone ? "Not logged\(MP.dot)phone test available" : "Not logged yet")
-                                        .mpFont(.label).foregroundStyle(MP.muted)
-                                }
-                            }
-                            Spacer(minLength: 8)
-                            if h.logged, let v = h.latestText {
-                                RowFigure(value: v, unit: h.unit)
-                            } else {
-                                Text("Log").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
-                            }
-                            Image(systemName: "chevron.right")
-                                .font(.systemGlyphs(13, weight: .semibold)).foregroundStyle(MP.muted)
-                                .accessibilityHidden(true)
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                    }
-                    .buttonStyle(.mpRow)
-                    if h.id != board.headline.last?.id { InsetDivider(leading: 16 + 32 + 12) }
-                }
-            }
-            .padding(.bottom, 6)
-            .clipShape(MP.surfaceShape)
-        }
-    }
-
     private func categorySymbol(for key: String) -> String {
         guard let cat = catalog?.test(key)?.category else { return "chart.bar.xaxis" }
         return catalog?.categories.first { $0.key == cat }?.symbol ?? "chart.bar.xaxis"
@@ -315,74 +337,11 @@ struct PerformanceView: View {
     private func categoryFamily(for key: String) -> MP.Category {
         guard let cat = catalog?.test(key)?.category,
               let f = catalog?.categories.first(where: { $0.key == cat })?.family else { return .teal }
-        return family(f)
-    }
-
-    private func family(_ s: String) -> MP.Category {
-        switch s {
+        switch f {
         case "blue": return .blue
         case "indigo": return .indigo
         case "violet": return .violet
         default: return .teal
-        }
-    }
-
-    // MARK: Categories
-
-    private func filterRow(_ board: PerformanceBoard) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                Chip(label: "All", selected: filter == "all") { filter = "all" }
-                ForEach(board.categories) { c in
-                    Chip(label: c.cards.isEmpty ? c.label : "\(c.label) \(c.cards.count)", selected: filter == c.key) {
-                        filter = filter == c.key ? "all" : c.key
-                    }
-                }
-            }
-            .padding(.horizontal, 4).padding(.vertical, 2)
-        }
-        .scrollClipDisabled()
-    }
-
-    private func categorySection(_ cat: PerformanceCategory) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(cat.label, note: cat.cards.isEmpty ? "nothing logged" : "\(cat.cards.count) logged",
-                         actionTitle: cat.available.isEmpty ? nil : "Log") {
-                logging = LogTestTarget(category: cat.key)
-            }
-            if cat.cards.isEmpty {
-                Card {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Tests in this group").mpFont(.labelMedium).foregroundStyle(MP.muted)
-                        Text(cat.available.map(\.label).joined(separator: MP.dot))
-                            .mpFont(.copy).foregroundStyle(MP.body)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            } else {
-                Card(padding: 0) {
-                    VStack(spacing: 0) {
-                        ForEach(cat.cards) { card in
-                            Button { openCard = card } label: { TestRow(card: card, symbol: cat.symbol, family: cat.categoryFamily) }
-                                .buttonStyle(.mpRow)
-                            if card.id != cat.cards.last?.id { InsetDivider(leading: 16 + 32 + 12) }
-                        }
-                        if !cat.available.isEmpty {
-                            InsetDivider(leading: 16)
-                            Button { logging = LogTestTarget(category: cat.key) } label: {
-                                HStack {
-                                    Text("\(cat.available.count) more to log").mpFont(.label).foregroundStyle(MP.muted)
-                                    Spacer()
-                                    Text("Log one").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
-                                }
-                                .padding(.horizontal, 16).padding(.vertical, 10)
-                            }
-                            .buttonStyle(.mpRow)
-                        }
-                    }
-                    .clipShape(MP.surfaceShape)
-                }
-            }
         }
     }
 
@@ -956,5 +915,236 @@ struct SportsSearchField: View {
         .frame(minHeight: 48)
         .background(MP.capsuleShape.fill(MP.panel))
         .overlay(MP.capsuleShape.strokeBorder(MP.lineStrong, lineWidth: 1))
+    }
+}
+
+// MARK: - Category tile and detail
+
+/// One quality on the scorecard: the glyph, the word and number for the
+/// level, a bar, how many of its tests are logged, the direction.
+struct CategoryTile: View {
+    let category: PerformanceCategory
+
+    private var pct: Int? { category.percentile }
+    private var tone: MP.Tone {
+        guard let pct else { return .missing }
+        return pct >= 75 ? .low : pct >= 50 ? .brand : .med
+    }
+
+    var body: some View {
+        Card(padding: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Glyph(systemName: category.symbol, family: category.categoryFamily, size: 32)
+                    Spacer()
+                    if let t = category.trendPct, abs(t) >= 1 {
+                        HStack(spacing: 2) {
+                            Image(systemName: t > 0 ? "arrow.up.right" : "arrow.down.right")
+                                .font(.systemGlyphs(10, weight: .semibold))
+                            Text(String(format: "%.0f%%", abs(t))).mpFont(.label)
+                        }
+                        .foregroundStyle(t > 0 ? MP.riskLow : MP.riskMed)
+                        .accessibilityLabel(Text(t > 0 ? "Improving \(Int(abs(t))) percent" : "Slipping \(Int(abs(t))) percent"))
+                    }
+                }
+                Text(category.label).mpFont(.copyLargeMedium).foregroundStyle(MP.ink).lineLimit(2).minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(pct.map { "\($0)" } ?? "—").font(.figuresDisplay(MPSize.displayS)).kerning(-0.9).foregroundStyle(MP.ink)
+                    Text(category.word ?? (category.loggedCount ?? 0 > 0 ? "no benchmark" : "not logged"))
+                        .mpFont(.label).foregroundStyle(MP.foreground(tone)).lineLimit(1).minimumScaleFactor(0.8)
+                }
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        MP.capsuleShape.fill(MP.track)
+                        if let pct {
+                            MP.capsuleShape.fill(MP.foreground(tone)).frame(width: proxy.size.width * CGFloat(pct) / 100)
+                        }
+                    }
+                }
+                .frame(height: 5)
+                .accessibilityHidden(true)
+                Text("\(category.loggedCount ?? category.cards.count) of \(category.total ?? (category.cards.count + category.available.count)) logged")
+                    .mpFont(.label).foregroundStyle(MP.muted).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(category.label): " + (pct.map { "\($0)th percentile, \(category.word ?? "")" } ?? "not logged")))
+    }
+}
+
+/// The tests in one quality: where the group sits, its best and weakest,
+/// every logged test, and the ones still to log.
+struct CategoryDetailView: View {
+    @Environment(AppModel.self) private var app
+    let category: PerformanceCategory
+    let levelLine: String
+    var onOpen: (TestCard) -> Void
+    var onLog: (LogTestTarget) -> Void
+    var onPhone: (PhoneTest) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                summary
+                if !category.cards.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionTitle("Logged", note: "\(category.cards.count)")
+                        Card(padding: 0) {
+                            VStack(spacing: 0) {
+                                ForEach(category.cards) { card in
+                                    Button { onOpen(card) } label: {
+                                        TestRow(card: card, symbol: category.symbol, family: category.categoryFamily)
+                                    }
+                                    .buttonStyle(.mpRow)
+                                    if card.id != category.cards.last?.id { InsetDivider(leading: 16 + 32 + 12) }
+                                }
+                            }
+                            .clipShape(MP.surfaceShape)
+                        }
+                    }
+                }
+                if !category.available.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionTitle("Still to log", note: "\(category.available.count)")
+                        Card(padding: 0) {
+                            VStack(spacing: 0) {
+                                ForEach(category.available) { t in
+                                    Button { onLog(LogTestTarget(testKey: t.key)) } label: {
+                                        HStack(spacing: 12) {
+                                            Glyph(systemName: t.phone ? "iphone" : category.symbol, family: t.phone ? .teal : category.categoryFamily)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(t.label).mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                                                    .multilineTextAlignment(.leading)
+                                                Text([t.unit.isEmpty ? nil : t.unit, t.core ? "core test" : nil, t.phone ? "phone test" : nil, t.sided ? "each side" : nil]
+                                                    .compactMap { $0 }.joined(separator: MP.dot))
+                                                    .mpFont(.label).foregroundStyle(MP.muted)
+                                            }
+                                            Spacer(minLength: 8)
+                                            Text("Log").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
+                                        }
+                                        .padding(.horizontal, 16).padding(.vertical, 10)
+                                    }
+                                    .buttonStyle(.mpRow)
+                                    if t.id != category.available.last?.id { InsetDivider(leading: 16 + 32 + 12) }
+                                }
+                            }
+                            .clipShape(MP.surfaceShape)
+                        }
+                    }
+                }
+                PrimaryButton(title: "Log a result", icon: "square.and.pencil") { onLog(LogTestTarget(category: category.key)) }
+                SportsGuardrail()
+            }
+            .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 28)
+        }
+        .ambientScreen()
+        .mpNavigationTitle(category.label, short: "Tests")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var summary: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 14) {
+                    Glyph(systemName: category.symbol, family: category.categoryFamily, size: 44)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(category.percentile.map { "\($0)" } ?? "—").font(.figuresDisplay(MPSize.displayM)).kerning(-1.2).foregroundStyle(MP.ink)
+                            Text(category.percentile != nil ? "percentile" : "no benchmark yet").mpFont(.copyMedium).foregroundStyle(MP.muted)
+                        }
+                        Text(category.word.map { "\($0) for \(levelLine)" } ?? "Log a benchmarked test to place this group")
+                            .mpFont(.copy).foregroundStyle(MP.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let best = category.best {
+                    standoutLine("Best", best, tone: .low)
+                }
+                if let weak = category.weakest, weak.key != category.best?.key {
+                    standoutLine("To build", weak, tone: .med)
+                }
+                if let t = category.trendPct, abs(t) >= 1 {
+                    Text(String(format: "%@ %.0f%% against earlier results across the group.", t > 0 ? "Up" : "Down", abs(t)))
+                        .mpFont(.label).foregroundStyle(t > 0 ? MP.riskLow : MP.riskMed)
+                }
+            }
+        }
+    }
+
+    private func standoutLine(_ title: String, _ x: Standout, tone: MP.Tone) -> some View {
+        HStack(spacing: 8) {
+            Text(title).mpFont(.labelMedium).foregroundStyle(MP.foreground(tone)).frame(width: 60, alignment: .leading)
+            Text(x.label).mpFont(.copy).foregroundStyle(MP.ink).lineLimit(1)
+            Spacer()
+            Text([x.latestText, x.unit].compactMap { $0 }.joined(separator: " ")).font(.figuresCopy).foregroundStyle(MP.ink)
+            if let p = x.percentile { Text("p\(p)").mpFont(.label).foregroundStyle(MP.muted) }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The read in full, with the standouts the numbers back it with.
+struct PerformanceReadSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let brief: PerformanceBrief
+    let board: PerformanceBoard?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(brief.headline.typeset).title(MPSize.displayS).accessibilityAddTraits(.isHeader)
+                    Text(brief.brief.typeset).mpFont(.copyLarge).foregroundStyle(MP.ink).lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(brief.provider == nil || brief.provider == "fallback" ? "Written from your numbers." : "Written by your coach from your numbers.")
+                        .mpFont(.label).foregroundStyle(MP.muted)
+                    list("Strengths", brief.strengths, tone: .low)
+                    list("Build next", brief.improve, tone: .med)
+                    if let gaps = board?.gaps, !gaps.isEmpty {
+                        Card(padding: 0) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                CardTitleRow("Behind the read", note: "lowest against the level")
+                                ForEach(gaps) { g in
+                                    HStack {
+                                        Text(g.label).mpFont(.copy).foregroundStyle(MP.ink)
+                                        Spacer()
+                                        Text([g.latestText, g.unit].compactMap { $0 }.joined(separator: " ")).font(.figuresCopy).foregroundStyle(MP.ink)
+                                        if let p = g.percentile { Text("p\(p)").mpFont(.label).foregroundStyle(MP.muted) }
+                                    }
+                                    .padding(.horizontal, 16).padding(.vertical, 8)
+                                }
+                                Spacer().frame(height: 8)
+                            }
+                        }
+                    }
+                    SportsGuardrail()
+                }
+                .padding(.horizontal, 22).padding(.top, 8).padding(.bottom, 28)
+            }
+            .ambientScreen()
+            .navigationTitle("Your read")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.mpFont(.copyLargeMedium) }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func list(_ title: String, _ lines: [String], tone: MP.Tone) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).mpFont(.labelMedium).foregroundStyle(MP.foreground(tone))
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle().fill(MP.foreground(tone)).frame(width: 6, height: 6).padding(.top, 7)
+                        Text(line.typeset).mpFont(.copy).foregroundStyle(MP.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
     }
 }

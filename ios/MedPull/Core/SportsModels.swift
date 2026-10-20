@@ -591,6 +591,37 @@ struct AvailableTest: Codable, Identifiable, Hashable {
     let sided: Bool
 }
 
+/// A test that stands out, high or low, against the level.
+struct Standout: Codable, Identifiable, Hashable {
+    var id: String { key + (note ?? "") }
+    let key: String
+    let label: String
+    let latestText: String?
+    let unit: String
+    let percentile: Int?
+    let word: String?
+    let category: String
+    let note: String?
+}
+
+/// The coach's read of the battery: strengths, what to build, one paragraph.
+struct PerformanceBrief: Codable, Hashable {
+    let headline: String
+    let brief: String
+    let strengths: [String]
+    let improve: [String]
+    let provider: String?
+    let generatedAt: String?
+}
+
+/// The coach's read of an injury plan.
+struct InjuryRead: Codable, Hashable {
+    let headline: String
+    let read: String
+    let provider: String?
+    let generatedAt: String?
+}
+
 struct PerformanceCategory: Codable, Identifiable, Hashable {
     var id: String { key }
     let key: String
@@ -599,6 +630,14 @@ struct PerformanceCategory: Codable, Identifiable, Hashable {
     let family: String
     let cards: [TestCard]
     let available: [AvailableTest]
+    /// Absent from an older server.
+    let percentile: Int?
+    let word: String?
+    let trendPct: Double?
+    let loggedCount: Int?
+    let total: Int?
+    let best: Standout?
+    let weakest: Standout?
 
     var categoryFamily: MP.Category {
         switch family {
@@ -656,6 +695,10 @@ struct PerformanceBoard: Codable {
     let categories: [PerformanceCategory]
     let cards: [String: TestCard]
     let jumps: JumpLoad?
+    /// Absent from an older server.
+    let strengths: [Standout]?
+    let gaps: [Standout]?
+    let brief: PerformanceBrief?
 }
 
 // MARK: - Rehab
@@ -796,6 +839,8 @@ struct InjuryBoard: Codable, Identifiable, Hashable {
     let retest: [String]?
     let pain: PainRead?
     let lastMeasure: String?
+    /// The coach's read; absent from an older server and on past injuries.
+    let read: InjuryRead?
 
     var sideLabel: String? { side.map { $0.capitalized } }
     var title: String { side.map { "\(label), \($0)" } ?? label }
