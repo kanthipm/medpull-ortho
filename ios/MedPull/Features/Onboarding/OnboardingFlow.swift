@@ -35,7 +35,26 @@ struct OnboardingFlow: View {
         // text, so the tint is the sage text colour. The Toggles pass the
         // sage fill themselves.
         .tint(MP.brandInk)
-        .onAppear { jumpForVerification() }
+        .onAppear {
+            applyHint()
+            jumpForVerification()
+        }
+    }
+
+    /// A sign-out from Profile that asked for the athlete side lands on the
+    /// right step instead of Welcome.
+    private func applyHint() {
+        guard let hint = app.onboardingHint else { return }
+        app.onboardingHint = nil
+        switch hint {
+        case "sports":
+            model.path = .sports
+            model.route = [.mode, .consent]
+        case "login":
+            model.route = [.login]
+        default:
+            break
+        }
     }
 
     /// Simulator verification only: `MP_ONBOARDING_STEP=goals` (or mode,

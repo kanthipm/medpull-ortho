@@ -38,7 +38,12 @@ storage.bootstrap()
 
 from mangum import Mangum  # noqa: E402
 
+from app.database import ensure_schema  # noqa: E402
 from app.main import app  # noqa: E402
+
+# The hydrated database may predate a table the models now declare (the
+# sports tables, say). create_all(checkfirst=True) is additive and cheap.
+ensure_schema()
 
 # lifespan="off": the startup hook spawns a background insight warmer that is a
 # laptop convenience. On Lambda it would re-run on every cold start, burn the
@@ -118,6 +123,56 @@ def _personal_daily(event: dict) -> dict:
     return {"ok": True, "uploaded": uploaded, **result}
 
 
+def _seed_sports(event: dict) -> dict:
+    """Add (or refresh) the MedPull Sports demo roster on a live database.
+    Additive: only the fictional athletes' rows are reset, nothing else is
+    touched, so it is safe on a deployment with real people on it."""
+    from app.database import SessionLocal
+    from app.sports.seed import seed_sports
+
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        ensure_schema()
+        db = SessionLocal()
+        try:
+            counts = seed_sports(db)
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False)
+    logger.info("Sports seed complete: %s (uploaded=%s)", counts, uploaded)
+    return {"ok": True, "uploaded": uploaded, "counts": counts}
+
+
+def _comp(event: dict) -> dict:
+    """An operator's complimentary grant for one email login:
+    ``{"action": "comp", "email": "...", "days": 365, "note": "..."}``."""
+    from app.database import SessionLocal
+    from app.models.patient import Patient
+    from app.personal import auth, subscription
+
+    email = auth.normalize_email(str(event.get("email") or ""))
+    if email is None:
+        return {"ok": False, "error": "email is required"}
+    days = int(event.get("days") or 365)
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        ensure_schema()
+        db = SessionLocal()
+        try:
+            cred = auth.credential_for_email(db, email)
+            if cred is None:
+                return {"ok": False, "error": f"No account uses {email}"}
+            patient = db.get(Patient, cred.patient_id)
+            row = subscription.grant_comp(db, patient, days, note=str(event.get("note") or "operator"))
+            db.commit()
+            expires = row.expires_at.isoformat() if row.expires_at else None
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False)
+    logger.info("Comp granted to %s until %s (uploaded=%s)", email, expires, uploaded)
+    return {"ok": True, "uploaded": uploaded, "email": email, "expires_at": expires}
+
+
 def handler(event, context):
     # Function URL / API Gateway events always carry requestContext; a direct
     # invoke of an admin action never does.
@@ -125,6 +180,10 @@ def handler(event, context):
         action = event["action"]
         if action == "seed":
             return _seed(event)
+        if action == "seed_sports":
+            return _seed_sports(event)
+        if action == "comp":
+            return _comp(event)
         if action == "personal_daily":
             return _personal_daily(event)
         return {"ok": False, "error": f"Unknown action: {action}"}

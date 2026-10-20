@@ -43,6 +43,9 @@ final class AppModel {
     /// Opens the Connections screen (Apple Health, wearables) from wherever
     /// the person is: the Today nudge, a `medpull://wearables` link.
     var showConnections = false
+    /// Where onboarding opens after a deliberate sign-out from Profile:
+    /// "sports" (set up an athlete account) or "login" (sign in as one).
+    var onboardingHint: String?
 
     /// The four tabs of a hospital record (Today, Progress, Measure, Care)
     /// and the three of a personal space (Today, Trends, Coach): the
@@ -172,6 +175,14 @@ final class AppModel {
     func enterHome() {
         phase = .home
         Task { await refreshAll() }
+    }
+
+    /// Leave this account for the athlete side: sign out, then open
+    /// onboarding on the athlete set-up or the sign-in screen.
+    func switchToSports(login: Bool) async {
+        await signOut()
+        onboardingHint = login ? "login" : "sports"
+        phase = .onboarding
     }
 
     func signOut() async {

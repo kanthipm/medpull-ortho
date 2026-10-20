@@ -418,3 +418,69 @@ struct JoinOrgSheet: View {
         }
     }
 }
+
+/// On a hospital record or a personal space: the way over to MedPull
+/// Sports. Both actions sign this account out first; the email and
+/// password get back in.
+struct SportsEntryCard: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var working = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Card(padding: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 14) {
+                        IconTile("figure.basketball", family: .indigo, size: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 8) {
+                                Text("MedPull Sports").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                                Text("Athletes").mpFont(.labelMedium).foregroundStyle(MP.brandInk)
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(MP.capsuleShape.fill(MP.brandTint))
+                            }
+                            Text("Performance tests against your level, game recovery, injury plans with the real return gates, with your team's staff or on your own.")
+                                .mpFont(.label).foregroundStyle(MP.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(16)
+                    InsetDivider(leading: 16)
+                    Button { go(login: true) } label: {
+                        HStack {
+                            Text("Sign in as an athlete").mpFont(.copyLargeMedium).foregroundStyle(MP.brandInk)
+                            Spacer()
+                            if working { ProgressView().tint(MP.muted) }
+                        }
+                        .padding(.horizontal, 16).frame(minHeight: 48)
+                    }
+                    .buttonStyle(.mpRow)
+                    .disabled(working)
+                    InsetDivider(leading: 16)
+                    Button { go(login: false) } label: {
+                        Text("Set up an athlete account").mpFont(.copyLargeMedium).foregroundStyle(MP.brandInk)
+                            .padding(.horizontal, 16).frame(minHeight: 48)
+                    }
+                    .buttonStyle(.mpRow)
+                    .disabled(working)
+                }
+                .padding(.bottom, 4)
+            }
+            .clipShape(MP.surfaceShape)
+            Text("Either one signs this account out first. Your email and password get you back in any time.")
+                .mpFont(.label).foregroundStyle(MP.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 16)
+        }
+    }
+
+    private func go(login: Bool) {
+        working = true
+        Task {
+            await app.switchToSports(login: login)
+            working = false
+            dismiss()
+        }
+    }
+}

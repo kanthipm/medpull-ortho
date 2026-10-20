@@ -37,6 +37,8 @@ struct ProfileView: View {
                         if me.isSports {
                             SportsProfileCard().id("sports")
                             AccountCard().id("account")
+                        } else {
+                            SportsEntryCard().id("sports")
                         }
                         if !me.patient.careTeam.isEmpty && !me.isSports {
                             group("Care team") {

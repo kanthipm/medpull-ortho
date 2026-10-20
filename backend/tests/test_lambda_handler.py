@@ -312,6 +312,36 @@ def test_personal_daily_action_runs_under_the_lock_and_uploads(monkeypatch, tmp_
     assert aws_settings.s3_lock_key not in fake.objects  # released
 
 
+def test_seed_sports_action_is_additive_and_uploads(monkeypatch, tmp_path):
+    """The MedPull Sports roster lands on a live database without the
+    destructive reseed: lock, hydrate, ensure the sports tables, seed, persist."""
+    handler, fake = _import_handler(monkeypatch, tmp_path)
+
+    def fake_seed_sports(db, today=None):
+        assert aws_settings.s3_lock_key in fake.objects, "sports seed ran without the write lock"
+        aws_settings.local_db_path.write_bytes(b"with-the-roster")
+        return {"athletes": 15}
+
+    monkeypatch.setattr("app.sports.seed.seed_sports", fake_seed_sports)
+
+    result = handler.handler({"action": "seed_sports"}, None)
+
+    assert result == {"ok": True, "uploaded": True, "counts": {"athletes": 15}}
+    assert fake.objects[aws_settings.s3_db_key] == b"with-the-roster"
+    assert aws_settings.s3_lock_key not in fake.objects  # released
+
+
+def test_comp_action_needs_a_known_email(monkeypatch, tmp_path):
+    handler, fake = _import_handler(monkeypatch, tmp_path)
+
+    result = handler.handler({"action": "comp", "email": "nobody@example.com", "days": 30}, None)
+    assert result["ok"] is False and "nobody@example.com" in result["error"]
+    assert aws_settings.s3_lock_key not in fake.objects  # released on the way out
+
+    result = handler.handler({"action": "comp", "email": ""}, None)
+    assert result["ok"] is False
+
+
 def test_unknown_admin_action_is_reported(monkeypatch, tmp_path):
     handler, _ = _import_handler(monkeypatch, tmp_path)
     result = handler.handler({"action": "drop-everything"}, None)
