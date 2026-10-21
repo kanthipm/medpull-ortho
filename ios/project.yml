@@ -44,6 +44,10 @@ targets:
       path: MedPull/Info.plist
       properties:
         CFBundleDisplayName: MedPull
+        # XcodeGen writes literal "1.0" / "1" here unless told to read the
+        # build settings, and TestFlight keys each upload by CFBundleVersion.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         MedPullAPIBaseURL: $(MEDPULL_API_BASE_URL)
         # The bundled typeface. XcodeGen rewrites Info.plist from this
         # spec on every generate, so the key has to live here — added to the
@@ -64,6 +68,10 @@ targets:
           - Outfit-Regular.ttf
           - Outfit-Medium.ttf
           - Outfit-SemiBold.ttf
+        # Export compliance: the app's only cryptography is the system's
+        # HTTPS/TLS, which is exempt, so App Store Connect need not ask per
+        # build. Revisit if the app ever ships its own encryption.
+        ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: com.medpull.recovery
             CFBundleURLSchemes: [medpull]
@@ -113,7 +121,11 @@ targets:
         DEVELOPMENT_TEAM: 2DFDVFGSH3
         CODE_SIGN_STYLE: Automatic
         MARKETING_VERSION: "1.0"
-        CURRENT_PROJECT_VERSION: "1"
+        # The TestFlight build number (CFBundleVersion). App Store Connect
+        # refuses a build number it has already seen for this version, so
+        # bump it before every upload: the date, with .1, .2 … for a second
+        # upload the same day.
+        CURRENT_PROJECT_VERSION: "20261021"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO
