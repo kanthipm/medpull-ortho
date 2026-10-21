@@ -424,6 +424,11 @@ def sports_verdict(board: dict[str, Any], wellness: dict[str, Any], neuro: dict[
         return {"kind": "rest", "title": "Illness watch", "score": score,
                 "reason": illness["finding"], "detail": "No intensity. Fluids, food, sleep, and a word with the athletic trainer.",
                 "reasons": illness["signals"]}
+    if score is None and days_with_data >= 3:
+        return {"kind": "learning", "title": "Waiting on last night", "score": None,
+                "reason": "Your nights are in; today's HRV, resting heart rate and sleep haven't synced yet.",
+                "detail": "Open your watch or band's app so it uploads last night, then pull down here.",
+                "reasons": reasons}
     if kind == "unknown" or score is None or days_with_data < 3:
         return {"kind": "learning", "title": "Still learning you", "score": None,
                 "reason": "Readiness needs a few nights of HRV, resting heart rate and sleep.",

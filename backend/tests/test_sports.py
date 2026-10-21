@@ -142,6 +142,55 @@ def test_join_as_individual_then_join_rice(client, db):
         _reset(db, pid)
 
 
+def test_showcase_fill_reads_as_stats_and_survives_a_missed_sync(client, db, monkeypatch):
+    """A real athlete's account after the showcase: a readiness score, a
+    verdict, a battery percentile. Anchored to yesterday (the band has not
+    uploaded last night), yesterday's score still carries the day; two days
+    stale, the home says it is waiting on a sync, not learning the athlete."""
+    from app.sports.showcase import fill_pro_athlete, showcased
+
+    monkeypatch.setattr("app.sports.seed.DAYS", 40)  # keep every anchor inside the ingest window
+    body = {"name": "Showcase Athlete", "email": "showcase.ath@athletes.medpull.demo", "password": PWD, "consent": _consent(),
+            "sport": "basketball", "position": "Guard", "height_cm": 190.0, "weight_kg": 86.0, "dominant_side": "right",
+            "sex": "M", "level": "club", "device_name": "iPhone (test)"}
+    resp = client.post("/api/mobile/sports/join", json=body)
+    assert resp.status_code == 200, resp.text
+    headers = {"Authorization": f"Bearer {resp.json()['session_token']}"}
+    pid = resp.json()["me"]["patient"]["id"]
+    today = date.today()
+    try:
+        counts = fill_pro_athlete(db, pid, org_id="rice", team_id="rice-mbb")
+        assert counts["observations"] > 300 and counts["tests"] > 50 and counts["measures"] > 50
+        assert (pid, "rice", "rice-mbb") in showcased(db)
+        home = client.post("/api/mobile/sports/day", headers=headers).json()
+        assert home["verdict"]["kind"] not in ("learning",) and home["verdict"]["score"] is not None
+        assert home["days_with_data"] >= 40 and home["availability"] == "available"
+        perf = client.get("/api/mobile/sports/performance", headers=headers).json()
+        assert perf["logged"] > 30 and perf["overall_percentile"] is not None
+        assert any(r["id"] == pid for r in client.get("/api/sports/teams/rice-mbb/dashboard").json()["roster"])
+
+        # The band has not uploaded last night: yesterday's score carries the day.
+        from sqlalchemy import delete
+
+        from app.models.observation import Observation
+
+        db.execute(delete(Observation).where(Observation.patient_id == pid, Observation.local_date == today))
+        db.commit()
+        home = client.post("/api/mobile/sports/day", headers=headers).json()
+        assert home["verdict"]["kind"] != "learning" and home["verdict"]["score"] is not None
+        assert home["readiness"]["extra"]["as_of"] == (today - timedelta(days=1)).isoformat()
+
+        # Two nights missing: waiting on a sync, not learning the athlete.
+        db.execute(delete(Observation).where(Observation.patient_id == pid, Observation.local_date == today - timedelta(days=1)))
+        db.commit()
+        home = client.post("/api/mobile/sports/day", headers=headers).json()
+        assert home["verdict"]["kind"] == "learning" and home["verdict"]["title"] == "Waiting on last night"
+    finally:
+        from app.sports.seed import _reset
+
+        _reset(db, pid)
+
+
 def test_join_rejects_bad_input(client):
     resp = client.post("/api/mobile/sports/join", json={"name": "X", "email": "nope", "password": "short", "sport": "golf"})
     assert resp.status_code == 422

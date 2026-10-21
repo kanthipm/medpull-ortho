@@ -467,6 +467,36 @@ def test_readiness_is_fifty_at_baseline_and_drops_when_hrv_falls():
     assert comps["hrv"]["z"] < -2 and comps["resting_hr"]["z"] < -2 and comps["sleep"]["z"] < -1
 
 
+def test_readiness_stands_in_for_one_day_without_a_sync():
+    """A band that has not uploaded last night yet: yesterday's score holds
+    the tile for a day, said as such; two days without a night is no data."""
+    today = date.today()
+    hrv = [60.0] * 30
+    rhr = [52.0] * 30
+    sleep = [7.5] * 30
+    unsynced = _data_from({
+        str(M.HRV_RMSSD): _daily(hrv, today - timedelta(days=1)),
+        str(M.RESTING_HR): _daily(rhr, today - timedelta(days=1)),
+        str(M.SLEEP_DURATION): _daily(sleep, today - timedelta(days=1)),
+    }, today)
+    board = metrics.compute_dashboard(unsynced, _Patient(), _Profile())
+    panel = board["panels"]["readiness"]
+    assert panel["status"] != "nodata"
+    assert 45 <= panel["extra"]["score"] <= 55
+    assert panel["extra"]["as_of"] == (today - timedelta(days=1)).isoformat()
+    assert "hasn't synced yet" in panel["finding"]
+    assert board["verdict"]["kind"] == "steady"
+
+    stale = _data_from({
+        str(M.HRV_RMSSD): _daily(hrv, today - timedelta(days=2)),
+        str(M.RESTING_HR): _daily(rhr, today - timedelta(days=2)),
+        str(M.SLEEP_DURATION): _daily(sleep, today - timedelta(days=2)),
+    }, today)
+    board = metrics.compute_dashboard(stale, _Patient(), _Profile())
+    assert board["panels"]["readiness"]["status"] == "nodata"
+    assert board["verdict"]["kind"] == "unknown"
+
+
 def test_acwr_flags_a_load_spike_and_form_follows_banister():
     today = date.today()
     load = [400.0] * 40 + [1300.0] * 5

@@ -342,6 +342,59 @@ def test_fill_athlete_action_needs_a_real_athlete(monkeypatch, tmp_path):
     assert result["ok"] is False
 
 
+def test_fill_athlete_action_finds_the_account_by_email(monkeypatch, tmp_path):
+    handler, fake = _import_handler(monkeypatch, tmp_path)
+
+    result = handler.handler({"action": "fill_athlete", "email": "nobody@athletes.medpull.demo"}, None)
+    assert result["ok"] is False and "nobody@athletes.medpull.demo" in result["error"]
+    assert aws_settings.s3_lock_key not in fake.objects
+
+    seen = {}
+
+    def fake_fill(db, patient_id, today=None, *, org_id, team_id):
+        seen.update(patient_id=patient_id, org_id=org_id, team_id=team_id)
+        aws_settings.local_db_path.write_bytes(b"showcased")
+        return {"observations": 1}
+
+    monkeypatch.setattr("app.sports.showcase.fill_pro_athlete", fake_fill)
+    monkeypatch.setattr(handler, "_athlete_id", lambda db, *, email, phone: "steve-ath" if email == "steve@example.com" else None)
+    result = handler.handler({"action": "fill_athlete", "email": "Steve@Example.com", "org_id": "rice", "team_id": "rice-mbb"}, None)
+    assert result == {"ok": True, "uploaded": True, "patient_id": "steve-ath", "counts": {"observations": 1}}
+    assert seen == {"patient_id": "steve-ath", "org_id": "rice", "team_id": "rice-mbb"}
+    assert fake.objects[aws_settings.s3_db_key] == b"showcased"
+
+
+def test_sports_daily_action_reanchors_the_roster_and_every_showcase(monkeypatch, tmp_path):
+    handler, fake = _import_handler(monkeypatch, tmp_path)
+    calls = []
+
+    def fake_seed_sports(db, today=None):
+        assert aws_settings.s3_lock_key in fake.objects, "sports daily ran without the write lock"
+        calls.append("seed")
+        return {"athletes": 15}
+
+    def fake_fill(db, patient_id, today=None, *, org_id, team_id):
+        calls.append((patient_id, org_id, team_id))
+        if patient_id == "gone-ath":
+            raise ValueError("No athlete account with id 'gone-ath'")
+        aws_settings.local_db_path.write_bytes(b"refreshed")
+        return {}
+
+    monkeypatch.setattr("app.sports.seed.seed_sports", fake_seed_sports)
+    monkeypatch.setattr("app.sports.showcase.fill_pro_athlete", fake_fill)
+    monkeypatch.setattr("app.sports.showcase.showcased",
+                        lambda db: [("steve-ath", "rice", "rice-mbb"), ("gone-ath", "rockets", "rockets-nba")])
+
+    result = handler.handler({"action": "sports_daily"}, None)
+
+    assert result["ok"] is True and result["uploaded"] is True
+    assert result["counts"] == {"athletes": 15}
+    assert result["refilled"] == ["steve-ath"] and "gone-ath" in result["failed"]
+    assert calls == ["seed", ("steve-ath", "rice", "rice-mbb"), ("gone-ath", "rockets", "rockets-nba")]
+    assert fake.objects[aws_settings.s3_db_key] == b"refreshed"
+    assert aws_settings.s3_lock_key not in fake.objects  # released
+
+
 def test_comp_action_needs_a_known_email(monkeypatch, tmp_path):
     handler, fake = _import_handler(monkeypatch, tmp_path)
 

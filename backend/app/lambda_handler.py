@@ -143,16 +143,43 @@ def _seed_sports(event: dict) -> dict:
     return {"ok": True, "uploaded": uploaded, "counts": counts}
 
 
+def _athlete_id(db, *, email: str | None, phone: str | None) -> str | None:
+    """The patient id behind an athlete's email login, else the one athlete
+    account opened with that mobile number."""
+    from sqlalchemy import select
+
+    from app.models.patient import Patient
+    from app.models.sports import SportsProfile
+    from app.personal import auth
+
+    if email:
+        cred = auth.credential_for_email(db, email)
+        if cred is not None:
+            return cred.patient_id
+    if phone:
+        from app.notifications import sendblue
+
+        number = sendblue.normalize_phone(phone) or phone
+        return db.scalar(select(Patient.id).join(SportsProfile, SportsProfile.patient_id == Patient.id)
+                         .where(Patient.phone == number).order_by(Patient.created_at.desc()))
+    return None
+
+
 def _fill_athlete(event: dict) -> dict:
     """Fill one athlete's account with the showcase (app/sports/showcase.py):
     ``{"action": "fill_athlete", "patient_id": "...", "org_id": "rockets", "team_id": "rockets-nba"}``.
-    The account itself is untouched; the generated streams are replaced."""
+    The account can also be named by its email login or the mobile number
+    it was opened with (``"email"`` / ``"phone"``), since an operator rarely
+    has the id to hand. The account itself is untouched; the generated
+    streams are replaced."""
     from app.database import SessionLocal
     from app.sports.showcase import fill_pro_athlete
 
     patient_id = str(event.get("patient_id") or "").strip()
-    if not patient_id:
-        return {"ok": False, "error": "patient_id is required"}
+    email = str(event.get("email") or "").strip().lower() or None
+    phone = str(event.get("phone") or "").strip() or None
+    if not patient_id and email is None and phone is None:
+        return {"ok": False, "error": "patient_id, email or phone is required"}
     org_id = event.get("org_id", "rockets") or None
     team_id = event.get("team_id", "rockets-nba") or None
     with storage.write_lock():
@@ -160,6 +187,10 @@ def _fill_athlete(event: dict) -> dict:
         ensure_schema()
         db = SessionLocal()
         try:
+            if not patient_id:
+                patient_id = _athlete_id(db, email=email, phone=phone)
+                if patient_id is None:
+                    return {"ok": False, "error": f"No athlete account uses {email or phone}"}
             try:
                 counts = fill_pro_athlete(db, patient_id, org_id=org_id, team_id=team_id)
             except ValueError as e:
@@ -170,6 +201,39 @@ def _fill_athlete(event: dict) -> dict:
         uploaded = storage.persist(conditional=False)
     logger.info("Showcase filled for %s: %s (uploaded=%s)", patient_id, counts, uploaded)
     return {"ok": True, "uploaded": uploaded, "patient_id": patient_id, "counts": counts}
+
+
+def _sports_daily(event: dict) -> dict:
+    """The sports demo's morning run, on the EventBridge schedule: the
+    fictional roster is rewritten around today (seed_sports resets only
+    those athletes), then every account the showcase was applied to gets
+    its showcase again, anchored to today. Readiness scores the current
+    day, so a demo left on yesterday's data reads as still learning by the
+    next morning; this keeps both the team board and the athlete's phone
+    current without anyone remembering to refill it."""
+    from app.database import SessionLocal
+    from app.sports.seed import seed_sports
+    from app.sports.showcase import fill_pro_athlete, showcased
+
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        ensure_schema()
+        db = SessionLocal()
+        try:
+            counts = seed_sports(db)
+            refilled, failed = [], {}
+            for patient_id, org_id, team_id in showcased(db):
+                try:
+                    fill_pro_athlete(db, patient_id, org_id=org_id, team_id=team_id)
+                    refilled.append(patient_id)
+                except ValueError as e:
+                    db.rollback()
+                    failed[patient_id] = str(e)
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False)
+    logger.info("Sports daily complete: %s refilled=%s failed=%s (uploaded=%s)", counts, refilled, failed, uploaded)
+    return {"ok": True, "uploaded": uploaded, "counts": counts, "refilled": refilled, "failed": failed}
 
 
 def _comp(event: dict) -> dict:
@@ -223,6 +287,8 @@ def handler(event, context):
             return _comp(event)
         if action == "fill_athlete":
             return _fill_athlete(event)
+        if action == "sports_daily":
+            return _sports_daily(event)
         if action == "personal_daily":
             return _personal_daily(event)
         return {"ok": False, "error": f"Unknown action: {action}"}

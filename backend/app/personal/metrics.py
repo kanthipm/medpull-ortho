@@ -353,6 +353,15 @@ def readiness_panel(data: PersonalData, profile: Any, load_z_yesterday: float | 
               "sleep vs need 25 %, breathing rate and skin temperature 5 % each), mapped to "
               "0–100 with a logistic curve. 50 is your normal; one SD off, taken together, is "
               "the edge of the green or red band.")
+    # A late sync: the band uploads last night when the phone wakes it, so
+    # the first open of the morning can land before today's reading. For one
+    # day yesterday's score stands in, said as such, rather than the tile
+    # falling back to "still learning you" after months of nights.
+    as_of = today
+    if score is None and series and series[-1]["date"] == (today - timedelta(days=1)).isoformat():
+        as_of = today - timedelta(days=1)
+        score, components = _readiness_day(data, as_of, hrv_key, temp_key,
+                                           _sleep_need_for(data, as_of, target, None))
     if score is None:
         yesterday = series[-1] if series else None
         why = ("Readiness needs today's HRV or resting heart rate and last night's sleep. "
@@ -382,6 +391,8 @@ def readiness_panel(data: PersonalData, profile: Any, load_z_yesterday: float | 
     finding = (", ".join(parts) + "." if parts else "Every signal is close to your normal.")
     if week_mean is not None:
         finding += f" Seven-day average {week_mean:.0f}."
+    if as_of != today:
+        finding += " From yesterday's night: today's reading hasn't synced yet."
     status = "ok" if band == "green" else "watch" if band == "amber" else "flag"
     return Panel(
         "readiness", "Readiness", status, label, f"{score:.0f}", "", finding.split(".")[0] + ".",
@@ -390,7 +401,8 @@ def readiness_panel(data: PersonalData, profile: Any, load_z_yesterday: float | 
         series,
         [{"label": "7-day avg", "value": _fmt(week_mean), "unit": ""},
          {"label": "Sleep need", "value": f"{need:.1f}", "unit": "h"}],
-        {"band": band, "components": components, "score": score, "need_hours": need},
+        {"band": band, "components": components, "score": score, "need_hours": need,
+         "as_of": as_of.isoformat()},
     )
 
 

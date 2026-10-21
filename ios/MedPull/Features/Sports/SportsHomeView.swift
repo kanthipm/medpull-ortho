@@ -36,7 +36,7 @@ struct SportsHomeView: View {
                     header.mpRise(0)
                     verdictTile.mpRise(1)
                     if let home {
-                        if home.verdict.kind == "learning" { learningCard.mpRise(2) }
+                        if home.verdict.kind == "learning" && home.daysWithData < 14 { learningCard.mpRise(2) }
                         if !home.schedule.today.isEmpty || home.schedule.nextGame != nil { scheduleCard(home).mpRise(2).id("schedule") }
                         planCard(home).mpRise(3).id("plan")
                         numbersCard(home).mpRise(4).id("numbers")
@@ -146,7 +146,7 @@ struct SportsHomeView: View {
                 GradientTile(verdict.gradient,
                              kicker: home.schedule.gameToday != nil ? "Game day" : "Today",
                              value: score.map { String(format: "%.0f", $0) } ?? "—",
-                             unit: score == nil ? "learning you" : "readiness",
+                             unit: score == nil ? ((home.daysWithData < 3) ? "learning you" : "last night") : "readiness",
                              side: (home.readiness.statusText, "overnight")) {
                     if values.count > 1 {
                         CurveArt(points: unitPoints(values), height: 92)

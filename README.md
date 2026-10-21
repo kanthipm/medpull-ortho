@@ -88,6 +88,17 @@ Rice's join code is `OWLS26`. Routes `/api/mobile/sports/*` (athlete) and
 `backend/tests/test_sports.py`. The guardrail on every screen: performance
 and recovery guidance, return-to-play is the medical staff's call.
 
+On AWS the demo is kept current by the API function's admin actions, each
+under the S3 write lock (`aws lambda invoke --function-name recovery-copilot-api
+--cli-binary-format raw-in-base64-out --payload '{...}' out.json`):
+`{"action": "seed_sports"}` adds or re-anchors the Rice roster to today;
+`{"action": "fill_athlete", "email": "..."}` (or `"phone"` / `"patient_id"`,
+with `"org_id"` / `"team_id"`) writes the showcase around a real athlete's
+account; `{"action": "sports_daily"}` does both for every showcased account
+and runs on an EventBridge schedule every morning (`SportsDailyCron`, 11:00
+UTC by default), because readiness scores the current day and a demo left
+on yesterday's data would read as "still learning you" by breakfast.
+
 ## MedPull's own mobility metrics
 
 Gait (walking speed, step length, cadence, signed asymmetry, double support),

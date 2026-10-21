@@ -160,6 +160,17 @@ def _ankle_sprain(pid: str, today: date, clinician: str) -> tuple[SportsInjury, 
     return inj, rows
 
 
+def showcased(db: Session) -> list[tuple[str, str | None, str | None]]:
+    """Every account the showcase was applied to, with the program it was
+    written for: what a daily refresh re-anchors to the new day."""
+    out = []
+    for profile in db.scalars(select(SportsProfile)).all():
+        mark = (profile.settings or {}).get("showcase")
+        if isinstance(mark, dict):
+            out.append((profile.patient_id, mark.get("org_id"), mark.get("team_id")))
+    return out
+
+
 def fill_pro_athlete(db: Session, patient_id: str, today: date | None = None, *, org_id: str | None = "rockets",
                      team_id: str | None = "rockets-nba") -> dict[str, Any]:
     today = today or date.today()
@@ -187,7 +198,7 @@ def fill_pro_athlete(db: Session, patient_id: str, today: date | None = None, *,
     profile.status_note = None
     stamp = datetime.now().isoformat()
     org_name = org.name if org is not None else "your program"
-    profile.settings = {**(profile.settings or {}), "devices": {
+    profile.settings = {**(profile.settings or {}), "showcase": {"org_id": org_id, "team_id": team_id, "at": stamp}, "devices": {
         "catapult": {"mode": "sample", "detail": f"Connected by {org_name} — sample data", "at": stamp},
         "hawkin": {"mode": "sample", "detail": f"Connected by {org_name} — sample data", "at": stamp},
         "vald": {"mode": "sample", "detail": f"Connected by {org_name} — sample data", "at": stamp},
