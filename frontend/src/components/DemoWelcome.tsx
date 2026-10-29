@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-/** The public demo's front door on app.medpull.org: a hazy glass screen over
+/** The public demo's front door on demo.medpull.org: a hazy glass screen over
  *  the worklist the first time a browser arrives, one line on what MedPull
  *  does, and a button that drops you on the product's own question — who
  *  needs a call today.
@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react'
  *  button and the quiet link all dismiss it; focus lands on the button. */
 
 const STORAGE_KEY = 'medpull.demo-welcomed'
-const PUBLIC_HOST = 'app.medpull.org'
+const PUBLIC_HOST = 'demo.medpull.org'
 
 function wantsWelcome(): boolean {
   if (typeof window === 'undefined') return false

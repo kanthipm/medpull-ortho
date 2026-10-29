@@ -139,7 +139,7 @@ mid-change without shipping that change.
 | `JUNCTION_ENVIRONMENT` | `sandbox` | `sandbox` or `production` — must match the key |
 | `JUNCTION_REGION` | `us` | `us` or `eu` |
 | `JUNCTION_LINK_REDIRECT_URL` | — | Where Junction Link sends a patient afterwards |
-| `SITE_DOMAIN` | — | Custom hostname for the console (e.g. `app.medpull.org`); also read from `.env`. See *Custom domain* |
+| `SITE_DOMAIN` | — | Custom hostname for the console (e.g. `demo.medpull.org`); also read from `.env`. See *Custom domain* |
 | `SITE_CERTIFICATE_ARN` | — | ISSUED ACM certificate in us-east-1 covering `SITE_DOMAIN`; also read from `.env` |
 | `BUDGET_EMAIL` | — | Enables the monthly cost alarm |
 | `API_RESERVED_CONCURRENCY` | `5` | `-1` leaves concurrency unreserved |
@@ -151,7 +151,7 @@ The stack can serve the console on a hostname under medpull.org instead of the
 
 - **The apex is taken.** `medpull.org` and `www.medpull.org` are the marketing
   site (GitHub Pages today, Vercel per `medpullsite`'s deploy notes). The
-  console therefore lives on a subdomain — `app.medpull.org`.
+  console therefore lives on a subdomain — `demo.medpull.org` (it was `app.medpull.org` until 2026-10-29; that name now redirects).
 - **The DNS zone is in a different AWS account.** medpull.org's nameservers
   are Route 53, but the hosted zone is not in the account this stack deploys
   to (556683673972) nor in the `medpull` CLI profile's account. It is in a
@@ -164,7 +164,7 @@ The sequence, with what runs where:
    no other region). Done once; the ARN is in `.env`.
    ```bash
    aws acm request-certificate --region us-east-1 \
-     --domain-name app.medpull.org --validation-method DNS
+     --domain-name demo.medpull.org --validation-method DNS
    aws acm describe-certificate --region us-east-1 --certificate-arn <arn> \
      --query 'Certificate.DomainValidationOptions[].ResourceRecord'
    ```
@@ -182,7 +182,7 @@ The sequence, with what runs where:
    carry the public host (behind CloudFront the request's own base URL is
    the Function URL, which the origin check rejects).
 4. **Add the traffic record** (zone owner):
-   `app.medpull.org  CNAME  <DistributionDomainName output>` — or a Route 53
+   `demo.medpull.org  CNAME  <DistributionDomainName output>` — or a Route 53
    A/AAAA alias to the distribution, which is free of query charges.
 
 Removing the domain is `SITE_DOMAIN=`/`SITE_CERTIFICATE_ARN=` and another
