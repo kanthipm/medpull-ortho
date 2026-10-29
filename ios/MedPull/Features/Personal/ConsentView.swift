@@ -105,6 +105,7 @@ struct ConsentForm: View {
             Text("Guidance for training and recovery — not medical advice. Questions: hello@medpull.org.")
                 .mpFont(.label).foregroundStyle(MP.muted)
                 .fixedSize(horizontal: false, vertical: true)
+            LegalLinks()
         }
         .onAppear {
             if scopes.isEmpty {

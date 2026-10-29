@@ -62,6 +62,7 @@ struct PaywallView: View {
                     Text("Subscriptions renew automatically until cancelled in Settings › Apple ID › Subscriptions. Prices are set by the App Store for your region.")
                         .mpFont(.label).foregroundStyle(MP.muted)
                         .fixedSize(horizontal: false, vertical: true)
+                    LegalLinks()
                 }
                 .padding(.horizontal, 22).padding(.top, 8).padding(.bottom, 28)
             }

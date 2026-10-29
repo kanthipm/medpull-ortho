@@ -118,6 +118,12 @@ struct ProfileView: View {
                         actionRow("Save server") { saveServer() }
                     }
 
+                    group("About", footer: "MedPull \(Self.versionLine). Questions: hello@medpull.org.") {
+                        actionRow("Privacy policy") { UIApplication.shared.open(Legal.privacy) }
+                        InsetDivider(leading: 16)
+                        actionRow("Terms of use") { UIApplication.shared.open(Legal.terms) }
+                    }
+
                     group(nil) {
                         Button {
                             signingOut = true
@@ -297,6 +303,14 @@ struct ProfileView: View {
         .padding(.vertical, 10)
         .frame(minHeight: 48)
         .accessibilityElement(children: .combine)
+    }
+
+    /// "1.0 (20261029)", as the App Store and TestFlight print it.
+    static var versionLine: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let short = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
     }
 
     private func actionRow(_ title: String, action: @escaping () -> Void) -> some View {
