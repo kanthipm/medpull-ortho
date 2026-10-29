@@ -125,7 +125,7 @@ targets:
         # refuses a build number it has already seen for this version, so
         # bump it before every upload: the date, with .1, .2 … for a second
         # upload the same day.
-        CURRENT_PROJECT_VERSION: "20261029"
+        CURRENT_PROJECT_VERSION: "20261029.1"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO

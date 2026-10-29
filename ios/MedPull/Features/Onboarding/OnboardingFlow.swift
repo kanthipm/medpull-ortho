@@ -21,6 +21,9 @@ import SwiftUI
 struct OnboardingFlow: View {
     @Environment(AppModel.self) private var app
     @State private var model = OnboardingModel()
+    /// Simulator screenshots only (`-MP_SHOW paywall`): the plans sheet
+    /// over Welcome, since a route pushed straight to `.plan` does not take.
+    @State private var previewPaywall = false
 
     var body: some View {
         @Bindable var model = model
@@ -39,6 +42,7 @@ struct OnboardingFlow: View {
             applyHint()
             jumpForVerification()
         }
+        .fullScreenCover(isPresented: $previewPaywall) { PaywallView(mode: .onboarding) {} }
     }
 
     /// A sign-out from Profile that asked for the athlete side lands on the
@@ -62,6 +66,7 @@ struct OnboardingFlow: View {
     /// path so a screenshot needs no taps. Debug builds only.
     private func jumpForVerification() {
         #if DEBUG
+        if AppConfig.debugFlag("MP_SHOW") == "paywall" { previewPaywall = true }
         guard let raw = AppConfig.debugFlag("MP_ONBOARDING_STEP") else { return }
         model.name = "Ada Runner"
         model.phone = "5125559001"
