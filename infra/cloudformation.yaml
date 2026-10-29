@@ -133,7 +133,7 @@ Parameters:
     Type: String
     Default: ""
     Description: >-
-      Optional. Hostname the console is served on (e.g. demo.medpull.org).
+      Optional. Hostname the console is served on (e.g. demo.medpull.app).
       Needs CertificateArn too. The DNS record itself is not managed here:
       the medpull.org zone lives in another AWS account, so someone with
       access to it points this name at the distribution (see infra/README.md).
