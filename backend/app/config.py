@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     # with a certificate Apple's chain cannot vouch for.
     apple_subscription_verify: str = "lenient"  # strict | lenient
     # Sandbox | Production: the environment a strict deployment accepts.
+    # Sandbox transactions are always accepted too (App Review, TestFlight).
     apple_environment: str = "Sandbox"
     # SHA-256 of Apple Root CA - G3 (DER), the anchor a strict check pins.
     # Confirm against https://www.apple.com/certificateauthority/ before
