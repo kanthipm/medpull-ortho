@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover: the tab bar and composer inset themselves from
+         the home indicator when the app is pinned to an iPhone home screen. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- theme-color follows the canvas: #FBFBF9 light / #0B0B0C dark. The
+         pre-paint script rewrites it before the first frame and
+         src/ui/appearance.ts keeps it in step after. -->
+    <meta name="theme-color" content="#fbfbf9" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="MedPull" />
+    <link rel="icon" type="image/svg+xml" href="/medpull-mark.svg" />
+    <link rel="alternate icon" type="image/png" href="/medpull-mark.png" />
+    <link rel="apple-touch-icon" href="/medpull-mark.png" />
+
+    <!-- Outfit (SIL OFL 1.1), the medpull.org face: one variable file for
+         every weight, so one preload covers the whole first paint. -->
+    <link
+      rel="preload"
+      href="/fonts/Outfit-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
+    <!-- Light is the default, like the iPhone app (Appearance.swift): Dark
+         or System apply only once the patient picked them in Profile. The
+         choice is applied here, before the first frame, so the page never
+         flashes the wrong mode. -->
+    <script>
+      (function () {
+        try {
+          var choice = localStorage.getItem('medpull-patient-appearance')
+          var dark = choice === 'dark'
+          if (choice === 'system' && window.matchMedia) {
+            dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+          }
+          if (dark) document.documentElement.classList.add('dark')
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+          var meta = document.querySelector('meta[name="theme-color"]')
+          if (meta) meta.setAttribute('content', dark ? '#0b0b0c' : '#fbfbf9')
+          document.documentElement.style.background = dark ? '#0b0b0c' : '#fbfbf9'
+        } catch (e) {}
+      })()
+    </script>
+    <title>MedPull</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

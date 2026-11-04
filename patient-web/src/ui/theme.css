@@ -1,0 +1,404 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   MEDPULL PATIENT APP — the iPhone app's design tokens (ios/MedPull/UI/
+   Theme.swift) in CSS, the same hexes the console's :root / .dark resolve
+   to, so the three surfaces read as one product. Light is the default;
+   dark follows the site's retired dark theme in structure (warm-neutral
+   surfaces, low-alpha fills, no bright borders).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── TYPEFACE — Outfit (SIL OFL 1.1), the medpull.org face. ─────────────── */
+@font-face {
+  font-family: 'Outfit';
+  src: url('/fonts/Outfit-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Outfit';
+  src: url('/fonts/Outfit-latin-ext.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+/* Glyphs Outfit lacks (thin spaces, primes, ≈ ≤ ≥, arrows) and the one it
+   draws badly (U+00B7, 0.13em with no sidebearings) go to Arial, metric
+   matched. Declared after the real faces so these win for the listed glyphs. */
+@font-face {
+  font-family: 'Outfit';
+  src: local('Arial'), local('Liberation Sans'), local('Helvetica'), local('Arial Unicode MS');
+  font-weight: 100 900;
+  font-style: normal;
+  size-adjust: 102.62%;
+  ascent-override: 97.45%;
+  descent-override: 25.34%;
+  line-gap-override: 0%;
+  unicode-range: U+00B7, U+2007, U+2009, U+200A, U+2020, U+2032, U+2033, U+2190, U+2192,
+    U+2248, U+2264, U+2265;
+}
+@font-face {
+  font-family: 'Outfit';
+  src: local('Helvetica'), local('Apple Symbols'), local('Segoe UI Symbol'), local('Arial Unicode MS');
+  font-weight: 100 900;
+  font-style: normal;
+  size-adjust: 102.62%;
+  ascent-override: 97.45%;
+  descent-override: 25.34%;
+  line-gap-override: 0%;
+  unicode-range: U+2010, U+2011, U+202F, U+2197, U+2198;
+}
+
+:root {
+  color-scheme: light;
+  /* ── Text ─────────────────────────────────────────────────────────────── */
+  --ink: 20 20 20; /* #141414 */
+  --body: 88 91 88; /* #585B58 */
+  --muted: 99 102 98; /* #636662 */
+  --faint: 166 168 164; /* #A6A8A4 — non-text only */
+  /* ── Rules ────────────────────────────────────────────────────────────── */
+  --hairline: 236 236 236;
+  --line: 222 222 222;
+  --line-strong: 138 140 136;
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+  --canvas: 251 251 249; /* #FBFBF9 */
+  --soft: 242 242 240;
+  --panel: 255 255 255;
+  --track: 227 227 224;
+  --disabled-fill: 242 242 240;
+  --disabled-ink: 99 102 98;
+  /* ── Primary action — the site's near-black capsule ───────────────────── */
+  --action: 20 20 20;
+  --action-top: 58 58 58;
+  --on-action: 255 255 255;
+  /* ── Brand — the site's sage ──────────────────────────────────────────── */
+  --brand: 74 102 62;
+  --on-brand: 255 255 255;
+  --brand-ink: 63 95 51;
+  --brand-deep: 51 77 41;
+  --brand-tint: 233 241 228;
+  --brand-tint-strong: 219 232 211;
+  --state-fill: 74 102 62;
+  /* ── Live / adherent ──────────────────────────────────────────────────── */
+  --teal: 95 127 79;
+  --teal-ink: 67 113 47;
+  --teal-tint: 231 239 225;
+  /* ── Accent ───────────────────────────────────────────────────────────── */
+  --lime: 212 241 74;
+  /* ── Fog — the soft colour fields behind the glass ────────────────────── */
+  --fog-sage: 143 174 116 / 0.42;
+  --fog-amber: 236 199 110 / 0.4;
+  --fog-clay: 233 160 125 / 0.34;
+  --fog-lilac: 154 163 220 / 0.36;
+  --fog-mint: 120 190 175 / 0.32;
+  --fog-a: 1;
+  --dots: 20 20 20 / 0.06;
+  --grain-surface-a: 1;
+  --grain-gradient-a: 0.7;
+  /* ── Glass ────────────────────────────────────────────────────────────── */
+  --glass-top: 255 255 255 / 0.92;
+  --glass-bottom: 255 255 255 / 0.78;
+  --glass-rim: 255 255 255 / 0.85;
+  --glass-solid-top: 255 255 255 / 0.95;
+  --glass-solid-bottom: 255 255 255 / 0.84;
+  --glass-ring: 20 20 20 / 0.1;
+  --shadow: 20 20 20;
+  --shadow-near: 0.05;
+  --shadow-far: 0.09;
+  --fill: 120 120 110 / 0.1;
+  --fill-strong: 120 120 110 / 0.18;
+  --tint-lilac: 154 163 220 / 0.16;
+  --tint-amber: 236 199 110 / 0.13;
+  /* ── Icon tiles — hue is category, never state ────────────────────────── */
+  --cat-blue-ink: 124 93 10;
+  --cat-blue-tint: 248 240 216;
+  --cat-teal-ink: 63 95 51;
+  --cat-teal-tint: 233 241 228;
+  --cat-indigo-ink: 84 78 142;
+  --cat-indigo-tint: 236 235 245;
+  --cat-violet-ink: 122 89 70;
+  --cat-violet-tint: 244 236 231;
+  /* ── Status — the site's pills, deepened to clear AA on their tints ───── */
+  --risk-high: 176 74 38;
+  --risk-high-bg: 251 236 230;
+  --risk-high-pressed: 140 56 26;
+  --on-risk-high: 255 255 255;
+  --risk-med: 124 93 10;
+  --risk-med-bg: 248 240 216;
+  --risk-low: 67 113 47;
+  --risk-low-bg: 231 239 225;
+  --risk-missing: 76 86 128;
+  --risk-missing-bg: 232 234 243;
+  /* ── Overlays ─────────────────────────────────────────────────────────── */
+  --overlay-panel: 255 255 255;
+  --overlay-border: 222 222 222;
+  --scrim: 30 30 25 / 0.34;
+  /* ── Charts ───────────────────────────────────────────────────────────── */
+  --chart-s1: 74 102 62;
+  --chart-s2: 84 78 142;
+  --chart-grid: 236 236 236;
+  --chart-axis-label: 99 102 98;
+  --chart-ref-line: 138 140 136;
+  /* ── System chrome (the tab bar's badge keeps the system red) ─────────── */
+  --system-red: 255 59 48;
+
+  /* ── Radii — the site's ───────────────────────────────────────────────── */
+  --r-surface: 26px;
+  --r-control: 18px;
+  --r-thumb: 14px;
+  --r-tile: 9px;
+  --r-canvas: 34px;
+
+  /* ── Type — the frozen ladder ─────────────────────────────────────────── */
+  --s-axis: 11px;
+  --s-label: 12px;
+  --s-copy: 14px;
+  --s-copy-lg: 16px;
+  --s-lede: 18px;
+  --s-subhead: 20px;
+  --s-display-s: 28px;
+  --s-display-m: 34px;
+  --s-display-l: 44px;
+  --s-display-xl: 54px;
+
+  /* ── Motion — the site's two curves ───────────────────────────────────── */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --dur-state: 250ms;
+  --dur-step: 320ms;
+  --dur-enter: 600ms;
+  --dur-press: 320ms;
+  --dur-layout: 420ms;
+  --press-scale: 0.97;
+
+  /* ── Gradients — the site's grainy earthy tiles ───────────────────────── */
+  --g-sage: radial-gradient(90% 55% at 50% 108%, #e6db7c 0%, transparent 62%),
+    linear-gradient(175deg, #405a36 0%, #5f7d4c 52%, #aebf87 100%);
+  --g-meadow: radial-gradient(80% 60% at 70% 110%, #d9cf7e 0%, transparent 60%),
+    linear-gradient(180deg, #3f5735 0%, #587548 42%, #8aa56a 78%, #b8b977 100%);
+  --g-amber: radial-gradient(80% 55% at 25% 100%, #eec27a 0%, transparent 60%),
+    linear-gradient(180deg, #7d6420 0%, #a88c35 42%, #cdb46a 100%);
+  --g-clay: radial-gradient(70% 55% at 30% 100%, #e3aa66 0%, transparent 60%),
+    linear-gradient(180deg, #7a5946 0%, #a27a64 48%, #c9a893 100%);
+  --g-dusk: linear-gradient(185deg, #9a5a39 0%, #a8807a 42%, #6b7fa0 100%);
+  --g-lilac: linear-gradient(175deg, #40457f 0%, #544e8e 62%, #806b8c 100%);
+  --g-mint: linear-gradient(165deg, #3f7f74 0%, #78bba8 50%, #d4e0a6 100%);
+  --g-bubble: linear-gradient(180deg, #5e7d4e, #445f39);
+
+  /* The grain, pre-rendered on the phone as a tileable PNG (Grain /
+     GrainSoft assets), shown at half size so it is matte, never pixelated. */
+  --grain: url('/grain.png');
+  --grain-soft: url('/grain-soft.png');
+
+  /* The phone column: the app is laid out for one hand, so on a wide screen
+     it keeps a phone's width and sits in the middle of the canvas. */
+  --phone-max: 480px;
+  --tabbar-h: 50px;
+  --navbar-h: 44px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.dark {
+  color-scheme: dark;
+  --ink: 245 245 247;
+  --body: 161 161 166;
+  --muted: 142 142 147;
+  --faint: 88 88 93;
+  --hairline: 44 44 47;
+  --line: 58 58 61;
+  --line-strong: 120 120 125;
+  --canvas: 11 11 12;
+  --soft: 38 38 40;
+  --panel: 28 28 30;
+  --track: 52 52 55;
+  --disabled-fill: 38 38 40;
+  --disabled-ink: 142 142 147;
+  --action: 245 245 247;
+  --action-top: 255 255 255;
+  --on-action: 20 20 20;
+  --brand: 90 125 74;
+  --brand-ink: 183 214 138;
+  --brand-deep: 74 102 62;
+  --brand-tint: 44 52 40;
+  --brand-tint-strong: 53 64 47;
+  --state-fill: 159 214 122;
+  --teal: 90 125 74;
+  --teal-ink: 159 214 122;
+  --teal-tint: 45 54 40;
+  --fog-sage: 143 174 116 / 0.16;
+  --fog-amber: 236 199 110 / 0.09;
+  --fog-clay: 233 160 125 / 0.09;
+  --fog-lilac: 154 163 220 / 0.15;
+  --fog-mint: 120 190 175 / 0.09;
+  --dots: 255 255 255 / 0.05;
+  --grain-surface-a: 0.5;
+  --glass-top: 36 36 40 / 0.94;
+  --glass-bottom: 28 28 30 / 0.9;
+  --glass-rim: 255 255 255 / 0.06;
+  --glass-solid-top: 46 46 50 / 0.96;
+  --glass-solid-bottom: 34 34 38 / 0.92;
+  --glass-ring: 0 0 0 / 0.5;
+  --shadow: 0 0 0;
+  --shadow-near: 0.35;
+  --shadow-far: 0.45;
+  --fill: 255 255 255 / 0.07;
+  --fill-strong: 255 255 255 / 0.12;
+  --tint-lilac: 154 163 220 / 0.12;
+  --tint-amber: 236 199 110 / 0.06;
+  --cat-blue-ink: 243 196 106;
+  --cat-blue-tint: 62 52 38;
+  --cat-teal-ink: 183 214 138;
+  --cat-teal-tint: 44 52 40;
+  --cat-indigo-ink: 179 174 240;
+  --cat-indigo-tint: 44 43 66;
+  --cat-violet-ink: 224 180 154;
+  --cat-violet-tint: 58 44 38;
+  --risk-high: 255 148 119;
+  --risk-high-bg: 64 43 40;
+  --risk-high-pressed: 255 148 119;
+  --on-risk-high: 20 20 20;
+  --risk-med: 243 196 106;
+  --risk-med-bg: 62 52 38;
+  --risk-low: 159 214 122;
+  --risk-low-bg: 45 54 40;
+  --risk-missing: 170 179 230;
+  --risk-missing-bg: 48 50 64;
+  --overlay-panel: 36 36 40;
+  --overlay-border: 58 58 61;
+  --scrim: 0 0 0 / 0.55;
+  --chart-s1: 183 214 138;
+  --chart-s2: 179 174 240;
+  --chart-grid: 44 44 47;
+  --chart-axis-label: 142 142 147;
+  --chart-ref-line: 120 120 125;
+  --system-red: 255 69 58;
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --faint: 99 102 98;
+    --hairline: 196 197 193;
+    --line: 138 140 136;
+    --chart-grid: 138 140 136;
+  }
+  .dark {
+    --faint: 142 142 147;
+    --hairline: 88 88 93;
+    --line: 120 120 125;
+    --chart-grid: 120 120 125;
+  }
+}
+
+/* Flat modes: no fog, no grain, no blur, no shadow. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root, .dark {
+    --fog-a: 0;
+    --grain-surface-a: 0;
+    --grain-gradient-a: 0;
+    --shadow-near: 0;
+    --shadow-far: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-state: 150ms;
+    --dur-step: 150ms;
+    --dur-enter: 1ms;
+    --dur-press: 1ms;
+    --dur-layout: 150ms;
+    --press-scale: 1;
+    --spring: ease-out;
+  }
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: 'Outfit', 'Arial', 'Helvetica', sans-serif;
+  font-size: var(--s-copy);
+  font-weight: 400;
+  letter-spacing: -0.06px;
+  line-height: 1.32;
+  color: rgb(var(--ink));
+  background: rgb(var(--canvas));
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
+}
+#root { height: 100%; }
+button, input, textarea, select { font: inherit; letter-spacing: inherit; color: inherit; }
+button {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: inherit;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+button:disabled { cursor: default; }
+a { color: rgb(var(--brand-ink)); text-decoration: none; }
+hr { border: 0; margin: 0; }
+img, svg { display: block; }
+:focus-visible { outline: 2px solid rgb(var(--ink)); outline-offset: 3px; border-radius: 4px; }
+::selection { background: rgb(238 248 201); color: rgb(20 20 20); }
+
+/* ── The type ladder — size, weight and tracking per rung (MPType) ──────── */
+.t-axis { font-size: var(--s-axis); font-weight: 400; letter-spacing: 0; }
+.t-label { font-size: var(--s-label); font-weight: 400; letter-spacing: 0; line-height: 1.3; }
+.t-label-m { font-size: var(--s-label); font-weight: 500; letter-spacing: 0; line-height: 1.3; }
+.t-label-sb { font-size: var(--s-label); font-weight: 600; letter-spacing: 0; line-height: 1.3; }
+.t-copy { font-size: var(--s-copy); font-weight: 400; letter-spacing: -0.06px; line-height: 1.32; }
+.t-copy-m { font-size: var(--s-copy); font-weight: 500; letter-spacing: -0.06px; line-height: 1.32; }
+.t-copy-sb { font-size: var(--s-copy); font-weight: 600; letter-spacing: -0.06px; line-height: 1.32; }
+.t-copy-lg { font-size: var(--s-copy-lg); font-weight: 400; letter-spacing: -0.1px; line-height: 1.32; }
+.t-copy-lg-m { font-size: var(--s-copy-lg); font-weight: 500; letter-spacing: -0.1px; line-height: 1.32; }
+.t-copy-lg-sb { font-size: var(--s-copy-lg); font-weight: 600; letter-spacing: -0.1px; line-height: 1.32; }
+.t-lede { font-size: var(--s-lede); font-weight: 400; letter-spacing: -0.18px; line-height: 1.3; }
+.t-lede-m { font-size: var(--s-lede); font-weight: 500; letter-spacing: -0.18px; line-height: 1.3; }
+.t-lede-sb { font-size: var(--s-lede); font-weight: 600; letter-spacing: -0.18px; line-height: 1.3; }
+.t-subhead { font-size: var(--s-subhead); font-weight: 400; letter-spacing: -0.4px; line-height: 1.25; }
+.t-subhead-m { font-size: var(--s-subhead); font-weight: 500; letter-spacing: -0.4px; line-height: 1.25; }
+.t-subhead-sb { font-size: var(--s-subhead); font-weight: 600; letter-spacing: -0.4px; line-height: 1.25; }
+.t-15-m { font-size: 15px; font-weight: 500; letter-spacing: -0.1px; line-height: 1.3; }
+.t-17-m { font-size: 17px; font-weight: 500; letter-spacing: -0.3px; line-height: 1.25; }
+.t-display-s { font-size: var(--s-display-s); font-weight: 300; letter-spacing: -1.1px; line-height: 1.12; }
+.t-display-m { font-size: var(--s-display-m); font-weight: 300; letter-spacing: -1.4px; line-height: 1.08; }
+.t-display-l { font-size: var(--s-display-l); font-weight: 300; letter-spacing: -2px; line-height: 1.02; }
+.t-display-xl { font-size: var(--s-display-xl); font-weight: 300; letter-spacing: -2.7px; line-height: 1; }
+/* The one uppercase element a screen gets: 12/500, tracked +0.06em, muted. */
+.t-eyebrow { font-size: var(--s-label); font-weight: 500; letter-spacing: 0.72px; text-transform: uppercase; color: rgb(var(--muted)); }
+/* Numbers that have to line up: Outfit's tnum. */
+.figures { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+.lh-2 { line-height: 1.45; }
+.lh-3 { line-height: 1.55; }
+.wrap { overflow-wrap: anywhere; }
+.ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ── Colour utilities ───────────────────────────────────────────────────── */
+.c-ink { color: rgb(var(--ink)); }
+.c-body { color: rgb(var(--body)); }
+.c-muted { color: rgb(var(--muted)); }
+.c-faint { color: rgb(var(--faint)); }
+.c-brand-ink { color: rgb(var(--brand-ink)); }
+.c-risk-high { color: rgb(var(--risk-high)); }
+.c-risk-med { color: rgb(var(--risk-med)); }
+.c-risk-low { color: rgb(var(--risk-low)); }
+.c-on-action { color: rgb(var(--on-action)); }
+.c-white { color: #fff; }
+/* Secondary text follows the ground it sits on: muted on glass and canvas,
+   body on a tinted card (`.on-tint`). */
+.secondary { color: rgb(var(--muted)); }
+.on-tint .secondary { color: rgb(var(--body)); }

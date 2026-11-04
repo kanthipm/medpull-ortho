@@ -1,4 +1,4 @@
-.PHONY: setup seed dev dev-backend dev-frontend build run test lint clean \
+.PHONY: setup seed dev dev-backend dev-frontend dev-patient-web build build-patient-web run test lint clean \
         deploy deploy-backend reseed destroy ios ios-build
 
 setup: ## Install backend (uv) and frontend (npm) dependencies
@@ -13,6 +13,12 @@ dev-backend: ## FastAPI with auto-reload on :8000
 
 dev-frontend: ## Vite dev server on :5173 (proxies /api -> :8000)
 	cd frontend && npm run dev
+
+dev-patient-web: ## Vite dev server for the patient web app on :5174 (proxies /api -> :8000)
+	cd patient-web && npm run dev
+
+build-patient-web: ## Production build of the patient web app (patient-web/dist)
+	cd patient-web && npm run build
 
 dev: ## Run backend + frontend together
 	cd frontend && npx concurrently -k -n api,web -c blue,green \
