@@ -499,9 +499,10 @@ Schema: the app added columns to `patients` and `adherence_tasks`.
 the S3 copy) picks them up without a reseed. Tests: `tests/test_mobile.py`.
 
 On AWS only `/api/*` reaches the function, so the task page is a SPA route
-(`/t/:token`) and the optional `apple-app-site-association` (served by the
-backend at `/.well-known/` when `IOS_TEAM_ID` is set) has to be uploaded to
-the SPA bucket as well. Not built yet: push notifications (texts are the
+(`/t/:token`). Universal links need `IOS_TEAM_ID` (in `.env` or the
+environment): the backend then serves `apple-app-site-association` at
+`/.well-known/` for local runs, and `deploy.sh` uploads the same JSON beside
+the SPA, where the CloudFront rewrite exempts it so Apple can fetch it. Not built yet: push notifications (texts are the
 notification channel), Android, and a scheduled daily check-in (the console
 assigns tasks; nothing creates one on a timer).
 

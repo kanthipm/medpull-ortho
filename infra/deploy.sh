@@ -51,6 +51,10 @@ SENDBLUE_SECRET_PARAM="${SENDBLUE_SECRET_PARAM:-/recovery-copilot/sendblue-api-s
 SENDBLUE_WEBHOOK_PARAM="${SENDBLUE_WEBHOOK_PARAM:-/recovery-copilot/sendblue-webhook-secret}"
 SENDBLUE_FROM_NUMBER="${SENDBLUE_FROM_NUMBER:-$(dotenv_value SENDBLUE_FROM_NUMBER)}"
 CARE_TEAM_PHONES="${CARE_TEAM_PHONES:-$(dotenv_value CARE_TEAM_PHONES)}"
+# Apple team id of the patient app. Set, the API serves the app-site-
+# association file and the same JSON is uploaded beside the SPA, so
+# https://<host>/t/<token> opens in the app. Blank: links open the web page.
+IOS_TEAM_ID="${IOS_TEAM_ID:-$(dotenv_value IOS_TEAM_ID)}"
 # Custom domain. Both or neither: the template ignores one without the other.
 # The certificate must already be ISSUED (CloudFront rejects a pending one),
 # and the DNS record lives in whichever account hosts the zone — not here.
@@ -291,6 +295,7 @@ PARAMS=(
   "PublicBaseUrl=$PUBLIC_BASE_URL"
   "SendblueFromNumber=$SENDBLUE_FROM_NUMBER"
   "CareTeamPhones=$CARE_TEAM_PHONES"
+  "IosTeamId=$IOS_TEAM_ID"
   "ApiReservedConcurrency=$RESERVED"
   # Passed even when empty so clearing them in .env removes the alias.
   "CustomDomainName=$SITE_DOMAIN"
@@ -338,6 +343,22 @@ log "Building and uploading the frontend"
   # index.html points at hashed bundles; a cached copy would pin a stale build.
   aws_ s3 cp "$DIST/index.html" "s3://$DATA_BUCKET/web/index.html" --only-show-errors \
     --cache-control "no-cache" --content-type "text/html; charset=utf-8"
+
+  # Universal links. Only /api/* reaches the function, so the association
+  # file the backend can serve never gets a request on AWS: the same JSON is
+  # uploaded as a static object instead (after the sync, which would delete
+  # it). The CloudFront rewrite exempts these two paths.
+  if [ -n "$IOS_TEAM_ID" ]; then
+    AASA="$(cd "$ROOT/backend" && IOS_TEAM_ID="$IOS_TEAM_ID" uv run python -c \
+      'import json; from app.api.applinks import association; print(json.dumps(association()))')"
+    for key in web/.well-known/apple-app-site-association web/apple-app-site-association; do
+      printf '%s' "$AASA" | aws_ s3 cp - "s3://$DATA_BUCKET/$key" --only-show-errors \
+        --cache-control "no-cache" --content-type "application/json"
+    done
+    info "uploaded apple-app-site-association for team $IOS_TEAM_ID"
+  else
+    info "IOS_TEAM_ID not set — task links open the web page, not the app"
+  fi
 fi
 
 # --------------------------------------------------------------------------

@@ -86,6 +86,14 @@ Parameters:
       of the inbound Sendblue webhook (POST /api/webhooks/sendblue/<secret>).
       deploy.sh writes it when SENDBLUE_WEBHOOK_SECRET is set; absent, the
       route answers 503 and no inbound text is processed.
+  IosTeamId:
+    Type: String
+    Default: ""
+    Description: >-
+      Apple developer team id of the patient app. Set, the API serves the
+      apple-app-site-association file and deploy.sh uploads the same JSON to
+      the SPA bucket so https://<host>/t/<token> links open in the app.
+      Blank serves nothing and the links fall back to the web task page.
   PublicBaseUrl:
     Type: String
     Default: ""
@@ -519,6 +527,7 @@ Resources:
           SENDBLUE_WEBHOOK_SECRET_PARAMETER: !Ref SendblueWebhookSecretParameter
           SENDBLUE_FROM_NUMBER: !Ref SendblueFromNumber
           CARE_TEAM_PHONES: !Ref CareTeamPhones
+          IOS_TEAM_ID: !Ref IosTeamId
           # Patient check-in links carry this host. Behind CloudFront the
           # request's own base URL is the Function URL, which the origin
           # check rejects, so without a custom domain the app has no public
@@ -650,6 +659,12 @@ Resources:
       FunctionCode: |
         function handler(event) {
           var uri = event.request.uri;
+          // Apple fetches the app-site-association file at an extensionless
+          // path; it is a real object deploy.sh uploads, so it must bypass
+          // the rewrite or every universal link answers with index.html.
+          if (uri.indexOf('/.well-known/') === 0 || uri === '/apple-app-site-association') {
+            return event.request;
+          }
           // Extensionless paths are React Router routes (/patients/marcus),
           // not objects in the bucket. Rewriting here rather than using
           // CustomErrorResponses matters: those apply to every behaviour, so
