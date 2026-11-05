@@ -177,6 +177,10 @@ def ingest_webhook(
         key = SourceProvider(provider)
     except ValueError:
         raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+    if key is SourceProvider.MOCK and not settings.allow_mock_webhook:
+        # Same answer as a name that does not exist: a closed demo route
+        # should not advertise that it could be opened.
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
     info = get_provider_info(key)
     if info is None or info.connector is None:
         raise HTTPException(

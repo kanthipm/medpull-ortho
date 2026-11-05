@@ -131,6 +131,17 @@ def test_webhook_flow(client):
     assert client.post("/api/webhooks/wearables/mock", json={"bad": 1}).status_code == 422
 
 
+def test_mock_webhook_is_closed_unless_allowed(client, monkeypatch):
+    from app.config import settings
+
+    payload = {"patient_id": "elena", "provider": "apple", "records": []}
+    monkeypatch.setattr(settings, "allow_mock_webhook", False)
+    # Indistinguishable from an unknown provider, and nothing is stored.
+    assert client.post("/api/webhooks/wearables/mock", json=payload).status_code == 404
+    monkeypatch.setattr(settings, "allow_mock_webhook", True)
+    assert client.post("/api/webhooks/wearables/mock", json=payload).status_code == 200
+
+
 def test_notifications_flow(client, db):
     row = Notification(
         patient_id="robert",

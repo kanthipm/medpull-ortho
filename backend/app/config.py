@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     # rejected (verification fails closed; the mock/demo path needs none).
     terra_signing_secret: str = ""
     junction_webhook_secret: str = ""
+    # The unsigned demo webhook (POST /api/webhooks/wearables/mock) trusts the
+    # patient id in its body, so it exists only where a developer asks for it.
+    # Off, the route answers 404 like any unknown provider.
+    allow_mock_webhook: bool = False
     # Junction (fka Vital), the wearable aggregator. The API key is the switch:
     # without it the registry reports Junction as needing setup and every
     # Junction endpoint answers 503, while signed deliveries to the webhook are
