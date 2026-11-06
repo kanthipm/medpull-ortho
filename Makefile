@@ -1,5 +1,5 @@
 .PHONY: setup seed dev dev-backend dev-frontend build run test lint clean \
-        deploy deploy-backend reseed destroy ios ios-build openapi
+        deploy deploy-backend reseed destroy ios ios-build openapi android-build android-install
 
 setup: ## Install backend (uv) and frontend (npm) dependencies
 	cd backend && uv sync
@@ -53,6 +53,12 @@ ios: ## Generate the Xcode project for the patient app (needs xcodegen) and open
 ios-build: ## Build the patient app for the iPhone simulator (CI-style, no signing)
 	cd ios && xcodegen generate && xcodebuild -project MedPull.xcodeproj -scheme MedPull \
 		-destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO build
+
+android-build: ## Debug APK of the Android patient app (Android Studio's JDK, the local SDK)
+	cd android && JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" ./gradlew :app:assembleDebug -q
+
+android-install: ## Install the debug APK on the connected device or emulator
+	"$(LOCALAPPDATA)/Android/Sdk/platform-tools/adb" install -r android/app/build/outputs/apk/debug/app-debug.apk
 
 clean: ## Remove the local database, the frontend build, and the Lambda build dir
 	rm -rf backend/data/*.db frontend/dist infra/.build

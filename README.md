@@ -516,6 +516,45 @@ Android equivalent, `/.well-known/assetlinks.json`, works the same way from
 notification channel), Android, and a scheduled daily check-in (the console
 assigns tasks; nothing creates one on a timer).
 
+## The Android app (`android/`)
+
+The same patient product for Android phones, in Kotlin and Jetpack Compose
+(`android/app`, package `com.medpull.recovery`, Android 10+). It mirrors the
+iPhone app screen for screen for hospital patients: onboarding with the beta
+consent form, Today, Progress, Measure, Care, Connections and Profile, against
+the same `/api/mobile/*` routes. What differs is what the phone can produce:
+
+- **Health Connect** through Junction's Android SDK
+  (`android/.../health/HealthConnector.kt`): the backend mints the same
+  sign-in token (`POST /api/mobile/wearables/apple/session`), one permission
+  sheet covers every resource the engine reads, and the SDK syncs on app
+  start and on request. Apple's walking metrics have no Health Connect
+  equivalent, so nothing is posted to `/observations/gait` from Android.
+- **Measure** (`android/.../motion/`): the guided walk (60 s), the six-minute
+  walk and the range-of-motion holds record the raw accelerometer,
+  gyroscope, gravity, barometer, step counter and optional GPS in a
+  foreground service and upload them with `platform: "android"`; the server
+  converts the frame and computes every number.
+- **Passive walks** (`motion/PassiveCapture.kt`): opt-in from Connections,
+  the Activity Recognition API starts a two-minute recording when the person
+  starts walking, at most once every half hour, uploaded as a `free_living`
+  bout. This is the Android stand-in for Apple's passive daily gait.
+- **Care**: the thread with photos, video, voice notes and files, with the
+  same size budgets as the iPhone, and the copilot through the platform
+  speech recogniser and synthesiser.
+- **Not yet on Android**: the MedPull Personal tier (its screens, StoreKit
+  and Play Billing); a personal account is told so and offered its hospital
+  space. Task links open the app through `/.well-known/assetlinks.json`
+  once `ANDROID_CERT_SHA256` is set (see `.env.example`).
+
+```bash
+make android-build    # debug APK with Android Studio's JDK and the local SDK
+make android-install  # install it on the connected device or emulator
+```
+
+The debug build talks to `http://10.0.2.2:8000` (a laptop's `make dev` from
+the emulator); change it on the Profile screen or in `android/app/build.gradle.kts`.
+
 ## Not in v1
 
 - **Auth.** Deliberately open for demos. Every console route is
