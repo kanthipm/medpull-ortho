@@ -45,18 +45,54 @@ def live_session_clause(now: datetime | None = None):
 
 
 class PhoneVerification(Base):
-    """A one-time code texted during onboarding. Only hashes are stored."""
+    """A one-time code texted during onboarding. Only hashes are stored.
+
+    ``phone`` is the number being claimed; ``destination`` is where the code
+    goes, which differs when the claim has to be proven at the number already
+    on the chart. ``sent_at`` is NULL until the code has actually been texted:
+    on a provider that refuses numbers it has never heard from (Sendblue's
+    free plan), the row waits here until the person texts MedPull once, the
+    inbound webhook marks the number reachable, and the code goes out then.
+    """
 
     __tablename__ = "phone_verifications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), index=True)
     phone: Mapped[str] = mapped_column(String)  # E.164
+    destination: Mapped[str | None] = mapped_column(String, nullable=True)  # E.164
     code_hash: Mapped[str] = mapped_column(String)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def sends_to(self) -> str:
+        """Where the code goes. Rows written before ``destination`` existed
+        always went to the claimed number."""
+        return self.destination or self.phone
+
+
+class VerifiedContact(Base):
+    """A number texts can reach.
+
+    Sendblue's free shared-line plan refuses any number that has not texted
+    the line first, and nothing in its API can verify one on our behalf. So
+    the product learns reachability itself: a number is written here the
+    moment the person texts MedPull (the inbound webhook), when a text to
+    them goes through, or when the provider's own contact list says so. A
+    number with no row is simply not known yet — never a reason to fail.
+    """
+
+    __tablename__ = "verified_contacts"
+
+    phone: Mapped[str] = mapped_column(String, primary_key=True)  # E.164
+    # inbound | sent | contacts | manual
+    source: Mapped[str] = mapped_column(String, default="inbound")
+    verified_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Message(Base):
