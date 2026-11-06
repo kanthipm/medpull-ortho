@@ -159,8 +159,69 @@ fun ConnectionsScreen(nav: NavHostController) {
         Gap()
         WearableLinkCard(app)
         Gap()
+        PassiveWalksCard()
+        Gap()
+        ReminderCard()
+        Gap()
         PlainButton("Refresh") { scope.launch { app.refreshWearables(force = true) } }
         Gap(24.dp)
+    }
+}
+
+/** Opt-in background walking bouts: the Android stand-in for Apple's passive gait. */
+@Composable
+fun PassiveWalksCard() {
+    val context = LocalContext.current
+    val c = MP.colors
+    var enabled by remember { mutableStateOf(com.medpull.recovery.motion.PassiveCapture.isEnabled(context)) }
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants[android.Manifest.permission.ACTIVITY_RECOGNITION] == true) {
+            com.medpull.recovery.motion.PassiveCapture.setEnabled(context, true); enabled = true
+        }
+    }
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Record walks automatically", style = MaterialTheme.typography.titleLarge, color = c.ink)
+                Text("When your phone notices you walking, it records two minutes in a pocket and sends them to MedPull, at most once every half hour. A small notification shows while it records.",
+                    color = c.body, style = MaterialTheme.typography.bodyMedium)
+            }
+            androidx.compose.material3.Switch(checked = enabled, onCheckedChange = { on ->
+                if (on && !com.medpull.recovery.motion.PassiveCapture.hasPermission(context)) {
+                    val wanted = mutableListOf(android.Manifest.permission.ACTIVITY_RECOGNITION)
+                    if (android.os.Build.VERSION.SDK_INT >= 33) wanted += android.Manifest.permission.POST_NOTIFICATIONS
+                    ask.launch(wanted.toTypedArray())
+                } else { com.medpull.recovery.motion.PassiveCapture.setEnabled(context, on); enabled = on }
+            })
+        }
+    }
+}
+
+@Composable
+fun ReminderCard() {
+    val context = LocalContext.current
+    val c = MP.colors
+    var hour by remember { mutableStateOf(com.medpull.recovery.core.Reminders.hour(context)) }
+    val askNotify = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Daily reminder", style = MaterialTheme.typography.titleLarge, color = c.ink)
+                Text(hour?.let { "Every day at ${if (it > 12) it - 12 else it} ${if (it >= 12) "pm" else "am"}" } ?: "Off", color = c.body, style = MaterialTheme.typography.bodyMedium)
+            }
+            androidx.compose.material3.Switch(checked = hour != null, onCheckedChange = { on ->
+                if (on) {
+                    if (android.os.Build.VERSION.SDK_INT >= 33) askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    com.medpull.recovery.core.Reminders.set(context, 8); hour = 8
+                } else { com.medpull.recovery.core.Reminders.set(context, null); hour = null }
+            })
+        }
+        if (hour != null) {
+            Gap(8.dp)
+            com.medpull.recovery.features.onboarding.FlowChips(listOf("7 am", "8 am", "9 am", "10 am", "6 pm"), listOf(7, 8, 9, 10, 18).indexOf(hour)) { i ->
+                val h = listOf(7, 8, 9, 10, 18)[i]; com.medpull.recovery.core.Reminders.set(context, h); hour = h
+            }
+        }
     }
 }
 
@@ -176,7 +237,13 @@ fun HealthConnectCard(app: AppModel) {
     val serverSays = state.me?.wearables?.deviceHealth?.connected == true
     val ready = state.me?.features?.deviceHealth ?: false
     val connected = hc is HealthConnectState.Connected || serverSays
-    val activity = context as? android.app.Activity
+    val contract = remember { health.permissionContract() }
+    val askPermissions = androidx.activity.compose.rememberLauncherForActivityResult(contract) { deferred ->
+        scope.launch {
+            health.onPermissions(deferred.await())
+            app.refreshWearables(force = true, surface = false); app.refreshMe(false)
+        }
+    }
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -193,11 +260,8 @@ fun HealthConnectCard(app: AppModel) {
         }
         Gap(10.dp)
         if (!ready) ErrorBanner("The server isn't connected to its wearable service yet, so Health Connect can't be linked.")
-        else if (!connected) PrimaryButton("Connect Health Connect", loading = hc == HealthConnectState.Connecting, enabled = activity != null) {
-            scope.launch {
-                val ok = health.connect(activity!!, app)
-                if (ok) { app.refreshWearables(force = true, surface = false); app.refreshMe(false) }
-            }
+        else if (!connected) PrimaryButton("Connect Health Connect", loading = hc == HealthConnectState.Connecting) {
+            scope.launch { if (health.signIn(app)) askPermissions.launch(Unit) }
         } else Row {
             PlainButton("Sync now") { scope.launch { health.syncNow(); app.refreshWearables(force = true, surface = false) } }
             PlainButton("Disconnect", color = c.muted) { scope.launch { health.disconnect(); app.refreshMe(false) } }

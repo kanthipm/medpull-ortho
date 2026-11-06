@@ -84,6 +84,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
     implementation(libs.androidx.work)
+    implementation(libs.vital.client)
+    implementation(libs.vital.health.connect)
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

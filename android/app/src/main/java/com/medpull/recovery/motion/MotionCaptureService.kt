@@ -9,10 +9,15 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.medpull.recovery.MainActivity
 import com.medpull.recovery.MedPullApp
 import com.medpull.recovery.R
+import com.medpull.recovery.core.AppConfig
+import com.medpull.recovery.core.MotionUpload
+import com.medpull.recovery.core.uploadMotion
+import com.medpull.recovery.features.measure.Stature
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,10 +31,10 @@ import kotlinx.coroutines.launch
 enum class CaptureState { IDLE, RUNNING, DONE }
 
 /**
- * Keeps the sensors alive for the length of a Measure test with a quiet
- * ongoing notification showing the clock, and stops itself at the time
- * limit. The recorder outlives the service call so the screen can read it
- * and upload after the test ends.
+ * Keeps the sensors alive for the length of a Measure test (or a passive
+ * walking bout) with a quiet ongoing notification showing the clock, and
+ * stops itself at the time limit. A guided test leaves the recorder for the
+ * screen to upload; a free-living bout uploads itself.
  */
 class MotionCaptureService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -45,6 +50,7 @@ class MotionCaptureService : Service() {
                 val durationS = intent?.getIntExtra(EXTRA_DURATION_S, 180) ?: 180
                 val outdoors = intent?.getBooleanExtra(EXTRA_OUTDOORS, false) ?: false
                 val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Measure test"
+                freeLiving = intent?.getBooleanExtra(EXTRA_FREE_LIVING, false) ?: false
                 begin(title, durationS, outdoors)
             }
         }
@@ -78,9 +84,22 @@ class MotionCaptureService : Service() {
 
     private fun finish() {
         ticker?.cancel(); ticker = null
-        current?.stop()
+        val recorder = current
+        recorder?.stop()
         _state.value = CaptureState.DONE
         wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
+        if (freeLiving && recorder != null) {
+            // Nobody is watching: send the bout and forget it.
+            val api = (application as MedPullApp).graph.api
+            val window = recorder.window("free_living", null)
+            freeLiving = false
+            current = null
+            _state.value = CaptureState.IDLE
+            if (window != null) scope.launch(Dispatchers.IO) {
+                try { api.uploadMotion(MotionUpload(listOf(window), Stature.get(applicationContext), AppConfig.deviceName)) }
+                catch (e: Exception) { Log.w("PassiveCapture", "free-living upload failed", e) }
+            }
+        }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -106,17 +125,20 @@ class MotionCaptureService : Service() {
         const val EXTRA_DURATION_S = "duration_s"
         const val EXTRA_OUTDOORS = "outdoors"
         const val EXTRA_TITLE = "title"
+        const val EXTRA_FREE_LIVING = "free_living"
         private const val NOTIFICATION_ID = 41
 
         /** The recorder of the current or last test, read by the Measure screens. */
         @Volatile var current: MotionRecorder? = null; private set
+        @Volatile var freeLiving: Boolean = false; private set
         private val _state = MutableStateFlow(CaptureState.IDLE)
         val state: StateFlow<CaptureState> = _state
 
-        fun start(context: Context, title: String, durationS: Int, outdoors: Boolean) {
+        fun start(context: Context, title: String, durationS: Int, outdoors: Boolean, freeLiving: Boolean = false) {
             _state.value = CaptureState.IDLE
             val intent = Intent(context, MotionCaptureService::class.java)
                 .putExtra(EXTRA_TITLE, title).putExtra(EXTRA_DURATION_S, durationS).putExtra(EXTRA_OUTDOORS, outdoors)
+                .putExtra(EXTRA_FREE_LIVING, freeLiving)
             context.startForegroundService(intent)
         }
 

@@ -11,6 +11,7 @@ class MedPullApp : Application() {
     override fun onCreate() {
         super.onCreate()
         graph = AppGraph(this)
+        graph.health.restore()
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_MOTION, getString(R.string.motion_channel), NotificationManager.IMPORTANCE_LOW)
