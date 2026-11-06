@@ -30,6 +30,18 @@ export const Keychain = {
     }
     memory.delete(key)
   },
+  /** Every item this app stored: the session token and each per-space
+   *  token, whichever account they belong to. Signing out must leave none
+   *  of them behind, including the ones `me` no longer knows about. */
+  clear(): void {
+    try {
+      const mine = Object.keys(localStorage).filter((k) => k.startsWith(PREFIX))
+      for (const k of mine) localStorage.removeItem(k)
+    } catch {
+      /* ignore */
+    }
+    memory.clear()
+  },
 }
 
 const memory = new Map<string, string>()

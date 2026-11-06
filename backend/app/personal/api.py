@@ -36,7 +36,7 @@ from app.personal.data import load_personal_data
 from app.personal.identity import PersonalIdentityError
 from app.personal.logs import LOG_KEYS, record
 from app.personal.metrics import compute_dashboard
-from app.personal.scope import CLINIC, is_personal
+from app.personal.scope import CLINIC, is_clinic, is_personal
 from app.personal.subscription import SubscriptionError
 
 logger = logging.getLogger(__name__)
@@ -182,7 +182,10 @@ def personal_join(body: PersonalJoinBody, db: Session = Depends(get_db)) -> dict
             raise HTTPException(status_code=422, detail="Enter a valid mobile number, or leave it out")
         holders = _holders(db, phone)
         personal_holders = [h for h in holders if is_personal(h)]
-        clinic_holders = [h for h in holders if not is_personal(h)]
+        # Only a hospital chart is something to prove and pair with. An
+        # athlete account (app/sports) carrying the same number is the same
+        # person's other row: it needs no code and is never "the chart".
+        clinic_holders = [h for h in holders if is_clinic(h)]
         if personal_holders:
             raise HTTPException(
                 status_code=409,
@@ -454,7 +457,7 @@ def personal_verify(body: PersonalVerifyBody, db: Session = Depends(get_db)) -> 
     if patient is None or not is_personal(patient):
         raise HTTPException(status_code=404, detail="Unknown account")
     phone = verification.phone
-    clinic = next((h for h in _holders(db, phone) if not is_personal(h)), None)
+    clinic = next((h for h in _holders(db, phone) if is_clinic(h)), None)
     for other in _holders(db, phone):
         if is_personal(other) and other.id != patient.id:
             other.phone = None  # a stale personal row; the proven phone wins
@@ -590,7 +593,7 @@ def link_hospital(body: LinkHospitalBody, patient: Patient = Depends(personal_pa
         if not body.patient_id:
             raise HTTPException(status_code=422, detail="Pick your record")
         clinic = db.get(Patient, body.patient_id)
-        if clinic is None or is_personal(clinic) or clinic.hospital_id != body.hospital_id:
+        if clinic is None or not is_clinic(clinic) or clinic.hospital_id != body.hospital_id:
             raise HTTPException(status_code=404, detail="Unknown record")
         if clinic.linked_patient_id:
             raise HTTPException(status_code=409, detail="That record already has a personal space")

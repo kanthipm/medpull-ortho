@@ -225,9 +225,18 @@ def record_consent(db: Session, patient: Patient, *, version: str, scopes: dict[
                    signature: str | None, device_name: str | None, app_version: str | None) -> Consent:
     if version != CONSENT_VERSION:
         raise AuthError("The consent form has changed — read the new version and agree again", 409)
+    scopes = validate_scopes(scopes)
+    existing = current_consent(db, patient)
+    if existing is not None and existing.version == version and (existing.scopes or {}) == scopes:
+        # The same words at the same version with the same answers: a
+        # returning person re-finding their record, or a second phone. One
+        # acceptance per version is the record; another row (and another
+        # archive copy) would only say "again". A changed version or a
+        # changed answer still records.
+        return existing
     row = Consent(
         patient_id=patient.id, kind=CONSENT_KIND, version=version, text_sha256=consent_hash(),
-        scopes=validate_scopes(scopes), signature=(signature or "").strip()[:120] or None,
+        scopes=scopes, signature=(signature or "").strip()[:120] or None,
         device_name=(device_name or "")[:80] or None, app_version=(app_version or "")[:40] or None,
     )
     db.add(row)

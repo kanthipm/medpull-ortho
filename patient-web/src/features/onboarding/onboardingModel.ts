@@ -6,7 +6,7 @@
 import { useSyncExternalStore } from 'react'
 import { APIClient, APIError } from '../../core/api'
 import type { AppModel } from '../../core/appModel'
-import { Dates, type Candidate, type ConsentAcceptance, type EnrollResponse, type Hospital, type Procedure } from '../../core/models'
+import { Dates, needsConsent, type Candidate, type ConsentAcceptance, type EnrollResponse, type Hospital, type Procedure } from '../../core/models'
 
 /** Every screen the flow can show. The order is load-bearing for
  *  `isPastEnrollment` only. */
@@ -72,8 +72,26 @@ export class OnboardingModel {
     return this.canSearch && this.phoneLooksValid && !this.loading && (this.path !== 'joinAfterSurgery' || this.procedure != null)
   }
 
-  /** The dots in the bar, for the clinic path. */
-  get stepsShown(): Step[] { return ['consent', 'hospital', 'path', 'identity', 'verify', 'wearable'] }
+  /** The dots in the bar, for the clinic path. The consent sits where it is
+   *  asked — before a new record is created — and not at all for a returning
+   *  patient finding their record: the server says whether that account
+   *  still has a form to sign, and `handle` shows it then. */
+  get stepsShown(): Step[] {
+    return this.path === 'findRecord'
+      ? ['hospital', 'path', 'identity', 'verify', 'wearable']
+      : ['hospital', 'path', 'consent', 'join', 'verify', 'wearable']
+  }
+
+  /** Whether `s` is at or before the current step along THIS path, so a
+   *  step shown out of declaration order (the consent) lights up where it
+   *  is walked. */
+  reached(s: Step): boolean {
+    const shown = this.stepsShown
+    const here = shown.indexOf(this.step)
+    const there = shown.indexOf(s)
+    if (here < 0 || there < 0) return steps.indexOf(s) <= steps.indexOf(this.step)
+    return there <= here
+  }
 
   /** "Step 3 of 5" for the screen, counted along the person's own path. */
   eyebrow(step: Step): string {
@@ -103,7 +121,10 @@ export class OnboardingModel {
     this.path = path
     this.candidates = []
     this.selected = null
-    const next: Step = path === 'findRecord' ? 'identity' : 'join'
+    // Finding an existing record asks nothing here: the server reports
+    // whether that account still needs to sign. Starting a record creates an
+    // account, so the consent comes first — once.
+    const next: Step = path === 'findRecord' ? 'identity' : this.consent ? 'join' : 'consent'
     // Switching between the two record forms replaces the form rather than
     // stacking one on the other, so Back still means "how are you joining?".
     const last = this.route[this.route.length - 1]
@@ -125,18 +146,27 @@ export class OnboardingModel {
     else this.go('path')
   }
 
-  /** The consent accepted in onboarding: carried into the call that
-   *  creates the session, and the signature doubles as the name. */
-  acceptConsent(accepted: ConsentAcceptance): void {
+  /** The consent agreed to. Before any account exists it is carried into the
+   *  call that creates the session (and the signature doubles as the name).
+   *  Asked after an enrolment the server reported as still needing a
+   *  signature, it is recorded there and then against the session. */
+  async agree(accepted: ConsentAcceptance, app: AppModel): Promise<void> {
+    if (app.me) {
+      await app.acceptConsent(accepted)
+      this.go('wearable')
+      return
+    }
     this.consent = accepted
     if (!this.name && accepted.signature) this.name = accepted.signature
-    this.go('hospital')
+    this.go('join')
   }
 
-  /** Welcome's two doors: set up, or sign back in. */
+  /** Welcome's two doors: set up, or sign back in. Neither asks for the
+   *  consent up front: a returning patient has signed already, and the
+   *  server says so. */
   begin(signingIn: boolean): void {
     this.signingIn = signingIn
-    this.go(this.consent ? 'hospital' : 'consent')
+    this.go('hospital')
   }
 
   async loadHospitals(api: APIClient): Promise<void> {
@@ -203,7 +233,12 @@ export class OnboardingModel {
       })
       this.handle(r, app)
     } catch (e) {
-      if (e instanceof APIError && e.status === 409) {
+      if (e instanceof APIError && e.status === 409 && e.message.toLowerCase().includes('sign in')) {
+        // The number is on a MedPull Personal account, not a hospital
+        // record, so the record search would never find it: the server's
+        // own words say which door to use.
+        this.error = e.message
+      } else if (e instanceof APIError && e.status === 409) {
         // The number is already on a record here. Don't dead-end: take them
         // to find-my-record, where the phone match lists that record.
         this.choose('findRecord')
@@ -246,10 +281,15 @@ export class OnboardingModel {
       case 'enrolled':
         if (!r.sessionToken || !r.me) throw new APIError(0, 'The server didn’t return a session.')
         app.adoptSession(r.sessionToken, r.me)
+        // A returning account signs nothing it has already signed: the form
+        // is shown only when the server says this account needs it (never
+        // accepted, or the version moved), and `agree` records it against
+        // the session that now exists.
+        //
         // No Apple Health step here: a browser cannot reach HealthKit, so the
         // phone app owns that connection and the web flow goes straight to
         // the wearables.
-        this.go('wearable')
+        this.go(needsConsent(r.me) ? 'consent' : 'wearable')
         break
       default:
         throw new APIError(0, `Unexpected status ${r.status}`)

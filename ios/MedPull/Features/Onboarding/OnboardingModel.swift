@@ -149,9 +149,28 @@ final class OnboardingModel {
 
     /// The dots in the bar, for the path the person is on.
     var stepsShown: [Step] {
-        isPersonal ? [.consent, .personalAbout, .goals, .plan, .health, .wearable]
-            : isSports ? [.consent, .personalAbout, .sport, .org, .athlete, .health, .wearable]
-            : [.consent, .hospital, .path, .identity, .verify, .health, .wearable]
+        if isPersonal { return [.consent, .personalAbout, .goals, .plan, .health, .wearable] }
+        if isSports { return [.consent, .personalAbout, .sport, .org, .athlete, .health, .wearable] }
+        // The clinic path asks for the consent where it is needed — before a
+        // new record is created — and not at all for a returning patient
+        // finding their record: the server says whether that account still
+        // has a form to sign, and `handle` shows it then.
+        return path == .findRecord
+            ? [.hospital, .path, .identity, .verify, .health, .wearable]
+            : [.hospital, .path, .consent, .join, .verify, .health, .wearable]
+    }
+
+    /// Where the consent screen goes once agreed. Before any account exists
+    /// it leads to the form that creates one; asked after enrolment (a
+    /// returning patient whose signature the server still wants) it leads
+    /// on to the steps that follow the session.
+    func stepAfterConsent(signedIn: Bool) -> Step {
+        if signedIn { return isPersonal ? .plan : .health }
+        switch path {
+        case .personal, .sports: return .personalAbout
+        case .findRecord: return .identity
+        case .joinGeneral, .joinAfterSurgery: return .join
+        }
     }
 
     /// "Step 3 of 5" for the screen, counted along the person's own path.
@@ -178,7 +197,19 @@ final class OnboardingModel {
         self.path = path
         candidates = []
         selected = nil
-        let next: Step = path == .findRecord ? .identity : path == .personal ? .personalAbout : .join
+        let next: Step
+        switch path {
+        case .findRecord:
+            // An existing record: nothing to sign here. Whether this account
+            // still needs the consent is the server's answer, after enrolment.
+            next = .identity
+        case .personal, .sports:
+            next = .personalAbout
+        case .joinGeneral, .joinAfterSurgery:
+            // Starting a record creates an account, so the consent comes
+            // first — and once.
+            next = consent == nil ? .consent : .join
+        }
         // Switching between the two record forms (a 409 on join sends the
         // patient to find-my-record) replaces the form rather than stacking
         // one on the other, so Back still means "how are you joining?".
@@ -319,11 +350,18 @@ final class OnboardingModel {
                 surgeryDate: surgeryDate, consent: consent)
             try handle(r, app: app)
         } catch let e as APIError where e.status == 409 {
-            // The number is already on a record here (the clinic created it,
-            // or this person enrolled before). Don't dead-end: take them to
-            // find-my-record, where the phone match lists that record.
-            choose(.findRecord)
-            self.error = "This number is already on a record at \(hospital.name). Pick it below and you’re in."
+            if e.detail.lowercased().contains("sign in") {
+                // The number is on a MedPull Personal account, not on a
+                // hospital record, so the record search would never find
+                // it. The server's own words say which door to use.
+                self.error = e.detail
+            } else {
+                // The number is already on a record here (the clinic created
+                // it, or this person enrolled before). Don't dead-end: take
+                // them to find-my-record, where the phone match lists it.
+                choose(.findRecord)
+                self.error = "This number is already on a record at \(hospital.name). Pick it below and you’re in."
+            }
         } catch {
             self.error = error.localizedDescription
         }
@@ -475,7 +513,15 @@ final class OnboardingModel {
                 throw APIError(status: 0, detail: "The server didn’t return a session.")
             }
             app.adoptSession(token: token, me: me)
-            go(isPersonal ? .plan : .health)
+            // A returning account signs nothing it has already signed. The
+            // form is shown only when the server says this account needs it
+            // — never accepted, or the version moved — and is then recorded
+            // against the session that now exists (ConsentStep).
+            if me.needsConsent {
+                go(.consent)
+            } else {
+                go(isPersonal ? .plan : .health)
+            }
         default:
             throw APIError(status: 0, detail: "Unexpected status \(r.status)")
         }

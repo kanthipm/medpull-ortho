@@ -45,6 +45,7 @@ from app.models.mobile import Message, PatientSession, PhoneVerification
 from app.models.observation import Observation
 from app.models.patient import Patient
 from app.notifications import sendblue
+from app.personal.scope import is_clinic, is_personal
 from app.tasks import service as tasks
 
 logger = logging.getLogger(__name__)
@@ -654,13 +655,24 @@ def _claim_phone(db: Session, patient: Patient, phone: str, *, verified: bool) -
     sign-up). An unverified one may not take a number off someone else's
     chart — that would silently redirect another patient's texts — so it is
     refused and the app sends them to find that record instead.
+
+    Only another CLINIC chart counts as "someone else's". One person holds
+    rows of several kinds under one number — their chart, the personal space
+    paired with it, an athlete account (app/sports) — and a number on a
+    personal or sports row says nothing about which chart it belongs to:
+    inbound texts reach the chart whatever those rows carry
+    (tasks/service.patient_for_phone) and their own briefs still need the
+    number. Counting them here is what locked a person out of the patient
+    side once they had opened an athlete account with the same phone: an
+    unverified enrol answered 409 for a "record" no hospital search could
+    find, and a verified one silently stripped the athlete's number.
     """
     others = db.scalars(
         select(Patient).where(Patient.phone == phone, Patient.id != patient.id)
     ).all()
     # A chart and its paired personal space share one number on purpose
     # (app/personal/identity.py); neither may take it off the other.
-    others = [o for o in others if o.id != patient.linked_patient_id]
+    others = [o for o in others if is_clinic(o) and o.id != patient.linked_patient_id]
     if others and not verified:
         raise HTTPException(
             status_code=409,
@@ -692,7 +704,11 @@ def _enrollment_is_open(db: Session, patient: Patient, phone: str) -> bool:
 @router.post("/enroll")
 def enroll(body: EnrollBody, db: Session = Depends(get_db)) -> dict:
     patient = db.get(Patient, body.patient_id)
-    if patient is None:
+    if patient is None or not is_clinic(patient):
+        # A personal space or an athlete account is nobody's hospital record.
+        # Neither is listed by the roster search, and this door must not
+        # hand a session on one to whoever knows its id while the deployment
+        # runs without a texted code.
         raise HTTPException(status_code=404, detail="Unknown patient")
     if patient.hospital_id and patient.hospital_id != body.hospital_id:
         raise HTTPException(status_code=409, detail="That record belongs to a different hospital")
@@ -826,17 +842,8 @@ def join(body: JoinBody, db: Session = Depends(get_db)) -> dict:
     phone = sendblue.normalize_phone(body.phone)
     if phone is None:
         raise HTTPException(status_code=422, detail="Enter a valid mobile number")
-    holder = tasks.patient_for_phone(db, phone)
-    if holder is not None and (holder.account_kind or "clinic") == "personal":
-        # The number belongs to a personal space. Joining a hospital keeps
-        # that space and pairs the new record with it, which is an
-        # authenticated call from inside the app (personal/link-hospital).
-        raise HTTPException(
-            status_code=409,
-            detail="That number is on a MedPull Personal account — sign in to it and add your "
-            "hospital from Profile",
-        )
-    if holder is not None:
+    holders = db.scalars(select(Patient).where(Patient.phone == phone)).all()
+    if any(is_clinic(h) for h in holders):
         # The person is already on a roster (they enrolled before, or a
         # clinician created their chart with this number). The app reads
         # this 409 and takes them to "find my record", where the phone
@@ -846,6 +853,18 @@ def join(body: JoinBody, db: Session = Depends(get_db)) -> dict:
             detail="That number is already on a record — find your record instead of "
             "creating a new one",
         )
+    if any(is_personal(h) for h in holders):
+        # The number belongs to a personal space. Joining a hospital keeps
+        # that space and pairs the new record with it, which is an
+        # authenticated call from inside the app (personal/link-hospital).
+        raise HTTPException(
+            status_code=409,
+            detail="That number is on a MedPull Personal account — sign in to it and add your "
+            "hospital from Profile",
+        )
+    # Anything else holding the number is an athlete account (app/sports):
+    # not a hospital record, nothing to pair with, and no hospital search
+    # would ever list it. The new chart shares the person's number with it.
     name = " ".join(body.name.split())
     if len(name) < 2:
         # min_length on the field counts raw characters, so "  " reaches here.
