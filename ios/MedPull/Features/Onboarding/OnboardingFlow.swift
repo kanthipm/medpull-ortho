@@ -115,7 +115,9 @@ struct OnboardingFlow: View {
         .ambientScreen()
         .navigationTitle(Self.backTitle(step))
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(step.isPastEnrollment)
+        // The consent asked AFTER enrolment sits on top of a session too:
+        // going back from it would land on a form that already did its job.
+        .navigationBarBackButtonHidden(step.isPastEnrollment || (step == .consent && app.me != nil))
         .toolbar { dotsItem(step) }
     }
 
@@ -174,12 +176,22 @@ private struct StepDots: View {
         HStack(spacing: 6) {
             ForEach(shown, id: \.rawValue) { s in
                 MP.capsuleShape
-                    .fill(s.rawValue <= current.rawValue ? MP.ink : MP.lineStrong.opacity(0.6))
+                    .fill(reached(s) ? MP.ink : MP.lineStrong.opacity(0.6))
                     .frame(width: s == current ? 24 : 8, height: 8)
             }
         }
         .animation(MPMotion.gated(MPMotion.layout, reduceMotion: reduceMotion), value: current)
         .accessibilityHidden(true)
+    }
+
+    /// At or before the current step along THIS path, so a step shown out
+    /// of enum order (the clinic path's consent, which sits after "how are
+    /// you joining") lights up where it is walked, not where it is declared.
+    private func reached(_ s: OnboardingModel.Step) -> Bool {
+        guard let here = shown.firstIndex(of: current), let there = shown.firstIndex(of: s) else {
+            return s.rawValue <= current.rawValue
+        }
+        return there <= here
     }
 }
 
@@ -468,7 +480,11 @@ private struct ModeStep: View {
                          title: "With my care team",
                          detail: "Your hospital set you up, or you’re recovering from an operation they follow. Free with your clinic.") {
                     model.path = .joinGeneral
-                    model.go(model.consent == nil ? .consent : .hospital)
+                    // No consent yet: a returning patient finding their
+                    // record has signed already, and the server says so.
+                    // The form comes before a NEW record is created
+                    // (`choose`), or after enrolment when it is really due.
+                    model.go(.hospital)
                 }
                 modeCard(icon: "sparkles", family: .teal,
                          title: "On my own",
@@ -1211,17 +1227,26 @@ private struct FlowProcedures: View {
 
 // MARK: - The personal space
 
-/// The beta consent, read before any account exists. What it records goes
-/// out with the call that creates the session.
+/// The beta consent. Before any account exists it is read here and what it
+/// records goes out with the call that creates the session. After an
+/// enrolment the server reported as still needing a signature (a chart the
+/// clinic created, or a version that moved) it is recorded there and then,
+/// against the session — a returning account with its consent on file is
+/// never shown this screen.
 private struct ConsentStep: View {
     @Environment(AppModel.self) private var app
     @Bindable var model: OnboardingModel
 
     var body: some View {
         ConsentLoader(onAgree: { accepted in
-            model.consent = accepted
-            if model.name.isEmpty, let name = accepted.signature { model.name = name }
-            model.go(model.usesEmailLogin ? .personalAbout : .hospital)
+            let signedIn = app.me != nil
+            if signedIn {
+                try await app.acceptConsent(accepted)
+            } else {
+                model.consent = accepted
+                if model.name.isEmpty, let name = accepted.signature { model.name = name }
+            }
+            model.go(model.stepAfterConsent(signedIn: signedIn))
         }) {
             EmptyView()
         }

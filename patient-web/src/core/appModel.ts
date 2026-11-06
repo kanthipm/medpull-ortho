@@ -108,9 +108,10 @@ export class AppModel {
   async signOut(): Promise<void> {
     try { await this.api.signOut() } catch { /* the session is going anyway */ }
     await this.health.disconnect()
-    Keychain.delete(TOKEN_KEY)
-    for (const p of this.me?.profiles ?? []) Keychain.delete(tokenKeyFor(p.patientId))
-    if (this.me) Keychain.delete(tokenKeyFor(this.me.patient.id))
+    // Every token this browser holds goes, not only the ones `me` names: a
+    // sign-out after /me had failed (me == null) used to leave the per-space
+    // tokens behind for the next account to trip over.
+    Keychain.clear()
     this.api.token = null
     this.me = null
     this.tasks = { open: [], recent: [] }

@@ -124,7 +124,10 @@ private fun Welcome(nav: NavHostController) {
 @Composable
 private fun ModeStep(nav: NavHostController) {
     StepFrame(nav, "Step 1", "Who set you up?") {
-        Panel(onClick = { nav.navigate(Step.CONSENT.name) }) {
+        // No consent yet: a returning patient finding their record has signed
+        // already, and the server says so (the gate in Root covers an account
+        // that still needs to). The form comes before a NEW record is created.
+        Panel(onClick = { nav.navigate(Step.HOSPITAL.name) }) {
             Text("With my care team", style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
             Text("A hospital or clinic is following your recovery.", style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
         }
@@ -140,7 +143,7 @@ private fun ModeStep(nav: NavHostController) {
 private fun PersonalSoon(nav: NavHostController) {
     StepFrame(nav, "MedPull Personal", "Not on Android yet",
         blurb = "The personal tier is on iPhone today and comes to Android after the care-team app. If a clinic is following your recovery, continue with them.") {
-        PrimaryButton("Continue with my care team") { nav.navigate(Step.CONSENT.name) }
+        PrimaryButton("Continue with my care team") { nav.navigate(Step.HOSPITAL.name) }
     }
 }
 
@@ -173,7 +176,9 @@ private fun ConsentStep(nav: NavHostController, model: OnboardingModel) {
         Field(s.signature, { model.state.value = s.copy(signature = it) }, "Type your name to sign")
         Gap(16.dp)
         PrimaryButton("Agree and continue", enabled = s.canAgree) {
-            scope.launch { model.agree(); nav.navigate(Step.HOSPITAL.name) }
+            // The consent precedes the call that creates a record; it is
+            // carried into join as `accepted`.
+            scope.launch { model.agree(); nav.navigate(Step.JOIN.name) }
         }
     }
 }
@@ -209,7 +214,11 @@ private fun PathStep(nav: NavHostController, model: OnboardingModel) {
             Text("Find the record they made for you.", style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
         }
         Gap()
-        Panel(onClick = { model.state.value = s.copy(path = Path.JOIN_GENERAL); nav.navigate(Step.JOIN.name) }) {
+        Panel(onClick = {
+            model.state.value = s.copy(path = Path.JOIN_GENERAL)
+            // Starting a record creates an account, so the consent comes first — once.
+            nav.navigate((if (s.accepted == null) Step.CONSENT else Step.JOIN).name)
+        }) {
             Text("I'm new here", style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
             Text("Join as a new patient at this hospital.", style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
         }
@@ -246,7 +255,10 @@ private fun IdentityStep(nav: NavHostController, model: OnboardingModel) {
         if (s.name.trim().length >= 2 && !s.searching && s.candidates.isEmpty()) {
             Text("Not on the list?", color = c.muted, style = MaterialTheme.typography.bodyMedium)
         }
-        PlainButton("Join as a new patient instead") { model.state.value = s.copy(path = Path.JOIN_GENERAL); nav.navigate(Step.JOIN.name) }
+        PlainButton("Join as a new patient instead") {
+            model.state.value = s.copy(path = Path.JOIN_GENERAL)
+            nav.navigate((if (s.accepted == null) Step.CONSENT else Step.JOIN).name)
+        }
         Gap()
         PrimaryButton("This is me", enabled = s.canEnroll, loading = s.working) {
             scope.launch { model.enroll()?.let { nav.navigate(it.name) } }

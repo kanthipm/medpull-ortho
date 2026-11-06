@@ -13,7 +13,7 @@ import {
 } from '../../ui/components'
 import { Sym } from '../../ui/icons'
 import { ConsentLoader } from '../consent/ConsentView'
-import { isPastEnrollment, OnboardingModel, steps, useOnboarding, type Step } from './onboardingModel'
+import { isPastEnrollment, OnboardingModel, useOnboarding, type Step } from './onboardingModel'
 
 export function OnboardingFlow() {
   const model = useOnboarding(useMemo(() => new OnboardingModel(), []))
@@ -54,7 +54,7 @@ function StepDots({ model }: { model: OnboardingModel }) {
   return (
     <span className="step-dots" aria-hidden="true">
       {model.stepsShown.map((s) => (
-        <i key={s} className={cx(steps.indexOf(s) <= steps.indexOf(current) && 'reached', s === current && 'current')} />
+        <i key={s} className={cx(model.reached(s) && 'reached', s === current && 'current')} />
       ))}
     </span>
   )
@@ -169,12 +169,18 @@ function WelcomeStep({ model }: { model: OnboardingModel }) {
   )
 }
 
-/** The beta consent, read before any account exists. What it records goes
- *  out with the call that creates the session. */
+/** The beta consent. Before any account exists it is read here and what it
+ *  records goes out with the call that creates the session. After an
+ *  enrolment the server reported as still needing a signature it is recorded
+ *  there and then — a returning account with its consent on file never sees
+ *  this screen, and once a session exists there is no way back from it. */
 function ConsentStep({ model }: { model: OnboardingModel }) {
+  const app = useApp()
+  const previous = model.route.length > 1 ? model.route[model.route.length - 2] : 'welcome'
+  const back = app.me ? undefined : { label: backTitle(previous), onClick: () => model.pop() }
   return (
-    <Screen nav={(s) => <NavBar scrolled={s} principal={<StepDots model={model} />} back={{ label: 'Welcome', onClick: () => model.pop() }} />}>
-      <ConsentLoader onAgree={async (accepted) => model.acceptConsent(accepted)} />
+    <Screen nav={(s) => <NavBar scrolled={s} principal={<StepDots model={model} />} back={back} />}>
+      <ConsentLoader onAgree={(accepted) => model.agree(accepted, app)} />
     </Screen>
   )
 }

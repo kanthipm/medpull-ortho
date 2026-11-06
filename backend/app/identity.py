@@ -33,6 +33,7 @@ from app.models.notification import Notification
 from app.models.observation import Observation
 from app.models.patient import Device, Patient
 from app.notifications import sendblue
+from app.personal.scope import is_clinic
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +88,10 @@ def link_candidates(db: Session, patient: Patient) -> list[dict[str, Any]]:
     rows = db.scalars(select(Patient).where(Patient.id != patient.id)).all()
     out: list[dict[str, Any]] = []
     for p in rows:
-        if (p.account_kind or "clinic") == "personal":
-            continue  # a personal space is paired, never folded into a chart
+        if not is_clinic(p):
+            # A personal space is paired, an athlete account is its own
+            # product; neither is ever folded into a chart.
+            continue
         status = app_status(db, p)
         if not status["ever_enrolled"] and not p.phone:
             continue
@@ -128,18 +131,26 @@ def link_candidates(db: Session, patient: Patient) -> list[dict[str, Any]]:
 def set_phone(db: Session, patient: Patient, phone: str | None, *, force: bool = False) -> dict:
     """Put a number on a chart (or clear it). A number already on another
     chart is refused unless ``force``, in which case it moves: one number,
-    one patient, or inbound texts could land on the wrong chart."""
+    one patient, or inbound texts could land on the wrong chart.
+
+    Only another clinic chart is "another chart". The same person's
+    personal space or athlete account may carry the number too; those rows
+    are left alone and named in ``shared_with``, because inbound texts reach
+    the chart regardless (tasks/service.patient_for_phone) and taking the
+    number off them would stop their own briefs."""
     if phone is None or not str(phone).strip():
         previous = patient.phone
         patient.phone = None
         db.commit()
-        return {"phone": None, "previous": previous, "moved_from": []}
+        return {"phone": None, "previous": previous, "moved_from": [], "shared_with": []}
     normalized = sendblue.normalize_phone(str(phone))
     if normalized is None:
         raise IdentityError("Enter a valid mobile number (10 digits, or +country code)", 422)
-    holders = db.scalars(
+    everyone = db.scalars(
         select(Patient).where(Patient.phone == normalized, Patient.id != patient.id)
     ).all()
+    holders = [h for h in everyone if is_clinic(h)]
+    shared_with = [h.id for h in everyone if not is_clinic(h)]
     if holders and not force:
         names = ", ".join(f"{h.name} ({h.id})" for h in holders)
         raise IdentityError(
@@ -154,7 +165,7 @@ def set_phone(db: Session, patient: Patient, phone: str | None, *, force: bool =
         logger.info("Phone moved from %s to %s by the console", h.id, patient.id)
     patient.phone = normalized
     db.commit()
-    return {"phone": normalized, "previous": None, "moved_from": moved}
+    return {"phone": normalized, "previous": None, "moved_from": moved, "shared_with": shared_with}
 
 
 # --- folding an app sign-up into a chart ---------------------------------------------

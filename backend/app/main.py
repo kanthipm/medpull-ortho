@@ -71,6 +71,7 @@ def _ensure_hospitals() -> None:
     from app.database import SessionLocal
     from app.models.hospital import Hospital
     from app.models.patient import Patient
+    from app.personal.scope import is_clinic
     from app.seed.patients import HOSPITALS, get_spec
 
     with SessionLocal() as db:
@@ -89,15 +90,30 @@ def _ensure_hospitals() -> None:
         fallback = HOSPITALS[0].id if HOSPITALS else None
         # A patient whose hospital is unknown (NULL, or an id the roster no
         # longer seeds) is unfindable from the app: give them the seeded one.
+        repaired = 0
         for patient in db.scalars(select(Patient)).all():
+            if not is_clinic(patient):
+                # A subscriber or an athlete belongs to no hospital, by
+                # design. This check once knew only "personal", so every
+                # athlete row (NULL hospital, kind "sports") was handed the
+                # fallback hospital on each cold start and turned up in that
+                # hospital's roster search as a record to enrol against.
+                # Undo that wherever it happened.
+                if patient.hospital_id is not None:
+                    patient.hospital_id = None
+                    repaired += 1
+                continue
             if patient.hospital_id in known:
                 continue
-            if (patient.account_kind or "clinic") == "personal":
-                continue  # a subscriber belongs to no hospital, by design
             spec = get_spec(patient.id)
             hospital_id = spec.hospital_id if spec and spec.hospital_id in known else fallback
             if hospital_id is not None:
                 patient.hospital_id = hospital_id
+        if repaired:
+            logging.getLogger(__name__).info(
+                "Took %d personal/athlete row(s) off a hospital roster they never belonged to",
+                repaired,
+            )
         db.commit()
 
 

@@ -902,13 +902,17 @@ def patient_for_phone(db: Session, phone: str) -> Patient | None:
     if len(rows) == 1:
         return rows[0]
     # A clinic chart and its personal profile legitimately share one number
-    # (app/personal/identity.py). A text answers whichever one is mid-way
-    # through a task conversation; otherwise the clinic chart, because the
-    # care team's channel is the one that must never lose a reply.
+    # (app/personal/identity.py), and so may the same person's athlete
+    # account (app/sports). A text answers whichever one is mid-way through
+    # a task conversation; otherwise the clinic chart, because the care
+    # team's channel is the one that must never lose a reply — an athlete
+    # row with a fresher app session must not win it.
+    from app.personal.scope import is_clinic
+
     for p in rows:
         if _active_conversation(open_tasks(db, p.id)) is not None:
             return p
-    clinic = [p for p in rows if (p.account_kind or "clinic") != "personal"]
+    clinic = [p for p in rows if is_clinic(p)]
     if len(clinic) == 1:
         return clinic[0]
     if clinic:

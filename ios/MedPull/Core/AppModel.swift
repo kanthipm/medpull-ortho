@@ -204,11 +204,12 @@ final class AppModel {
     func signOut() async {
         try? await api.signOut()
         await health.disconnect()
+        // Every token this device holds goes, not only the ones `me` names.
+        // A sign-out after /me had failed (me == nil) used to leave the
+        // per-space tokens behind, and the next account to sign in on this
+        // phone found another account's spaces in its keychain.
+        Keychain.deleteAll()
         Keychain.delete(Self.tokenKey)
-        for profile in me?.profiles ?? [] {
-            Keychain.delete(Self.tokenKey(for: profile.patientId))
-        }
-        if let id = me?.patient.id { Keychain.delete(Self.tokenKey(for: id)) }
         api.token = nil
         me = nil
         launchSport = nil

@@ -42,4 +42,15 @@ enum Keychain {
         ]
         SecItemDelete(query as CFDictionary)
     }
+
+    /// Every item this app stored: the session token and each per-space
+    /// token, whichever account they belong to. Signing out must leave none
+    /// of them behind, including the ones `me` no longer knows about.
+    static func deleteAll() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
 }
