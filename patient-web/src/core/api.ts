@@ -10,7 +10,7 @@ import type {
   Hospital, LinkResponse, Me, MessagesResponse, MotionUpload, MotionUploadResponse, OKResponse,
   PatientMetricsResponse, PortfolioResponse, Procedure, ProgressResponse, RangeOfMotionUpload,
   RangeOfMotionResponse, SentMessageResponse, SixMinuteWalkUpload, SixMinuteWalkResponse,
-  TasksResponse, WearablesResponse, Answers,
+  TasksResponse, VerificationStatus, WearablesResponse, Answers,
 } from './models'
 
 export class APIError extends Error {
@@ -173,6 +173,16 @@ export class APIClient {
     return this.post('/api/mobile/enroll/verify', {
       verificationId, code, consent, deviceName: deviceName(), appVersion: AppConfig.appVersion,
     })
+  }
+
+  /** While the person texts MedPull for the first time: has the code gone out? */
+  verificationStatus(verificationId: number): Promise<VerificationStatus> {
+    return this.get(`/api/mobile/enroll/verification/${verificationId}`)
+  }
+
+  /** "I've sent it — send my code": the same verification, tried again. */
+  resendVerification(verificationId: number): Promise<EnrollResponse> {
+    return this.post(`/api/mobile/enroll/verification/${verificationId}/resend`)
   }
 
   async procedures(): Promise<Procedure[]> {

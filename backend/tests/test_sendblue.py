@@ -224,12 +224,14 @@ def test_a_failed_text_puts_the_reason_on_the_thread(client, db, configured, mon
     monkeypatch.setattr(sendblue, "_last_config_fault", None)
 
 
-def test_a_failure_carries_what_the_operator_has_to_do(configured, monkeypatch):
+def test_a_refused_unverified_number_is_unreachable_not_failed(configured, monkeypatch):
+    """Sendblue's own wording is a dead end on its own — "must be verified"
+    by whom, how? The answer is the honest state plus the one thing that
+    fixes it: the number has not texted MedPull yet, so ask them to. It is
+    not a failure of the deployment and must not light the health banner."""
     monkeypatch.setattr(sendblue, "_last_config_fault", None)
     monkeypatch.setattr(sendblue, "_last_failure", None)
-    """Sendblue's own wording is a dead end on its own — "must be verified"
-    by whom, how? The hint is the difference between a stuck demo and a ten
-    second fix."""
+    monkeypatch.setattr(sendblue, "_last_unreachable", None)
     monkeypatch.setattr(
         sendblue.httpx, "post",
         lambda *a, **kw: _FakeResponse(400, {
@@ -240,16 +242,43 @@ def test_a_failure_carries_what_the_operator_has_to_do(configured, monkeypatch):
     assert result.sent is False
     # recipient-scoped, so not an account fault...
     assert result.config_fault is False
-    # ...but it says exactly what unblocks it, naming the sending number
-    assert "not a verified Sendblue contact" in result.detail
+    # ...but a number we cannot reach YET, and the detail says what unblocks
+    # it, naming the number to text
+    assert result.unreachable is True
+    assert result.detail.startswith("Not reachable by text yet")
     assert "+15049081262" in result.detail
-    # and health shows the failure even though the account itself is fine
+    assert sendblue.delivery_status_for(result) == "unreachable"
+    # health keeps the account clean and reports the number apart
     status = sendblue.status()
-    assert status["config_fault"] is None
-    assert status["last_failure"] == (
-        "This contact must be verified before sending messages to it."
+    assert status["config_fault"] is None and status["last_failure"] is None
+    assert status["reachability"]["last_unreachable"] == "+18588666257"
+    assert status["reachability"]["text_to"] == "+15049081262"
+    # the same wording when the refusal comes as a 200 with status ERROR
+    monkeypatch.setattr(
+        sendblue.httpx, "post",
+        lambda *a, **kw: _FakeResponse(200, {
+            "status": "ERROR", "error_message": "No contact found for this number."}),
     )
-    assert "verify it in the Sendblue dashboard" in status["hint"]
+    again = sendblue.send_sms("+18588666258", "hello")
+    assert again.unreachable is True and again.sent is False
+
+
+def test_a_real_recipient_failure_still_carries_the_hint(configured, monkeypatch):
+    """A failure that is neither the account's nor the verified-contact rule
+    keeps Sendblue's words and the operator hint, and does reach the banner."""
+    monkeypatch.setattr(sendblue, "_last_config_fault", None)
+    monkeypatch.setattr(sendblue, "_last_failure", None)
+    monkeypatch.setattr(
+        sendblue.httpx, "post",
+        lambda *a, **kw: _FakeResponse(400, {"status": "ERROR",
+                                             "message": "Cannot send messages to self"}),
+    )
+    result = sendblue.send_sms("+15049081262", "hello")
+    assert result.sent is False and result.unreachable is False
+    assert sendblue.delivery_status_for(result) == "failed"
+    status = sendblue.status()
+    assert status["last_failure"] == "Cannot send messages to self"
+    assert "own sending number" in status["hint"]
 
 
 def test_a_delivered_message_clears_the_failure_banner(configured, monkeypatch):

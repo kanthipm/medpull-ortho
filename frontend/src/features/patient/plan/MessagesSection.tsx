@@ -175,9 +175,13 @@ function Bubble({ m, first, patientId }: { m: PatientMessage; first: string; pat
   const who = inbound ? first : clinician ? `${clinician}, care team` : 'Copilot'
   const unread = inbound && !m.read_by_care_team
   const failed = m.delivery_status === 'failed'
+  // A number that has never texted MedPull is not a failure of ours: the
+  // texting plan cannot reach it until the patient texts the line once, so
+  // the chip says that state and what fixes it rather than "not delivered".
+  const unreachable = m.delivery_status === 'unreachable'
   // Delivery as a word in the meta line; only a failure is a state chip.
   const delivery =
-    inbound || failed
+    inbound || failed || unreachable
       ? null
       : m.delivery_status === 'delivered'
         ? 'Delivered'
@@ -234,11 +238,22 @@ function Bubble({ m, first, patientId }: { m: PatientMessage; first: string; pat
             </>
           )}
           {failed && <span className="chip bg-risk-high-tint text-risk-high-ink">Not delivered</span>}
+          {unreachable && (
+            <span className="chip bg-risk-med-tint text-risk-med-ink">Not reachable by text yet</span>
+          )}
         </p>
         {failed && m.delivery_detail && (
           // The provider's own words. "Not delivered" alone left a clinician
           // unable to tell a landline from a broken texting account.
           <p className="mt-0.5 px-2 text-label text-risk-high-ink">{m.delivery_detail}</p>
+        )}
+        {unreachable && (
+          // What is true and what fixes it: the patient texts MedPull once
+          // and every text from then on goes through. The message itself is
+          // already waiting in their app.
+          <p className="mt-0.5 px-2 text-label text-body">
+            {m.delivery_detail ?? 'Ask them to text MedPull first — texts go through the moment they do.'}
+          </p>
         )}
       </div>
     </li>

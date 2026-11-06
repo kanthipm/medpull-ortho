@@ -37,6 +37,11 @@ os.environ["SENDBLUE_FROM_NUMBER"] = ""
 os.environ["CARE_TEAM_PHONES"] = ""
 os.environ["CHECKIN_BASE_URL"] = ""
 os.environ["MOBILE_OTP_REQUIRED"] = "false"
+# The verified-contact rule (Sendblue's free plan) is exercised by tests that
+# fake the provider's contact list; the baseline is "just send", so no test
+# ever reaches Sendblue's account API. See the autouse fixture below.
+os.environ["SENDBLUE_VERIFIED_CONTACTS_ONLY"] = "false"
+os.environ["SENDBLUE_TEXT_FIRST_BODY"] = "Hi MedPull"
 os.environ["ALLOW_MOCK_WEBHOOK"] = "true"  # the suite drives the demo connector through it
 # Attachment bytes go to a throwaway directory, never backend/data.
 os.environ["ATTACHMENT_DIR"] = f"{_TMP}/attachments"
@@ -75,6 +80,22 @@ def seeded_db():
 @pytest.fixture()
 def db(seeded_db):
     return seeded_db
+
+
+@pytest.fixture(autouse=True)
+def _no_sendblue_account_api(monkeypatch):
+    """Reachability starts every test with an empty memory, and the one seam
+    that reaches Sendblue's account API refuses unless the test fakes it."""
+    from app.notifications import reachability
+
+    reachability.reset_caches()
+
+    def refuse(method, path, json=None):
+        raise AssertionError(f"Sendblue account API called without a fake: {method} {path}")
+
+    monkeypatch.setattr(reachability, "_request", refuse)
+    yield
+    reachability.reset_caches()
 
 
 @pytest.fixture(scope="session")

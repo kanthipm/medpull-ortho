@@ -306,6 +306,89 @@ aws lambda invoke --function-name recovery-copilot-api \
   --cli-binary-format raw-in-base64-out /dev/stdout
 ```
 
+## Texting patients: Sendblue and the first text
+
+MedPull texts patients through Sendblue (`backend/app/notifications/sendblue.py`),
+and the account is on Sendblue's **free shared-line plan**, sending from
++1 (504) 908-1262. That plan has one rule that shaped the product: a
+recipient must be a *verified contact*, and the only thing that verifies a
+contact is **that person texting the line first**. A send to anyone else is
+refused with "This contact must be verified before sending messages to it",
+the API has no call that verifies a number on our behalf, and nothing in the
+dashboard scales to a clinic's worth of patients. Sources, checked
+2026-11-06: [pricing](https://www.sendblue.com/pricing) ("Up to 10 verified
+contacts", "Inbound-first (contacts text you first)");
+[quickstart](https://docs.sendblue.com/getting-started/quickstart/) ("On free
+shared-line plans, outbound recipients must be verified before messaging");
+the [verified-contacts API](https://docs.sendblue.com/api/resources/verified_contacts/index.md)
+(contacts "start as pending" and become verified after an inbound message to
+the line).
+
+Two ways through. The deployment does the first one by itself.
+
+### 1. The code flow (shipped; no admin step; works on the free plan)
+
+`backend/app/notifications/reachability.py` learns which numbers texts can
+reach, and never fails for one it cannot reach *yet*:
+
+- A number is **verified** once the person has texted the line (the inbound
+  webhook records it), once a text to them has gone through, or when
+  Sendblue's own list says so (`GET /v3/verified-contacts/{phone}`, falling
+  back to `GET /accounts/contacts`). Rows live in `verified_contacts`.
+- When a one-time code must go to a number that is not reachable yet, the
+  API answers `verification_required` with `code_sent: false`,
+  `text_first: true`, `text_to` (the line) and `text_body` ("Hi MedPull").
+  The apps show **Text us first**: one tap opens Messages with the text
+  written, then "I've sent it — send my code". The moment the inbound text
+  reaches `POST /api/webhooks/sendblue`, the number is marked reachable and
+  the waiting code is texted; the apps poll
+  `GET /api/mobile/enroll/verification/{id}` and move to the code field by
+  themselves. `POST /api/mobile/enroll/verification/{id}/resend` retries the
+  same verification. The personal tier's phone sign-in and password reset
+  go through the same door.
+- Every other text (tasks, check-ins, console messages, the welcome) to a
+  number that has not texted yet is stored for the app, with the thread line
+  marked **not reachable by text yet** and the words "ask them to text
+  MedPull first" — not a red failure. The first text from the patient flips
+  all of it, and a bare "Hi MedPull" from a known patient is answered
+  "you're connected" without a model call.
+- Settings: `SENDBLUE_VERIFIED_CONTACTS_ONLY` — `auto` (default) asks the
+  account's plan and contact list before a first send; `true` always asks
+  for the first text from an unknown number; `false` for a paid plan or
+  another provider: just send, and learn from any refusal — and
+  `SENDBLUE_TEXT_FIRST_BODY`. `/api/health` → `sms.reachability` shows the
+  rule in force and how many numbers are known.
+
+What it costs: nothing. What it changes for the patient: one extra tap, the
+first time, only when their number has never texted MedPull.
+
+### 2. The business option (lift the rule at the provider)
+
+Sendblue's published plans ([pricing](https://www.sendblue.com/pricing),
+2026-11-06): **Free Sandbox**, $0 — shared number, up to 10 verified
+contacts, inbound-first, no webhooks; **AI Agent**, $100 per dedicated line
+per month — a dedicated number, "inbound-first messaging", 1,000 inbound
+contacts a day, webhooks; **Enterprise**, custom — the only tier that lists
+"full outbound messaging". The [FAQ](https://docs.sendblue.com/faq/index.md)
+prices dedicated numbers "depending on country, area code, functionalities,
+and use-case" and asks for a quote. So the cheap paid tier is still
+inbound-first, and unrestricted first-contact outbound is a sales
+conversation: confirm with Sendblue what a plan actually lifts before paying
+for it. iMessage itself needs no 10DLC ([Sendblue's 10DLC guide](https://www.sendblue.com/blog/a2p-10dlc-registration-guide):
+"There is no 10DLC equivalent for iMessage"), but SMS fallback to Android
+phones is carrier traffic, which has been blocked unregistered since late
+2024: a brand ($4 one-time, $40 vetted) and a campaign ($15 one-time plus
+roughly $2–10 a month) with The Campaign Registry, two to eight weeks. A
+fallback provider carries the same registration: Twilio
+([sole-proprietor 10DLC](https://support.twilio.com/hc/en-us/articles/1260803965530):
+about $4 brand, $15 campaign vetting, $2 a month) or Telnyx
+([10DLC fees](https://support.telnyx.com/en/articles/5634625-10dlc-fees-and-charges):
+$1.50–10 a month per campaign, passed through at cost). Any of these lifts
+the verified-contact rule entirely; set `SENDBLUE_VERIFIED_CONTACTS_ONLY=false`
+and the apps never show "Text us first". The webhook, the thread states and
+the apps need no other change — `send_sms` is the one seam a different
+provider would replace.
+
 ## Security posture
 
 The console ships **open by default**, for the public demo. Set

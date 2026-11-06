@@ -7,7 +7,7 @@ from app.models.connection import WearableConnection
 from app.models.hospital import Hospital
 from app.models.insight import EstablishedBaseline, Insight, RiskAssessment
 from app.models.library import CareAction, MessageTemplate, TaskTemplate, TaskVerification
-from app.models.mobile import Message, PatientSession, PhoneVerification
+from app.models.mobile import Message, PatientSession, PhoneVerification, VerifiedContact
 from app.models.notification import Notification, NotificationPreference
 from app.models.observation import Observation, WebhookEvent
 from app.models.patient import CareTeamMember, Device, Patient
@@ -46,6 +46,7 @@ __all__ = [
     "Message",
     "PatientSession",
     "PhoneVerification",
+    "VerifiedContact",
     "Insight",
     "RiskAssessment",
     "Notification",

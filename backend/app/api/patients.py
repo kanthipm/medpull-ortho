@@ -462,8 +462,8 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
             link=None if enrolled else settings.app_download_url,
             media_url=links[0] if links else None,
         )
-        message.delivery_status = "sent" if delivery.sent else "failed"
-        message.delivery_detail = None if delivery.sent else delivery.detail
+        message.delivery_status = sendblue.delivery_status_for(delivery)
+        message.delivery_detail = sendblue.delivery_detail_for(delivery)
         message.external_handle = delivery.message_handle
         if delivery.sent and links:
             media_texted = 1
@@ -478,14 +478,13 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
                     logger.warning("A file for %s did not go by text: %s", patient.id,
                                    extra.detail)
     db.commit()
-    if delivery is not None and delivery.sent:
-        status = "sent_sms"
-    elif patient.phone:
-        status = "stored_sms_failed"
-    else:
-        status = "stored_app_only"
+    status, reason = message_outcome(delivery, patient.phone)
     return {
         "status": status,
+        # Why the text did not go, when it did not: "no_phone", or
+        # "not_reachable_yet" (the number has never texted MedPull — the
+        # honest state, not a failure), or "provider_error".
+        "reason": reason,
         "detail": delivery.detail if delivery else "patient has no phone number on file",
         # How many of the files went out as picture messages, so the console
         # can say whether the patient has them in the text or only in the app.
@@ -493,6 +492,25 @@ def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(ge
         "files_attached": attached,
         "message": _message_view(message, db, attachments_for(db, [message])),
     }
+
+
+def message_outcome(delivery: sendblue.CheckinSendResult | None,
+                    phone: str | None) -> tuple[str, str | None]:
+    """(status, reason) for a message written in the console.
+
+    ``sent_sms`` when the text went. ``stored_app_only`` when nothing could
+    go out through no fault of anyone's — no number on file, or a number
+    that has not texted MedPull yet (``reason`` tells the two apart, and the
+    message is in the app either way). ``stored_sms_failed`` only for a real
+    provider failure, which is the one case worth a warning.
+    """
+    if delivery is not None and delivery.sent:
+        return "sent_sms", None
+    if delivery is not None and delivery.unreachable:
+        return "stored_app_only", "not_reachable_yet"
+    if phone:
+        return "stored_sms_failed", "provider_error"
+    return "stored_app_only", "no_phone"
 
 
 @router.get("/{patient_id}/messages")
@@ -764,8 +782,8 @@ def create_patient(
         db.add(Message(
             patient_id=patient.id, sender="care_team", sender_id=assigned_id, channel="sms",
             text=sendblue.INVITE_TEMPLATE.format(app_url=settings.app_download_url),
-            delivery_status="sent" if delivery.sent else "failed",
-            delivery_detail=None if delivery.sent else delivery.detail,
+            delivery_status=sendblue.delivery_status_for(delivery),
+            delivery_detail=sendblue.delivery_detail_for(delivery),
             external_handle=delivery.message_handle,
         ))
         db.commit()

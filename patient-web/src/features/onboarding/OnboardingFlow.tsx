@@ -9,7 +9,7 @@ import { messageFor, useApp } from '../../core/appModel'
 import { DOT, isRecovery, type Candidate, type Hospital } from '../../core/models'
 import {
   Card, Chip, cx, EmptyRow, ErrorBanner, IconTile, InsetDivider, MPButton, NavBar, PrimaryButton, Screen,
-  Spinner, StatusPill, Toggle, type Category,
+  SecondaryButton, Spinner, StatusPill, Toggle, type Category,
 } from '../../ui/components'
 import { Sym } from '../../ui/icons'
 import { ConsentLoader } from '../consent/ConsentView'
@@ -360,6 +360,15 @@ function JoinStep({ model }: { model: OnboardingModel }) {
 
 function VerifyStep({ model }: { model: OnboardingModel }) {
   const app = useApp()
+  const textFirst = model.textFirst
+  // Poll while the person texts MedPull for the first time, so the code
+  // field appears by itself the moment the code goes out.
+  useEffect(() => {
+    if (!textFirst) return
+    const timer = window.setInterval(() => { void model.pollForCode(app.api) }, 3000)
+    return () => window.clearInterval(timer)
+  }, [model, textFirst, app.api])
+  if (textFirst) return <TextFirstStep model={model} />
   return (
     <StepScaffold model={model} eyebrow={model.eyebrow('verify')} title="Check your texts"
       subtitle={`We sent a code to ${model.phoneMasked ?? 'your number'}. It’s good for 10 minutes.`}
@@ -373,6 +382,50 @@ function VerifyStep({ model }: { model: OnboardingModel }) {
         <input className="field figures" placeholder="6-digit code" inputMode="numeric" autoComplete="one-time-code" value={model.code} aria-label="6-digit code"
           onChange={(e) => model.set('code', e.target.value)} autoFocus
           onKeyDown={(e) => { if (e.key === 'Enter' && model.code.length >= 4) void model.verify(app.api, app) }} />
+        {model.error && <ErrorBanner text={model.error} />}
+      </div>
+    </StepScaffold>
+  )
+}
+
+/** "+15049081262" as "(504) 908-1262" for a US number; anything else as is. */
+function formatPhone(e164: string | null): string {
+  if (!e164) return ''
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164)
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164
+}
+
+/** Sendblue's free plan cannot text a number that has never texted the line,
+ *  so the server is waiting on one text from that phone. On a phone, one tap
+ *  opens Messages with the words already written; on a desktop the number to
+ *  text is shown instead. The code goes out the moment the text lands, and
+ *  the step moves on to the field by itself. */
+function TextFirstStep({ model }: { model: OnboardingModel }) {
+  const app = useApp()
+  const link = model.textFirstLink()
+  const onPhone = /iPhone|iPad|Android/i.test(navigator.userAgent)
+  return (
+    <StepScaffold model={model} eyebrow={model.eyebrow('verify')} title="Text us first"
+      subtitle={`Before we can text ${model.phoneMasked ?? 'your number'}, send us one message from it. ${
+        onPhone ? 'Tap below — the text is already written — then come back here.' : 'Then come back here.'}`}
+      footer={
+        <>
+          {onPhone && link && (
+            <PrimaryButton title="Open Messages" icon="message.fill" onClick={() => { window.location.href = link }} />
+          )}
+          {onPhone && link
+            ? <SecondaryButton title="I’ve sent it — send my code" loading={model.loading} onClick={() => void model.continueAfterText(app.api, app)} />
+            : <PrimaryButton title="I’ve sent it — send my code" loading={model.loading} onClick={() => void model.continueAfterText(app.api, app)} />}
+        </>
+      }>
+      <div className="stack-14">
+        <Card>
+          <div className="stack-6">
+            <span className="t-label secondary">Text “{model.textBody ?? 'Hi MedPull'}” to</span>
+            <span className="t-copy-lg-m c-ink figures">{formatPhone(model.textTo)}</span>
+            <span className="t-copy c-body">We’ll text your code the moment it arrives.</span>
+          </div>
+        </Card>
         {model.error && <ErrorBanner text={model.error} />}
       </div>
     </StepScaffold>

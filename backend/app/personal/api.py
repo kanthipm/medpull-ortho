@@ -290,6 +290,8 @@ def password_reset(body: ResetBody, db: Session = Depends(get_db)) -> dict:
     verification = db.get(PhoneVerification, body.verification_id)
     if verification is None or verification.verified_at is not None:
         raise HTTPException(status_code=404, detail="Start over — that code is no longer valid")
+    if mobile._awaiting_first_text(verification):
+        raise HTTPException(status_code=409, detail=mobile.NOT_TEXTED_YET)
     if verification.expires_at < datetime.now():
         raise HTTPException(status_code=410, detail="That code expired — request a new one")
     if verification.attempts >= mobile.VERIFICATION_MAX_ATTEMPTS:
@@ -442,6 +444,8 @@ def personal_verify(body: PersonalVerifyBody, db: Session = Depends(get_db)) -> 
     verification = db.get(PhoneVerification, body.verification_id)
     if verification is None or verification.verified_at is not None:
         raise HTTPException(status_code=404, detail="Start over — that code is no longer valid")
+    if mobile._awaiting_first_text(verification):
+        raise HTTPException(status_code=409, detail=mobile.NOT_TEXTED_YET)
     if verification.expires_at < datetime.now():
         raise HTTPException(status_code=410, detail="That code expired — request a new one")
     if verification.attempts >= mobile.VERIFICATION_MAX_ATTEMPTS:

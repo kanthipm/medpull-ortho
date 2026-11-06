@@ -1,5 +1,8 @@
 package com.medpull.recovery.features.onboarding
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -319,6 +322,10 @@ private fun JoinStep(nav: NavHostController, model: OnboardingModel) {
 private fun VerifyStep(nav: NavHostController, model: OnboardingModel) {
     val s by model.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    if (s.textFirst) {
+        TextFirstStep(nav, model)
+        return
+    }
     StepFrame(nav, "Step 4 of 5", "Enter the code we texted",
         blurb = "Sent to ${s.phoneMasked ?: "your number"}. It expires in ten minutes.") {
         s.error?.let { ErrorBanner(it, onDismiss = { model.state.value = s.copy(error = null) }); Gap() }
@@ -330,6 +337,53 @@ private fun VerifyStep(nav: NavHostController, model: OnboardingModel) {
         }
         PlainButton("Send a new code") { scope.launch { model.resend() } }
     }
+}
+
+/** Sendblue's free plan cannot text a number that has never texted the line, so the server is
+ *  waiting on one text from this phone. One tap opens Messages with the words already written;
+ *  the code goes out the moment the text lands, and the step moves on to the field by itself. */
+@Composable
+private fun TextFirstStep(nav: NavHostController, model: OnboardingModel) {
+    val s by model.state.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val c = MP.colors
+    LaunchedEffect(s.verificationId) {
+        // Poll while waiting, so the field appears without another tap.
+        while (true) { delay(3_000); model.pollForCode() }
+    }
+    StepFrame(nav, "Step 4 of 5", "Text us first",
+        blurb = "Before we can text ${s.phoneMasked ?: "your number"}, send us one message from it. Tap below — the text is already written — then come back here.") {
+        Panel {
+            Text("Text “${s.textBody ?: "Hi MedPull"}” to", style = MaterialTheme.typography.labelMedium, color = c.muted)
+            Gap(4.dp)
+            Text(formatPhone(s.textTo), style = MaterialTheme.typography.titleLarge, color = c.ink)
+            Gap(6.dp)
+            Text("We'll text your code the moment it arrives.", style = MaterialTheme.typography.bodyMedium, color = c.body)
+        }
+        s.error?.let { Gap(); ErrorBanner(it, onDismiss = { model.state.value = s.copy(error = null) }) }
+        Gap(16.dp)
+        PrimaryButton("Open Messages") {
+            val uri = model.textFirstUri() ?: return@PrimaryButton
+            try {
+                context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse(uri)))
+            } catch (_: ActivityNotFoundException) {
+                model.state.value = s.copy(error = "No messaging app found — text ${formatPhone(s.textTo)} from your phone, then come back.")
+            }
+        }
+        Gap(8.dp)
+        SecondaryButton("I've sent it — send my code", loading = s.working) {
+            scope.launch { model.continueAfterText()?.let { if (it != Step.VERIFY) nav.navigate(it.name) } }
+        }
+    }
+}
+
+/** "+15049081262" as "(504) 908-1262" for a US number; anything else as is. */
+private fun formatPhone(e164: String?): String {
+    if (e164 == null) return ""
+    val m = Regex("""^\+1(\d{3})(\d{3})(\d{4})$""").find(e164) ?: return e164
+    val (a, b, d) = m.destructured
+    return "($a) $b-$d"
 }
 
 @Composable

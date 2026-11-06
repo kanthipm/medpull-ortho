@@ -5256,6 +5256,96 @@
         ]
       }
     },
+    "/api/mobile/enroll/verification/{verification_id}": {
+      "get": {
+        "description": "What the app polls while the patient texts MedPull for the first\ntime: has the code gone out yet? ``status`` is ``waiting_for_text``,\n``code_sent``, ``expired`` or ``verified``. Carries nothing the app did\nnot already hold — the masked destination and the number to text.",
+        "operationId": "verification_status_api_mobile_enroll_verification__verification_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "verification_id",
+            "required": true,
+            "schema": {
+              "title": "Verification Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verification Status Api Mobile Enroll Verification  Verification Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verification Status",
+        "tags": [
+          "mobile"
+        ]
+      }
+    },
+    "/api/mobile/enroll/verification/{verification_id}/resend": {
+      "post": {
+        "description": "\"I've sent it — send my code\": try the same verification again.\n\nReuses the row the app already holds, so a retry never creates a second\nchart or a second code the app knows nothing about. Reachable now (the\ninbound text landed, or the number was always fine): a fresh code goes\nout and the answer says ``code_sent``. Still not: the same\n``text_first`` answer as before, and the webhook will do the sending.",
+        "operationId": "verification_resend_api_mobile_enroll_verification__verification_id__resend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "verification_id",
+            "required": true,
+            "schema": {
+              "title": "Verification Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verification Resend Api Mobile Enroll Verification  Verification Id  Resend Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verification Resend",
+        "tags": [
+          "mobile"
+        ]
+      }
+    },
     "/api/mobile/enroll/verify": {
       "post": {
         "operationId": "verify_api_mobile_enroll_verify_post",

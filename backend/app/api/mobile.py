@@ -44,7 +44,7 @@ from app.models.hospital import Hospital
 from app.models.mobile import Message, PatientSession, PhoneVerification
 from app.models.observation import Observation
 from app.models.patient import Patient
-from app.notifications import sendblue
+from app.notifications import reachability, sendblue
 from app.personal.scope import is_clinic, is_personal
 from app.tasks import service as tasks
 
@@ -57,6 +57,9 @@ public_router = APIRouter(tags=["mobile"])
 
 VERIFICATION_TTL = timedelta(minutes=10)
 VERIFICATION_MAX_ATTEMPTS = 5
+# A code typed before any was sent (the number has not texted MedPull yet).
+NOT_TEXTED_YET = ("We haven't texted your code yet — text MedPull first, then it's on its way. "
+                  "Tap \"I've sent it\" once you have.")
 SESSION_TOUCH_INTERVAL = timedelta(minutes=5)
 SEARCH_MIN_CHARS = 2
 SEARCH_LIMIT = 5
@@ -125,8 +128,8 @@ def _welcome(db: Session, patient: Patient) -> None:
     db.add(message)
     if patient.phone:
         delivery = sendblue.send_welcome_message(patient.phone)
-        message.delivery_status = "sent" if delivery.sent else "failed"
-        message.delivery_detail = None if delivery.sent else delivery.detail
+        message.delivery_status = sendblue.delivery_status_for(delivery)
+        message.delivery_detail = sendblue.delivery_detail_for(delivery)
         message.external_handle = delivery.message_handle
         if not delivery.sent:
             logger.info("Welcome text to %s not sent: %s", patient.id, delivery.detail)
@@ -616,35 +619,180 @@ def _verification_needed() -> bool:
 
 def _start_verification(db: Session, patient: Patient, phone: str, *,
                         send_to: str | None = None) -> dict:
-    """Text a one-time code and answer ``verification_required``. Nothing on
-    the patient changes until the code comes back through ``verify``.
+    """Start a phone verification and answer ``verification_required``.
+    Nothing on the patient changes until the code comes back through
+    ``verify``.
 
     ``send_to`` is where the code goes when that is not the number being
     claimed: proving a claim on a chart that already has a number means
     receiving a code AT that number, so a stranger who guesses a record id
     cannot take it over with their own phone.
+
+    The code is texted at once when the number can be reached. When the
+    provider refuses numbers that have never texted it (Sendblue's free
+    plan) and this one is not known yet, nothing fails and nobody has to
+    approve anything: the row waits with ``sent_at`` empty, the answer
+    carries ``text_first`` with the number to text and the words to send,
+    and the inbound webhook texts the code the moment that text arrives
+    (``waiting_verification`` + ``deliver_code``). The app polls
+    ``GET /enroll/verification/{id}`` meanwhile, or simply asks again.
     """
-    code = f"{secrets.randbelow(1_000_000):06d}"
     destination = send_to or phone
     verification = PhoneVerification(
-        patient_id=patient.id, phone=phone, code_hash=_hash(code),
-        expires_at=datetime.now() + VERIFICATION_TTL,
+        patient_id=patient.id, phone=phone, destination=destination,
+        code_hash=_hash(_new_code()), expires_at=datetime.now() + VERIFICATION_TTL,
     )
     db.add(verification)
     db.commit()
+    return _deliver_or_wait(db, verification)
+
+
+def _new_code() -> str:
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def deliver_code(db: Session, verification: PhoneVerification) -> sendblue.CheckinSendResult:
+    """Text a fresh code for ``verification`` and stamp it sent.
+
+    A new code every time: only a hash is stored, so a row that waited for
+    the patient's first text cannot re-send the one it was created with —
+    and a code should be as fresh as the text that carries it, so the
+    ten-minute clock restarts here too. A send that went through also proves
+    the number reachable for every later text.
+    """
+    code = _new_code()
+    destination = verification.sends_to
     delivery = sendblue.send_verification_code(destination, code)
-    if not delivery.sent:
-        # The code cannot reach them; a session now would be unverified and
-        # the app would show a screen waiting for a text that never comes.
+    if delivery.sent:
+        now = datetime.now()
+        verification.code_hash = _hash(code)
+        verification.attempts = 0
+        verification.sent_at = now
+        verification.expires_at = now + VERIFICATION_TTL
+        reachability.mark_verified(db, destination, source="sent")
+        db.commit()
+    return delivery
+
+
+def _deliver_or_wait(db: Session, verification: PhoneVerification, *,
+                     fresh: bool = False) -> dict:
+    destination = verification.sends_to
+    if reachability.lookup(db, destination, fresh=fresh) != "unverified":
+        delivery = deliver_code(db, verification)
+        if delivery.sent:
+            return _verification_view(verification)
+        if not delivery.unreachable:
+            # A landline, a bad key, a broken account: the code cannot reach
+            # them, and a session now would be unverified while the app
+            # waits for a text that never comes.
+            raise HTTPException(
+                status_code=502,
+                detail=f"We couldn't text a code to that number ({delivery.detail})",
+            )
+    # The number has never texted the line. Tell the provider to expect it
+    # (optional — the inbound text verifies it either way — but it names
+    # the line to text), then hand the app the one tap that fixes this.
+    reachability.register_pending(destination)
+    view = _verification_view(verification)
+    if not view.get("text_to"):
         raise HTTPException(
-            status_code=502, detail=f"We couldn't text a code to that number ({delivery.detail})"
+            status_code=502,
+            detail="We couldn't text a code to that number (the texting account has no "
+                   "sending number configured — set SENDBLUE_FROM_NUMBER)",
         )
-    return {
+    return view
+
+
+def _verification_view(verification: PhoneVerification) -> dict:
+    """The ``verification_required`` answer, and the body of the status poll.
+
+    ``code_sent`` says whether the code has gone out. Until it has, the
+    ``text_first`` fields carry what the app turns into one tap: open
+    Messages to ``text_to`` with ``text_body`` filled in.
+    """
+    destination = verification.sends_to
+    sent = not _awaiting_first_text(verification)
+    view: dict[str, Any] = {
         "status": "verification_required",
         "verification_id": verification.id,
         "phone_masked": _mask_phone(destination),
         "expires_at": _iso(verification.expires_at),
+        "code_sent": sent,
+        "text_first": False,
+        "text_to": None,
+        "text_body": None,
     }
+    if not sent:
+        view.update(reachability.text_first_instructions(destination))
+    return view
+
+
+def waiting_verification(db: Session, phone: str) -> PhoneVerification | None:
+    """The verification waiting for ``phone`` to text the line, if any.
+
+    The newest one wins — the app holds the newest id — and older rows for
+    the same number are left to expire. Nothing older than a day is woken:
+    that attempt was abandoned, and a code out of the blue is noise.
+    """
+    cutoff = datetime.now() - timedelta(hours=24)
+    return db.scalar(
+        select(PhoneVerification)
+        .where(
+            PhoneVerification.destination == phone,
+            PhoneVerification.sent_at.is_(None),
+            PhoneVerification.verified_at.is_(None),
+            PhoneVerification.created_at >= cutoff,
+        )
+        .order_by(PhoneVerification.id.desc())
+        .limit(1)
+    )
+
+
+def _awaiting_first_text(verification: PhoneVerification) -> bool:
+    """A row whose code has not gone out yet. Rows written before
+    ``destination`` existed were always sent on creation."""
+    return verification.sent_at is None and verification.destination is not None
+
+
+@router.get("/enroll/verification/{verification_id}")
+def verification_status(verification_id: int, db: Session = Depends(get_db)) -> dict:
+    """What the app polls while the patient texts MedPull for the first
+    time: has the code gone out yet? ``status`` is ``waiting_for_text``,
+    ``code_sent``, ``expired`` or ``verified``. Carries nothing the app did
+    not already hold — the masked destination and the number to text."""
+    verification = db.get(PhoneVerification, verification_id)
+    if verification is None:
+        raise HTTPException(status_code=404, detail="Start over — that code is no longer valid")
+    view = _verification_view(verification)
+    if verification.verified_at is not None:
+        view["status"] = "verified"
+    elif _awaiting_first_text(verification):
+        view["status"] = "waiting_for_text"
+    elif verification.expires_at < datetime.now():
+        view["status"] = "expired"
+    else:
+        view["status"] = "code_sent"
+    return view
+
+
+@router.post("/enroll/verification/{verification_id}/resend")
+def verification_resend(verification_id: int, db: Session = Depends(get_db)) -> dict:
+    """"I've sent it — send my code": try the same verification again.
+
+    Reuses the row the app already holds, so a retry never creates a second
+    chart or a second code the app knows nothing about. Reachable now (the
+    inbound text landed, or the number was always fine): a fresh code goes
+    out and the answer says ``code_sent``. Still not: the same
+    ``text_first`` answer as before, and the webhook will do the sending.
+    """
+    verification = db.get(PhoneVerification, verification_id)
+    if verification is None or verification.verified_at is not None or (
+        verification.created_at < datetime.now() - timedelta(hours=24)
+    ):
+        raise HTTPException(status_code=404, detail="Start over — that code is no longer valid")
+    # The person says they have texted: ask the provider afresh rather than
+    # trusting a "pending" remembered from before they did.
+    return _deliver_or_wait(db, verification, fresh=True)
 
 
 def _claim_phone(db: Session, patient: Patient, phone: str, *, verified: bool) -> None:
@@ -765,6 +913,8 @@ def verify(body: VerifyBody, db: Session = Depends(get_db)) -> dict:
     verification = db.get(PhoneVerification, body.verification_id)
     if verification is None or verification.verified_at is not None:
         raise HTTPException(status_code=404, detail="Start over — that code is no longer valid")
+    if _awaiting_first_text(verification):
+        raise HTTPException(status_code=409, detail=NOT_TEXTED_YET)
     if verification.expires_at < datetime.now():
         raise HTTPException(status_code=410, detail="That code expired — request a new one")
     if verification.attempts >= VERIFICATION_MAX_ATTEMPTS:

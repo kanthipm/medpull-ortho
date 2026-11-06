@@ -28,6 +28,10 @@ suspend fun ApiClient.search(body: SearchBody): List<Candidate> =
     post<SearchBody, CandidatesResponse>("/api/mobile/patients/search", body).candidates
 suspend fun ApiClient.enroll(body: EnrollBody): EnrollResponse = post("/api/mobile/enroll", body)
 suspend fun ApiClient.verify(body: VerifyBody): EnrollResponse = post("/api/mobile/enroll/verify", body)
+/** While the person texts MedPull for the first time: has the code gone out? */
+suspend fun ApiClient.verificationStatus(id: Int): VerificationStatus = get("/api/mobile/enroll/verification/$id")
+/** "I've sent it — send my code": the same verification, tried again. */
+suspend fun ApiClient.resendVerification(id: Int): EnrollResponse = post("/api/mobile/enroll/verification/$id/resend")
 suspend fun ApiClient.procedures(): List<Procedure> = get<ProceduresResponse>("/api/mobile/procedures").procedures
 suspend fun ApiClient.join(body: JoinBody): EnrollResponse = post("/api/mobile/join", body)
 suspend fun ApiClient.consentDocument(): ConsentDocument = get("/api/mobile/consent")

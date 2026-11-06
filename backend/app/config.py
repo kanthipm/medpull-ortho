@@ -65,6 +65,19 @@ class Settings(BaseSettings):
     # register at Sendblue (POST .../api/webhooks/sendblue/<secret>); with it
     # unset the route answers 503 and no inbound text is ever processed.
     sendblue_webhook_secret: str = ""
+    # Sendblue's free shared-line plan refuses any number that has not texted
+    # the line first ("This contact must be verified before sending messages
+    # to it"). app/notifications/reachability.py learns which numbers can be
+    # reached — from inbound texts, successful sends and the provider's own
+    # contact list — and the apps ask a new patient to text MedPull once when
+    # a code cannot go out yet. "auto" consults the account (plan + contact
+    # list) before a first send; "true" always treats an unknown number as
+    # needing that first text; "false" (a paid plan, another provider) skips
+    # the lookup and simply attempts the send, learning from any refusal.
+    sendblue_verified_contacts_only: str = "auto"  # auto | true | false
+    # What the app pre-fills when it opens Messages for that first text. Any
+    # text works; this one is friendly and unmistakable in the webhook log.
+    sendblue_text_first_body: str = "Hi MedPull"
     # --- the patient app ---------------------------------------------------
     # Custom URL scheme the iOS app registers; task texts deep-link into it.
     mobile_app_scheme: str = "medpull"

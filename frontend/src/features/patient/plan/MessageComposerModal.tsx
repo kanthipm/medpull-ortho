@@ -119,6 +119,14 @@ export default function MessageComposerModal({
             `Saved to ${first}'s app thread — text failed: ${r.detail || 'no reason given'}`,
             'warning',
           )
+        else if (r.reason === 'not_reachable_yet')
+          // Not a failure: the number has never texted MedPull, and the
+          // texting plan cannot reach it until it does. Say so, and say what
+          // fixes it, instead of sending anyone to look for a fault.
+          toast(
+            `Saved to ${first}'s app thread — not reachable by text yet. Ask them to text MedPull once and texts will go through.`,
+            'info',
+          )
         else toast(`Saved to ${first}'s app thread — no phone on file to text`, 'info')
         if (saveAs && saveTitle.trim()) {
           createTemplate.mutate(

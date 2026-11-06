@@ -219,8 +219,8 @@ def assign_plan(
             result = sendblue.send_sms(patient.phone, text)
             message = Message(
                 patient_id=patient.id, sender="copilot", channel="sms", text=text,
-                delivery_status="sent" if result.sent else "failed",
-                delivery_detail=None if result.sent else result.detail,
+                delivery_status=sendblue.delivery_status_for(result),
+                delivery_detail=sendblue.delivery_detail_for(result),
                 external_handle=result.message_handle,
             )
             db.add(message)

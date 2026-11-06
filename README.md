@@ -533,8 +533,11 @@ What it does, and where each piece lives:
   mobile number, and the roster is searched as you type, scoped to that
   hospital and masked (first name, last initial, procedure, surgery month).
   Confirm the match and you are enrolled. With Sendblue configured the
-  number must receive a 6-digit code first; without it (a laptop) enrollment
-  is unverified and the API response says so. The session token lives in the
+  number must receive a 6-digit code first (a number that has never texted
+  MedPull is asked to send one text first — Sendblue's free plan cannot
+  reach it until then; the code follows the moment the text lands, see
+  `infra/README.md`); without it (a laptop) enrollment is unverified and the
+  API response says so. The session token lives in the
   keychain; every later call carries it and can only touch that patient.
 - **Apple Health in one tap** (`Core/HealthConnector.swift`): the backend
   mints a Vital Sign-In Token for the patient's Junction user
