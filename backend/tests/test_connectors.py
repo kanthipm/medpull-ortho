@@ -329,7 +329,7 @@ def test_restatement_cannot_flip_provenance(db):
 
 
 def test_registry_shape():
-    assert len(PROVIDERS) == 11
+    assert len(PROVIDERS) == 12
     assert get_connector(SourceProvider.MOCK) is not None
     assert get_connector(SourceProvider.JUNCTION) is not None  # the live aggregator
     assert get_connector(SourceProvider.FITBIT) is None  # a brand, reached through Junction

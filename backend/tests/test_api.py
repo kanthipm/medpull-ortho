@@ -86,9 +86,11 @@ def test_metrics_endpoint(client):
     assert "walking_asymmetry_pct" in keys  # apple patient gets gait cards
     body2 = client.get("/api/patients/linda/metrics").json()
     # The panel is always whole: a Fitbit patient's gait card exists, but it
-    # says the metric was never measured and what would fill it.
+    # says her setup cannot produce the metric (no iPhone, not signed in on
+    # the app) and what would.
     gait = next(m for m in body2["metrics"] if m["metric_key"] == "walking_asymmetry_pct")
-    assert gait["status"] == "nodata" and gait["status_text"] == "Not measured yet"
+    assert gait["status"] == "nodata" and gait["status_text"] == "Not available on this setup"
+    assert gait["availability"] == "unavailable"
     assert "guided walk" in gait["finding"] and gait["series"] == []
 
 
@@ -116,7 +118,7 @@ def test_observations_series(client):
 def test_integrations(client):
     body = client.get("/api/integrations").json()
     providers = body["providers"]
-    assert len(providers) == 11
+    assert len(providers) == 12
     by_key = {p["key"]: p for p in providers}
     assert by_key["mock"]["status"] == "mock_connected"
     # no API key in the test environment: the aggregator is present but unconfigured

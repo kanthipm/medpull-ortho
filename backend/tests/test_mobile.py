@@ -511,6 +511,22 @@ def test_device_health_reports_health_connect_as_the_phone_store(client, db):
         db.commit()
 
 
+def test_patient_metrics_say_which_signals_this_setup_can_produce(client):
+    """Steve has no wearable and no data. Signed in on the app, his gait
+    cards wait on a Measure-tab test and his wearable cards say nothing
+    connected can report them, in his own words."""
+    headers, _ = _enroll(client)
+    body = client.get("/api/mobile/metrics", headers=headers).json()
+    signals = {s["key"]: s for s in body["signals"]}
+    walking = signals["walking_speed"]
+    assert walking["state"] == "waiting" and walking["availability"] == "active"
+    assert walking["state_label"] == "Needs a test"
+    assert "guided walk" in walking["headline"]
+    resting = signals["resting_hr"]
+    assert resting["state"] == "waiting" and resting["availability"] == "unavailable"
+    assert resting["state_label"] == "Not available on this setup"
+
+
 def test_idle_session_expires_on_next_request(client, db):
     import hashlib
     from datetime import datetime, timedelta

@@ -754,6 +754,36 @@ def test_dataload_sums_intraday_buckets_but_keeps_a_daily_summary_alone():
     assert series[str(M.RESTING_HR)].loc[5] == 65.0  # non-additive: mean of rows
 
 
+def test_cards_say_what_this_setup_can_measure():
+    """A card nobody has produced says why: waiting on a connected wearable,
+    waiting on a Measure-tab test, or not available on this setup at all."""
+    from app.engine.confidence import coverage
+    from app.engine.sources import profile_for
+
+    sources = {
+        "walking_speed": profile_for(M.WALKING_SPEED, set(), app=True),
+        "resting_hr": profile_for(M.RESTING_HR, set(), app=True),
+        "steps": profile_for(M.STEPS, {"fitbit"}, app=False),
+        "skin_temp": profile_for(M.SKIN_TEMP, {"garmin"}, app=False),
+    }
+    cards = build_cards({}, {}, {}, coverage({}, 10), ProcedureType.TKA, 10, SURGERY_DATE,
+                        sources=sources)
+    by = {c.metric_key: c for c in cards}
+    assert by["walking_speed"].availability == "active"
+    assert by["walking_speed"].status_text == "Needs a test in the app"
+    assert "guided walk" in by["walking_speed"].finding
+    assert by["resting_hr"].availability == "unavailable"
+    assert by["resting_hr"].status_text == "Not available on this setup"
+    assert "Apple Health" in by["resting_hr"].finding and "Fitbit" in by["resting_hr"].finding
+    assert by["steps"].availability == "passive" and by["steps"].status_text == "Not measured yet"
+    # Garmin reports no skin temperature: unavailable, and the note names who does.
+    assert by["skin_temp"].availability == "unavailable" and "Fitbit" in by["skin_temp"].finding
+    # The stress index follows its inputs; an unconnected card is simply unknown.
+    assert profile_for(M.STRESS_INDEX, {"oura"}, app=False)["availability"] == "passive"
+    assert profile_for(M.STRESS_INDEX, set(), app=True)["availability"] == "unavailable"
+    assert by["hrv_rmssd"].availability is None  # not in the profile: nothing claimed
+
+
 def test_dataload_takes_one_source_per_day_and_falls_back():
     """A patient reached two ways (a Fitbit through Junction's cloud and again
     through Health Connect) must not have both copies of a day added together,

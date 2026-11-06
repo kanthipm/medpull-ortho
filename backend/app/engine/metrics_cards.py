@@ -181,8 +181,10 @@ def build_cards(
     procedure: ProcedureType,
     postop_day: int,
     surgery_date: date,
+    sources: dict[str, dict] | None = None,
 ) -> list[MetricInsight]:
     cards: list[MetricInsight] = []
+    sources = sources or {}
     variants_present = {str(v) for v in VARIANT_OF if str(v) in series}
     for metric, name, unit, guarded in CARD_ORDER:
         key = str(metric)
@@ -192,19 +194,33 @@ def build_cards(
             continue  # a variant is charted only in place of an absent canonical
         if s is None and any(VARIANT_OF[v] is metric for v in VARIANT_OF if str(v) in variants_present):
             continue  # the device ships the variant statistic instead
+        availability = sources.get(key, {}).get("availability")
         if s is None:
             # Never measured for this patient: the card stays on the panel so
             # the clinician sees the whole set and what would fill the gap.
+            # What it says depends on what the patient's setup can do
+            # (engine/sources.py): waiting on a connected source, waiting on
+            # a test in the app, or not available at all.
+            status_text, finding = "Not measured yet", SOURCE_HINT.get(metric, WEARABLE)
+            note = "no source reports this signal yet"
+            if availability == "unavailable":
+                status_text = "Not available on this setup"
+                finding = sources[key].get("note") or finding
+                note = "no connected source can report this signal"
+            elif availability == "active":
+                status_text = "Needs a test in the app"
+                finding = sources[key].get("note") or finding
+                note = "reported when the patient runs the test"
             cards.append(MetricInsight(
                 metric_key=key, name=name, status=MetricStatus.NODATA,
-                status_text="Not measured yet",
-                finding=SOURCE_HINT.get(metric, WEARABLE),
+                status_text=status_text, finding=finding,
                 confidence=ConfidenceLevel.LOW,
                 coverage_text=f"0 of {confidence.window_days or 7} days of data",
                 next_step=None, guarded=guarded, unit=unit, series=[], baseline_mean=None,
                 # No countdown: nothing counts down until a source reports it.
                 readiness={**baseline_readiness(None, postop_day), "left": 0, "firm_left": 0,
-                           "note": "no source reports this signal yet"},
+                           "note": note},
+                availability=availability,
             ))
             continue
         post = s[s.index >= 0]
@@ -344,6 +360,7 @@ def build_cards(
                 ],
                 baseline_mean=_reference(metric, baselines.get(key), procedure, postop_day),
                 readiness=ready,
+                availability=availability,
             )
         )
     return cards
