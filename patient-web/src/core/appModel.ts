@@ -148,17 +148,19 @@ export class AppModel {
   async refreshAll(): Promise<void> {
     // These share one banner, and the 14-day portfolio is the heaviest call
     // and the first to be throttled. The banner means what it says: nothing
-    // got through.
-    const outcomes: Outcome[] = [
-      await this.refresh(false, async () => { this.me = await this.api.me(); this.notify() }),
-      await this.refresh(false, async () => { this.tasks = await this.api.tasks(); this.notify() }),
-      await this.refresh(false, async () => { this.messages = await this.api.messages(); this.notify() }),
-      await this.refresh(false, async () => {
+    // got through. The five are independent, so they go out together — the
+    // tabs fill in at once rather than one feed after another — and each
+    // still records its own outcome. `refresh` never rejects.
+    const outcomes: Outcome[] = await Promise.all([
+      this.refresh(false, async () => { this.me = await this.api.me(); this.notify() }),
+      this.refresh(false, async () => { this.tasks = await this.api.tasks(); this.notify() }),
+      this.refresh(false, async () => { this.messages = await this.api.messages(); this.notify() }),
+      this.refresh(false, async () => {
         this.portfolio = (await this.api.portfolio(14)).metrics
         this.notify()
       }),
-      await this.refreshMetrics(false),
-    ]
+      this.refreshMetrics(false),
+    ])
     if (outcomes.includes('ok')) this.clearError()
     else if (outcomes.includes('failed')) {
       this.set('lastError', "Can't reach MedPull right now. Check your connection.")
