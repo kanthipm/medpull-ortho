@@ -627,6 +627,9 @@ def test_link_dedupes_overlapping_readings_and_keeps_the_phones_junction_user(cl
     # the app sees one Apple Health device, the live one, and three days of steps
     me = client.get("/api/mobile/me", headers=_auth(token)).json()
     assert me["patient"]["id"] == "steve" and me["wearables"]["apple_health"]["connected"] is True
+    assert me["wearables"]["device_health"]["platform"] == "apple"
+    assert me["wearables"]["device_health"]["connected"] is True
+    assert me["features"]["device_health"] == me["features"]["apple_health"]
     prog = client.get("/api/mobile/progress?days=5", headers=_auth(token)).json()["days"]
     assert [d["steps"] for d in prog if d["steps"] is not None] == [1000, 2100, 3000]
     # a redelivery of d3 for the kept user lands on the moved row, not beside it

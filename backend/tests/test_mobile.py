@@ -473,6 +473,8 @@ def test_progress_and_wearables_answer_without_junction(client):
     assert len(prog["days"]) == 7 and prog["days"][-1]["date"] == date.today().isoformat()
     wear = client.get("/api/mobile/wearables", headers=headers).json()
     assert wear["summary"]["apple_health"]["connected"] is False
+    assert wear["summary"]["device_health"] == {
+        "platform": None, "connected": False, "last_sync_at": None}
     assert client.post("/api/mobile/wearables/apple/session", headers=headers).status_code == 503
     assert client.post("/api/mobile/wearables/link", headers=headers).status_code == 503
     refreshed = client.post("/api/mobile/wearables/refresh", headers=headers)
@@ -483,6 +485,30 @@ def test_signout_revokes_session(client):
     headers, _ = _enroll(client)
     assert client.post("/api/mobile/signout", headers=headers).status_code == 200
     assert client.get("/api/mobile/me", headers=headers).status_code == 401
+
+
+def test_device_health_reports_health_connect_as_the_phone_store(client, db):
+    from datetime import datetime
+
+    from app.models.patient import Device
+
+    headers, _ = _enroll(client)
+    device = Device(id="junction:test:health_connect", patient_id="steve",
+                    source_provider="health_connect", device_model="Pixel 9",
+                    connected_at=datetime.now(), last_sync_at=datetime.now(),
+                    status="connected")
+    db.add(device)
+    db.commit()
+    try:
+        wear = client.get("/api/mobile/me", headers=headers).json()["wearables"]
+        assert wear["device_health"]["platform"] == "health_connect"
+        assert wear["device_health"]["connected"] is True
+        assert wear["apple_health"]["connected"] is False
+        # The phone store is not listed among the wearables.
+        assert all(d["provider"] != "health_connect" for d in wear["devices"])
+    finally:
+        db.delete(device)
+        db.commit()
 
 
 def test_idle_session_expires_on_next_request(client, db):
