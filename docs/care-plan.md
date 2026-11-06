@@ -79,7 +79,7 @@ record table belongs to the patient-app session. Idempotent.
 13 `MessageTemplate`s (`{first}`/`{surgeon}` placeholders; four pinned; three
 chronic-care). `POST /api/patients/{id}/messages/draft {intent?, tone?,
 template_id?}` reuses `app/llm/draft.py`'s prompt and fallback by import and adds
-the clinician's intent, tone (warm | direct | encouraging) and template
+the clinician's intent, tone (warm | direct; the composer offers those two) and template
 personalization; the deterministic path rewrites "remind her to …" into second
 person. Sending is their `POST /actions/message`.
 

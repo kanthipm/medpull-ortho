@@ -17,8 +17,8 @@ get the validation but not the sentence.
 
 Product direction: **[SPEC.md](SPEC.md)**. Read its implementation-status
 table before treating any section of it as shipped; the RTM billing platform
-it describes was built and then removed from this codebase (see CHANGELOG
-1.5.0), so its RTM sections are direction, not description.
+it describes was built and then removed from this codebase (commit
+8df30664), so its RTM sections are direction, not description.
 
 ## MedPull Personal
 
@@ -106,7 +106,7 @@ Single-process demo (serves the built frontend from FastAPI):
 make build && make run     # everything on http://localhost:8000
 ```
 
-`make test` runs the backend suite (269 tests: seed determinism, engine golden
+`make test` runs the backend suite (about 600 tests: seed determinism, engine golden
 tiers, baseline stability, guardrail enforcement, API contracts, connector
 idempotency and ingest bounds, the Junction connector end to end against a
 fake Junction, LLM deadline and cooldown behaviour,
@@ -233,20 +233,18 @@ are always deterministic.
   orthopedic-demo risk tokens). Two primary surfaces: the Worklist
   (prioritized roster + AI daily briefing) and the Patient Detail (AI recovery
   summary, care actions, timeline, check-in conversations, tiered supporting
-  signals), plus Integrations and Notification settings.
+  signals), plus Integrations, Settings and the task and message Library.
 
-  - **Care actions** — Assign task, Message, and Escalate live in a glass
-    action bar on every patient record. A task is saved to the patient's plan
-    and nothing more:
-    there is no patient-facing surface and no completion tracking, so it cannot
-    move the adherence rate, and the endpoint returns `assigned_untracked` so
-    the UI does not imply follow-through. Message records intent only (no queue
-    behind it). Escalate raises an in-app notification to the patient's
-    assigned provider.
-  - **Supporting signals** — all evidence lives behind one dropdown:
-    collapsed to a summary line by default, or open with everything in full
-    detail (trajectory chart, deviation drivers, metric cards with next
-    steps, adherence & monitoring). Metric data loads lazily on first open.
+  - **Care actions** — Assign tasks, Message, and Escalate live in an action
+    bar on every patient record. A task goes onto the patient's plan, is texted
+    as a `/t/<token>` link, appears in the app, and is verified for 14 days
+    against data (`app/plan/verification.py`) or recorded by the provider.
+    Message writes to the shared thread and texts the patient when a number is
+    on file; replies come back from the app or by SMS. Escalate raises an
+    in-app notification to the patient's assigned provider.
+  - **Supporting signals** — six headline tiles from the care metrics open the
+    record; everything else sits in Full stats (Metrics, Signals and Raw data
+    tabs). Metric data loads lazily on first open.
   - **Refresh analysis** — reruns the engine, drops this patient's cached
     narratives and the roster briefing so the LLM genuinely regenerates them
     (Ask answers are keyed on the roster, not on one patient, and are left
@@ -425,8 +423,8 @@ migration as the same device epoch).
 The P1 Remote Therapeutic Monitoring platform (enrollment/billing compliance
 engine, treatment-management time logging, AI encounter documentation, the
 readiness card and practice overview strip) was built here and later removed
-in 1.5.0. SPEC.md still describes it as product direction. The git history
-holds the implementation.
+in commit 8df30664. SPEC.md still describes it as product direction. The git
+history holds the implementation.
 
 ## The patient app (`ios/`)
 
@@ -477,20 +475,27 @@ What it does, and where each piece lives:
   history and digest read, plus the `AdherenceRecord` the adherence engine
   scores — which nothing wrote before the app. Fever, drainage, redness or
   pain ≥ 8 in an answer raises an in-app alert for the assigned provider.
-- **Messages** (`Features/Messages`): a two-way thread. The console's
-  Message action now writes to it (and texts the patient when a number is on
-  file); a patient's message raises a bell notification for the provider.
-  Inbound texts arrive at `POST /api/webhooks/sendblue/<secret>` — the
-  secret is a path segment because Sendblue does not sign its webhook; with
-  `SENDBLUE_WEBHOOK_SECRET` unset the route answers 503. A number no patient
-  has on file is dropped, never stored.
-- **Talk** (`Features/Voice`, `backend/app/agent/copilot.py`): on-device
-  speech recognition in, spoken reply out. The copilot can log pain, mark a
-  task done from what was said, or pass a note to the care team — nothing
-  else. A deterministic red-flag pass (chest pain, calf pain, incision
-  drainage, fever, a fall) runs before any model call and its wording is what
-  the patient reads, with the care team alerted in the same transaction;
-  model replies are validated against the same banned-language rule as the
+- **Measure** (`Features/Measure`, `Core/MotionCapture.swift`): the guided
+  walk, six-minute walk and range-of-motion tests record raw phone motion
+  (50 Hz accelerometer, gyroscope and gravity, plus barometer, pedometer and
+  optional GPS) and upload it; the server computes every metric
+  (`backend/app/engine/mobility/`, see `docs/methods/`). Nothing is computed
+  on the phone.
+- **Care** (`Features/Care`, `backend/app/agent/copilot.py`): one two-way
+  thread with the care team that also carries photos, video, voice notes and
+  files. The console's Message action writes to it (and texts the patient
+  when a number is on file); a patient's message raises a bell notification
+  for the provider. Inbound texts arrive at
+  `POST /api/webhooks/sendblue/<secret>` — the secret is a path segment
+  because Sendblue does not sign its webhook; with `SENDBLUE_WEBHOOK_SECRET`
+  unset the route answers 503. A number no patient has on file is dropped,
+  never stored. The microphone button is the copilot: on-device speech
+  recognition in, spoken reply out. The copilot can log pain, mark a task
+  done from what was said, or pass a note to the care team — nothing else. A
+  deterministic red-flag pass (chest pain, calf pain, incision drainage,
+  fever, a fall) runs before any model call and its wording is what the
+  patient reads, with the care team alerted in the same transaction; model
+  replies are validated against the same banned-language rule as the
   console's narratives and fall back to keyword intents.
 
 Schema: the app added columns to `patients` and `adherence_tasks`.
@@ -508,22 +513,24 @@ assigns tasks; nothing creates one on a timer).
 
 ## Not in v1
 
-- **Auth.** Deliberately open for demos. Every API route is unauthenticated,
-  write paths included (escalations, the demo
-  webhook, and now the Junction lifecycle: whoever can reach the console can
-  issue a Junction Link for any patient, trigger a back-fill, or disconnect
-  an account). The Junction *webhook* is the exception — it is verified
-  against Junction's Svix signature and fails closed — but binding a device
-  to a patient is a console action, and the console has no login. That is
-  the gap to close before any real patient is linked. Running locally, `/docs`, `/redoc` and `/openapi.json` are open too;
+- **Auth.** Deliberately open for demos. Every console route is
+  unauthenticated, write paths included (escalations, task assignment, record
+  merges, and the Junction lifecycle: whoever can reach the console can issue
+  a Junction Link for any patient, trigger a back-fill, or disconnect an
+  account). The webhooks are the exception — Junction's is verified against
+  its Svix signature, Apple's against its certificate chain, and the unsigned
+  demo webhook is closed unless `ALLOW_MOCK_WEBHOOK=true` — but binding a
+  device to a patient is a console action, and the console has no login. That
+  is the gap to close before any real patient is linked. Running locally, `/docs`, `/redoc` and `/openapi.json` are open too;
   on AWS only `/api/*` is routed to the function, so those three are not
   reachable there. The demo server does contain the SPA catch-all to the built
   bundle and 404s unmatched `/api/*` paths rather than falling through to
   index.html, so it will not serve the database or read outside the bundle. That
   is containment, not authentication.
-- **Every wearable path except Junction.** Apple Health and Android Health
-  Connect need Junction's mobile SDK inside a patient app, which does not
-  exist; Terra stays scaffolded. See the wearable section above.
+- **Android Health Connect and Terra.** Apple Health arrives through
+  Junction's SDK inside the iOS app; Health Connect needs the same SDK inside
+  an Android app, which does not exist. Terra stays scaffolded. See the
+  wearable section above.
 - **Email delivery.** The email channel stub records intent only; SMS is
   real through Sendblue, and the preferences API refuses to enable a channel
   that would deliver nowhere.
