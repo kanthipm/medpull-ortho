@@ -353,6 +353,9 @@ def _fake_jws(payload: dict) -> str:
 
 def test_apple_transaction_grants_access_in_lenient_mode(client, db, monkeypatch):
     monkeypatch.setattr(settings, "apple_subscription_verify", "lenient")
+    # The developer's .env may say Production (a lenient Production server is
+    # refused by design); the test is about the lenient path itself.
+    monkeypatch.setattr(settings, "apple_environment", "Sandbox")
     headers, data = _join(client, goal="sleep")
     pid = data["me"]["patient"]["id"]
     try:
@@ -438,6 +441,9 @@ def test_app_store_notifications_update_the_entitlement(client, db, monkeypatch)
     from app.personal import subscription as sub
 
     monkeypatch.setattr(settings, "apple_subscription_verify", "lenient")
+    # The developer's .env may say Production (a lenient Production server is
+    # refused by design); the test is about the lenient path itself.
+    monkeypatch.setattr(settings, "apple_environment", "Sandbox")
     headers, data = _join(client, goal="sleep")
     pid = data["me"]["patient"]["id"]
     try:
