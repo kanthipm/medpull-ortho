@@ -94,6 +94,14 @@ Parameters:
       apple-app-site-association file and deploy.sh uploads the same JSON to
       the SPA bucket so https://<host>/t/<token> links open in the app.
       Blank serves nothing and the links fall back to the web task page.
+  AndroidCertSha256:
+    Type: String
+    Default: ""
+    Description: >-
+      SHA-256 fingerprint(s) of the Android app's signing certificate,
+      comma-separated, as the Play Console prints them. Set, the API serves
+      assetlinks.json and deploy.sh uploads it beside the SPA so task links
+      open in the Android app. Blank serves nothing.
   ConsoleAccessTokenParameter:
     Type: String
     Default: /recovery-copilot/console-access-token
