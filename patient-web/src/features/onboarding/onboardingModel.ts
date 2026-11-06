@@ -1,6 +1,7 @@
 /* The onboarding flow's state (Features/Onboarding/OnboardingModel.swift),
    the clinic path only: consent, hospital, how you are joining, find my
-   record or start one, the code by text, Health, wearables, done. */
+   record or start one, the code by text, wearables, done. The phone's
+   Apple Health step has no web equivalent and is left out. */
 
 import { useSyncExternalStore } from 'react'
 import { APIClient, APIError } from '../../core/api'
@@ -9,12 +10,12 @@ import { Dates, type Candidate, type ConsentAcceptance, type EnrollResponse, typ
 
 /** Every screen the flow can show. The order is load-bearing for
  *  `isPastEnrollment` only. */
-export const steps = ['welcome', 'consent', 'hospital', 'path', 'identity', 'join', 'verify', 'health', 'wearable', 'done'] as const
+export const steps = ['welcome', 'consent', 'hospital', 'path', 'identity', 'join', 'verify', 'wearable', 'done'] as const
 export type Step = (typeof steps)[number]
 
 /** Steps after the session exists. Going back from these would land on a
  *  form that has already done its job, so they hide the back button. */
-export const isPastEnrollment = (s: Step) => steps.indexOf(s) >= steps.indexOf('health')
+export const isPastEnrollment = (s: Step) => steps.indexOf(s) >= steps.indexOf('wearable')
 
 /** How the person is joining: on a hospital's roster already (find the
  *  record), or new to it (create one, with or without a surgery). */
@@ -72,7 +73,7 @@ export class OnboardingModel {
   }
 
   /** The dots in the bar, for the clinic path. */
-  get stepsShown(): Step[] { return ['consent', 'hospital', 'path', 'identity', 'verify', 'health', 'wearable'] }
+  get stepsShown(): Step[] { return ['consent', 'hospital', 'path', 'identity', 'verify', 'wearable'] }
 
   /** "Step 3 of 5" for the screen, counted along the person's own path. */
   eyebrow(step: Step): string {
@@ -245,7 +246,10 @@ export class OnboardingModel {
       case 'enrolled':
         if (!r.sessionToken || !r.me) throw new APIError(0, 'The server didn’t return a session.')
         app.adoptSession(r.sessionToken, r.me)
-        this.go('health')
+        // No Apple Health step here: a browser cannot reach HealthKit, so the
+        // phone app owns that connection and the web flow goes straight to
+        // the wearables.
+        this.go('wearable')
         break
       default:
         throw new APIError(0, `Unexpected status ${r.status}`)

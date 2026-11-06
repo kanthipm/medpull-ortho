@@ -7,12 +7,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../../core/appModel'
-import { IPHONE_NEEDED } from '../../core/health'
 import {
   Dates, DOT, hideUnit, isDailyTotal, isRecovery, isWaiting, latestText, signalFor, spokenText, toneForMetricState, typeset, unitOf,
   type Me, type PatientMetric, type PatientSignal, type PortfolioMetric, type Tone,
 } from '../../core/models'
-import { Card, InsetDivider, MPButton, NavBar, PrimaryButton, Rise, Screen, SecondaryButton, useGone } from '../../ui/components'
+import { Card, InsetDivider, MPButton, NavBar, Rise, Screen, SecondaryButton, useGone } from '../../ui/components'
 import { CardTitleRow, Chevron, Glyph, RowDivider, RowFigure, SectionTitle, Sparkline, StateLabel } from '../../ui/rows'
 import { Sym } from '../../ui/icons'
 import {
@@ -134,13 +133,10 @@ function EmptyState() {
             <span className="t-copy c-body">Your signals arrive from Apple Health, a wearable, or a measurement with your phone.</span>
           </div>
         </div>
-        {me && !me.wearables.appleHealth.connected && me.features.appleHealth && (
-          <div className="stack-6">
-            <PrimaryButton title="Connect Apple Health" icon="heart.fill" disabled />
-            <span className="greyed-note">{IPHONE_NEEDED}</span>
-          </div>
-        )}
         <SecondaryButton title="Measure a walk with your phone" icon="figure.walk.motion" onClick={() => navigate('/measure')} />
+        {me && !me.wearables.appleHealth.connected && me.features.appleHealth && (
+          <span className="t-label c-muted">Apple Health data arrives through the MedPull iPhone app, signed in to this same record.</span>
+        )}
       </div>
     </Card>
   )

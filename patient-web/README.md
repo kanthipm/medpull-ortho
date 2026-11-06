@@ -13,12 +13,12 @@ operation or followed for their everyday signals. The MedPull Personal
 (subscriber) tier and the Sports athlete app are not part of it.
 
 **Apple Health** cannot be connected from a browser — HealthKit lives on the
-phone — so every place the iPhone app offers it (the onboarding Health step,
-the Today nudge, the Progress empty state, the Connections sheet) is greyed
-out here and says to use the MedPull iPhone app, signed in to the same
-record. What a phone has already connected still shows (last sync, and the
-data on every tab). Wearables through Junction (Oura, Garmin, WHOOP…) link
-from here as they do on the phone.
+phone — so the web app has no Health step in onboarding and no Connect
+button anywhere. The Connections sheet reports what the MedPull iPhone app
+has already connected (last sync; the data shows on every tab) and says
+that the connection is made there, signed in to the same record. Wearables
+through Junction (Oura, Garmin, WHOOP…) link from here as they do on the
+phone.
 
 ## Run it
 
@@ -27,14 +27,25 @@ make dev-backend        # the API on :8000 (from the repo root)
 make dev-patient-web    # Vite on :5174, proxying /api to :8000
 ```
 
-`npm install` once inside `patient-web/`. The dev server runs on port 5174
-so it can sit beside the provider console (`make dev-frontend`, :5173).
+Then open http://localhost:5174/patient/ — the app is built with the base
+path `/patient/`, the same path it has on the deployed stack. `npm install`
+once inside `patient-web/`. The dev server runs on port 5174 so it can sit
+beside the provider console (`make dev-frontend`, :5173).
 
 `npm run build` produces `dist/`; `npm run lint` and `tsc -b` are what the
-console runs too. There is no deploy wiring yet: a deployment serves
-`dist/` from the same host as the API (like the console) or sets
-`VITE_MEDPULL_API_BASE_URL` at build time; a saved server URL on the
-Profile screen (Developer) overrides either at runtime.
+console runs too.
+
+## Where it is served
+
+- **AWS**: `./infra/deploy.sh` builds it and uploads `dist/` to
+  `web/patient/` in the data bucket next to the console; the CloudFront
+  rewrite function sends `/patient/*` client routes to `/patient/index.html`
+  (`infra/cloudformation.yaml`). So it lives at `https://app.medpull.org/patient/`
+  and talks to the same `/api/*` origin.
+- **Single process** (`make run`): the backend serves `patient-web/dist`
+  under `/patient` beside `frontend/dist`.
+- A saved server URL on the Profile screen (Developer) points the app at a
+  different API at runtime, as on the phone.
 
 ## How it maps to the iPhone app
 
@@ -53,6 +64,6 @@ The phone's SF Symbols are drawn with the nearest Lucide glyph under the
 same SF name (`ui/icons.tsx`), so a screen ported from Swift keeps its
 `symbol: "figure.walk"` lines.
 
-Deep links: `/tasks/<id>` opens that task on Today (the phone's
-`medpull://tasks/<id>`); `/connections` opens the Connections sheet
+Deep links: `/patient/tasks/<id>` opens that task on Today (the phone's
+`medpull://tasks/<id>`); `/patient/connections` opens the Connections sheet
 (`medpull://wearables`).

@@ -1207,8 +1207,6 @@ button.round-btn:active:not(:disabled), .press-88:active { transform: scale(0.88
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .unread-badge { padding: 3px 8px; border-radius: 999px; font-size: var(--s-label); font-weight: 400; color: rgb(var(--on-action)); background: rgb(var(--action)); font-variant-numeric: tabular-nums; }
 .schedule-pill { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: var(--s-label); font-weight: 500; color: rgb(var(--brand-ink)); background: rgb(var(--brand-tint)); }
-.greyed { opacity: 0.55; filter: grayscale(0.4); }
-.greyed-note { font-size: var(--s-label); color: rgb(var(--muted)); }
 .launch { display: grid; place-items: center; height: 100%; color: rgb(var(--brand)); }
 .hide-scrollbar { scrollbar-width: none; }
 .hide-scrollbar::-webkit-scrollbar { display: none; }

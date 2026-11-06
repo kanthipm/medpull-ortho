@@ -4,7 +4,7 @@
 #
 #   ./infra/deploy.sh                 # build, deploy, seed on first run
 #   ./infra/deploy.sh --reseed        # rebuild the demo database too
-#   ./infra/deploy.sh --backend-only  # skip the frontend build/upload
+#   ./infra/deploy.sh --backend-only  # skip the frontend and patient-app builds/uploads
 #   ./infra/deploy.sh --stack-only    # template/parameters only: ships no code
 #
 # Custom domain: set SITE_DOMAIN and SITE_CERTIFICATE_ARN (environment or
@@ -362,13 +362,29 @@ log "Building and uploading the frontend"
   DIST="$ROOT/frontend/dist"
   [ -f "$DIST/index.html" ] || die "frontend build produced no dist/index.html"
 
+  # The patient app lives under web/patient/ (see below), so the console's
+  # sync must not sweep it away with --delete.
   aws_ s3 sync "$DIST/" "s3://$DATA_BUCKET/web/" --delete --only-show-errors \
-    --cache-control "public,max-age=3600"
+    --exclude "patient/*" --cache-control "public,max-age=3600"
   # Vite content-hashes everything under assets/, so those can be immutable.
   aws_ s3 cp "$DIST/assets/" "s3://$DATA_BUCKET/web/assets/" --recursive --only-show-errors \
     --metadata-directive REPLACE --cache-control "public,max-age=31536000,immutable"
   # index.html points at hashed bundles; a cached copy would pin a stale build.
   aws_ s3 cp "$DIST/index.html" "s3://$DATA_BUCKET/web/index.html" --only-show-errors \
+    --cache-control "no-cache" --content-type "text/html; charset=utf-8"
+
+  # The patient app (patient-web/, the clinic iPhone app for the browser),
+  # built with base /patient/ and served from web/patient/: the CloudFront
+  # rewrite function sends /patient/* client routes to its own index.html.
+  log "Building and uploading the patient app"
+  (cd "$ROOT/patient-web" && npm ci --no-audit --no-fund && npm run build)
+  PDIST="$ROOT/patient-web/dist"
+  [ -f "$PDIST/index.html" ] || die "patient-web build produced no dist/index.html"
+  aws_ s3 sync "$PDIST/" "s3://$DATA_BUCKET/web/patient/" --delete --only-show-errors \
+    --cache-control "public,max-age=3600"
+  aws_ s3 cp "$PDIST/assets/" "s3://$DATA_BUCKET/web/patient/assets/" --recursive --only-show-errors \
+    --metadata-directive REPLACE --cache-control "public,max-age=31536000,immutable"
+  aws_ s3 cp "$PDIST/index.html" "s3://$DATA_BUCKET/web/patient/index.html" --only-show-errors \
     --cache-control "no-cache" --content-type "text/html; charset=utf-8"
 
   # App links. Only /api/* reaches the function, so the association files

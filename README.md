@@ -555,6 +555,23 @@ make android-install  # install it on the connected device or emulator
 The debug build talks to `http://10.0.2.2:8000` (a laptop's `make dev` from
 the emulator); change it on the Profile screen or in `android/app/build.gradle.kts`.
 
+## The patient app for the web (`patient-web/`)
+
+The clinic patient app in the browser: the same screens as the iPhone app
+(onboarding and the beta consent, Today, Progress, Measure, Care, the profile
+and connections sheets, the daily check-in, the thread with photos, videos,
+voice notes and files) against the same `/api/mobile/*` routes and the same
+design system. It has no Apple Health step: HealthKit is the phone's, and the
+Connections sheet only reports what the iPhone app connected. The Personal
+tier and Sports are not part of it.
+
+`make dev-patient-web` serves it at http://localhost:5174/patient/ beside the
+console (`make dev-frontend`); `./infra/deploy.sh` builds it and uploads
+`patient-web/dist` to `web/patient/` in the data bucket, and the CloudFront
+rewrite function routes `/patient/*` to its own `index.html`, so it lives at
+`https://app.medpull.org/patient/`. Details and the Swift → TypeScript file
+map are in `patient-web/README.md`.
+
 ## Not in v1
 
 - **Auth.** Deliberately open for demos. Every console route is
