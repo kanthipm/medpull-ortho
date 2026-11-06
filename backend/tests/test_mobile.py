@@ -485,6 +485,27 @@ def test_signout_revokes_session(client):
     assert client.get("/api/mobile/me", headers=headers).status_code == 401
 
 
+def test_idle_session_expires_on_next_request(client, db):
+    import hashlib
+    from datetime import datetime, timedelta
+
+    from app.models.mobile import PatientSession
+
+    headers, _ = _enroll(client)
+    token_hash = hashlib.sha256(headers["Authorization"].split()[1].encode()).hexdigest()
+    session = db.scalar(select(PatientSession).where(PatientSession.token_hash == token_hash))
+
+    session.last_seen_at = datetime.now() - timedelta(days=settings.session_idle_days - 1)
+    db.commit()
+    assert client.get("/api/mobile/me", headers=headers).status_code == 200
+
+    session.last_seen_at = datetime.now() - timedelta(days=settings.session_idle_days + 1)
+    db.commit()
+    assert client.get("/api/mobile/me", headers=headers).status_code == 401
+    db.refresh(session)
+    assert session.revoked_at is not None
+
+
 def test_aasa_only_when_team_id_set(client, monkeypatch):
     assert client.get("/.well-known/apple-app-site-association").status_code == 404
     monkeypatch.setattr(settings, "ios_team_id", "TEAM123")

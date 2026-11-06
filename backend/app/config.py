@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # send one. Off by default (frictionless enrollment); set true to require
     # the code before a session is issued.
     mobile_otp_required: bool = False
+    # A session the phone has not used for this long is revoked on its next
+    # request and the app signs out (it already does so on any 401).
+    session_idle_days: int = 90
     # apple-app-site-association: "<TEAMID>.<bundle id>" is served only when
     # the team id is set, so a deployment without the app publishes nothing.
     ios_team_id: str = ""

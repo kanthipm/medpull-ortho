@@ -86,6 +86,10 @@ def current_patient(
     if session is None or session.revoked_at is not None:
         raise HTTPException(status_code=401, detail="This session has ended — sign in again")
     now = datetime.now()
+    if not session.is_live(now):
+        session.revoked_at = now
+        db.commit()
+        raise HTTPException(status_code=401, detail="This session has ended — sign in again")
     if now - session.last_seen_at > SESSION_TOUCH_INTERVAL:
         session.last_seen_at = now
         db.commit()
