@@ -37,10 +37,17 @@ struct CareView: View {
     /// Quick logs. They FILL the field, never send it: a tapped "my pain is
     /// a 4" that went straight to the chart would be a score nobody gave.
     private var quickLogs: [String] {
-        app.isPersonal
+        app.isSports
+            ? ["Why is my readiness low?", "What should I do before the game?", "How's my knee plan going?", "Practice was 90 minutes, RPE 7"]
+            : app.isPersonal
             ? ["Why is my readiness low?", "I ran 45 minutes, RPE 7", "Energy is a 6 today"]
             : ["My pain is a ", "I did my exercises", "I walked today", "A note for my nurse: "]
     }
+
+    /// The assistant is "your coach" in a personal space and for an athlete.
+    private var coachMode: Bool { app.isPersonal || app.isSports }
+    /// An athlete on a team has staff on the thread; typed messages go to them.
+    private var staffLinked: Bool { app.isSports && !(app.me?.patient.careTeam.isEmpty ?? true) }
 
     var body: some View {
         NavigationStack {
@@ -61,7 +68,7 @@ struct CareView: View {
                         if thinking {
                             HStack(spacing: 8) {
                                 ProgressView().tint(MP.brandInk)
-                                Text(app.isPersonal ? "Your coach is thinking" : "MedPull is thinking")
+                                Text(coachMode ? "Your coach is thinking" : "MedPull is thinking")
                                     .mpFont(.label).foregroundStyle(MP.muted)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -88,7 +95,7 @@ struct CareView: View {
                 .mpComposerBar { composer }
             }
             .ambientScreen(height: 300)
-            .navigationTitle(app.isPersonal ? "Coach" : "Care team")
+            .navigationTitle(coachMode ? "Coach" : "Care team")
             .navigationBarTitleDisplayMode(.inline)
             .photosPicker(isPresented: $choosingPhotos, selection: $photoPicks,
                           maxSelectionCount: 4, matching: .any(of: [.images, .videos]))
@@ -144,7 +151,7 @@ struct CareView: View {
                 }
                 .accessibilityHidden(true)
                 VStack(spacing: 2) {
-                    Text("Your care team").mpFont(.copyMedium).foregroundStyle(MP.ink)
+                    Text(app.isSports ? "Your staff and your coach" : "Your care team").mpFont(.copyMedium).foregroundStyle(MP.ink)
                     Text(team.map(\.name).joined(separator: ", "))
                         .mpFont(.label).foregroundStyle(MP.muted)
                         .multilineTextAlignment(.center)
@@ -153,11 +160,12 @@ struct CareView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 12).padding(.bottom, 10)
-        } else if app.isPersonal {
+        } else if coachMode {
             VStack(spacing: 8) {
                 Glyph(systemName: "sparkles", family: .indigo, size: 44)
                 Text("Your coach").mpFont(.copyMedium).foregroundStyle(MP.ink)
-                Text("Knows today’s readouts. Ask about any of your numbers.")
+                Text(app.isSports ? "Knows today’s readiness, your tests and your injury plan. Ask about any of it."
+                     : "Knows today’s readouts. Ask about any of your numbers.")
                     .mpFont(.label).foregroundStyle(MP.muted)
                     .multilineTextAlignment(.center)
             }
@@ -169,9 +177,13 @@ struct CareView: View {
     private var intro: some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Text(app.isPersonal ? "Nothing here yet" : "How this works")
+                Text(coachMode ? "Nothing here yet" : "How this works")
                     .mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
-                Text(app.isPersonal
+                Text(app.isSports
+                     ? (staffLinked
+                        ? "Your morning brief lands here. Anything you type goes to your staff; the quick questions go to your coach, which answers from your numbers."
+                        : "Your morning brief lands here, and anything you write goes to your coach, which answers from your numbers.")
+                     : app.isPersonal
                      ? "Your morning brief lands here, and anything you write goes to your coach."
                      : "Anything you type goes to your care team, and the plus button sends them a photo, a short video, a voice note or a file. Tap the mic, or one of the quick logs, to tell MedPull how you feel: it logs it for you, answers straight away, and passes anything serious to the team.")
                     .mpFont(.copy).foregroundStyle(MP.body).lineSpacing(2)
@@ -190,7 +202,7 @@ struct CareView: View {
             if draftToAssistant && !draft.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles").font(.systemGlyphs(12, weight: .medium))
-                    Text(app.isPersonal ? "To your coach" : "To MedPull, which logs it for you")
+                    Text(coachMode ? "To your coach" : "To MedPull, which logs it for you")
                     Spacer()
                     Button("Clear") { draft = ""; draftToAssistant = false }
                         .buttonStyle(MPButtonStyle(kind: .plain, bare: true))
@@ -228,6 +240,7 @@ struct CareView: View {
                     .accessibilityLabel("Attach a photo, video, voice note or file")
                 }
                 ComposerField(placeholder: speech.isListening ? "Listening…"
+                                : app.isSports ? (draftToAssistant || !staffLinked ? "Ask your coach" : "Message your staff")
                                 : app.isPersonal ? "Ask your coach"
                                 : draftToAssistant ? "Tell MedPull" : "Message your care team",
                               text: $draft,
@@ -245,7 +258,7 @@ struct CareView: View {
                 .disabled(thinking || sending)
                 .accessibilityLabel(speech.isListening ? "Stop and send" : "Talk")
                 .accessibilityHint(speech.isListening ? "Sends what you said"
-                                   : app.isPersonal ? "Speak to your coach" : "Speak to MedPull; it logs it for you")
+                                   : coachMode ? "Speak to your coach" : "Speak to MedPull; it logs it for you")
             }
             }
             if speech.isListening {
@@ -260,7 +273,7 @@ struct CareView: View {
     private var quickRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                Text(app.isPersonal ? "Ask" : "Quick log")
+                Text(coachMode ? "Ask" : "Quick log")
                     .mpFont(.labelMedium).foregroundStyle(MP.muted).padding(.trailing, 2)
                 ForEach(quickLogs, id: \.self) { phrase in
                     Button {
@@ -366,7 +379,7 @@ struct CareView: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let ids = pending.map(\.id)
         guard !text.isEmpty || !ids.isEmpty else { return }
-        if app.isPersonal || draftToAssistant {
+        if app.isPersonal || draftToAssistant || (app.isSports && !staffLinked) {
             draft = ""
             draftToAssistant = false
             ask(text, channel: "app", speak: false)

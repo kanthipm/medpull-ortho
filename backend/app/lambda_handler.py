@@ -38,7 +38,12 @@ storage.bootstrap()
 
 from mangum import Mangum  # noqa: E402
 
+from app.database import ensure_schema  # noqa: E402
 from app.main import app  # noqa: E402
+
+# The hydrated database may predate a table the models now declare (the
+# sports tables, say). create_all(checkfirst=True) is additive and cheap.
+ensure_schema()
 
 # lifespan="off": the startup hook spawns a background insight warmer that is a
 # laptop convenience. On Lambda it would re-run on every cold start, burn the
@@ -118,6 +123,157 @@ def _personal_daily(event: dict) -> dict:
     return {"ok": True, "uploaded": uploaded, **result}
 
 
+def _seed_sports(event: dict) -> dict:
+    """Add (or refresh) the MedPull Sports demo roster on a live database.
+    Additive: only the fictional athletes' rows are reset, nothing else is
+    touched, so it is safe on a deployment with real people on it."""
+    from app.database import SessionLocal
+    from app.sports.seed import seed_sports
+
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        ensure_schema()
+        db = SessionLocal()
+        try:
+            counts = seed_sports(db)
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False)
+    logger.info("Sports seed complete: %s (uploaded=%s)", counts, uploaded)
+    return {"ok": True, "uploaded": uploaded, "counts": counts}
+
+
+def _athlete_id(db, *, email: str | None, phone: str | None) -> str | None:
+    """The patient id behind an athlete's email login, else the one athlete
+    account opened with that mobile number."""
+    from sqlalchemy import select
+
+    from app.models.patient import Patient
+    from app.models.sports import SportsProfile
+    from app.personal import auth
+
+    if email:
+        cred = auth.credential_for_email(db, email)
+        if cred is not None:
+            return cred.patient_id
+    if phone:
+        from app.notifications import sendblue
+
+        number = sendblue.normalize_phone(phone) or phone
+        return db.scalar(select(Patient.id).join(SportsProfile, SportsProfile.patient_id == Patient.id)
+                         .where(Patient.phone == number).order_by(Patient.created_at.desc()))
+    return None
+
+
+def _fill_athlete(event: dict) -> dict:
+    """Fill one athlete's account with the showcase (app/sports/showcase.py):
+    ``{"action": "fill_athlete", "patient_id": "...", "org_id": "rockets", "team_id": "rockets-nba"}``.
+    The account can also be named by its email login or the mobile number
+    it was opened with (``"email"`` / ``"phone"``), since an operator rarely
+    has the id to hand. The account itself is untouched; the generated
+    streams are replaced."""
+    from app.database import SessionLocal
+    from app.sports.showcase import fill_pro_athlete
+
+    patient_id = str(event.get("patient_id") or "").strip()
+    email = str(event.get("email") or "").strip().lower() or None
+    phone = str(event.get("phone") or "").strip() or None
+    if not patient_id and email is None and phone is None:
+        return {"ok": False, "error": "patient_id, email or phone is required"}
+    org_id = event.get("org_id", "rockets") or None
+    team_id = event.get("team_id", "rockets-nba") or None
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        ensure_schema()
+        db = SessionLocal()
+        try:
+            if not patient_id:
+                patient_id = _athlete_id(db, email=email, phone=phone)
+                if patient_id is None:
+                    return {"ok": False, "error": f"No athlete account uses {email or phone}"}
+            try:
+                counts = fill_pro_athlete(db, patient_id, org_id=org_id, team_id=team_id)
+            except ValueError as e:
+                db.rollback()
+                return {"ok": False, "error": str(e)}
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False)
+    logger.info("Showcase filled for %s: %s (uploaded=%s)", patient_id, counts, uploaded)
+    return {"ok": True, "uploaded": uploaded, "patient_id": patient_id, "counts": counts}
+
+
+def _sports_daily(event: dict) -> dict:
+    """The sports demo's morning run, on the EventBridge schedule: the
+    fictional roster is rewritten around today (seed_sports resets only
+    those athletes), then every account the showcase was applied to gets
+    its showcase again, anchored to today. Readiness scores the current
+    day, so a demo left on yesterday's data reads as still learning by the
+    next morning; this keeps both the team board and the athlete's phone
+    current without anyone remembering to refill it."""
+    from app.database import SessionLocal
+    from app.sports.seed import seed_sports
+    from app.sports.showcase import fill_pro_athlete, showcased
+
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        ensure_schema()
+        db = SessionLocal()
+        try:
+            counts = seed_sports(db)
+            refilled, failed = [], {}
+            for patient_id, org_id, team_id in showcased(db):
+                try:
+                    fill_pro_athlete(db, patient_id, org_id=org_id, team_id=team_id)
+                    refilled.append(patient_id)
+                except ValueError as e:
+                    db.rollback()
+                    failed[patient_id] = str(e)
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False)
+    logger.info("Sports daily complete: %s refilled=%s failed=%s (uploaded=%s)", counts, refilled, failed, uploaded)
+    return {"ok": True, "uploaded": uploaded, "counts": counts, "refilled": refilled, "failed": failed}
+
+
+def _comp(event: dict) -> dict:
+    """An operator's complimentary grant for one personal space, named by
+    its email login or its patient id (a space opened by phone number has
+    no email): ``{"action": "comp", "email": "...", "days": 365}`` or
+    ``{"action": "comp", "patient_id": "...", "days": 365}``."""
+    from app.database import SessionLocal
+    from app.models.patient import Patient
+    from app.personal import auth, subscription
+    from app.personal.scope import PERSONAL
+
+    email = auth.normalize_email(str(event.get("email") or ""))
+    patient_id = str(event.get("patient_id") or "").strip()
+    if email is None and not patient_id:
+        return {"ok": False, "error": "email or patient_id is required"}
+    days = int(event.get("days") or 365)
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        ensure_schema()
+        db = SessionLocal()
+        try:
+            if email is not None:
+                cred = auth.credential_for_email(db, email)
+                if cred is None:
+                    return {"ok": False, "error": f"No account uses {email}"}
+                patient_id = cred.patient_id
+            patient = db.get(Patient, patient_id)
+            if patient is None or patient.account_kind != PERSONAL:
+                return {"ok": False, "error": f"No personal space with id {patient_id!r}"}
+            row = subscription.grant_comp(db, patient, days, note=str(event.get("note") or "operator"))
+            db.commit()
+            expires = row.expires_at.isoformat() if row.expires_at else None
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False)
+    logger.info("Comp granted to %s until %s (uploaded=%s)", patient_id, expires, uploaded)
+    return {"ok": True, "uploaded": uploaded, "patient_id": patient_id, "email": email, "expires_at": expires}
+
+
 def handler(event, context):
     # Function URL / API Gateway events always carry requestContext; a direct
     # invoke of an admin action never does.
@@ -125,6 +281,14 @@ def handler(event, context):
         action = event["action"]
         if action == "seed":
             return _seed(event)
+        if action == "seed_sports":
+            return _seed_sports(event)
+        if action == "comp":
+            return _comp(event)
+        if action == "fill_athlete":
+            return _fill_athlete(event)
+        if action == "sports_daily":
+            return _sports_daily(event)
         if action == "personal_daily":
             return _personal_daily(event)
         return {"ok": False, "error": f"Unknown action: {action}"}

@@ -9,6 +9,7 @@ final class OnboardingModel {
     /// decided by `Path`.
     enum Step: Int, CaseIterable, Hashable {
         case welcome, mode, consent, login, hospital, path, identity, join, personalAbout, goals,
+             sport, org, team, athlete,
              verify, plan, health, wearable, done
 
         /// Steps after the session exists. Going back from these would land
@@ -20,7 +21,7 @@ final class OnboardingModel {
     /// How the person is joining: on a hospital's roster already (find the
     /// record), new to it (create one — with or without a surgery), or on
     /// their own as a MedPull Personal subscriber.
-    enum Path { case findRecord, joinGeneral, joinAfterSurgery, personal }
+    enum Path { case findRecord, joinGeneral, joinAfterSurgery, personal, sports }
 
     /// The NavigationStack path. Welcome is the root and never appears in
     /// it; `step` is whatever is on top.
@@ -29,6 +30,32 @@ final class OnboardingModel {
     var path: Path = .joinGeneral
 
     var isPersonal: Bool { path == .personal }
+    var isSports: Bool { path == .sports }
+    /// Email-and-password accounts: a personal space or an athlete.
+    var usesEmailLogin: Bool { isPersonal || isSports }
+
+    // the athlete (MedPull Sports)
+    var sportKey = "basketball"
+    var sportsCatalog: SportsCatalog?
+    var orgs: [SportsOrg] = []
+    var orgQuery = ""
+    var org: SportsOrg?
+    var team: SportsTeam?
+    var joinCode = ""
+    var position = ""
+    var jersey = ""
+    var classYear = ""
+    var level = "club"
+    var units = Locale.current.measurementSystem == .metric ? "metric" : "imperial"
+    var heightFt = ""
+    var heightIn = ""
+    var heightCm = ""
+    var weightText = ""
+    var wingspanText = ""
+    var reachText = ""
+    var dominantSide = "right"
+    var sex = ""
+    var cycleTracking = false
 
     var hospitals: [Hospital] = []
     var hospitalQuery = ""
@@ -108,10 +135,22 @@ final class OnboardingModel {
     var canLogin: Bool {
         !loading && loginEmail.contains("@") && loginPassword.count >= 8
     }
+    var canCreateAthlete: Bool {
+        canSearch && emailLooksValid && passwordLooksValid && phoneOkOrEmpty && !loading
+    }
+
+    var filteredOrgs: [SportsOrg] {
+        let q = orgQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return orgs }
+        return orgs.filter {
+            $0.name.lowercased().contains(q) || $0.shortName.lowercased().contains(q) || $0.city.lowercased().contains(q)
+        }
+    }
 
     /// The dots in the bar, for the path the person is on.
     var stepsShown: [Step] {
         isPersonal ? [.consent, .personalAbout, .goals, .plan, .health, .wearable]
+            : isSports ? [.consent, .personalAbout, .sport, .org, .athlete, .health, .wearable]
             : [.consent, .hospital, .path, .identity, .verify, .health, .wearable]
     }
 
@@ -151,6 +190,61 @@ final class OnboardingModel {
             route = r
         } else {
             go(next)
+        }
+    }
+
+    func loadOrgs(api: APIClient) async {
+        guard orgs.isEmpty else { return }
+        do {
+            orgs = try await api.sportsOrgs()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func loadSportsCatalog(api: APIClient) async {
+        if let c = sportsCatalog, c.sport == sportKey { return }
+        sportsCatalog = try? await api.sportsCatalog(sport: sportKey)
+    }
+
+    /// Create the athlete's account. The session arrives straight away (no
+    /// code: the email login is the door), so Health comes next.
+    func sportsJoin(api: APIClient, app: AppModel) async {
+        loading = true
+        error = nil
+        defer { loading = false }
+        do {
+            guard let consent else {
+                throw APIError(status: 422, detail: "Read and agree to the beta consent first.")
+            }
+            let imperial = units == "imperial"
+            var heightCmValue: Double? = nil
+            if imperial, let ft = Double(heightFt) { heightCmValue = (ft * 12 + (Double(heightIn) ?? 0)) * 2.54 }
+            if !imperial, let cm = Double(heightCm) { heightCmValue = cm }
+            func length(_ text: String) -> Double? {
+                guard let v = Double(text) else { return nil }
+                return imperial ? v * 2.54 : v
+            }
+            let weightKg = Double(weightText).map { imperial ? $0 * 0.4536 : $0 }
+            let cleanPhone = phone.filter(\.isNumber).isEmpty ? nil : phone
+            let r = try await api.sportsJoin(.init(
+                name: name, email: email.trimmingCharacters(in: .whitespaces).lowercased(), password: password,
+                consent: consent, phone: cleanPhone, dateOfBirth: dateOfBirth.map(Dates.dayString),
+                sex: sex.isEmpty ? nil : sex, sport: sportKey, orgId: org?.id, teamId: team?.id,
+                joinCode: joinCode.isEmpty ? nil : joinCode.trimmingCharacters(in: .whitespaces).uppercased(),
+                position: position.isEmpty ? nil : position, jersey: jersey.isEmpty ? nil : jersey,
+                classYear: classYear.isEmpty ? nil : classYear, level: level,
+                heightCm: heightCmValue, weightKg: weightKg, wingspanCm: length(wingspanText), standingReachCm: length(reachText),
+                dominantSide: dominantSide, units: units, cycleTracking: sex == "F" && cycleTracking,
+                deviceName: UIDeviceName.current, appVersion: AppConfig.appVersion))
+            app.adoptSession(token: r.sessionToken, me: r.me)
+            go(.health)
+        } catch let e as APIError where e.status == 409 && e.detail.lowercased().contains("already has an account") {
+            loginEmail = email
+            self.error = nil
+            go(.login)
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 
@@ -289,12 +383,23 @@ final class OnboardingModel {
         error = nil
         defer { loading = false }
         do {
-            let r = try await api.personalLogin(email: loginEmail.trimmingCharacters(in: .whitespaces).lowercased(),
-                                                password: loginPassword)
-            path = .personal
-            guard let token = r.sessionToken, let me = r.me else {
-                throw APIError(status: 0, detail: "The server didn’t return a session.")
+            let cleanEmail = loginEmail.trimmingCharacters(in: .whitespaces).lowercased()
+            let token: String
+            let me: Me
+            do {
+                let r = try await api.sportsLogin(email: cleanEmail, password: loginPassword)
+                token = r.sessionToken
+                me = r.me
+            } catch let e as APIError where e.status == 404 {
+                // An older server without the shared login: the personal door.
+                let r = try await api.personalLogin(email: cleanEmail, password: loginPassword)
+                guard let t = r.sessionToken, let m = r.me else {
+                    throw APIError(status: 0, detail: "The server didn’t return a session.")
+                }
+                token = t
+                me = m
             }
+            path = me.isSports ? .sports : .personal
             app.adoptSession(token: token, me: me)
             // A returning person goes straight in; onboarding is done.
             app.enterHome()
