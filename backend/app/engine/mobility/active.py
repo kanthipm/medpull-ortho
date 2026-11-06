@@ -149,10 +149,15 @@ def _tilts(samples: np.ndarray) -> np.ndarray:
 
 
 def range_of_motion(
-    protocol: str, reference: np.ndarray, movement: np.ndarray
+    protocol: str, reference: np.ndarray, movement: np.ndarray, platform: str = "ios"
 ) -> RangeOfMotion | None:
     if protocol not in PROTOCOLS:
         return None
+    if platform == "android":
+        # Android's gravity vector is the negative of Apple's (frames.py);
+        # the tilt convention above assumes Apple's.
+        reference = -np.asarray(reference, dtype=float)
+        movement = -np.asarray(movement, dtype=float)
     ref, mov = _tilts(reference), _tilts(movement)
     if len(ref) < 3 or len(mov) < 3:
         return None
