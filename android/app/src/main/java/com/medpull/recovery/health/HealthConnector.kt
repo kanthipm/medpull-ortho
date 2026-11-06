@@ -1,0 +1,138 @@
+package com.medpull.recovery.health
+
+import android.content.Context
+import android.util.Log
+import androidx.activity.result.contract.ActivityResultContract
+import com.medpull.recovery.core.AppModel
+import com.medpull.recovery.core.junctionSession
+import io.tryvital.client.VitalClient
+import io.tryvital.vitalhealthconnect.VitalHealthConnectManager
+import io.tryvital.vitalhealthconnect.model.PermissionOutcome
+import io.tryvital.vitalhealthcore.model.ConnectionPolicy
+import io.tryvital.vitalhealthcore.model.ProviderAvailability
+import io.tryvital.vitalhealthcore.model.SyncStatus
+import io.tryvital.vitalhealthcore.model.VitalResource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+
+sealed class HealthConnectState {
+    data object Idle : HealthConnectState()
+    data object Connecting : HealthConnectState()
+    data class Connected(val syncLine: String? = null) : HealthConnectState()
+    data object Unavailable : HealthConnectState()
+    data class Failed(val message: String) : HealthConnectState()
+}
+
+/**
+ * Health Connect through Junction's Android SDK, the mirror of the iPhone's
+ * HealthConnector: the backend mints a sign-in token for the patient's
+ * Junction user (the team key never ships), the SDK signs in once per
+ * installation, one permission sheet covers every resource the engine
+ * reads, and the SDK syncs on app start and on request. Apple's gait types
+ * have no Health Connect equivalent, so nothing is posted to the gait route.
+ */
+class HealthConnector(private val context: Context) {
+    private val _state = MutableStateFlow<HealthConnectState>(HealthConnectState.Idle)
+    val state: StateFlow<HealthConnectState> = _state
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var statusJob: Job? = null
+
+    private val manager: VitalHealthConnectManager by lazy { VitalHealthConnectManager.getOrCreate(context) }
+
+    /** Everything the engine reads that Health Connect can hold. */
+    val resources: Set<VitalResource> = setOf(
+        VitalResource.Profile, VitalResource.Body, VitalResource.Activity, VitalResource.Sleep, VitalResource.Workout,
+        VitalResource.HeartRate, VitalResource.HeartRateVariability, VitalResource.BloodOxygen, VitalResource.RespiratoryRate,
+        VitalResource.Temperature, VitalResource.BloodPressure, VitalResource.Steps, VitalResource.DistanceWalkingRunning,
+        VitalResource.FloorsClimbed, VitalResource.ActiveEnergyBurned, VitalResource.Vo2Max,
+    )
+
+    val isSignedIn: Boolean get() = VitalClient.Status.SignedIn in VitalClient.status
+    val isConnected: Boolean get() = _state.value is HealthConnectState.Connected
+
+    fun availability(): ProviderAvailability = VitalHealthConnectManager.isAvailable(context)
+
+    /** The permission sheet, launched through the Activity Result API by the screen. */
+    fun permissionContract(): ActivityResultContract<Unit, Deferred<PermissionOutcome>> =
+        manager.createPermissionRequestContract(resources, emptySet())
+
+    /** On launch: reflect an existing sign-in without asking again. */
+    fun restore() {
+        if (isSignedIn) {
+            _state.value = HealthConnectState.Connected()
+            observeStatus()
+        }
+    }
+
+    /** Step one of connecting: sign the SDK in with a token from our backend. */
+    suspend fun signIn(app: AppModel): Boolean {
+        val avail = availability()
+        if (avail != ProviderAvailability.Installed) {
+            _state.value = when (avail) {
+                ProviderAvailability.NotInstalled -> HealthConnectState.Failed("Install the Health Connect app from Google Play, then try again.")
+                ProviderAvailability.OnboardingIncomplete -> HealthConnectState.Failed("Open Health Connect once to finish setting it up, then try again.")
+                else -> HealthConnectState.Unavailable
+            }
+            return false
+        }
+        _state.value = HealthConnectState.Connecting
+        return try {
+            if (!isSignedIn) {
+                val session = app.api.junctionSession()
+                VitalClient.signIn(context, session.signInToken)
+            }
+            manager.configureHealthConnectClient(false, true, 90, null, ConnectionPolicy.AutoConnect)
+            true
+        } catch (e: Exception) {
+            Log.w("HealthConnector", "sign-in failed", e)
+            _state.value = HealthConnectState.Failed(e.message ?: "Couldn't connect to the wearable service.")
+            false
+        }
+    }
+
+    /** Step two: what the permission sheet came back with. */
+    fun onPermissions(outcome: PermissionOutcome) {
+        when (outcome) {
+            is PermissionOutcome.Success, is PermissionOutcome.NotPrompted -> {
+                _state.value = HealthConnectState.Connected("Connected. Syncing…")
+                observeStatus()
+                scope.launch { syncNow() }
+            }
+            is PermissionOutcome.Cancelled -> _state.value = HealthConnectState.Failed("Permissions were not granted.")
+            is PermissionOutcome.HealthConnectUnavailable -> _state.value = HealthConnectState.Unavailable
+            else -> _state.value = HealthConnectState.Failed("Health Connect refused the request. Try again.")
+        }
+    }
+
+    suspend fun syncNow() {
+        try { manager.syncData(resources) } catch (e: Exception) { Log.w("HealthConnector", "sync failed", e) }
+    }
+
+    suspend fun disconnect() {
+        statusJob?.cancel(); statusJob = null
+        try { if (isSignedIn) VitalClient.getOrCreate(context).signOut() } catch (e: Exception) { Log.w("HealthConnector", "sign-out failed", e) }
+        _state.value = HealthConnectState.Idle
+    }
+
+    private fun observeStatus() {
+        statusJob?.cancel()
+        statusJob = scope.launch {
+            manager.status.collect { s ->
+                val line = when (s) {
+                    is SyncStatus.ResourceSyncing -> "Syncing…"
+                    is SyncStatus.ResourceSyncingComplete, is SyncStatus.SyncingCompleted -> "Synced just now."
+                    is SyncStatus.ResourceNothingToSync -> "Up to date."
+                    is SyncStatus.ResourceSyncFailed -> "A sync failed; it will retry."
+                    else -> null
+                }
+                if (_state.value is HealthConnectState.Connected) _state.value = HealthConnectState.Connected(line)
+            }
+        }
+    }
+}

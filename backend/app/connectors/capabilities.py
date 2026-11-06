@@ -1,9 +1,11 @@
 """Which metric types each provider can supply.
 
-The UI uses this to degrade gracefully per patient device — e.g. gait-quality
-metrics (walking speed/asymmetry/double-support/steadiness) are measured by
-iPhone/Apple Watch only; no other platform exposes them. Sources: Apple
-mobility-metrics whitepaper; Health Connect data-type list; vendor API docs.
+The UI uses this to degrade gracefully per patient device. Vendor gait
+metrics (walking speed/asymmetry/double-support/steadiness) come from
+iPhone/Apple Watch only; every other phone gets the same set from MedPull's
+own algorithms over the Measure tab's sensor windows (provider MEDPULL).
+Sources: Apple mobility-metrics whitepaper; Health Connect data-type list;
+vendor API docs.
 """
 
 from app.models.enums import MetricType as M
@@ -49,6 +51,17 @@ CAPABILITIES: dict[P, list[M]] = {
     P.POLAR: CORE + [M.HRV_RMSSD, M.SLEEP_STAGES, M.EXERCISE_SESSION],
     P.SAMSUNG: CORE + [M.HRV_RMSSD, M.SLEEP_STAGES, M.SPO2, M.SKIN_TEMP,
                        M.EXERCISE_SESSION],
+    # Android's on-device store, read by Junction's Android SDK inside the
+    # patient app. Record types, not a brand: what lands depends on which
+    # apps write into it. HRV is RMSSD (HeartRateVariabilityRmssdRecord);
+    # there is no wrist-temperature delta, no HR-recovery record and no gait
+    # (SpeedRecord and StepsCadenceRecord exist but almost nothing writes
+    # them), so gait on Android is MEDPULL's alone. BodyTemperatureRecord is
+    # core temperature, not skin, and is deliberately not mapped to SKIN_TEMP.
+    P.HEALTH_CONNECT: CORE + [M.HRV_RMSSD, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,
+                              M.EXERCISE_SESSION, M.FLIGHTS_CLIMBED, M.BODY_WEIGHT,
+                              M.BLOOD_PRESSURE_SYSTOLIC, M.BLOOD_PRESSURE_DIASTOLIC,
+                              M.VO2_MAX, M.BLOOD_GLUCOSE],
     P.MOCK: CORE + GAIT + [M.HRV_RMSSD, M.SLEEP_STAGES, M.SPO2, M.RESPIRATORY_RATE,
                            M.SKIN_TEMP, M.EXERCISE_SESSION, M.FLIGHTS_CLIMBED,
                            M.BODY_WEIGHT],

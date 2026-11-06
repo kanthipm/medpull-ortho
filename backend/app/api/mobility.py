@@ -35,6 +35,7 @@ from app.engine.mobility import (
     six_minute_walk,
 )
 from app.engine.mobility.active import PROTOCOLS
+from app.engine.mobility.frames import canonical_frame
 from app.models.enums import Granularity, MetricType, SourceProvider
 from app.models.patient import Patient
 
@@ -66,6 +67,8 @@ class MotionWindowBody(BaseModel):
     pedometer_distance_m: float | None = Field(default=None, ge=0.0, le=100_000.0)
     pocket_side: Literal["left", "right"] | None = None
     context: Literal["guided_walk", "six_minute_walk", "free_living"] = "guided_walk"
+    # Which sensor convention the arrays use; the server converts (frames.py).
+    platform: Literal["ios", "android"] = "ios"
 
 
 class MotionUpload(BaseModel):
@@ -94,6 +97,7 @@ class RangeOfMotionBody(BaseModel):
     reference: list[list[float]] = Field(min_length=3, max_length=MAX_HOLD_SAMPLES)
     movement: list[list[float]] = Field(min_length=3, max_length=MAX_HOLD_SAMPLES)
     device_model: str | None = Field(default=None, max_length=80)
+    platform: Literal["ios", "android"] = "ios"
 
 
 def _triplets(values: list[list[float]] | None, name: str, n: int | None = None) -> np.ndarray | None:
@@ -135,14 +139,14 @@ def _window(body: MotionWindowBody, tz_id: str, height_cm: float | None,
         if alt.ndim != 2 or alt.shape[1] != 2:
             raise HTTPException(status_code=422, detail="altitude must be [t_s, metres] pairs")
         altitude = alt
-    return MotionWindow(
+    return canonical_frame(MotionWindow(
         started_at=_local_naive(body.started_at, tz_id), fs=body.sample_rate_hz, accel=accel,
         gyro=gyro, gravity=gravity, timestamps=timestamps, altitude=altitude,
         gps_distance_m=body.gps_distance_m, gps_accuracy_m=body.gps_accuracy_m,
         pedometer_steps=body.pedometer_steps, pedometer_distance_m=body.pedometer_distance_m,
         height_cm=height_cm, pocket_side=body.pocket_side, context=body.context,
-        device_model=device_model,
-    )
+        device_model=device_model, platform=body.platform,
+    ))
 
 
 def _store(db: Session, patient: Patient, rows: list[CanonicalObservation]) -> dict[str, int]:
@@ -248,7 +252,8 @@ def range_of_motion_test(
     if body.protocol not in PROTOCOLS:
         raise HTTPException(status_code=422, detail=f"Unknown protocol; one of {sorted(PROTOCOLS)}")
     result = range_of_motion(
-        body.protocol, _triplets(body.reference, "reference"), _triplets(body.movement, "movement")
+        body.protocol, _triplets(body.reference, "reference"), _triplets(body.movement, "movement"),
+        platform=body.platform,
     )
     if result is None:
         raise HTTPException(status_code=422, detail="Each hold needs at least three samples")
@@ -258,7 +263,7 @@ def range_of_motion_test(
         patient_id=target, source_provider=SourceProvider.MEDPULL,
         metric_type=ROM_METRIC[result.movement], unit="deg", value_num=result.angle_deg,
         value_json={"version": VERSION, "method": "phone_inclinometer", "protocol": body.protocol,
-                    "joint": result.joint, "movement": result.movement,
+                    "platform": body.platform, "joint": result.joint, "movement": result.movement,
                     "tilt_reference_deg": result.tilt_reference_deg,
                     "tilt_movement_deg": result.tilt_movement_deg,
                     "reference_sd_deg": result.reference_sd_deg,

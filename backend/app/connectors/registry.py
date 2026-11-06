@@ -59,6 +59,7 @@ PROVIDERS: list[ProviderInfo] = [
     _brand(P.DEXCOM, "Dexcom"),
     _brand(P.POLAR, "Polar"),
     _brand(P.SAMSUNG, "Samsung Health"),
+    _brand(P.HEALTH_CONNECT, "Health Connect"),
     ProviderInfo(P.MOCK, "Demo data source", _mock, None),
 ]
 

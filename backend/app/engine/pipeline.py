@@ -111,12 +111,29 @@ def compute_input_hash(db: Session, patient_id: str) -> str:
                    AdherenceTask.status.in_(("done", "skipped"))).scalar_subquery(),
         )
     ).one()
+    # What the patient's setup can measure (engine/sources.py) is read off
+    # their devices and app sessions, neither of which adds an observation,
+    # so connecting a watch or signing in on the phone has to move the hash
+    # or the cards would keep saying "not available" until midnight.
+    from app.models.mobile import PatientSession, live_session_clause
+    from app.models.patient import Device
+
+    devices, sessions = db.execute(
+        select(
+            select(func.count(Device.id))
+            .where(Device.patient_id == patient_id, Device.status != "revoked").scalar_subquery(),
+            select(func.count(PatientSession.id))
+            .where(PatientSession.patient_id == patient_id, live_session_clause())
+            .scalar_subquery(),
+        )
+    ).one()
     # today's date is part of the hash: postop_day and the recent-window stats
     # shift at midnight even when no new data arrives, so the first request of
     # each day lazily recomputes every assessment.
     payload = (
         f"{patient_id}:{count}:{latest}:{checkins}:{records}:{max_task}:"
-        f"{active_tasks}:{closed_tasks}:{date.today()}:{ENGINE_VERSION}"
+        f"{active_tasks}:{closed_tasks}:{devices}:{min(sessions, 1)}:{date.today()}:"
+        f"{ENGINE_VERSION}"
     )
     return hashlib.sha256(payload.encode()).hexdigest()
 
@@ -256,9 +273,11 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
     card_baselines, card_deviations = display_deviations(
         series, baselines, deviations, patient.procedure_type
     )
+    from app.engine.sources import source_profile
+
     cards = build_cards(
         series, card_baselines, card_deviations, confidence, patient.procedure_type,
-        postop_day, patient.surgery_date,
+        postop_day, patient.surgery_date, sources=source_profile(db, patient),
     )
 
     # The care-metrics report objects. Each metric guards itself; this guard

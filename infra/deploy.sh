@@ -49,8 +49,16 @@ SENDBLUE_SECRET_PARAM="${SENDBLUE_SECRET_PARAM:-/recovery-copilot/sendblue-api-s
 # The inbound webhook's secret path segment (patient app). Optional: absent,
 # inbound texts answer 503 while outbound SMS keeps working.
 SENDBLUE_WEBHOOK_PARAM="${SENDBLUE_WEBHOOK_PARAM:-/recovery-copilot/sendblue-webhook-secret}"
+# The console's shared access token (see "Console access" below).
+CONSOLE_TOKEN_PARAM="${CONSOLE_TOKEN_PARAM:-/recovery-copilot/console-access-token}"
 SENDBLUE_FROM_NUMBER="${SENDBLUE_FROM_NUMBER:-$(dotenv_value SENDBLUE_FROM_NUMBER)}"
 CARE_TEAM_PHONES="${CARE_TEAM_PHONES:-$(dotenv_value CARE_TEAM_PHONES)}"
+# Apple team id of the patient app. Set, the API serves the app-site-
+# association file and the same JSON is uploaded beside the SPA, so
+# https://<host>/t/<token> opens in the app. Blank: links open the web page.
+IOS_TEAM_ID="${IOS_TEAM_ID:-$(dotenv_value IOS_TEAM_ID)}"
+# The Android app's signing-certificate fingerprint(s): same idea, assetlinks.json.
+ANDROID_CERT_SHA256="${ANDROID_CERT_SHA256:-$(dotenv_value ANDROID_CERT_SHA256)}"
 # Custom domain. Both or neither: the template ignores one without the other.
 # The certificate must already be ISSUED (CloudFront rejects a pending one),
 # and the DNS record lives in whichever account hosts the zone — not here.
@@ -233,6 +241,27 @@ store_optional_secret "$SENDBLUE_KEY_PARAM" SENDBLUE_API_KEY "Sendblue API key"
 store_optional_secret "$SENDBLUE_SECRET_PARAM" SENDBLUE_API_SECRET "Sendblue API secret"
 store_optional_secret "$SENDBLUE_WEBHOOK_PARAM" SENDBLUE_WEBHOOK_SECRET "Sendblue webhook secret"
 
+# Console access. Unlike the integrations above this is never generated on
+# its own: an absent parameter is the public demo, open by design. Set
+# CONSOLE_ACCESS_TOKEN to lock the console with that value (a new value
+# replaces the stored one), or CONSOLE_ACCESS_TOKEN=generate to mint one and
+# print it once.
+CONSOLE_ACCESS_TOKEN="${CONSOLE_ACCESS_TOKEN:-$(dotenv_value CONSOLE_ACCESS_TOKEN)}"
+if [ "$CONSOLE_ACCESS_TOKEN" = "generate" ]; then
+  CONSOLE_ACCESS_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  aws_ ssm put-parameter --name "$CONSOLE_TOKEN_PARAM" --type SecureString --overwrite \
+    --value "$CONSOLE_ACCESS_TOKEN" --description "Console access token for Recovery Copilot" >/dev/null
+  info "console access token (shown once, keep it): $CONSOLE_ACCESS_TOKEN"
+elif [ -n "$CONSOLE_ACCESS_TOKEN" ]; then
+  aws_ ssm put-parameter --name "$CONSOLE_TOKEN_PARAM" --type SecureString --overwrite \
+    --value "$CONSOLE_ACCESS_TOKEN" --description "Console access token for Recovery Copilot" >/dev/null
+  info "stored the console access token in SSM ($CONSOLE_TOKEN_PARAM)"
+elif aws_ ssm get-parameter --name "$CONSOLE_TOKEN_PARAM" >/dev/null 2>&1; then
+  info "console locked with the token already in SSM (delete the parameter to reopen it)"
+else
+  info "no console access token — the console stays open (the public demo)"
+fi
+
 # --------------------------------------------------------------------------
 if $STACK_ONLY; then
 log "Reusing the deployed Lambda package (--stack-only)"
@@ -288,9 +317,12 @@ PARAMS=(
   "SendblueApiKeyParameter=$SENDBLUE_KEY_PARAM"
   "SendblueApiSecretParameter=$SENDBLUE_SECRET_PARAM"
   "SendblueWebhookSecretParameter=$SENDBLUE_WEBHOOK_PARAM"
+  "ConsoleAccessTokenParameter=$CONSOLE_TOKEN_PARAM"
   "PublicBaseUrl=$PUBLIC_BASE_URL"
   "SendblueFromNumber=$SENDBLUE_FROM_NUMBER"
   "CareTeamPhones=$CARE_TEAM_PHONES"
+  "IosTeamId=$IOS_TEAM_ID"
+  "AndroidCertSha256=$ANDROID_CERT_SHA256"
   "ApiReservedConcurrency=$RESERVED"
   # Passed even when empty so clearing them in .env removes the alias.
   "CustomDomainName=$SITE_DOMAIN"
@@ -338,6 +370,32 @@ log "Building and uploading the frontend"
   # index.html points at hashed bundles; a cached copy would pin a stale build.
   aws_ s3 cp "$DIST/index.html" "s3://$DATA_BUCKET/web/index.html" --only-show-errors \
     --cache-control "no-cache" --content-type "text/html; charset=utf-8"
+
+  # App links. Only /api/* reaches the function, so the association files
+  # the backend can serve never get a request on AWS: the same JSON is
+  # uploaded as static objects instead (after the sync, which would delete
+  # them). The CloudFront rewrite exempts /.well-known/.
+  put_json() {  # put_json KEY JSON
+    printf '%s' "$2" | aws_ s3 cp - "s3://$DATA_BUCKET/$1" --only-show-errors \
+      --cache-control "no-cache" --content-type "application/json"
+  }
+  if [ -n "$IOS_TEAM_ID" ]; then
+    AASA="$(cd "$ROOT/backend" && IOS_TEAM_ID="$IOS_TEAM_ID" uv run python -c \
+      'import json; from app.api.applinks import association; print(json.dumps(association()))')"
+    put_json web/.well-known/apple-app-site-association "$AASA"
+    put_json web/apple-app-site-association "$AASA"
+    info "uploaded apple-app-site-association for team $IOS_TEAM_ID"
+  else
+    info "IOS_TEAM_ID not set — task links open the web page on iPhone, not the app"
+  fi
+  if [ -n "$ANDROID_CERT_SHA256" ]; then
+    LINKS="$(cd "$ROOT/backend" && ANDROID_CERT_SHA256="$ANDROID_CERT_SHA256" uv run python -c \
+      'import json; from app.api.applinks import asset_links; print(json.dumps(asset_links()))')"
+    put_json web/.well-known/assetlinks.json "$LINKS"
+    info "uploaded assetlinks.json"
+  else
+    info "ANDROID_CERT_SHA256 not set — task links open the web page on Android, not the app"
+  fi
 fi
 
 # --------------------------------------------------------------------------

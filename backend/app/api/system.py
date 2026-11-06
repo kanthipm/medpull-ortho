@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from sqlalchemy import text
 
+from app.api.auth import console_auth_enabled
 from app.database import engine
 from app.llm.provider import model_name, provider_name
 from app.notifications import sendblue
@@ -19,6 +20,8 @@ def health() -> dict:
     return {
         "status": "ok",
         "db_ok": db_ok,
+        # Tells the SPA whether to ask for the console token before loading.
+        "console_auth": console_auth_enabled(),
         "llm_provider": provider_name(),
         "model": model_name(),
         # Keys present is not the same as able to send: the sending number has

@@ -37,6 +37,7 @@ os.environ["SENDBLUE_FROM_NUMBER"] = ""
 os.environ["CARE_TEAM_PHONES"] = ""
 os.environ["CHECKIN_BASE_URL"] = ""
 os.environ["MOBILE_OTP_REQUIRED"] = "false"
+os.environ["ALLOW_MOCK_WEBHOOK"] = "true"  # the suite drives the demo connector through it
 # Attachment bytes go to a throwaway directory, never backend/data.
 os.environ["ATTACHMENT_DIR"] = f"{_TMP}/attachments"
 

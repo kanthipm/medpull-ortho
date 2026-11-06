@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react'
 import { Link, Outlet, useLocation } from 'react-router-dom'
+import { clearConsoleToken, getConsoleToken } from '../../api/client'
 import { useReveal, useSpotlight } from '../../lib/useReveal'
 import { useScrollEdge } from '../../lib/useScrollEdge'
 import DemoWelcome from '../DemoWelcome'
@@ -190,6 +191,18 @@ export default function AppShell() {
                 <ThemeToggle />
               </span>
               <NotificationsPopover />
+              {getConsoleToken() && (
+                <button
+                  type="button"
+                  className="btn-plain btn-sm hidden sm:inline-flex"
+                  onClick={() => {
+                    clearConsoleToken()
+                    window.location.assign('/login')
+                  }}
+                >
+                  Sign out
+                </button>
+              )}
             </div>
           </div>
         </div>

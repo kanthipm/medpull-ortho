@@ -28,7 +28,7 @@ from app.models.checkin import Checkin, CheckinInvite
 from app.models.connection import WearableConnection
 from app.models.insight import EstablishedBaseline, Insight, RiskAssessment
 from app.models.library import CareAction, TaskVerification
-from app.models.mobile import Message, PatientSession, PhoneVerification
+from app.models.mobile import Message, PatientSession, PhoneVerification, live_session_clause
 from app.models.notification import Notification
 from app.models.observation import Observation
 from app.models.patient import Device, Patient
@@ -54,7 +54,7 @@ def app_status(db: Session, patient: Patient) -> dict[str, Any]:
     """Whether this chart is signed in on the patient app, and from where."""
     session = db.scalar(
         select(PatientSession)
-        .where(PatientSession.patient_id == patient.id, PatientSession.revoked_at.is_(None))
+        .where(PatientSession.patient_id == patient.id, live_session_clause())
         .order_by(PatientSession.last_seen_at.desc())
         .limit(1)
     )
@@ -178,7 +178,7 @@ _DERIVED = (RiskAssessment, EstablishedBaseline)
 def _last_seen(db: Session, patient_id: str) -> datetime:
     seen = db.scalar(
         select(PatientSession.last_seen_at)
-        .where(PatientSession.patient_id == patient_id, PatientSession.revoked_at.is_(None))
+        .where(PatientSession.patient_id == patient_id, live_session_clause())
         .order_by(PatientSession.last_seen_at.desc())
         .limit(1)
     )
@@ -441,7 +441,7 @@ def delete_patient(db: Session, patient: Patient) -> dict[str, Any]:
     app session — link it instead, or sign the phone out first."""
     if db.scalar(
         select(PatientSession.id).where(
-            PatientSession.patient_id == patient.id, PatientSession.revoked_at.is_(None)
+            PatientSession.patient_id == patient.id, live_session_clause()
         ).limit(1)
     ) is not None:
         raise IdentityError(

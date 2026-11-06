@@ -250,6 +250,13 @@ def apply_apple_transaction(
         payload = verify_strict(jws)
         verified = True
     else:
+        if settings.apple_environment == "Production":
+            # Lenient exists for Xcode and sandbox demos. A server that takes
+            # real money must not grant access on an unchecked signature.
+            raise SubscriptionError(
+                "Receipt verification is set to lenient; a Production server must run strict",
+                503,
+            )
         _header, payload, _sig, _input = decode_jws(jws)
         verified = False
 
@@ -295,3 +302,61 @@ def apply_apple_transaction(
     logger.info("Apple subscription %s for %s: %s until %s (%s)", product, patient.id,
                 row.status, expires, "verified" if verified else "unverified")
     return row
+
+
+# --- App Store Server Notifications (V2) --------------------------------------------------
+
+NOTIFICATIONS_THAT_REVOKE = {"REFUND", "REVOKE"}
+NOTIFICATIONS_THAT_EXPIRE = {"EXPIRED"}
+
+
+def apply_notification(
+    db: Session, payload: dict[str, Any], *, verify: Any
+) -> tuple[str, Entitlement | None]:
+    """Fold a notification Apple sent about a subscription into the row it
+    names. ``payload`` is the verified outer payload; ``verify`` checks the
+    two signed JWS strings nested inside it the same way. Returns
+    ``("processed", row)``, or ``("ignored", None)`` for a transaction this
+    server never recorded, which Apple should not be made to retry."""
+    kind = str(payload.get("notificationType") or "")
+    data = payload.get("data") or {}
+    if not isinstance(data, dict):
+        raise SubscriptionError("The notification carries no data")
+    bundle = data.get("bundleId")
+    if bundle and bundle != settings.ios_bundle_id:
+        raise SubscriptionError("That notification is for a different app")
+    tx = verify(data["signedTransactionInfo"]) if data.get("signedTransactionInfo") else {}
+    renewal = verify(data["signedRenewalInfo"]) if data.get("signedRenewalInfo") else {}
+    original = str(tx.get("originalTransactionId") or renewal.get("originalTransactionId") or "")
+    if not original:
+        raise SubscriptionError("The notification names no transaction")
+
+    row = db.scalar(select(Entitlement).where(Entitlement.original_transaction_id == original))
+    if row is None:
+        return "ignored", None
+    if tx:
+        if tx.get("productId") in product_ids():
+            row.product_id = tx["productId"]
+        row.transaction_id = str(tx.get("transactionId") or "") or row.transaction_id
+        expires = _ms(tx.get("expiresDate"))
+        if expires is not None:
+            row.expires_at = expires
+        row.environment = tx.get("environment") or row.environment
+    if "autoRenewStatus" in renewal:
+        row.auto_renew = bool(renewal.get("autoRenewStatus"))
+    if kind in NOTIFICATIONS_THAT_REVOKE or (tx and _ms(tx.get("revocationDate")) is not None):
+        row.status = "revoked"
+    elif kind in NOTIFICATIONS_THAT_EXPIRE:
+        row.status = "expired"
+    else:
+        row.status = "active"
+    # Only a notification whose chain reached Apple's root gets here, so the
+    # row is now verified even if the app's own report was lenient.
+    row.verified = True
+    row.raw = {**(row.raw or {}), "last_notification": {
+        "type": kind, "subtype": payload.get("subtype"), "uuid": payload.get("notificationUUID"),
+    }}
+    db.flush()
+    logger.info("App Store notification %s for %s: %s until %s", kind, row.patient_id,
+                row.status, row.expires_at)
+    return "processed", row

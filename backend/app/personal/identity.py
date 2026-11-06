@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.identity import _merge_connections, _merge_observations
-from app.models.mobile import PatientSession
+from app.models.mobile import PatientSession, live_session_clause
 from app.models.patient import Patient
 from app.models.personal import GOALS, PersonalProfile
 from app.personal import subscription
@@ -187,6 +187,6 @@ def switch_target(db: Session, current: Patient, target_id: str) -> Patient:
 def has_live_session(db: Session, patient_id: str) -> bool:
     return db.scalar(
         select(PatientSession.id).where(
-            PatientSession.patient_id == patient_id, PatientSession.revoked_at.is_(None)
+            PatientSession.patient_id == patient_id, live_session_clause()
         ).limit(1)
     ) is not None

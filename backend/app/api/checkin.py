@@ -27,7 +27,10 @@ from app.notifications.sendblue import send_checkin_message
 from app.tasks import service as tasks_service
 from app.tasks.service import CHECKIN_QUESTIONS, PHRASES
 
+# Two doors: the patient's page, let in by the token in its link, and the
+# clinician's actions, which api/__init__ puts behind the console's token.
 router = APIRouter(tags=["checkin"])
+console_router = APIRouter(tags=["checkin"])
 
 INVITE_TTL = timedelta(hours=72)
 
@@ -58,7 +61,7 @@ class InviteRequest(BaseModel):
     phone: str
 
 
-@router.post("/patients/{patient_id}/checkin-invite")
+@console_router.post("/patients/{patient_id}/checkin-invite")
 def send_invite(
     patient_id: str, body: InviteRequest, request: Request, db: Session = Depends(get_db)
 ) -> dict:
@@ -158,7 +161,7 @@ def _open_checkin(db: Session, patient_id: str) -> AdherenceTask | None:
     return next((t for t in tasks_service.open_tasks(db, patient_id) if t.kind == "checkin"), None)
 
 
-@router.post("/patients/{patient_id}/actions/daily-checkin")
+@console_router.post("/patients/{patient_id}/actions/daily-checkin")
 def send_daily_checkin(patient_id: str, request: Request, db: Session = Depends(get_db)) -> dict:
     """Put today's check-in in the patient's app and text them that it's there.
 

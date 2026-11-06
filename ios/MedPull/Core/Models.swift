@@ -613,16 +613,6 @@ struct WearablesResponse: Codable {
     let refreshError: String?
 }
 
-struct ProgressDay: Codable, Identifiable, Hashable {
-    var id: String { date }
-    let date: String
-    let postopDay: Int
-    let steps: Int?
-    let sleepHours: Double?
-}
-
-struct ProgressResponse: Codable { let days: [ProgressDay] }
-
 struct GaitPoint: Encodable {
     let metricType: String
     let date: String

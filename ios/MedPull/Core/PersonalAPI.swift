@@ -92,8 +92,6 @@ extension APIClient {
         let _: R = try await delete("/api/mobile/personal/account")
     }
 
-    func personalWeek() async throws -> WeekResponse { try await get("/api/mobile/personal/week") }
-
     func personalSignin(phone: String) async throws -> EnrollResponse {
         try await post("/api/mobile/personal/signin", body: PhoneBody(
             phone: phone, deviceName: UIDeviceName.current, appVersion: AppConfig.appVersion))
@@ -104,8 +102,6 @@ extension APIClient {
             verificationId: verificationId, code: code,
             deviceName: UIDeviceName.current, appVersion: AppConfig.appVersion))
     }
-
-    func profiles() async throws -> ProfilesResponse { try await get("/api/mobile/profiles") }
 
     struct SwitchBody: Encodable { let patientId: String; let deviceName: String; let appVersion: String }
 
@@ -143,10 +139,6 @@ extension APIClient {
 
     func linkHospital(_ body: LinkHospitalBody) async throws -> LinkHospitalResponse {
         try await post("/api/mobile/personal/link-hospital", body: body)
-    }
-
-    func personalProfile() async throws -> PersonalProfileResponse {
-        try await get("/api/mobile/personal/profile")
     }
 
     struct ProfilePatch: Encodable {

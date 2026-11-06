@@ -355,11 +355,7 @@ struct LinkHospitalSheet: View {
                 // The code proves the chart; the clinic verify route issues a
                 // session on it, after which linking is an open-record call.
                 let r = try await app.api.verify(verificationId: id, code: code)
-                guard let token = r.sessionToken, let me = r.me, let hospital else { return }
-                let personalToken = app.api.token
-                app.api.token = token
-                _ = me
-                app.api.token = personalToken
+                guard r.sessionToken != nil, let hospital else { return }
                 let linked = try await app.api.linkHospital(.init(
                     mode: "enroll", hospitalId: hospital.id, patientId: selected?.patientId,
                     hadSurgery: false, procedureType: nil, surgeryDate: nil,

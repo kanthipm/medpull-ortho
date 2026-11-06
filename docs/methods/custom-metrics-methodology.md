@@ -49,7 +49,7 @@ No consumer wearable exposes raw inertial data through its API. The phone does, 
 
 Nominal sampling is 50 Hz; a window is capped at 12 minutes (36,000 samples). Carriage is a **front trouser pocket, top end up** — the placement Apple's iPhone metrics also assume — so the phone rides on the thigh. Every derived row records the window's context, the number of steps behind it, the method, and quality flags in `value_json`, so a reviewer can audit any single number back to its bout.
 
-**Sign conventions.** iOS reports the gravity vector pointing into the ground and Android out of it. Every quantity below that reads the vertical acceleration is sign-invariant (integration range, autocorrelation, harmonic ratio, spectral power); the convention is recorded, never relied upon.
+**Sign conventions.** iOS reports the gravity vector pointing into the ground and Android the reaction force out of it; the two accelerations are exact negatives and the gyroscope is the same on both. Every window and joint test carries `platform` (`ios`, the default, or `android`), and the server negates an Android window's accelerometer and gravity arrays before any algorithm runs (`frames.canonical_frame`), so one convention reaches §3–§11. The gait quantities that read the vertical acceleration are sign-invariant anyway; the signed extension angle in §11 is not, which is why the tag exists rather than a client-side flip.
 
 ## 3. Preprocessing (`frames.py`, `dsp.py`)
 
@@ -100,7 +100,7 @@ The thigh's angular velocity about the mediolateral axis over one stride (Aminia
 
 **Without a gyroscope** (an old or restricted phone) asymmetry is the unsigned index over alternating accelerometer step times (`alternating_asymmetry`) and double support is not computed.
 
-**Limitations stated.** (a) The contralateral swing is not measured; an asymmetric patient's double support carries the instrumented side's bias — the same limitation Apple documents for the iPhone. Recording the pocket side and alternating it brackets the truth. (b) Toe-off from the steepest rise of the flexion lobe is a rule adopted from the thigh-IMU literature, not a fitted model; its timing error against force plates is the first thing a validation should measure. (c) Double support from a single thigh sensor is the weakest metric in this document, as it is for Apple (ICC 0.53) and in the pocket-phone literature (Larsen 2025: 30–73 % error); it is displayed on bands (§12) and never enters the risk tier.
+**Limitations stated.** (a) The contralateral swing is not measured; an asymmetric patient's double support carries the instrumented side's bias — the same limitation Apple documents for the iPhone. Recording the pocket side and alternating it brackets the truth. (b) Toe-off from the steepest rise of the flexion lobe is a rule adopted from the thigh-IMU literature, not a fitted model; its timing error against force plates is the first thing a validation should measure. (c) Double support from a single thigh sensor is the weakest metric in this document, as it is for Apple (ICC 0.53) and in the pocket-phone literature (Larsen 2025: 30–73 % error); it is displayed on bands (§13, Appendix A) and never enters the risk tier.
 
 ## 7. Step length and walking speed (`spatial.py`)
 
@@ -275,10 +275,10 @@ These are self-consistency checks of the rules, not evidence about patients.
 
 ## Appendix B. API contracts
 
-`POST /api/mobile/observations/motion` — `{windows: [MotionWindow…] (≤ 12), height_cm?, device_model?}`; `MotionWindow = {started_at, sample_rate_hz, accel[N][3], gyro?[N][3], gravity?[N][3], timestamps?[N], altitude?[M][2], gps_distance_m?, gps_accuracy_m?, pedometer_steps?, pedometer_distance_m?, pocket_side?, context}`. Returns per-window summaries and ingest counts.
+`POST /api/mobile/observations/motion` — `{windows: [MotionWindow…] (≤ 12), height_cm?, device_model?}`; `MotionWindow = {started_at, sample_rate_hz, accel[N][3], gyro?[N][3], gravity?[N][3], timestamps?[N], altitude?[M][2], gps_distance_m?, gps_accuracy_m?, pedometer_steps?, pedometer_distance_m?, pocket_side?, context, platform?}` (`platform` is `ios` by default or `android`; see §2). Returns per-window summaries and ingest counts.
 
 `POST /api/mobile/tests/six-minute-walk` — `{started_at, duration_s, steps?, pedometer_distance_m?, gps_distance_m?, gps_accuracy_m?, minute_steps?, height_cm?, motion?}`. Returns distance, method, cadence, fade.
 
-`POST /api/mobile/tests/range-of-motion` — `{recorded_at, protocol, side, reference[K][3], movement[K][3]}`. Returns joint, movement, angle, steadiness of the holds.
+`POST /api/mobile/tests/range-of-motion` — `{recorded_at, protocol, side, reference[K][3], movement[K][3], platform?}`. Returns joint, movement, angle, steadiness of the holds.
 
 All three run every row through the same ingest path as a wearable delivery (plausibility bounds, the surgery window, idempotent dedupe) and recompute the patient's assessment immediately.

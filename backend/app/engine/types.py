@@ -80,6 +80,9 @@ class MetricInsight:
     baseline_mean: float | None = None
     # "x days left" until this card can say something (engine/readiness.py).
     readiness: dict[str, Any] | None = None
+    # passive | active | unavailable | unknown: whether this patient's setup
+    # can produce the signal at all (engine/sources.py).
+    availability: str | None = None
 
 
 @dataclass

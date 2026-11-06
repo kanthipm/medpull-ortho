@@ -28,6 +28,27 @@ def test_health(client):
     body = client.get("/api/health").json()
     assert body["status"] == "ok" and body["db_ok"] is True
     assert body["llm_provider"] == "fallback"
+    assert body["console_auth"] is False
+
+
+def test_console_token_guards_console_routes_only(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "console_access_token", "open-sesame")
+    assert client.get("/api/health").json()["console_auth"] is True
+    # Console reads and writes need the header.
+    assert client.get("/api/worklist").status_code == 401
+    assert client.get("/api/worklist", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.post("/api/patients/reyes/actions/escalate").status_code == 401
+    assert client.post("/api/patients/reyes/actions/daily-checkin").status_code == 401
+    ok = {"Authorization": "Bearer open-sesame"}
+    assert client.get("/api/worklist", headers=ok).status_code == 200
+    assert client.get("/api/explain", headers=ok).status_code == 200
+    # Patients, their pages and the webhooks are untouched.
+    assert client.get("/api/mobile/hospitals").status_code == 200
+    assert client.get("/api/checkin/no-such-token").status_code == 404
+    assert client.get("/api/tasks/no-such-token").status_code == 404
+    assert client.post("/api/webhooks/wearables/nope", json={}).status_code == 404
 
 
 def test_worklist_shape_and_ordering(client):
@@ -65,9 +86,11 @@ def test_metrics_endpoint(client):
     assert "walking_asymmetry_pct" in keys  # apple patient gets gait cards
     body2 = client.get("/api/patients/linda/metrics").json()
     # The panel is always whole: a Fitbit patient's gait card exists, but it
-    # says the metric was never measured and what would fill it.
+    # says her setup cannot produce the metric (no iPhone, not signed in on
+    # the app) and what would.
     gait = next(m for m in body2["metrics"] if m["metric_key"] == "walking_asymmetry_pct")
-    assert gait["status"] == "nodata" and gait["status_text"] == "Not measured yet"
+    assert gait["status"] == "nodata" and gait["status_text"] == "Not available on this setup"
+    assert gait["availability"] == "unavailable"
     assert "guided walk" in gait["finding"] and gait["series"] == []
 
 
@@ -95,7 +118,7 @@ def test_observations_series(client):
 def test_integrations(client):
     body = client.get("/api/integrations").json()
     providers = body["providers"]
-    assert len(providers) == 11
+    assert len(providers) == 12
     by_key = {p["key"]: p for p in providers}
     assert by_key["mock"]["status"] == "mock_connected"
     # no API key in the test environment: the aggregator is present but unconfigured
@@ -129,6 +152,17 @@ def test_webhook_flow(client):
     assert client.post("/api/webhooks/wearables/nope", json={}).status_code == 404
     assert client.post("/api/webhooks/wearables/garmin", json={}).status_code == 501
     assert client.post("/api/webhooks/wearables/mock", json={"bad": 1}).status_code == 422
+
+
+def test_mock_webhook_is_closed_unless_allowed(client, monkeypatch):
+    from app.config import settings
+
+    payload = {"patient_id": "elena", "provider": "apple", "records": []}
+    monkeypatch.setattr(settings, "allow_mock_webhook", False)
+    # Indistinguishable from an unknown provider, and nothing is stored.
+    assert client.post("/api/webhooks/wearables/mock", json=payload).status_code == 404
+    monkeypatch.setattr(settings, "allow_mock_webhook", True)
+    assert client.post("/api/webhooks/wearables/mock", json=payload).status_code == 200
 
 
 def test_notifications_flow(client, db):
@@ -600,6 +634,23 @@ def _api_endpoints():
             pending.extend(nested.routes)
         elif hasattr(route, "endpoint"):
             yield route
+
+
+def test_committed_openapi_export_is_current(client):
+    """backend/openapi.json is what the patient apps' clients are generated
+    against; a route or schema change has to move it (`make openapi`)."""
+    import sys
+    from pathlib import Path
+
+    scripts = Path(__file__).resolve().parent.parent / "scripts"
+    sys.path.insert(0, str(scripts))
+    try:
+        from export_openapi import OUT, render
+    finally:
+        sys.path.remove(str(scripts))
+    assert OUT.exists(), "run `make openapi` and commit backend/openapi.json"
+    assert OUT.read_text(encoding="utf-8") == render(), \
+        "backend/openapi.json is stale: run `make openapi` and commit the result"
 
 
 def test_every_router_is_wired(client):

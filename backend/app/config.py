@@ -15,10 +15,19 @@ class Settings(BaseSettings):
 
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
+    # The console's one shared credential. Empty keeps every console route
+    # open (the public demo); set, every console route needs
+    # `Authorization: Bearer <token>` and the SPA asks for it on /login. The
+    # patient app, the token-link pages and the webhooks are never behind it.
+    console_access_token: str = ""
     # Webhook signing secrets — empty means that provider's deliveries are
     # rejected (verification fails closed; the mock/demo path needs none).
     terra_signing_secret: str = ""
     junction_webhook_secret: str = ""
+    # The unsigned demo webhook (POST /api/webhooks/wearables/mock) trusts the
+    # patient id in its body, so it exists only where a developer asks for it.
+    # Off, the route answers 404 like any unknown provider.
+    allow_mock_webhook: bool = False
     # Junction (fka Vital), the wearable aggregator. The API key is the switch:
     # without it the registry reports Junction as needing setup and every
     # Junction endpoint answers 503, while signed deliveries to the webhook are
@@ -66,10 +75,18 @@ class Settings(BaseSettings):
     # send one. Off by default (frictionless enrollment); set true to require
     # the code before a session is issued.
     mobile_otp_required: bool = False
+    # A session the phone has not used for this long is revoked on its next
+    # request and the app signs out (it already does so on any 401).
+    session_idle_days: int = 90
     # apple-app-site-association: "<TEAMID>.<bundle id>" is served only when
     # the team id is set, so a deployment without the app publishes nothing.
     ios_team_id: str = ""
     ios_bundle_id: str = "com.medpull.recovery"
+    # assetlinks.json, the Android equivalent: served only when the signing
+    # certificate's SHA-256 fingerprints (comma-separated, colon-hex as the
+    # Play Console prints them) are set.
+    android_package: str = "com.medpull.recovery"
+    android_cert_sha256: str = ""
     # --- the personal tier (app/personal) ---------------------------------
     # Every personal account starts on a trial this long; the paywall closes
     # after it unless an Apple subscription is on file.

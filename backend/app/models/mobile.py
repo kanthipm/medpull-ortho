@@ -7,11 +7,12 @@ session token is the patient app's credential; only its hash is stored, like
 the check-in invite token.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String, and_
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.config import settings
 from app.database import Base
 
 
@@ -28,6 +29,19 @@ class PatientSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     patient = relationship("Patient")
+
+    def is_live(self, now: datetime | None = None) -> bool:
+        return self.revoked_at is None and self.last_seen_at >= session_cutoff(now)
+
+
+def session_cutoff(now: datetime | None = None) -> datetime:
+    """Sessions last used before this moment count as expired."""
+    return (now or datetime.now()) - timedelta(days=settings.session_idle_days)
+
+
+def live_session_clause(now: datetime | None = None):
+    """The one definition of "signed in", for every query that asks."""
+    return and_(PatientSession.revoked_at.is_(None), PatientSession.last_seen_at >= session_cutoff(now))
 
 
 class PhoneVerification(Base):

@@ -50,7 +50,7 @@ no ECR repository, and no always-on database — between them, those are where a
 | Lambda | 1M requests + 400,000 GB-s / month | ~1 GB-s per API request; a demo uses a fraction of a percent |
 | CloudFront | 1 TB egress + 10M requests / month | SPA is ~250 KB gzipped, cached at the edge |
 | CloudFront Functions | 2M invocations / month | one per non-API request |
-| SSM Parameter Store | standard parameters free | 2 parameters |
+| SSM Parameter Store | standard parameters free | 7 parameters |
 | CloudWatch Logs | 5 GB ingest + 5 GB storage | capped at 14-day retention |
 | AWS Budgets | first 2 budgets free | 1, optional |
 | S3 storage | 5 GB (first 12 months) | ~20 MB — about **$0.0005/month** after that |
@@ -95,7 +95,7 @@ and `git`.
 ```bash
 # in CloudShell
 curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
-git clone <this repo> && cd MedPullKiosk/recovery-copilot
+git clone <this repo> && cd medpull-ortho
 ./infra/deploy.sh
 ```
 
@@ -133,7 +133,8 @@ mid-change without shipping that change.
 | `AWS_REGION` | `us-east-1` | Deployment region |
 | `STACK_NAME` | `recovery-copilot` | CloudFormation stack name |
 | `GROQ_API_KEY` | — | Skips the prompt; also read from `recovery-copilot/.env` |
-| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Overrides the model |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` | Overrides the model |
+| `CONSOLE_ACCESS_TOKEN` | — | Locks the console behind this bearer token (stored in SSM). Unset, the console stays open; `generate` mints one and prints it once |
 | `JUNCTION_API_KEY` | — | Stored in SSM on first deploy; also read from `.env`. Optional — without it the wearable connector stays idle |
 | `JUNCTION_WEBHOOK_SECRET` | — | The Svix `whsec_…` secret for the registered endpoint; stored in SSM like the key |
 | `JUNCTION_ENVIRONMENT` | `sandbox` | `sandbox` or `production` — must match the key |
@@ -307,10 +308,12 @@ aws lambda invoke --function-name recovery-copilot-api \
 
 ## Security posture
 
-The app ships **no authentication**, by design, for demos — that predates this
-deployment and is called out in the project README. Anyone with the CloudFront
-URL can call all 30 API routes, the write paths among them. What the stack does
-add:
+The console ships **open by default**, for the public demo. Set
+`CONSOLE_ACCESS_TOKEN` at deploy time and every console route needs that
+bearer token, which the SPA asks for on `/login`; the patient app, the
+token-link pages and the webhooks keep their own credentials. Without it,
+anyone with the CloudFront URL can call every console API route, the write
+paths among them. What the stack adds either way:
 
 - The S3 bucket is private. CloudFront reaches the SPA through an Origin Access
   Control; the `db/` prefix is not reachable through the distribution at all.
@@ -323,8 +326,9 @@ add:
   distribution, because everything outside `/api/*` is served from the SPA
   origin.
 - Bucket policy denies any non-TLS request.
-- The Lambda role reads and writes only the `db/` prefix, holds one SSM
-  parameter, and can `kms:Decrypt` only via SSM. Its `s3:ListBucket` grant is
+- The Lambda role reads and writes only the `db/`, `attachments/` and
+  `personal/` prefixes, reads its six SSM parameters, and can `kms:Decrypt`
+  only via SSM. Its `s3:ListBucket` grant is
   the one bucket-wide permission and is deliberately unconditioned: S3 consults
   it to decide whether a missing key is a 404 or a 403, and `s3:prefix` is
   populated only for list requests, so conditioning on it would turn the

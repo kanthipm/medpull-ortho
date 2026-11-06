@@ -53,6 +53,7 @@ class MotionWindow:
     pocket_side: str | None = None        # "left" | "right": the leg the phone rides on
     context: str = "free_living"          # guided_walk | six_minute_walk | free_living
     device_model: str | None = None
+    platform: str = "ios"                 # ios | android: the sensor convention the arrays use
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -64,6 +65,27 @@ class MotionWindow:
         if self.timestamps is not None and len(self.timestamps) > 1:
             return float(self.timestamps[-1] - self.timestamps[0])
         return self.n / self.fs if self.fs > 0 else 0.0
+
+
+PLATFORMS = ("ios", "android")
+
+
+def canonical_frame(window: MotionWindow) -> MotionWindow:
+    """Bring a window into the iOS convention every algorithm here was written
+    against. Both platforms share the device axes (x right, y toward the top
+    edge, z out of the screen) and report the gyroscope in rad/s by the same
+    right-hand rule, but they disagree on acceleration: iOS reports the
+    gravity vector pointing into the ground (a phone flat on a table reads
+    -9.81 on z once scaled), Android reports the reaction force (+9.81 on z).
+    The two are exact negatives, so an Android window is negated in place,
+    accelerometer and gravity alike, and marked as converted."""
+    if window.platform == "android":
+        window.accel = -np.asarray(window.accel, dtype=float)
+        if window.gravity is not None:
+            window.gravity = -np.asarray(window.gravity, dtype=float)
+        window.platform = "ios"
+        window.notes.append("android frame converted")
+    return window
 
 
 @dataclass

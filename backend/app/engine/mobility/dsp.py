@@ -1,8 +1,8 @@
 """Signal-processing primitives for the mobility engine, in numpy only.
 
-scipy is excluded from the Lambda artifact (infra/build-lambda.sh), so the
-filters, peak finder and spectral helpers every gait algorithm needs are
-implemented here from first principles. Each one is small enough to be read
+scipy is not a dependency of this backend, so the filters, peak finder and
+spectral helpers every gait algorithm needs are implemented here from first
+principles. Each one is small enough to be read
 and checked line by line, which is the point: a reviewer can see exactly what
 "band-pass 0.5-3.5 Hz" means without opening a library.
 

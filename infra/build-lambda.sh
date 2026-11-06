@@ -12,8 +12,6 @@
 #     websockets, pyyaml, click) — Mangum replaces the ASGI server on Lambda.
 #     h11 and python-dotenv look like uvicorn deps but httpcore and
 #     pydantic-settings need them, so they stay.
-#   * scipy — declared in pyproject but imported nowhere in app/ (verified by
-#     the grep guard below), and it is the single largest wheel in the tree.
 #
 # Wheels are fetched for aarch64: Graviton bills ~20% fewer GB-seconds, which
 # stretches the always-free 400,000 GB-s/month further.
@@ -33,15 +31,9 @@ PY_VERSION="3.12"
 # publishes no 2.17 aarch64 wheel — and older-tagged wheels still resolve here.
 GLIBC_TAG="${LAMBDA_GLIBC_TAG:-manylinux_2_28}"
 
-EXCLUDE='^(boto3|botocore|s3transfer|jmespath|uvicorn|uvloop|httptools|watchfiles|websockets|pyyaml|click|colorama|scipy)=='
+EXCLUDE='^(boto3|botocore|s3transfer|jmespath|uvicorn|uvloop|httptools|watchfiles|websockets|pyyaml|click|colorama)=='
 
 command -v uv >/dev/null || { echo "error: uv is required (https://docs.astral.sh/uv/)" >&2; exit 1; }
-
-echo "==> Verifying the excluded packages really are unused"
-if grep -rqE '^\s*(import|from)\s+scipy' "$BACKEND/app"; then
-  echo "error: app/ imports scipy but the build excludes it — update EXCLUDE." >&2
-  exit 1
-fi
 
 echo "==> Resolving dependencies from uv.lock"
 rm -rf "$BUILD"

@@ -86,6 +86,10 @@ def current_patient(
     if session is None or session.revoked_at is not None:
         raise HTTPException(status_code=401, detail="This session has ended — sign in again")
     now = datetime.now()
+    if not session.is_live(now):
+        session.revoked_at = now
+        db.commit()
+        raise HTTPException(status_code=401, detail="This session has ended — sign in again")
     if now - session.last_seen_at > SESSION_TOUCH_INTERVAL:
         session.last_seen_at = now
         db.commit()
@@ -288,6 +292,10 @@ def _message_view(
     }
 
 
+# Providers that are the phone's own health store rather than a wearable brand.
+PHONE_HEALTH_STORES = frozenset({"apple", "health_connect", "samsung"})
+
+
 def _wearable_summary(db: Session, patient: Patient) -> dict[str, Any]:
     from app.personal.scope import data_patient
 
@@ -295,15 +303,21 @@ def _wearable_summary(db: Session, patient: Patient) -> dict[str, Any]:
     # devices and connection it reports are the chart's.
     patient = data_patient(db, patient)
     conn = junction_connector().connection_for(db, patient.id)
-    apple = next(
-        (d for d in patient.devices if str(d.source_provider) == "apple" and d.status != "revoked"),
+    # The phone's own health store, whichever platform: Apple Health on an
+    # iPhone, Health Connect (or Samsung Health through it) on Android. The
+    # `apple_health` keys below stay for the shipped iPhone app; `device_health`
+    # is the platform-neutral view the Android app reads.
+    phone = next(
+        (d for d in patient.devices
+         if str(d.source_provider) in PHONE_HEALTH_STORES and d.status != "revoked"),
         None,
     )
+    apple = phone if phone is not None and str(phone.source_provider) == "apple" else None
     others = [
         {"provider": str(d.source_provider), "model": d.device_model, "status": d.status,
          "last_sync_at": _iso(d.last_sync_at)}
         for d in patient.devices
-        if str(d.source_provider) != "apple" and d.status != "revoked"
+        if str(d.source_provider) not in PHONE_HEALTH_STORES and d.status != "revoked"
     ]
     return {
         "aggregator_configured": junction_connector().is_configured(),
@@ -311,6 +325,11 @@ def _wearable_summary(db: Session, patient: Patient) -> dict[str, Any]:
         "apple_health": {
             "connected": apple is not None,
             "last_sync_at": _iso(apple.last_sync_at) if apple else None,
+        },
+        "device_health": {
+            "platform": str(phone.source_provider) if phone else None,
+            "connected": phone is not None,
+            "last_sync_at": _iso(phone.last_sync_at) if phone else None,
         },
         "devices": others,
         "last_data_at": _iso(conn.last_data_at) if conn else None,
@@ -448,6 +467,8 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
         "features": {
             "sms": sendblue.configured(),
             "apple_health": junction_connector().is_configured(),
+            # Same switch under a platform-neutral name for the Android app.
+            "device_health": junction_connector().is_configured(),
             "deep_link_scheme": settings.mobile_app_scheme,
             # The whole app is a beta while these are true; the app says so
             # in onboarding and Profile.

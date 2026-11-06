@@ -878,7 +878,7 @@ def patient_for_phone(db: Session, phone: str) -> Patient | None:
     roster can carry the same one twice (a clinician typed it on a chart the
     patient later signed up beside). Then the record that is actually using
     the app wins, and after that the newest."""
-    from app.models.mobile import PatientSession
+    from app.models.mobile import PatientSession, live_session_clause
 
     rows = db.scalars(select(Patient).where(Patient.phone == phone)).all()
     if not rows:
@@ -901,7 +901,7 @@ def patient_for_phone(db: Session, phone: str) -> Patient | None:
     def last_seen(p: Patient) -> datetime:
         seen = db.scalar(
             select(PatientSession.last_seen_at)
-            .where(PatientSession.patient_id == p.id, PatientSession.revoked_at.is_(None))
+            .where(PatientSession.patient_id == p.id, live_session_clause())
             .order_by(PatientSession.last_seen_at.desc())
             .limit(1)
         )

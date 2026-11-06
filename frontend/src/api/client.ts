@@ -20,6 +20,55 @@ export interface FetchOptions extends RequestInit {
  *  flight afterwards is waiting on a response that will never arrive. */
 export const REQUEST_TIMEOUT_MS = 30_000
 
+// --- the console's access token ---------------------------------------------------
+//
+// One shared token, entered once on /login and sent as a bearer header on
+// every console call. The patient pages (/checkin, /t) talk to routes with
+// their own credential and never send it. localStorage, not sessionStorage:
+// a clinician opening a second tab should not be asked again.
+
+const TOKEN_KEY = 'medpull.console-token'
+
+export function getConsoleToken(): string | null {
+  try {
+    return window.localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setConsoleToken(token: string) {
+  try {
+    window.localStorage.setItem(TOKEN_KEY, token)
+  } catch {
+    // storage blocked: the token lives for this page load only
+  }
+}
+
+export function clearConsoleToken() {
+  try {
+    window.localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    // nothing stored to clear
+  }
+}
+
+/** Routes a patient reaches from a texted link; they carry their own token. */
+function isPatientPath(path: string): boolean {
+  return path.startsWith('/api/checkin/') || path.startsWith('/api/tasks/')
+}
+
+/** A console call the server refused: forget the token and go sign in,
+ *  remembering where we were. Never from /login itself, or a wrong token
+ *  would loop the page. */
+function sendToLogin() {
+  if (typeof window === 'undefined') return
+  if (window.location.pathname.startsWith('/login')) return
+  clearConsoleToken()
+  const next = window.location.pathname + window.location.search
+  window.location.assign(`/login?next=${encodeURIComponent(next)}`)
+}
+
 export async function fetchJson<T>(path: string, init?: FetchOptions): Promise<T> {
   const { timeoutMs = REQUEST_TIMEOUT_MS, signal: caller, headers, ...rest } = init ?? {}
   const controller = new AbortController()
@@ -27,10 +76,15 @@ export async function fetchJson<T>(path: string, init?: FetchOptions): Promise<T
   // the caller's own signal — TanStack cancels on unmount — still wins
   const relay = () => controller.abort()
   caller?.addEventListener('abort', relay, { once: true })
+  const token = isPatientPath(path) ? null : getConsoleToken()
   try {
     const res = await fetch(path, {
       ...rest,
-      headers: { 'Content-Type': 'application/json', ...headers },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
       signal: controller.signal,
     })
     if (!res.ok) {
@@ -54,6 +108,7 @@ export async function fetchJson<T>(path: string, init?: FetchOptions): Promise<T
       } catch {
         // non-JSON error body — keep statusText
       }
+      if (res.status === 401 && !isPatientPath(path)) sendToLogin()
       throw new ApiError(res.status, detail)
     }
     return (await res.json()) as T

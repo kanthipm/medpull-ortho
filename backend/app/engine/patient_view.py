@@ -154,12 +154,24 @@ def signal_view(card: dict[str, Any]) -> dict[str, Any]:
             latest_text = f"{shown} {unit}".strip()
     readiness = card.get("readiness")
     explain = patient_explanation(SIGNALS.get(key))
+    headline = _headline(state, title, readiness, latest_text, explain and explain.get("help"))
+    # A signal this phone and wearables cannot produce stays a waiting card
+    # for the app (no new state to teach it) but says so instead of
+    # counting down; one that needs a Measure-tab test says which.
+    availability = card.get("availability")
+    if state == "waiting" and availability == "unavailable":
+        state_label = "Not available on this setup"
+        headline = card.get("finding") or "Nothing connected to you reports this yet."
+    elif state == "waiting" and availability == "active" and not latest:
+        state_label = "Needs a test"
+        headline = card.get("finding") or headline
     return {
         "key": key,
         "title": title,
         "state": state,
         "state_label": state_label,
-        "headline": _headline(state, title, readiness, latest_text, explain and explain.get("help")),
+        "availability": availability,
+        "headline": headline,
         "latest": latest,
         "unit": card.get("unit", ""),
         "readiness": readiness,

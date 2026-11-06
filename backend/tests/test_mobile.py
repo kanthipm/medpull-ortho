@@ -473,6 +473,8 @@ def test_progress_and_wearables_answer_without_junction(client):
     assert len(prog["days"]) == 7 and prog["days"][-1]["date"] == date.today().isoformat()
     wear = client.get("/api/mobile/wearables", headers=headers).json()
     assert wear["summary"]["apple_health"]["connected"] is False
+    assert wear["summary"]["device_health"] == {
+        "platform": None, "connected": False, "last_sync_at": None}
     assert client.post("/api/mobile/wearables/apple/session", headers=headers).status_code == 503
     assert client.post("/api/mobile/wearables/link", headers=headers).status_code == 503
     refreshed = client.post("/api/mobile/wearables/refresh", headers=headers)
@@ -485,11 +487,83 @@ def test_signout_revokes_session(client):
     assert client.get("/api/mobile/me", headers=headers).status_code == 401
 
 
+def test_device_health_reports_health_connect_as_the_phone_store(client, db):
+    from datetime import datetime
+
+    from app.models.patient import Device
+
+    headers, _ = _enroll(client)
+    device = Device(id="junction:test:health_connect", patient_id="steve",
+                    source_provider="health_connect", device_model="Pixel 9",
+                    connected_at=datetime.now(), last_sync_at=datetime.now(),
+                    status="connected")
+    db.add(device)
+    db.commit()
+    try:
+        wear = client.get("/api/mobile/me", headers=headers).json()["wearables"]
+        assert wear["device_health"]["platform"] == "health_connect"
+        assert wear["device_health"]["connected"] is True
+        assert wear["apple_health"]["connected"] is False
+        # The phone store is not listed among the wearables.
+        assert all(d["provider"] != "health_connect" for d in wear["devices"])
+    finally:
+        db.delete(device)
+        db.commit()
+
+
+def test_patient_metrics_say_which_signals_this_setup_can_produce(client):
+    """Steve has no wearable and no data. Signed in on the app, his gait
+    cards wait on a Measure-tab test and his wearable cards say nothing
+    connected can report them, in his own words."""
+    headers, _ = _enroll(client)
+    body = client.get("/api/mobile/metrics", headers=headers).json()
+    signals = {s["key"]: s for s in body["signals"]}
+    walking = signals["walking_speed"]
+    assert walking["state"] == "waiting" and walking["availability"] == "active"
+    assert walking["state_label"] == "Needs a test"
+    assert "guided walk" in walking["headline"]
+    resting = signals["resting_hr"]
+    assert resting["state"] == "waiting" and resting["availability"] == "unavailable"
+    assert resting["state_label"] == "Not available on this setup"
+
+
+def test_idle_session_expires_on_next_request(client, db):
+    import hashlib
+    from datetime import datetime, timedelta
+
+    from app.models.mobile import PatientSession
+
+    headers, _ = _enroll(client)
+    token_hash = hashlib.sha256(headers["Authorization"].split()[1].encode()).hexdigest()
+    session = db.scalar(select(PatientSession).where(PatientSession.token_hash == token_hash))
+
+    session.last_seen_at = datetime.now() - timedelta(days=settings.session_idle_days - 1)
+    db.commit()
+    assert client.get("/api/mobile/me", headers=headers).status_code == 200
+
+    session.last_seen_at = datetime.now() - timedelta(days=settings.session_idle_days + 1)
+    db.commit()
+    assert client.get("/api/mobile/me", headers=headers).status_code == 401
+    db.refresh(session)
+    assert session.revoked_at is not None
+
+
 def test_aasa_only_when_team_id_set(client, monkeypatch):
     assert client.get("/.well-known/apple-app-site-association").status_code == 404
     monkeypatch.setattr(settings, "ios_team_id", "TEAM123")
     body = client.get("/.well-known/apple-app-site-association").json()
     assert body["applinks"]["details"][0]["appIDs"] == ["TEAM123.com.medpull.recovery"]
+
+
+def test_assetlinks_only_when_android_cert_set(client, monkeypatch):
+    assert client.get("/.well-known/assetlinks.json").status_code == 404
+    monkeypatch.setattr(settings, "android_cert_sha256", " aa:bb:cc , dd:ee:ff")
+    body = client.get("/.well-known/assetlinks.json").json()
+    assert body == [{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {"namespace": "android_app", "package_name": "com.medpull.recovery",
+                   "sha256_cert_fingerprints": ["AA:BB:CC", "DD:EE:FF"]},
+    }]
 
 
 def test_gait_upload_goes_through_ingest(client, db):

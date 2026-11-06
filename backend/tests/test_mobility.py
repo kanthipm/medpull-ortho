@@ -156,6 +156,38 @@ def _gravity(tilt_deg: float, n: int = 100, sd: float = 0.4, seed: int = 0) -> n
     return np.stack([np.zeros(n), -np.sin(t), -np.cos(t)], axis=1)
 
 
+def test_android_frame_gives_the_same_numbers_as_ios():
+    """An Android phone reports the reaction force, the exact negative of
+    Apple's gravity-included acceleration, with the same gyroscope. Tagged
+    `platform: android`, a window is converted before any algorithm runs and
+    every number matches; the signed extension angle shows what goes wrong
+    without the tag."""
+    from dataclasses import replace
+
+    from app.engine.mobility.frames import canonical_frame
+
+    ios, _truth = synth_walk(duration_s=60.0, cadence=100, step_len=0.6, ipsi_ratio=1.1,
+                             stairs=True)
+    android = replace(ios, accel=-ios.accel, gravity=-ios.gravity, platform="android", notes=[])
+    expected = process_window(ios).summary()
+    converted = canonical_frame(android)
+    assert converted.platform == "ios" and "android frame converted" in converted.notes
+    got = process_window(converted).summary()
+    strip = lambda s: {k: v for k, v in s.items() if k != "notes"}  # noqa: E731
+    assert strip(got) == strip(expected)
+    assert expected["cadence_spm"] and expected["stairs"]  # the comparison was not of empties
+
+    deficit = range_of_motion("knee_extension_supine", _gravity(0.0), _gravity(7.0))
+    assert abs(deficit.angle_deg - 7.0) < 1.0
+    tagged = range_of_motion("knee_extension_supine", -_gravity(0.0), -_gravity(7.0),
+                             platform="android")
+    assert tagged.angle_deg == deficit.angle_deg
+    # Unconverted, the flat reference hold straddles the ±180° wrap: the
+    # spread explodes and a perfectly still phone is reported as moving.
+    untagged = range_of_motion("knee_extension_supine", -_gravity(0.0), -_gravity(7.0))
+    assert untagged.reference_sd_deg > 100 and not untagged.steady and deficit.steady
+
+
 def test_range_of_motion_reads_the_full_arc_and_flags_an_unsteady_hold():
     flexion = range_of_motion("knee_flexion_supine", _gravity(1.0), _gravity(121.0))
     assert flexion.joint == "knee" and flexion.movement == "flexion"

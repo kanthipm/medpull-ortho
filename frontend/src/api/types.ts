@@ -110,6 +110,10 @@ export interface MetricInsight {
   baseline_mean: number | null
   /** "x days left" until this card can say something. */
   readiness: Readiness | null
+  /** Whether this patient's setup can produce the signal at all:
+   *  passive (a wearable reports it), active (needs a Measure-tab test),
+   *  unavailable (nothing connected can), unknown (nothing connected yet). */
+  availability?: 'passive' | 'active' | 'unavailable' | 'unknown' | null
 }
 
 export interface PatientMetrics {

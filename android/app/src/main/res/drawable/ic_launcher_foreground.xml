@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- The MedPull mark: a sage pulse line in a rounded square. -->
+    <path
+        android:fillColor="@color/brand"
+        android:pathData="M30,30 h48 a8,8 0 0 1 8,8 v32 a8,8 0 0 1 -8,8 h-48 a8,8 0 0 1 -8,-8 v-32 a8,8 0 0 1 8,-8 z" />
+    <path
+        android:strokeColor="#FBFBF9"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M34,54 h10 l5,-12 l8,24 l6,-18 l4,6 h7" />
+</vector>
