@@ -101,7 +101,19 @@ Verification mode is `APPLE_SUBSCRIPTION_VERIFY`: `lenient` (decode, check
 bundle id, product and expiry; grant recorded `verified=false`) until App
 Store Connect is live, because Xcode's local StoreKit signs with a certificate
 Apple's chain cannot vouch for; `strict` verifies the x5c chain to the pinned
-Apple Root CA G3 fingerprint and the ES256 signature (`cryptography`).
+Apple Root CA G3 fingerprint and the ES256 signature (`cryptography`). A
+server whose `APPLE_ENVIRONMENT` is `Production` refuses to run lenient: the
+receipt route answers 503 until the mode is switched.
+
+Renewals, lapses, refunds and revocations arrive without the phone's help
+through App Store Server Notifications (V2) at
+`POST /api/webhooks/apple/subscriptions` (`api/apple_notifications.py`).
+That route is always strict, whatever the receipt route runs as, because
+nobody is signed in behind it. Register the URL in App Store Connect under
+the app's "App Store Server Notifications" (sandbox and production URLs are
+set separately). A notification for a transaction this server never
+recorded is answered 202 and left alone; every delivery, accepted or
+rejected, is a `webhook_events` row with provider `apple`.
 
 ## The readouts (`metrics.py`)
 

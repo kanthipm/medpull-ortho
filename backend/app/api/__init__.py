@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api import (
+    apple_notifications,
     ask,
     attachments,
     care,
@@ -31,6 +32,7 @@ api_router.include_router(patients.router)
 api_router.include_router(notifications.router)
 api_router.include_router(integrations.router)
 api_router.include_router(webhooks.router)
+api_router.include_router(apple_notifications.router)
 api_router.include_router(ask.router)
 api_router.include_router(checkin.router)
 api_router.include_router(mobile.router)

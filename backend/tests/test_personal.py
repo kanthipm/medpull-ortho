@@ -410,6 +410,88 @@ def test_strict_mode_refuses_an_unchained_transaction(client, db, monkeypatch):
         _forget(db, pid)
 
 
+def test_lenient_mode_refuses_production_receipts(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "apple_subscription_verify", "lenient")
+    monkeypatch.setattr(settings, "apple_environment", "Production")
+    headers, data = _join(client)
+    pid = data["me"]["patient"]["id"]
+    try:
+        resp = client.post("/api/mobile/personal/subscription/apple", headers=headers,
+                           json={"jws": _fake_jws({"bundleId": settings.ios_bundle_id,
+                                                   "productId": "com.medpull.recovery.personal.monthly"})})
+        assert resp.status_code == 503
+        assert "strict" in resp.json()["detail"]
+    finally:
+        _forget(db, pid)
+
+
+def _notification(kind: str, tx: dict, renewal: dict | None = None, subtype: str | None = None) -> str:
+    data = {"bundleId": settings.ios_bundle_id, "environment": "Sandbox",
+            "signedTransactionInfo": _fake_jws(tx)}
+    if renewal is not None:
+        data["signedRenewalInfo"] = _fake_jws(renewal)
+    return _fake_jws({"notificationType": kind, "subtype": subtype, "notificationUUID": "n-1",
+                      "version": "2.0", "data": data})
+
+
+def test_app_store_notifications_update_the_entitlement(client, db, monkeypatch):
+    from app.personal import subscription as sub
+
+    monkeypatch.setattr(settings, "apple_subscription_verify", "lenient")
+    headers, data = _join(client, goal="sleep")
+    pid = data["me"]["patient"]["id"]
+    try:
+        db.scalar(select(Entitlement).where(Entitlement.patient_id == pid)).expires_at = \
+            datetime.now() - timedelta(days=1)
+        db.commit()
+        expires = int((datetime.now() + timedelta(days=30)).timestamp() * 1000)
+        tx = {"bundleId": settings.ios_bundle_id,
+              "productId": "com.medpull.recovery.personal.monthly",
+              "originalTransactionId": "3000000001", "transactionId": "3000000002",
+              "expiresDate": expires, "purchaseDate": expires - 30 * 86400000,
+              "environment": "Sandbox"}
+        assert client.post("/api/mobile/personal/subscription/apple", headers=headers,
+                           json={"jws": _fake_jws(tx)}).status_code == 200
+        assert client.get("/api/mobile/personal/dashboard", headers=headers).status_code == 200
+
+        # The notification route is strict whatever the app's route runs as.
+        assert client.post("/api/webhooks/apple/subscriptions",
+                           json={"signedPayload": _notification("DID_RENEW", tx)}).status_code == 401
+        monkeypatch.setattr(sub, "verify_strict", lambda jws: sub.decode_jws(jws)[1])
+
+        later = expires + 30 * 86400000
+        renewed = client.post("/api/webhooks/apple/subscriptions", json={"signedPayload": _notification(
+            "DID_RENEW", {**tx, "transactionId": "3000000003", "expiresDate": later},
+            {"autoRenewStatus": 1, "originalTransactionId": "3000000001"})})
+        assert renewed.status_code == 200, renewed.text
+        row = db.scalar(select(Entitlement).where(Entitlement.original_transaction_id == "3000000001"))
+        db.refresh(row)
+        assert row.transaction_id == "3000000003"
+        assert row.auto_renew is True and row.verified is True and row.status == "active"
+        assert abs(row.expires_at.timestamp() * 1000 - later) < 1000
+
+        assert client.post("/api/webhooks/apple/subscriptions", json={"signedPayload": _notification(
+            "DID_CHANGE_RENEWAL_STATUS", tx, {"autoRenewStatus": 0}, "AUTO_RENEW_DISABLED")}).status_code == 200
+        db.refresh(row)
+        assert row.auto_renew is False and row.status == "active"
+
+        assert client.post("/api/webhooks/apple/subscriptions",
+                           json={"signedPayload": _notification("REFUND", tx)}).status_code == 200
+        db.refresh(row)
+        assert row.status == "revoked"
+        assert client.get("/api/mobile/personal/dashboard", headers=headers).status_code == 402
+
+        ghost = client.post("/api/webhooks/apple/subscriptions", json={"signedPayload": _notification(
+            "DID_RENEW", {**tx, "originalTransactionId": "nobody-knows"})})
+        assert ghost.status_code == 202
+        other_app = client.post("/api/webhooks/apple/subscriptions", json={"signedPayload": _fake_jws({
+            "notificationType": "DID_RENEW",
+            "data": {"bundleId": "com.other", "signedTransactionInfo": _fake_jws(tx)}})})
+        assert other_app.status_code == 422
+    finally:
+        _forget(db, pid)
+
+
 # --- the readouts -----------------------------------------------------------------------
 
 

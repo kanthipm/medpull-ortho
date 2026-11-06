@@ -162,7 +162,8 @@ Parameters:
       checks bundle id, product and expiry — what a deployment without App
       Store Connect needs, and the only mode Xcode's local StoreKit testing can
       pass. "strict" verifies the certificate chain to Apple's root and the
-      signature; switch to it once real App Store transactions flow.
+      signature; switch to it once real App Store transactions flow. With
+      AppleEnvironment=Production the receipt route refuses to run lenient.
   AppleEnvironment:
     Type: String
     Default: Sandbox
