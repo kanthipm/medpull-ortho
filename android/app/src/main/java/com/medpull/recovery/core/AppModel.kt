@@ -6,6 +6,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -97,14 +100,19 @@ class AppModel(val api: ApiClient, private val session: SessionStore, val config
         }
     }
 
-    /** Four calls share one banner: it shows only when nothing got through. */
+    /** Four calls share one banner: it shows only when nothing got through.
+     *  The four are independent, so they go out together rather than one
+     *  after another — the tabs fill in at once instead of in turn. Each
+     *  still records its own outcome, so the banner rule is unchanged. */
     suspend fun refreshAll() {
-        val outcomes = listOf(
-            refresh(false) { val me = api.me(); _state.update { it.copy(me = me) } },
-            refresh(false) { val t = api.tasks(); _state.update { it.copy(tasks = t) } },
-            refresh(false) { val m = api.messages(); _state.update { it.copy(messages = m) } },
-            refresh(false) { val p = api.portfolio(14); _state.update { it.copy(portfolio = p.metrics) } },
-        )
+        val outcomes = coroutineScope {
+            listOf(
+                async { refresh(false) { val me = api.me(); _state.update { it.copy(me = me) } } },
+                async { refresh(false) { val t = api.tasks(); _state.update { it.copy(tasks = t) } } },
+                async { refresh(false) { val m = api.messages(); _state.update { it.copy(messages = m) } } },
+                async { refresh(false) { val p = api.portfolio(14); _state.update { it.copy(portfolio = p.metrics) } } },
+            ).awaitAll()
+        }
         if (Outcome.OK in outcomes) clearError()
         else if (Outcome.FAILED in outcomes) {
             _state.update { it.copy(lastError = "Can't reach MedPull right now. Check your connection.") }
