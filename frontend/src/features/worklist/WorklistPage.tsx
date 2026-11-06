@@ -20,6 +20,7 @@ import { useNarrativeWarming, usePrefetchPatient, useWorklist } from '../../api/
 import type { WorklistResponse } from '../../api/types'
 import DotLine from '../patient/DotLine'
 import MessageComposerModal from '../patient/plan/MessageComposerModal'
+import { loadPatientDetailPage } from '../patient/preload'
 import { AskAnswer, AskField } from './AskBar'
 import { useAskState } from './useAskState'
 import { NarrativeTile } from '../../components/AIAttribution'
@@ -714,9 +715,14 @@ function WorklistRow({
   onMessage: (step: NextStep) => void
 }) {
   const high = p.priority === 'high'
-  // Warm the patient page while the pointer is still on the row, so the
-  // chart paints from the cache on click.
+  // Warm the patient page while the pointer is still on the row — its data
+  // (one overview read) and its code (a separate chunk) — so every card
+  // paints from the cache on click.
   const prefetch = usePrefetchPatient()
+  const warm = () => {
+    prefetch(p.id)
+    void loadPatientDetailPage()
+  }
   const step = p.next_step && p.next_step.state.status === 'open' ? p.next_step : null
   const procedure = p.procedure_display.replace(/\s*\(.*\)$/, '')
   // "D6" means post-op day six, which says nothing true about a patient who
@@ -742,8 +748,8 @@ function WorklistRow({
     <li
       className={`card-row ${high ? 'row-risk-high' : ''} ${stateGuard} ${ROW_GRID} ${rise != null ? 'rise' : ''}`}
       style={rise != null ? ({ '--rise-delay': `${rise}ms` } as CSSProperties) : undefined}
-      onPointerEnter={() => prefetch(p.id)}
-      onFocus={() => prefetch(p.id)}
+      onPointerEnter={warm}
+      onFocus={warm}
     >
       <span className="flex [grid-area:av]">
         <Avatar name={p.name} tier={p.priority} />
