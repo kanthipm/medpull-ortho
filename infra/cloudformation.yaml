@@ -94,6 +94,14 @@ Parameters:
       apple-app-site-association file and deploy.sh uploads the same JSON to
       the SPA bucket so https://<host>/t/<token> links open in the app.
       Blank serves nothing and the links fall back to the web task page.
+  ConsoleAccessTokenParameter:
+    Type: String
+    Default: /recovery-copilot/console-access-token
+    Description: >-
+      SSM Parameter Store name (SecureString) holding the console's shared
+      access token. deploy.sh writes it when CONSOLE_ACCESS_TOKEN is set;
+      with the parameter absent every console route stays open (the public
+      demo), and with it present the SPA asks for the token on /login.
   PublicBaseUrl:
     Type: String
     Default: ""
@@ -448,6 +456,7 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SendblueApiKeyParameter}"
                   - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SendblueApiSecretParameter}"
                   - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SendblueWebhookSecretParameter}"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ConsoleAccessTokenParameter}"
               - Effect: Allow
                 # Decrypting a SecureString written under the AWS-managed
                 # aws/ssm key, and only through SSM.
@@ -526,6 +535,7 @@ Resources:
           SENDBLUE_API_KEY_PARAMETER: !Ref SendblueApiKeyParameter
           SENDBLUE_API_SECRET_PARAMETER: !Ref SendblueApiSecretParameter
           SENDBLUE_WEBHOOK_SECRET_PARAMETER: !Ref SendblueWebhookSecretParameter
+          CONSOLE_ACCESS_TOKEN_PARAMETER: !Ref ConsoleAccessTokenParameter
           SENDBLUE_FROM_NUMBER: !Ref SendblueFromNumber
           CARE_TEAM_PHONES: !Ref CareTeamPhones
           IOS_TEAM_ID: !Ref IosTeamId

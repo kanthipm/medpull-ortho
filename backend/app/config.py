@@ -15,6 +15,11 @@ class Settings(BaseSettings):
 
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
+    # The console's one shared credential. Empty keeps every console route
+    # open (the public demo); set, every console route needs
+    # `Authorization: Bearer <token>` and the SPA asks for it on /login. The
+    # patient app, the token-link pages and the webhooks are never behind it.
+    console_access_token: str = ""
     # Webhook signing secrets — empty means that provider's deliveries are
     # rejected (verification fails closed; the mock/demo path needs none).
     terra_signing_secret: str = ""

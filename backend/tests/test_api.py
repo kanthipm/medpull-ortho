@@ -28,6 +28,27 @@ def test_health(client):
     body = client.get("/api/health").json()
     assert body["status"] == "ok" and body["db_ok"] is True
     assert body["llm_provider"] == "fallback"
+    assert body["console_auth"] is False
+
+
+def test_console_token_guards_console_routes_only(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "console_access_token", "open-sesame")
+    assert client.get("/api/health").json()["console_auth"] is True
+    # Console reads and writes need the header.
+    assert client.get("/api/worklist").status_code == 401
+    assert client.get("/api/worklist", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.post("/api/patients/reyes/actions/escalate").status_code == 401
+    assert client.post("/api/patients/reyes/actions/daily-checkin").status_code == 401
+    ok = {"Authorization": "Bearer open-sesame"}
+    assert client.get("/api/worklist", headers=ok).status_code == 200
+    assert client.get("/api/explain", headers=ok).status_code == 200
+    # Patients, their pages and the webhooks are untouched.
+    assert client.get("/api/mobile/hospitals").status_code == 200
+    assert client.get("/api/checkin/no-such-token").status_code == 404
+    assert client.get("/api/tasks/no-such-token").status_code == 404
+    assert client.post("/api/webhooks/wearables/nope", json={}).status_code == 404
 
 
 def test_worklist_shape_and_ordering(client):

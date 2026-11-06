@@ -23,6 +23,7 @@ OTHER_PARAMS=(
   /recovery-copilot/sendblue-api-key
   /recovery-copilot/sendblue-api-secret
   /recovery-copilot/sendblue-webhook-secret
+  /recovery-copilot/console-access-token
 )
 
 DELETE_DATA=false

@@ -134,6 +134,7 @@ mid-change without shipping that change.
 | `STACK_NAME` | `recovery-copilot` | CloudFormation stack name |
 | `GROQ_API_KEY` | — | Skips the prompt; also read from `recovery-copilot/.env` |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | Overrides the model |
+| `CONSOLE_ACCESS_TOKEN` | — | Locks the console behind this bearer token (stored in SSM). Unset, the console stays open; `generate` mints one and prints it once |
 | `JUNCTION_API_KEY` | — | Stored in SSM on first deploy; also read from `.env`. Optional — without it the wearable connector stays idle |
 | `JUNCTION_WEBHOOK_SECRET` | — | The Svix `whsec_…` secret for the registered endpoint; stored in SSM like the key |
 | `JUNCTION_ENVIRONMENT` | `sandbox` | `sandbox` or `production` — must match the key |
@@ -307,10 +308,12 @@ aws lambda invoke --function-name recovery-copilot-api \
 
 ## Security posture
 
-The app ships **no authentication**, by design, for demos — that predates this
-deployment and is called out in the project README. Anyone with the CloudFront
-URL can call every console API route, the write paths among them. What the
-stack does add:
+The console ships **open by default**, for the public demo. Set
+`CONSOLE_ACCESS_TOKEN` at deploy time and every console route needs that
+bearer token, which the SPA asks for on `/login`; the patient app, the
+token-link pages and the webhooks keep their own credentials. Without it,
+anyone with the CloudFront URL can call every console API route, the write
+paths among them. What the stack adds either way:
 
 - The S3 bucket is private. CloudFront reaches the SPA through an Origin Access
   Control; the `db/` prefix is not reachable through the distribution at all.

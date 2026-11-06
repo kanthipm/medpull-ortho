@@ -3,6 +3,7 @@ import AppShell from './components/layout/AppShell'
 import CheckinPage from './features/checkin/CheckinPage'
 import TaskPage from './features/task/TaskPage'
 import IntegrationsPage from './features/integrations/IntegrationsPage'
+import LoginPage from './features/login/LoginPage'
 import PatientDetailPage from './features/patient/PatientDetailPage'
 import LibraryPage from './features/settings/LibraryPage'
 import NotificationSettingsPage from './features/settings/NotificationSettingsPage'
@@ -13,6 +14,7 @@ export default function App() {
     <Routes>
       <Route path="checkin/:token" element={<CheckinPage />} />
       <Route path="t/:token" element={<TaskPage />} />
+      <Route path="login" element={<LoginPage />} />
       <Route element={<AppShell />}>
         <Route index element={<WorklistPage />} />
         <Route path="patients/:id" element={<PatientDetailPage />} />

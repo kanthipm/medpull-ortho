@@ -49,6 +49,8 @@ SENDBLUE_SECRET_PARAM="${SENDBLUE_SECRET_PARAM:-/recovery-copilot/sendblue-api-s
 # The inbound webhook's secret path segment (patient app). Optional: absent,
 # inbound texts answer 503 while outbound SMS keeps working.
 SENDBLUE_WEBHOOK_PARAM="${SENDBLUE_WEBHOOK_PARAM:-/recovery-copilot/sendblue-webhook-secret}"
+# The console's shared access token (see "Console access" below).
+CONSOLE_TOKEN_PARAM="${CONSOLE_TOKEN_PARAM:-/recovery-copilot/console-access-token}"
 SENDBLUE_FROM_NUMBER="${SENDBLUE_FROM_NUMBER:-$(dotenv_value SENDBLUE_FROM_NUMBER)}"
 CARE_TEAM_PHONES="${CARE_TEAM_PHONES:-$(dotenv_value CARE_TEAM_PHONES)}"
 # Apple team id of the patient app. Set, the API serves the app-site-
@@ -237,6 +239,27 @@ store_optional_secret "$SENDBLUE_KEY_PARAM" SENDBLUE_API_KEY "Sendblue API key"
 store_optional_secret "$SENDBLUE_SECRET_PARAM" SENDBLUE_API_SECRET "Sendblue API secret"
 store_optional_secret "$SENDBLUE_WEBHOOK_PARAM" SENDBLUE_WEBHOOK_SECRET "Sendblue webhook secret"
 
+# Console access. Unlike the integrations above this is never generated on
+# its own: an absent parameter is the public demo, open by design. Set
+# CONSOLE_ACCESS_TOKEN to lock the console with that value (a new value
+# replaces the stored one), or CONSOLE_ACCESS_TOKEN=generate to mint one and
+# print it once.
+CONSOLE_ACCESS_TOKEN="${CONSOLE_ACCESS_TOKEN:-$(dotenv_value CONSOLE_ACCESS_TOKEN)}"
+if [ "$CONSOLE_ACCESS_TOKEN" = "generate" ]; then
+  CONSOLE_ACCESS_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  aws_ ssm put-parameter --name "$CONSOLE_TOKEN_PARAM" --type SecureString --overwrite \
+    --value "$CONSOLE_ACCESS_TOKEN" --description "Console access token for Recovery Copilot" >/dev/null
+  info "console access token (shown once, keep it): $CONSOLE_ACCESS_TOKEN"
+elif [ -n "$CONSOLE_ACCESS_TOKEN" ]; then
+  aws_ ssm put-parameter --name "$CONSOLE_TOKEN_PARAM" --type SecureString --overwrite \
+    --value "$CONSOLE_ACCESS_TOKEN" --description "Console access token for Recovery Copilot" >/dev/null
+  info "stored the console access token in SSM ($CONSOLE_TOKEN_PARAM)"
+elif aws_ ssm get-parameter --name "$CONSOLE_TOKEN_PARAM" >/dev/null 2>&1; then
+  info "console locked with the token already in SSM (delete the parameter to reopen it)"
+else
+  info "no console access token — the console stays open (the public demo)"
+fi
+
 # --------------------------------------------------------------------------
 if $STACK_ONLY; then
 log "Reusing the deployed Lambda package (--stack-only)"
@@ -292,6 +315,7 @@ PARAMS=(
   "SendblueApiKeyParameter=$SENDBLUE_KEY_PARAM"
   "SendblueApiSecretParameter=$SENDBLUE_SECRET_PARAM"
   "SendblueWebhookSecretParameter=$SENDBLUE_WEBHOOK_PARAM"
+  "ConsoleAccessTokenParameter=$CONSOLE_TOKEN_PARAM"
   "PublicBaseUrl=$PUBLIC_BASE_URL"
   "SendblueFromNumber=$SENDBLUE_FROM_NUMBER"
   "CareTeamPhones=$CARE_TEAM_PHONES"
