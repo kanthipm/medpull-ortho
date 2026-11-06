@@ -420,7 +420,7 @@ def hrv_panel(data: PersonalData) -> Panel:
     if latest is None:
         return _nodata("hrv", "HRV", "ms", "No HRV in the last 90 days.", method)
     stale = _stale(latest[0], today)
-    sub = f"Latest {latest[1]:.0f} ms ({latest[0].strftime('%b %-d')})"
+    sub = f"Latest {latest[1]:.0f} ms ({latest[0]:%b} {latest[0].day})"
     status, status_text = "ok", "In your range"
     finding = ""
     if base is not None and recent_ln is not None and raw_base is not None:
@@ -553,7 +553,7 @@ def resting_hr_panel(data: PersonalData) -> Panel:
         else recent
     return Panel("resting_hr", "Resting heart rate", status, status_text,
                  f"{headline:.0f}", "bpm",
-                 f"Latest {latest[1]:.0f} bpm ({latest[0].strftime('%b %-d')})", finding, method,
+                 f"Latest {latest[1]:.0f} bpm ({latest[0]:%b} {latest[0].day})", finding, method,
                  _confidence(base[2] if base else 0, len(_tail(s, today, 7))),
                  f"{len(_tail(s, today, 7))} of 7 nights", _points(_tail(s, today), 0), stats, extra)
 

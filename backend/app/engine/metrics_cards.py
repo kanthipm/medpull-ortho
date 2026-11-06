@@ -369,8 +369,8 @@ def _no_reading_text(
         last_day = int(post.index[-1])
         ago = postop_day - last_day
         when = (
-            (surgery_date + timedelta(days=last_day)).strftime("%b %-d") if surgery_date
-            else f"post-op day {last_day}"
+            f"{surgery_date + timedelta(days=last_day):%b} {(surgery_date + timedelta(days=last_day)).day}"
+            if surgery_date else f"post-op day {last_day}"
         )
         latest = _fmt(float(post.iloc[-1]), metric)
         return (
