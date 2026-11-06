@@ -636,6 +636,23 @@ def _api_endpoints():
             yield route
 
 
+def test_committed_openapi_export_is_current(client):
+    """backend/openapi.json is what the patient apps' clients are generated
+    against; a route or schema change has to move it (`make openapi`)."""
+    import sys
+    from pathlib import Path
+
+    scripts = Path(__file__).resolve().parent.parent / "scripts"
+    sys.path.insert(0, str(scripts))
+    try:
+        from export_openapi import OUT, render
+    finally:
+        sys.path.remove(str(scripts))
+    assert OUT.exists(), "run `make openapi` and commit backend/openapi.json"
+    assert OUT.read_text(encoding="utf-8") == render(), \
+        "backend/openapi.json is stale: run `make openapi` and commit the result"
+
+
 def test_every_router_is_wired(client):
     """A router dropped at import time used to fall through to the SPA
     catch-all as 200 text/html with no log line, so its absence has to be an

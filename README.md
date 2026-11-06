@@ -111,6 +111,9 @@ tiers, baseline stability, guardrail enforcement, API contracts, connector
 idempotency and ingest bounds, the Junction connector end to end against a
 fake Junction, LLM deadline and cooldown behaviour,
 static-file containment, AWS persistence). There are no frontend tests. `make lint` runs ESLint over the frontend and ruff over the backend.
+`make openapi` refreshes `backend/openapi.json`, the API contract the patient
+apps' clients are generated or checked against; the suite fails when it is
+stale. `.github/workflows/ci.yml` runs all three on every push.
 
 ## Deploying
 

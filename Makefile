@@ -1,5 +1,5 @@
 .PHONY: setup seed dev dev-backend dev-frontend build run test lint clean \
-        deploy deploy-backend reseed destroy ios ios-build
+        deploy deploy-backend reseed destroy ios ios-build openapi
 
 setup: ## Install backend (uv) and frontend (npm) dependencies
 	cd backend && uv sync
@@ -31,6 +31,9 @@ test: ## Backend test suite (pytest). There are no frontend tests.
 lint: ## ESLint over frontend/src + ruff over backend/app and backend/tests
 	cd frontend && npm run lint
 	cd backend && uv run ruff check app tests
+
+openapi: ## Refresh backend/openapi.json, the contract the patient apps are generated against
+	cd backend && uv run python scripts/export_openapi.py
 
 deploy: ## Deploy to AWS (see infra/README.md)
 	./infra/deploy.sh
