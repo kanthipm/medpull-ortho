@@ -507,7 +507,9 @@ On AWS only `/api/*` reaches the function, so the task page is a SPA route
 (`/t/:token`). Universal links need `IOS_TEAM_ID` (in `.env` or the
 environment): the backend then serves `apple-app-site-association` at
 `/.well-known/` for local runs, and `deploy.sh` uploads the same JSON beside
-the SPA, where the CloudFront rewrite exempts it so Apple can fetch it. Not built yet: push notifications (texts are the
+the SPA, where the CloudFront rewrite exempts it so Apple can fetch it. The
+Android equivalent, `/.well-known/assetlinks.json`, works the same way from
+`ANDROID_CERT_SHA256` once there is an Android app to open. Not built yet: push notifications (texts are the
 notification channel), Android, and a scheduled daily check-in (the console
 assigns tasks; nothing creates one on a timer).
 

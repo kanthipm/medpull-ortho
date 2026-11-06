@@ -539,6 +539,7 @@ Resources:
           SENDBLUE_FROM_NUMBER: !Ref SendblueFromNumber
           CARE_TEAM_PHONES: !Ref CareTeamPhones
           IOS_TEAM_ID: !Ref IosTeamId
+          ANDROID_CERT_SHA256: !Ref AndroidCertSha256
           # Patient check-in links carry this host. Behind CloudFront the
           # request's own base URL is the Function URL, which the origin
           # check rejects, so without a custom domain the app has no public

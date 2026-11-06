@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # the team id is set, so a deployment without the app publishes nothing.
     ios_team_id: str = ""
     ios_bundle_id: str = "com.medpull.recovery"
+    # assetlinks.json, the Android equivalent: served only when the signing
+    # certificate's SHA-256 fingerprints (comma-separated, colon-hex as the
+    # Play Console prints them) are set.
+    android_package: str = "com.medpull.recovery"
+    android_cert_sha256: str = ""
     # --- the personal tier (app/personal) ---------------------------------
     # Every personal account starts on a trial this long; the paywall closes
     # after it unless an Apple subscription is on file.

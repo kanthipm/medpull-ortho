@@ -539,6 +539,17 @@ def test_aasa_only_when_team_id_set(client, monkeypatch):
     assert body["applinks"]["details"][0]["appIDs"] == ["TEAM123.com.medpull.recovery"]
 
 
+def test_assetlinks_only_when_android_cert_set(client, monkeypatch):
+    assert client.get("/.well-known/assetlinks.json").status_code == 404
+    monkeypatch.setattr(settings, "android_cert_sha256", " aa:bb:cc , dd:ee:ff")
+    body = client.get("/.well-known/assetlinks.json").json()
+    assert body == [{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {"namespace": "android_app", "package_name": "com.medpull.recovery",
+                   "sha256_cert_fingerprints": ["AA:BB:CC", "DD:EE:FF"]},
+    }]
+
+
 def test_gait_upload_goes_through_ingest(client, db):
     from app.models.observation import Observation
 

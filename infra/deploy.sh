@@ -57,6 +57,8 @@ CARE_TEAM_PHONES="${CARE_TEAM_PHONES:-$(dotenv_value CARE_TEAM_PHONES)}"
 # association file and the same JSON is uploaded beside the SPA, so
 # https://<host>/t/<token> opens in the app. Blank: links open the web page.
 IOS_TEAM_ID="${IOS_TEAM_ID:-$(dotenv_value IOS_TEAM_ID)}"
+# The Android app's signing-certificate fingerprint(s): same idea, assetlinks.json.
+ANDROID_CERT_SHA256="${ANDROID_CERT_SHA256:-$(dotenv_value ANDROID_CERT_SHA256)}"
 # Custom domain. Both or neither: the template ignores one without the other.
 # The certificate must already be ISSUED (CloudFront rejects a pending one),
 # and the DNS record lives in whichever account hosts the zone — not here.
@@ -320,6 +322,7 @@ PARAMS=(
   "SendblueFromNumber=$SENDBLUE_FROM_NUMBER"
   "CareTeamPhones=$CARE_TEAM_PHONES"
   "IosTeamId=$IOS_TEAM_ID"
+  "AndroidCertSha256=$ANDROID_CERT_SHA256"
   "ApiReservedConcurrency=$RESERVED"
   # Passed even when empty so clearing them in .env removes the alias.
   "CustomDomainName=$SITE_DOMAIN"
@@ -368,20 +371,30 @@ log "Building and uploading the frontend"
   aws_ s3 cp "$DIST/index.html" "s3://$DATA_BUCKET/web/index.html" --only-show-errors \
     --cache-control "no-cache" --content-type "text/html; charset=utf-8"
 
-  # Universal links. Only /api/* reaches the function, so the association
-  # file the backend can serve never gets a request on AWS: the same JSON is
-  # uploaded as a static object instead (after the sync, which would delete
-  # it). The CloudFront rewrite exempts these two paths.
+  # App links. Only /api/* reaches the function, so the association files
+  # the backend can serve never get a request on AWS: the same JSON is
+  # uploaded as static objects instead (after the sync, which would delete
+  # them). The CloudFront rewrite exempts /.well-known/.
+  put_json() {  # put_json KEY JSON
+    printf '%s' "$2" | aws_ s3 cp - "s3://$DATA_BUCKET/$1" --only-show-errors \
+      --cache-control "no-cache" --content-type "application/json"
+  }
   if [ -n "$IOS_TEAM_ID" ]; then
     AASA="$(cd "$ROOT/backend" && IOS_TEAM_ID="$IOS_TEAM_ID" uv run python -c \
       'import json; from app.api.applinks import association; print(json.dumps(association()))')"
-    for key in web/.well-known/apple-app-site-association web/apple-app-site-association; do
-      printf '%s' "$AASA" | aws_ s3 cp - "s3://$DATA_BUCKET/$key" --only-show-errors \
-        --cache-control "no-cache" --content-type "application/json"
-    done
+    put_json web/.well-known/apple-app-site-association "$AASA"
+    put_json web/apple-app-site-association "$AASA"
     info "uploaded apple-app-site-association for team $IOS_TEAM_ID"
   else
-    info "IOS_TEAM_ID not set — task links open the web page, not the app"
+    info "IOS_TEAM_ID not set — task links open the web page on iPhone, not the app"
+  fi
+  if [ -n "$ANDROID_CERT_SHA256" ]; then
+    LINKS="$(cd "$ROOT/backend" && ANDROID_CERT_SHA256="$ANDROID_CERT_SHA256" uv run python -c \
+      'import json; from app.api.applinks import asset_links; print(json.dumps(asset_links()))')"
+    put_json web/.well-known/assetlinks.json "$LINKS"
+    info "uploaded assetlinks.json"
+  else
+    info "ANDROID_CERT_SHA256 not set — task links open the web page on Android, not the app"
   fi
 fi
 
