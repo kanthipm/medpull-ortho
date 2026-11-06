@@ -761,10 +761,19 @@ private struct IdentityStep: View {
 
 private struct VerifyStep: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.openURL) private var openURL
     @Bindable var model: OnboardingModel
     @FocusState private var focused: Bool
 
     var body: some View {
+        Group {
+            if model.textFirst { textFirst } else { codeEntry }
+        }
+        .mpErrorFeedback(model.error)
+    }
+
+    /// The step as it has always been: the code is on its way, type it in.
+    private var codeEntry: some View {
         StepScaffold(eyebrow: model.eyebrow(.verify), title: "Check your texts",
                      subtitle: "We sent a code to \(model.phoneMasked ?? "your number"). It’s good for 10 minutes.") {
             VStack(spacing: 14) {
@@ -784,7 +793,45 @@ private struct VerifyStep: View {
             QuietAction(title: "Send a new code") { Task { await model.resend(api: app.api, app: app) } }
         }
         .onAppear { focused = true }
-        .mpErrorFeedback(model.error)
+    }
+
+    /// Sendblue's free plan cannot text a number that has never texted the
+    /// line, so the server is waiting on one text from this phone. One tap
+    /// opens Messages with the words already written; the code goes out the
+    /// moment the text lands, and the step moves on to the field by itself.
+    private var textFirst: some View {
+        StepScaffold(eyebrow: model.eyebrow(.verify), title: "Text us first",
+                     subtitle: "Before we can text \(model.phoneMasked ?? "your number"), send us one message from it. Tap below — the text is already written — then come back here.") {
+            VStack(alignment: .leading, spacing: 14) {
+                Card {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Text “\(model.textBody ?? "Hi MedPull")” to")
+                            .mpFont(.label).mpSecondary()
+                        Text(model.textToDisplay)
+                            .mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
+                            .textSelection(.enabled)
+                        Text("We’ll text your code the moment it arrives.")
+                            .mpFont(.copy).foregroundStyle(MP.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let error = model.error { ErrorBanner(text: error) }
+            }
+        } footer: {
+            PrimaryButton(title: "Open Messages", icon: "message.fill") {
+                if let url = model.textFirstURL { openURL(url) }
+            }
+            SecondaryButton(title: "I’ve sent it — send my code", loading: model.loading) {
+                Task { await model.continueAfterText(api: app.api, app: app) }
+            }
+        }
+        .task(id: model.verificationId) {
+            // Poll while waiting, so the field appears without another tap.
+            while !Task.isCancelled && model.textFirst {
+                try? await Task.sleep(for: .seconds(3))
+                await model.pollForCode(api: app.api)
+            }
+        }
     }
 }
 

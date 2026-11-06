@@ -29,7 +29,31 @@ export type EnrollResponse = {
   verified?: boolean | null
   sessionToken?: string | null
   me?: Me | null
+  /** Text-first (`verification_required` only). `codeSent` false means the
+   *  server could not text this number yet — on Sendblue's free plan a number
+   *  has to text the line once — and `textTo` / `textBody` are the one tap
+   *  that fixes it. Absent from an older server: the code was sent. */
+  codeSent?: boolean | null
+  textFirst?: boolean | null
+  textTo?: string | null
+  textBody?: string | null
 }
+
+/** `GET /api/mobile/enroll/verification/{id}`: what the app polls while the
+ *  person texts MedPull for the first time. */
+export type VerificationStatus = {
+  verificationId: number
+  /** waiting_for_text | code_sent | expired | verified */
+  status: string
+  codeSent?: boolean | null
+  textFirst?: boolean | null
+  textTo?: string | null
+  textBody?: string | null
+  phoneMasked?: string | null
+}
+
+/** The code is on its way (or already used): the step can show the field. */
+export const codeIsOut = (s: VerificationStatus) => s.status === 'code_sent' || s.status === 'verified'
 
 export type CareTeamMember = { name: string; role: string }
 

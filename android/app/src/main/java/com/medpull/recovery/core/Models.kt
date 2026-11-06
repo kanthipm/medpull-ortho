@@ -46,7 +46,24 @@ import kotlinx.serialization.json.jsonPrimitive
     val status: String, val verificationId: Int? = null, val phoneMasked: String? = null,
     val expiresAt: String? = null, val verified: Boolean? = null, val sessionToken: String? = null,
     val me: Me? = null,
+    // Text-first (verification_required only). codeSent false means the server could not
+    // text this number yet — on Sendblue's free plan a number has to text the line once —
+    // and textTo / textBody are the one tap that fixes it. Absent from an older server.
+    val codeSent: Boolean? = null, val textFirst: Boolean? = null, val textTo: String? = null,
+    val textBody: String? = null,
 )
+
+/** GET /api/mobile/enroll/verification/{id}: polled while the person texts MedPull first. */
+@Serializable data class VerificationStatus(
+    val verificationId: Int,
+    /** waiting_for_text | code_sent | expired | verified */
+    val status: String,
+    val codeSent: Boolean? = null, val textFirst: Boolean? = null, val textTo: String? = null,
+    val textBody: String? = null, val phoneMasked: String? = null,
+) {
+    /** The code is on its way (or already used): the step can show the field. */
+    val codeIsOut get() = status == "code_sent" || status == "verified"
+}
 
 @Serializable data class ConsentScope(val key: String, val label: String, val detail: String = "",
                                       val required: Boolean = false)

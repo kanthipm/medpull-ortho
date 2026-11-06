@@ -6,7 +6,7 @@
 import { useSyncExternalStore } from 'react'
 import { APIClient, APIError } from '../../core/api'
 import type { AppModel } from '../../core/appModel'
-import { Dates, type Candidate, type ConsentAcceptance, type EnrollResponse, type Hospital, type Procedure } from '../../core/models'
+import { codeIsOut, Dates, type Candidate, type ConsentAcceptance, type EnrollResponse, type Hospital, type Procedure } from '../../core/models'
 
 /** Every screen the flow can show. The order is load-bearing for
  *  `isPastEnrollment` only. */
@@ -52,6 +52,13 @@ export class OnboardingModel {
   verificationId: number | null = null
   phoneMasked: string | null = null
   code = ''
+  /** Text-first: the server could not text the code yet, because on
+   *  Sendblue's free plan a number has to text the line once before it can
+   *  be reached. The verify step then asks for that one text and polls;
+   *  cleared the moment the code goes out. */
+  textFirst = false
+  textTo: string | null = null
+  textBody: string | null = null
 
   loading = false
   error: string | null = null
@@ -235,12 +242,63 @@ export class OnboardingModel {
     else await this.join(api, app)
   }
 
+  // MARK: Text us first
+
+  /** The `sms:` link that opens Messages with the first text already
+   *  written. iOS takes `&body=`, Android `?body=`. */
+  textFirstLink(): string | null {
+    if (!this.textTo) return null
+    const body = encodeURIComponent(this.textBody ?? 'Hi MedPull')
+    const android = /Android/i.test(navigator.userAgent)
+    return `sms:${this.textTo}${android ? '?' : '&'}body=${body}`
+  }
+
+  /** "I've sent it — send my code": the webhook may already have sent it
+   *  when the text landed; if not, the server tries again now that the
+   *  number is known to the provider. */
+  async continueAfterText(api: APIClient, app: AppModel): Promise<void> {
+    if (this.verificationId == null) return
+    this.loading = true
+    this.set('error', null)
+    try {
+      if (codeIsOut(await api.verificationStatus(this.verificationId))) {
+        this.textFirst = false
+        return
+      }
+      this.handle(await api.resendVerification(this.verificationId), app)
+      if (this.textFirst) this.error = 'We haven’t got your text yet — give it a moment, or send it again.'
+    } catch (e) {
+      this.error = (e as Error).message
+    } finally {
+      this.set('loading', false)
+    }
+  }
+
+  /** Polled while the step waits: the code goes out the moment the text
+   *  lands, and the field appears by itself. */
+  async pollForCode(api: APIClient): Promise<void> {
+    if (this.verificationId == null || !this.textFirst) return
+    try {
+      if (codeIsOut(await api.verificationStatus(this.verificationId))) {
+        this.error = null
+        this.set('textFirst', false)
+      }
+    } catch {
+      // keep waiting; the next tick asks again
+    }
+  }
+
   private handle(r: EnrollResponse, app: AppModel): void {
     switch (r.status) {
       case 'verification_required':
         this.verificationId = r.verificationId ?? null
         this.phoneMasked = r.phoneMasked ?? null
         this.code = ''
+        // `codeSent` false means the number has never texted MedPull and the
+        // server is waiting on that text before it can send anything.
+        this.textFirst = (r.textFirst ?? false) && !(r.codeSent ?? true)
+        this.textTo = r.textTo ?? null
+        this.textBody = r.textBody ?? null
         this.go('verify')
         break
       case 'enrolled':

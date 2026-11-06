@@ -336,8 +336,13 @@ export interface PatientMessage {
   channel: 'app' | 'sms' | 'voice' | 'console'
   text: string
   created_at: string
-  delivery_status: 'sent' | 'delivered' | 'failed' | null
-  /** Why a text failed, in the provider's words. Null when it went out. */
+  /**
+   * `unreachable` is not a failure: the number has never texted MedPull, and
+   * the texting plan cannot reach it until the patient texts the line once.
+   * The thread says so and what to do; the message is in the app meanwhile.
+   */
+  delivery_status: 'sent' | 'delivered' | 'failed' | 'unreachable' | null
+  /** Why a text did not go, in plain words. Null when it went out. */
   delivery_detail: string | null
   read_by_care_team: boolean
   /** Images and files on this line. Empty for most of them. */
@@ -421,6 +426,12 @@ export interface AssignTaskResult {
 
 export interface MessagePatientResult {
   status: 'sent_sms' | 'stored_sms_failed' | 'stored_app_only'
+  /**
+   * Why nothing went by text, when nothing did: no number on file, a number
+   * that has not texted MedPull yet (stored for the app, not a failure), or
+   * a real provider error. Absent from an older server.
+   */
+  reason?: 'no_phone' | 'not_reachable_yet' | 'provider_error' | null
   detail: string
   /** How many of the files went with the text as picture messages. Absent
    *  from an older server. */

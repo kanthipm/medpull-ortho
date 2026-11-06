@@ -103,6 +103,13 @@ final class OnboardingModel {
     var verificationId: Int?
     var phoneMasked: String?
     var code = ""
+    /// Text-first: the server could not text the code yet, because on
+    /// Sendblue's free plan a number has to text the line once before it can
+    /// be reached. The verify step then asks for that one text and polls;
+    /// cleared the moment the code goes out.
+    var textFirst = false
+    var textTo: String?
+    var textBody: String?
     /// Which verify route finishes the code: the personal one when the
     /// space (or sign-in) started it.
     private var verifyPersonal = false
@@ -463,12 +470,68 @@ final class OnboardingModel {
         }
     }
 
+    // MARK: Text us first
+
+    /// The `sms:` URL that opens Messages with the first text already written.
+    var textFirstURL: URL? {
+        guard let textTo else { return nil }
+        let body = (textBody ?? "Hi MedPull")
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "Hi%20MedPull"
+        return URL(string: "sms:\(textTo)&body=\(body)")
+    }
+
+    /// "+15049081262" as "(504) 908-1262" for a US number; anything else as is.
+    var textToDisplay: String {
+        guard let textTo else { return "" }
+        let digits = textTo.filter(\.isNumber)
+        guard digits.count == 11, digits.hasPrefix("1") else { return textTo }
+        let d = Array(digits.dropFirst())
+        return "(\(String(d[0..<3]))) \(String(d[3..<6]))-\(String(d[6..<10]))"
+    }
+
+    /// "I've sent it — send my code": the webhook may already have sent it
+    /// when the text landed; if not, the server tries again now that the
+    /// number is known to the provider.
+    func continueAfterText(api: APIClient, app: AppModel) async {
+        guard let verificationId else { return }
+        loading = true
+        error = nil
+        defer { loading = false }
+        do {
+            if try await api.verificationStatus(id: verificationId).codeIsOut {
+                textFirst = false
+                return
+            }
+            try handle(api.resendVerification(id: verificationId), app: app)
+            if textFirst {
+                error = "We haven’t got your text yet — give it a moment, or send it again."
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Polled while the step waits: the code goes out the moment the text
+    /// lands, and the field appears by itself.
+    func pollForCode(api: APIClient) async {
+        guard let verificationId, textFirst else { return }
+        if let status = try? await api.verificationStatus(id: verificationId), status.codeIsOut {
+            textFirst = false
+            error = nil
+        }
+    }
+
     private func handle(_ r: EnrollResponse, app: AppModel) throws {
         switch r.status {
         case "verification_required":
             verificationId = r.verificationId
             phoneMasked = r.phoneMasked
             code = ""
+            // `code_sent` false means the number has never texted MedPull and
+            // the server is waiting on that text before it can send anything.
+            textFirst = (r.textFirst ?? false) && !(r.codeSent ?? true)
+            textTo = r.textTo
+            textBody = r.textBody
             go(.verify)
         case "enrolled":
             guard let token = r.sessionToken, let me = r.me else {

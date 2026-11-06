@@ -202,6 +202,16 @@ extension APIClient {
             deviceName: UIDeviceName.current, appVersion: AppConfig.appVersion))
     }
 
+    /// While the person texts MedPull for the first time: has the code gone out?
+    func verificationStatus(id: Int) async throws -> VerificationStatus {
+        try await get("/api/mobile/enroll/verification/\(id)")
+    }
+
+    /// "I've sent it — send my code": the same verification, tried again.
+    func resendVerification(id: Int) async throws -> EnrollResponse {
+        try await post("/api/mobile/enroll/verification/\(id)/resend")
+    }
+
     struct ProceduresResponse: Codable { let procedures: [Procedure] }
 
     func procedures() async throws -> [Procedure] {

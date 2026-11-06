@@ -1,5 +1,6 @@
 package com.medpull.recovery.features.onboarding
 
+import android.net.Uri
 import com.medpull.recovery.core.ApiClient
 import com.medpull.recovery.core.ApiException
 import com.medpull.recovery.core.AppConfig
@@ -19,7 +20,9 @@ import com.medpull.recovery.core.enroll
 import com.medpull.recovery.core.hospitals
 import com.medpull.recovery.core.join
 import com.medpull.recovery.core.procedures
+import com.medpull.recovery.core.resendVerification
 import com.medpull.recovery.core.search
+import com.medpull.recovery.core.verificationStatus
 import com.medpull.recovery.core.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -38,6 +41,10 @@ data class OnboardingState(
     val consent: ConsentDocument? = null, val consentScopes: Map<String, Boolean> = emptyMap(), val signature: String = "",
     val accepted: ConsentAcceptance? = null,
     val verificationId: Int? = null, val phoneMasked: String? = null, val code: String = "",
+    // Text-first: the server could not text the code yet, because on Sendblue's free plan a
+    // number has to text the line once before it can be reached. The verify step then asks
+    // for that one text and polls; cleared the moment the code goes out.
+    val textFirst: Boolean = false, val textTo: String? = null, val textBody: String? = null,
     val working: Boolean = false, val error: String? = null,
 ) {
     val canEnroll get() = selected != null && phoneDigits(phone).length >= 10 && hospital != null
@@ -126,9 +133,46 @@ class OnboardingModel(private val api: ApiClient, private val app: AppModel, pri
 
     suspend fun resend(): Step? = if (s.path == Path.FIND_RECORD) enroll() else join()
 
+    // --- text us first -------------------------------------------------------------------
+
+    /** The sms: URI that opens Messages with the first text already written (Android takes ?body=). */
+    fun textFirstUri(): String? {
+        val to = s.textTo ?: return null
+        return "sms:$to?body=${Uri.encode(s.textBody ?: "Hi MedPull")}"
+    }
+
+    /** "I've sent it — send my code": the webhook may already have sent it when the text
+     *  landed; if not, the server tries again now that the number is known to the provider. */
+    suspend fun continueAfterText(): Step? = guarded {
+        val id = s.verificationId ?: return@guarded null
+        if (api.verificationStatus(id).codeIsOut) {
+            state.update { it.copy(textFirst = false) }
+            Step.VERIFY
+        } else {
+            val step = handle(api.resendVerification(id))
+            if (s.textFirst) state.update { it.copy(error = "We haven't got your text yet — give it a moment, or send it again.") }
+            step
+        }
+    }
+
+    /** Polled while the step waits: the code goes out the moment the text lands, and the
+     *  field appears by itself. */
+    suspend fun pollForCode() {
+        val id = s.verificationId ?: return
+        if (!s.textFirst) return
+        try {
+            if (api.verificationStatus(id).codeIsOut) state.update { it.copy(textFirst = false, error = null) }
+        } catch (_: Exception) {
+            // keep waiting; the next tick asks again
+        }
+    }
+
     private fun handle(r: EnrollResponse): Step = when (r.status) {
         "verification_required" -> {
-            state.update { it.copy(verificationId = r.verificationId, phoneMasked = r.phoneMasked, code = "") }
+            // codeSent false means the number has never texted MedPull and the server is
+            // waiting on that text before it can send anything.
+            state.update { it.copy(verificationId = r.verificationId, phoneMasked = r.phoneMasked, code = "",
+                textFirst = (r.textFirst ?: false) && !(r.codeSent ?: true), textTo = r.textTo, textBody = r.textBody) }
             Step.VERIFY
         }
         "enrolled" -> {

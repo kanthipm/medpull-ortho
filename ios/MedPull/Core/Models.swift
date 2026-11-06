@@ -31,6 +31,30 @@ struct EnrollResponse: Codable {
     let verified: Bool?
     let sessionToken: String?
     let me: Me?
+    /// Text-first (`verification_required` only). `codeSent` false means the
+    /// server could not text this number yet — on Sendblue's free plan a
+    /// number has to text the line once — and `textTo` / `textBody` are the
+    /// one tap that fixes it. Absent from an older server: the code was sent.
+    let codeSent: Bool?
+    let textFirst: Bool?
+    let textTo: String?
+    let textBody: String?
+}
+
+/// `GET /api/mobile/enroll/verification/{id}`: what the app polls while the
+/// person texts MedPull for the first time.
+struct VerificationStatus: Codable {
+    let verificationId: Int
+    /// waiting_for_text | code_sent | expired | verified
+    let status: String
+    let codeSent: Bool?
+    let textFirst: Bool?
+    let textTo: String?
+    let textBody: String?
+    let phoneMasked: String?
+
+    /// The code is on its way (or already used): the step can show the field.
+    var codeIsOut: Bool { status == "code_sent" || status == "verified" }
 }
 
 struct Me: Codable {
