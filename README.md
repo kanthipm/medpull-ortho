@@ -240,6 +240,24 @@ other row. Insight caches warm in a background thread at startup so the first
 page load never waits on a cold model (off on Lambda, where the deploy warms
 the database once instead).
 
+The key turns over every midnight and on every engine recompute, and a page
+read never spends a model call, so the console used to drop every narrative to
+the deterministic text at that moment and jump back when the warm call landed.
+Each row now also records its *scope* (the risk tier and check-in digest it was
+written for; the roster's tiers, for the briefing), and a read that misses the
+key re-serves the newest model-written row with the same scope while it is
+younger than 36 hours — under the "Writing…" mark, until the rewrite is on file.
+The same stand-in covers a provider in its cooldown, so a rate-limit burst never
+flips a page's copy between two voices; the warm pass stops at the first call
+that falls back while the provider is cooling, since the rest would pay for
+nothing. A row for a different tier never stands in. The deterministic renderer
+reads the latest check-in too (`llm/fallback.py`): its summary opens with what
+the patient reported and when, in their own words, and a red flag reported in
+the last three days (fever or chills, warmth, the incision, dizziness) becomes
+the first suggested action — so a chart whose watch is dark still reads like a
+handoff, not an error state. The console labels a model's narrative "Written
+by AI" and the renderer's not at all; neither is ever called unavailable.
+
 ### AI features
 
 - **Recovery summaries, worklist reasons, suggested actions, daily briefing**

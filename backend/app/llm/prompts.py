@@ -72,7 +72,11 @@ Respond with a single JSON object exactly matching the requested contract."""
 CONTRACTS: dict[InsightKind, str] = {
     InsightKind.WORKLIST_REASON: (
         '{"reason": "<one line, max 90 characters: the 1 or 2 findings that matter most, '
-        "in plain shorthand a clinician scans in a second, separated by ' · '. Example: "
+        "in plain shorthand a clinician scans in a second, separated by ' · '. Start with "
+        "a capital letter, no full stop. Say findings as a person would, never as a field "
+        "with a number: 'No device data this week', 'No exercises logged', not 'data "
+        "confidence 0' or 'adherence 0'. When device data is missing, lead with what the "
+        "patient reported, if anything. Example: "
         "\"Pain rising 4 days · feverish · RHR +8 vs baseline\">}"
     ),
     InsightKind.PATIENT_SUMMARY: (
@@ -81,8 +85,10 @@ CONTRACTS: dict[InsightKind, str] = {
         "patient's own words if they said it. Then the signals that go with it, by how "
         "much and since when, grouped where they point the same way. Then activity and "
         "exercises in plain counts, and whether the recovery is ahead, on track or behind. "
-        "No headings, no one-sentence-per-metric. End with exactly this sentence: "
-        f'{GUARDRAIL_SENTENCE}">}}'
+        "When device data is missing, say so once in a few words and spend the paragraph "
+        "on what the patient reported and when; never list every absent signal. No "
+        "headings, no one-sentence-per-metric, no index or score values. End with exactly "
+        f'this sentence: {GUARDRAIL_SENTENCE}">}}'
     ),
     InsightKind.SUGGESTED_ACTIONS: (
         '{"actions": [{"title": "<one thing the clinician does, max 6 words, naming the '
@@ -96,7 +102,8 @@ CONTRACTS: dict[InsightKind, str] = {
     InsightKind.DAILY_BRIEFING: (
         '{"briefing": "<60-110 words for the whole roster, spoken the way a colleague '
         "gives a morning handoff. Who to see first and why, by name. Who is worth a look "
-        "later. Any patient with missing data. One sentence on everyone else. No "
+        "later. Patients with missing data: name at most three and count the rest ('and "
+        "14 others'), never list the whole roster. One sentence on everyone else. No "
         'greeting, no sign-off.">}'
     ),
 }

@@ -178,7 +178,7 @@ def worklist(db: Session = Depends(get_db)) -> dict:
         if not briefing_is_cached(db):
             pending += 1
         briefing = get_daily_briefing(db, allow_llm=False)
-        briefing_text = briefing.content.get("briefing", "")
+        briefing_text = humanize_codes(briefing.content.get("briefing", ""))
         briefing_view = {
             "text": briefing_text,
             "generated_at": briefing.generated_at.isoformat(),

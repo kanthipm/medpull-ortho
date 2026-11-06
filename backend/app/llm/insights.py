@@ -16,11 +16,13 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.engine.checkin_digest import digest as digest_checkin
 from app.llm import fallback
 from app.llm.prompts import PROMPT_VERSION, SYSTEM, briefing_prompt, patient_prompt
 from app.llm.provider import (
     LLMError,
     complete_json,
+    degraded,
     model_name,
     note_invalid_output,
     note_valid_output,
@@ -35,6 +37,28 @@ logger = logging.getLogger(__name__)
 
 # Word-prefix match: catches detect/detected/detection, diagnose/diagnosis/...
 BANNED = re.compile(r"\b(detect|diagnos)", re.IGNORECASE)
+
+# How long a model-written narrative may stand in for its own replacement.
+# The cache key turns over at midnight and on every recompute; until the
+# warm call has written the new paragraph, a row this young about the same
+# tier and the same conversation is the best copy on file. Older than this
+# the numbers in it have drifted too far to show, however the tier reads.
+REUSE_MAX_AGE = timedelta(hours=36)
+
+
+def _polish_line(text: str) -> str:
+    """House style for a one-liner the model wrote: one space between words,
+    a capital at the start, no full stop at the end. Models drift on all
+    three ("trajectory behind -14% vs expected · no device data this week.")
+    and a scan line that starts in lower case reads as a draft."""
+    text = re.sub(r"\s+", " ", text).strip().rstrip(".").rstrip()
+    return text[:1].upper() + text[1:] if text else text
+
+
+def _polish_prose(text: str) -> str:
+    """A paragraph: collapsed whitespace, capital first letter."""
+    text = re.sub(r"[ \t]+", " ", text).strip()
+    return text[:1].upper() + text[1:] if text else text
 
 # Rows are keyed by an input hash that turns over on every engine recompute
 # (and, because date.today() is in it, at least once a calendar day), so only
@@ -69,12 +93,12 @@ def _validate(kind: InsightKind, content: dict[str, Any]) -> dict[str, Any] | No
     """Returns normalized content, or None when it must be replaced."""
     try:
         if kind == InsightKind.WORKLIST_REASON:
-            reason = str(content["reason"]).strip()
+            reason = _polish_line(str(content["reason"]))
             if not reason or len(reason) > 110:
                 return None
-            content = {"reason": reason[:90]}
+            content = {"reason": reason[:90].rstrip()}
         elif kind == InsightKind.PATIENT_SUMMARY:
-            summary = str(content["summary"]).strip()
+            summary = _polish_prose(str(content["summary"]))
             if not summary or len(summary) < 40:
                 return None
             if not summary.endswith(GUARDRAIL_SENTENCE):
@@ -89,12 +113,18 @@ def _validate(kind: InsightKind, content: dict[str, Any]) -> dict[str, Any] | No
                 urgency = a.get("urgency", "routine")
                 if urgency not in ("today", "this_week", "routine"):
                     urgency = "routine"
+                title = _polish_line(str(a["title"]))[:60].rstrip()
+                if not title:
+                    continue
                 normalized.append(
-                    {"title": str(a["title"])[:60], "detail": str(a.get("detail", "")), "urgency": urgency}
+                    {"title": title, "detail": _polish_prose(str(a.get("detail", ""))),
+                     "urgency": urgency}
                 )
+            if not normalized:
+                return None
             content = {"actions": normalized}
         elif kind == InsightKind.DAILY_BRIEFING:
-            briefing = str(content["briefing"]).strip()
+            briefing = _polish_prose(str(content["briefing"]))
             if not briefing or len(briefing) < 30:
                 return None
             content = {"briefing": briefing}
@@ -187,6 +217,7 @@ def _persist(
     content: dict[str, Any],
     cache_hash: str,
     provider: str,
+    scope: str | None = None,
 ) -> Insight:
     insight = Insight(
         patient_id=patient_id,
@@ -195,6 +226,7 @@ def _persist(
         input_hash=cache_hash,
         llm_provider=provider,
         model=model_name() if provider != "fallback" else None,
+        scope=scope,
     )
     db.add(insight)
     db.flush()  # sessions run autoflush=False; the prune must see this row
@@ -227,6 +259,56 @@ def _transcript(db: Session, patient_id: str, n_checkins: int = 3) -> list[dict[
         for m in checkin.messages:
             messages.append({"who": m.who, "text": m.text})
     return messages
+
+
+def _latest_checkin(db: Session, patient_id: str) -> dict[str, Any] | None:
+    """The newest conversation, digested for the deterministic renderer:
+    when it happened and what the patient reported in it. The model reads
+    the raw transcript; the renderer gets the same facts as typed fields so
+    its paragraph can lead with the patient's own words too."""
+    checkin = db.scalar(
+        select(Checkin)
+        .where(Checkin.patient_id == patient_id)
+        .order_by(Checkin.occurred_at.desc())
+        .limit(1)
+    )
+    if checkin is None:
+        return None
+    summary = digest_checkin(list(checkin.messages))
+    return {
+        "days_ago": max(0, (datetime.now().date() - checkin.occurred_at.date()).days),
+        "date": checkin.occurred_at.strftime("%b ") + str(checkin.occurred_at.day),
+        "topics": summary["topics"],
+        "tone": summary["tone"],
+        "highlight": summary["highlight"],
+    }
+
+
+def _scope(assessment: RiskAssessment, transcript: list[dict[str, str]]) -> str:
+    """What a patient narrative is about: the tier it was written for and the
+    conversation it quotes. Coarser than the cache key on purpose — see
+    Insight.scope."""
+    digest = hashlib.sha256(json.dumps(transcript).encode()).hexdigest()[:16]
+    return f"{assessment.risk_level}:{digest}"
+
+
+def _recent_model_row(
+    db: Session, patient_id: str | None, kind: InsightKind, scope: str
+) -> Insight | None:
+    """The newest model-written row about the same scope, young enough to
+    show while its replacement is being written."""
+    return db.scalar(
+        select(Insight)
+        .where(
+            Insight.patient_id == patient_id,
+            Insight.kind == kind,
+            Insight.scope == scope,
+            Insight.llm_provider != "fallback",
+            Insight.generated_at >= datetime.now() - REUSE_MAX_AGE,
+        )
+        .order_by(Insight.id.desc())
+        .limit(1)
+    )
 
 
 def _header(patient: Patient, postop_day: int) -> dict[str, Any]:
@@ -300,10 +382,23 @@ def get_patient_insight(
         and analytics.get("risk", {}).get("level") == "low"
     )
     provider = "fallback" if skip_llm else provider_name()
+    scope = _scope(assessment, transcript)
 
     cache_hash = _insight_key(kind, assessment, transcript, provider)
 
     cached = _cached(db, patient_id, kind, cache_hash, provider)
+    # The model's last paragraph about this tier and this conversation
+    # outranks the deterministic renderer whenever the model itself cannot
+    # answer right now: a page read that may not spend a model call, or a
+    # provider that is cooling down after a rate-limit burst. The key still
+    # misses, so the warm call (or the recovered provider) rewrites it; the
+    # reader meanwhile keeps the AI copy under an "updating" mark instead of
+    # watching it flip to a different voice and back.
+    standing_in = not skip_llm and degraded()
+    if standing_in or (provider != "fallback" and not allow_llm):
+        recent = _recent_model_row(db, patient_id, kind, scope)
+        if recent is not None and (cached is None or cached.llm_provider == "fallback"):
+            return recent
     if cached is not None:
         return cached
     if provider != "fallback" and not allow_llm:
@@ -338,12 +433,14 @@ def get_patient_insight(
         provider = "fallback"
         if kind == InsightKind.WORKLIST_REASON:
             content = fallback.worklist_reason(analytics)
-        elif kind == InsightKind.PATIENT_SUMMARY:
-            content = fallback.patient_summary(header, analytics)
         else:
-            content = fallback.suggested_actions(analytics)
+            latest = _latest_checkin(db, patient_id)
+            if kind == InsightKind.PATIENT_SUMMARY:
+                content = fallback.patient_summary(header, analytics, latest)
+            else:
+                content = fallback.suggested_actions(analytics, latest)
 
-    return _persist(db, patient_id, kind, content, cache_hash, provider)
+    return _persist(db, patient_id, kind, content, cache_hash, provider, scope)
 
 
 def _briefing_key(assessments: list[tuple[Patient, RiskAssessment]], provider: str) -> str:
@@ -379,10 +476,17 @@ def get_daily_briefing(db: Session, *, allow_llm: bool = True) -> Insight:
 
     provider = provider_name()
     cache_hash = _briefing_key(assessments, provider)
+    scope = _roster_scope(assessments)
 
     # The cache is consulted before the roster is built: each roster entry
     # costs a per-patient insight lookup, so a warm briefing has to be free.
     cached = _cached(db, None, InsightKind.DAILY_BRIEFING, cache_hash, provider)
+    # Same stand-in rule as the patient narratives: while the model cannot
+    # answer, its last briefing for this exact set of tiers is the copy.
+    if degraded() or (provider != "fallback" and not allow_llm):
+        recent = _recent_model_row(db, None, InsightKind.DAILY_BRIEFING, scope)
+        if recent is not None and (cached is None or cached.llm_provider == "fallback"):
+            return recent
     if cached is not None:
         return cached
     if provider != "fallback" and not allow_llm:
@@ -439,4 +543,11 @@ def get_daily_briefing(db: Session, *, allow_llm: bool = True) -> Insight:
         provider = "fallback"
         content = fallback.daily_briefing(roster)
 
-    return _persist(db, None, InsightKind.DAILY_BRIEFING, content, cache_hash, provider)
+    return _persist(db, None, InsightKind.DAILY_BRIEFING, content, cache_hash, provider, scope)
+
+
+def _roster_scope(assessments: list[tuple[Patient, RiskAssessment]]) -> str:
+    """Who is on the roster and in which tier — what a briefing is about."""
+    return hashlib.sha256(
+        ";".join(f"{p.id}:{a.risk_level}" for p, a in assessments).encode()
+    ).hexdigest()[:16]

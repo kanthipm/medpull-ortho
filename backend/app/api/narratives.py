@@ -29,6 +29,7 @@ from app.llm.insights import (
     get_patient_insight,
     insight_is_cached,
 )
+from app.llm.provider import degraded
 from app.models.enums import InsightKind, RiskLevel
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,13 @@ def warm(body: WarmBody, db: Session = Depends(get_db)) -> dict:
         # against the budget: the next one would pay the same wait.
         spent += 1
         generated.append({"kind": str(kind), "patient_id": patient_id, "provider": row.llm_provider})
+        if row.llm_provider == "fallback" and degraded():
+            # The provider just went into its cooldown: every further call
+            # this pass would render the same deterministic text at once
+            # and burn the budget for nothing. Stop here; the pages keep the
+            # model's last narratives meanwhile (insights.py) and the next
+            # warm, after the cooldown, picks the pass up again.
+            break
     remaining = len(_todo(db, body))
     return {
         "generated": generated,

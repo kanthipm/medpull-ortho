@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.worklist import ensure_fresh_assessment
 from app.config import settings
 from app.database import get_db
+from app.llm.prose import humanize_codes
 from app.models.adherence import AdherenceTask
 from app.models.checkin import Checkin
 from app.models.enums import InsightKind, MetricType, NotificationChannel
@@ -106,11 +107,15 @@ def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
             "pct": analytics["trajectory"]["pct"],
         },
         "summary": {
-            "text": summary.content.get("summary", ""),
+            # The model sometimes echoes a tier code ("risk missing_data").
+            "text": humanize_codes(summary.content.get("summary", "")),
             "generated_at": summary.generated_at.isoformat(),
             "provider": summary.llm_provider,
         },
         "actions": actions.content.get("actions", []),
+        # Who wrote the suggested actions: the console labels a model's
+        # wording as such and leaves the renderer's unlabelled.
+        "actions_provider": actions.llm_provider,
         "last_checkin_at": last_checkin.isoformat() if last_checkin else None,
         "narratives_pending": pending,
     }

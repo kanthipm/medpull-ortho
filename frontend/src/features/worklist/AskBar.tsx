@@ -3,7 +3,8 @@ import { useId } from 'react'
 import { NarrativeTile } from '../../components/AIAttribution'
 import SectionCard from '../../components/SectionCard'
 import { SkeletonLine } from '../../components/Skeleton'
-import { relativeTime } from '../../lib/format'
+import { narrativeSource, relativeTime } from '../../lib/format'
+import DotLine from '../patient/DotLine'
 import type { AskState } from './useAskState'
 
 const SUGGESTIONS = [
@@ -107,7 +108,6 @@ export function AskField({ state }: { state: AskState }) {
 export function AskAnswer({ state }: { state: AskState }) {
   const { result, pending, clear } = state
   const matches = result?.patient_ids.length ?? 0
-  const rulesBased = result?.provider === 'fallback'
 
   if (!pending && !result) return null
 
@@ -138,19 +138,14 @@ export function AskAnswer({ state }: { state: AskState }) {
           title="Answer"
           icon={<NarrativeTile provider={result.provider} />}
           aside={
-            <span className="meta tabular-nums">
-              {rulesBased ? 'Rules-based' : 'AI'}
-              <span aria-hidden> · </span>
-              <span className="sr-only">, </span>
-              {relativeTime(result.generated_at)}
-              {matches > 0 && (
-                <>
-                  <span aria-hidden> · </span>
-                  <span className="sr-only">, </span>
-                  Showing {matches} {matches === 1 ? 'match' : 'matches'}
-                </>
-              )}
-            </span>
+            <DotLine
+              className="meta tabular-nums"
+              parts={[
+                narrativeSource(result.provider),
+                relativeTime(result.generated_at),
+                matches > 0 && `Showing ${matches} ${matches === 1 ? 'match' : 'matches'}`,
+              ]}
+            />
           }
           action={
             <button type="button" onClick={clear} className="btn-plain btn-sm">

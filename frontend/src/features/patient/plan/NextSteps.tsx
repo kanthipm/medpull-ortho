@@ -79,6 +79,7 @@ export default function NextSteps({
   phone,
   canText,
   aiActions,
+  aiProvider,
   refreshing,
   onOpen,
 }: {
@@ -90,6 +91,10 @@ export default function NextSteps({
    *  dial link needs: the worklist knows one without the other. */
   canText?: boolean
   aiActions: SuggestedAction[]
+  /** Who wrote `aiActions`. Only a model's wording is shown under a step
+   *  (labelled as its suggestion); the deterministic renderer's restates
+   *  the step's own evidence and is left out. */
+  aiProvider?: string
   refreshing: boolean
   /** `open` steps: "full_stats:M12" | "wearables" | "plan" | "messages". */
   onOpen: (target: string) => void
@@ -104,6 +109,7 @@ export default function NextSteps({
   const planner = !steps.isError
   if (!steps.isLoading && planner && list.length === 0 && aiActions.length === 0) return null
 
+  const modelWording = Boolean(aiProvider) && aiProvider !== 'fallback'
   const grouped = groupByUrgency(list, (s) => s.urgency)
   const aiGrouped = groupByUrgency(aiActions, (a) => a.urgency)
 
@@ -142,11 +148,11 @@ export default function NextSteps({
               </UrgencyGroup>
             ))}
             {aiActions.length === 0 && (
-              <p className="meta px-4 pb-4">No next steps are available yet.</p>
+              <p className="meta px-4 pb-4">Next steps appear here once the analysis has run.</p>
             )}
             {aiActions.length > 0 && (
               <p className="meta px-4 pb-4 pt-2">
-                The planner is unavailable, so these are the AI’s suggestions as wording only.
+                Suggestions only while the planner is unavailable: nothing here is a button.
               </p>
             )}
           </div>
@@ -158,7 +164,9 @@ export default function NextSteps({
               <UrgencyGroup key={urgency} urgency={urgency}>
                 {items.map((s, i) => {
                   const done = s.state.status !== 'open'
-                  const wording = aiActions.find((a) => titlesOverlap(a.title, s.title))
+                  const wording = modelWording
+                    ? aiActions.find((a) => titlesOverlap(a.title, s.title))
+                    : undefined
                   const meta = ACTION[s.action.type] ?? ACTION.acknowledge
                   const Icon = meta.icon
                   // Consecutive steps from one finding share a detail; say it once.
@@ -192,7 +200,7 @@ export default function NextSteps({
                             {sources && !sourcesRepeat && <span className="block">{sources}</span>}
                             {wording && (
                               <span className="block">
-                                AI wording · {wording.title}
+                                AI suggests · {wording.title}
                                 {wording.detail ? ` — ${wording.detail}` : ''}
                               </span>
                             )}

@@ -25,6 +25,15 @@ export function shortDate(iso: string): string {
   return new Date(local).toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+/** "Written by AI" when a model wrote a narrative (`llm_provider` "groq" or
+ *  "ollama"); nothing when the deterministic renderer ("fallback") did. The
+ *  renderer's work is finished copy, not a degraded state, so it carries no
+ *  qualifier — only NarrativeTile's quiet list glyph tells the two apart.
+ *  The console's one source label, so every card agrees. */
+export function narrativeSource(provider: string | null | undefined): string | null {
+  return provider && provider !== 'fallback' ? 'Written by AI' : null
+}
+
 export function signedPct(pct: number | null | undefined): string {
   if (pct == null) return '—'
   const rounded = Math.round(pct)

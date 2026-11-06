@@ -341,6 +341,10 @@ function TaskRow({
   const Icon = kind.icon
   const ended = t.active === false
   const pct = rate == null ? '—' : `${Math.round(rate * 100)}%`
+  // A strip with no recorded day yet is fourteen invisible cells beside a
+  // dash — it reads as a broken row, not an empty one. Say it in words
+  // until the first day lands.
+  const recorded = strip.some((r) => r.status !== 'none' && r.status !== 'pending')
 
   return (
     <ListRow
@@ -388,22 +392,26 @@ function TaskRow({
       }
     >
       {/* The 14-day strip and its rate: an opaque row on the panel. */}
-      <div className="flex items-center gap-3">
-        <div
-          className="flex items-center gap-1.5"
-          role="img"
-          aria-label={`Last 14 days${rate != null ? `, ${pct} done` : ''}`}
-        >
-          {strip.map((r, i) => (
-            <span
-              key={i}
-              title={r.date ? `${shortDate(r.date)} · ${RECORD_DOT[r.status].label}` : undefined}
-              className={RECORD_DOT[r.status].cls}
-            />
-          ))}
+      {recorded ? (
+        <div className="flex items-center gap-3">
+          <div
+            className="flex items-center gap-1.5"
+            role="img"
+            aria-label={`Last 14 days${rate != null ? `, ${pct} done` : ''}`}
+          >
+            {strip.map((r, i) => (
+              <span
+                key={i}
+                title={r.date ? `${shortDate(r.date)} · ${RECORD_DOT[r.status].label}` : undefined}
+                className={RECORD_DOT[r.status].cls}
+              />
+            ))}
+          </div>
+          <span className="text-copy font-medium tabular-nums text-ink">{pct}</span>
         </div>
-        <span className="text-copy font-medium tabular-nums text-ink">{pct}</span>
-      </div>
+      ) : (
+        <p className="meta">{ended ? 'No days were recorded.' : 'No days recorded yet.'}</p>
+      )}
     </ListRow>
   )
 }

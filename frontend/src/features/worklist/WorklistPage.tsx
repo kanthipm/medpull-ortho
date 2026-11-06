@@ -32,7 +32,7 @@ import SectionCard from '../../components/SectionCard'
 import SegmentedControl from '../../components/SegmentedControl'
 import { SkeletonCard, SkeletonLine } from '../../components/Skeleton'
 import { useToast } from '../../components/Toast'
-import { longDate, relativeTime } from '../../lib/format'
+import { longDate, narrativeSource, relativeTime } from '../../lib/format'
 import { PRIORITY, type Priority } from '../../lib/risk'
 
 type Filter = 'all' | 'high' | 'missing_data'
@@ -377,7 +377,8 @@ function PageHead({
  *  While the worklist (and so the briefing) is being generated it is a
  *  status with the shimmer text; once it is ready it is a button that
  *  brings the briefing card into view and moves focus to it.
- *  The renderer's work is never headlined as AI. */
+ *  The sparkle marks a model's briefing; the renderer's is the same button
+ *  without it — finished copy, never headlined as AI and never qualified. */
 function BriefingBadge({
   provider,
   generating,
@@ -398,14 +399,22 @@ function BriefingBadge({
     )
   }
   // A refresh keeps the button (focus is not lost) and swaps only its label.
-  const rulesBased = provider === 'fallback'
+  const ai = provider !== 'fallback'
   return (
     <button type="button" className="badge-ring" onClick={onClick} aria-busy={generating}>
-      {rulesBased ? null : glyph}
-      {generating ? writing : rulesBased ? 'Today’s briefing · rules-based' : 'AI daily briefing'}
+      {ai || generating ? glyph : null}
+      {generating ? writing : 'Today’s briefing'}
       <ChevronDown aria-hidden />
     </button>
   )
+}
+
+/** The model's one-liners drift on house style (a scan line that starts in
+ *  lower case reads as a draft); the API polishes new ones, and this covers
+ *  the rows a deployment cached before it did. */
+function sentenceCase(text: string): string {
+  const t = text.trim().replace(/\.$/, '')
+  return t.charAt(0).toUpperCase() + t.slice(1)
 }
 
 /** The worklist's headline, the site's dashboard KPI: when someone needs
@@ -510,7 +519,6 @@ function BriefingCard({
   briefing: WorklistResponse['briefing']
   startWith: WorklistRowWithStep | null
 }) {
-  const rulesBased = briefing.provider === 'fallback'
   return (
     <SectionCard
       sum
@@ -518,12 +526,10 @@ function BriefingCard({
       className={startWith ? '' : 'lg:w-fit lg:min-w-[480px]'}
       icon={<NarrativeTile provider={briefing.provider} />}
       aside={
-        <span className="meta tabular-nums">
-          {rulesBased ? 'Rules-based' : 'AI'}
-          <span aria-hidden> · </span>
-          <span className="sr-only">, </span>
-          {relativeTime(briefing.generated_at)}
-        </span>
+        <DotLine
+          className="meta tabular-nums"
+          parts={[narrativeSource(briefing.provider), relativeTime(briefing.generated_at)]}
+        />
       }
     >
       <div
@@ -561,7 +567,7 @@ function StartWith({ patient: p }: { patient: WorklistRowWithStep }) {
             </span>
           )}
         </span>
-        <span className="mt-1.5 line-clamp-2 block text-copy text-ink">{p.reason}</span>
+        <span className="mt-1.5 line-clamp-2 block text-copy text-ink">{sentenceCase(p.reason)}</span>
         <span className="mt-2 inline-flex items-center gap-1 text-copy font-medium text-brand-ink">
           Open chart
           <ArrowRight
@@ -770,8 +776,8 @@ function WorklistRow({
       </div>
 
       <div className="min-w-0 [grid-area:rs]">
-        <p className="line-clamp-2 text-copy text-ink" title={p.reason}>
-          {p.reason}
+        <p className="line-clamp-2 text-copy text-ink" title={sentenceCase(p.reason)}>
+          {sentenceCase(p.reason)}
         </p>
         {showConfidence && (
           <p className="mt-0.5 truncate">

@@ -16,7 +16,7 @@ import PriorityBadge from '../../components/PriorityBadge'
 import SectionCard from '../../components/SectionCard'
 import { RefreshOverlay, SkeletonCard, SkeletonLine } from '../../components/Skeleton'
 import { useToast } from '../../components/Toast'
-import { relativeTime, signedPct } from '../../lib/format'
+import { narrativeSource, relativeTime, signedPct } from '../../lib/format'
 import { CONFIDENCE_LABEL, TRAJECTORY_LABEL } from '../../lib/risk'
 import ActionBar from './ActionBar'
 import CheckinHistory from './CheckinHistory'
@@ -235,12 +235,12 @@ export default function PatientDetailPage() {
       : p.trajectory.state === 'on'
         ? 'On curve'
         : '—'
-  const rulesBased = p.summary.provider === 'fallback'
-
   // The facts line. Every part is plain body text on the sky; confidence is
   // said in words only when it is reduced (R7: no chip beside the risk pill).
   // The pathway has its own badge above the name, so the procedure is left
-  // out when the pathway name already starts with it.
+  // out when the pathway name already starts with it. A chart created from
+  // the app may carry no age or sex yet; "0 U" is not a fact, so the part is
+  // left out until there is one.
   const pathwayName = care.data?.pathway?.name ?? null
   const procedure = general ? 'No surgery on file' : p.procedure_display
   const restated =
@@ -248,8 +248,10 @@ export default function PatientDetailPage() {
     !!pathwayName &&
     !!procedure &&
     pathwayName.toLowerCase().startsWith(procedure.toLowerCase())
+  const sex = /^[MF]$/i.test(p.sex ?? '') ? p.sex.toUpperCase() : null
+  const ageSex = [p.age > 0 ? String(p.age) : null, sex].filter(Boolean).join(' ')
   const facts = [
-    `${p.age} ${p.sex}`,
+    ageSex || null,
     restated ? null : procedure,
     p.surgeon,
     p.device?.model,
@@ -328,14 +330,17 @@ export default function PatientDetailPage() {
                 refreshing || writing ? (
                   // Aside's AI signature, only while the summary is being
                   // rewritten; static secondary text under Reduce Motion.
+                  // The text on the card stays readable the whole time: it
+                  // is the last summary on file, which the API serves until
+                  // the rewrite lands.
                   <span role="status" className="shimmer-text text-label font-medium">
-                    {writing ? 'Writing AI summary…' : rulesBased ? 'Updating summary…' : 'Writing AI summary…'}
+                    {refreshing ? 'Updating the summary…' : 'Writing the AI summary…'}
                   </span>
                 ) : (
                   <DotLine
                     className="meta tabular-nums"
                     parts={[
-                      rulesBased ? 'Rules-based' : 'Written by AI',
+                      narrativeSource(p.summary.provider),
                       p.summary.generated_at && relativeTime(p.summary.generated_at),
                     ]}
                   />
@@ -394,6 +399,7 @@ export default function PatientDetailPage() {
               phone={delivery.phone}
               canText={delivery.smsAvailable}
               aiActions={p.actions}
+              aiProvider={p.actions_provider}
               refreshing={refreshing}
               onOpen={openTarget}
             />

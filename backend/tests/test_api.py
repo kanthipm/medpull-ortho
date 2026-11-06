@@ -71,6 +71,8 @@ def test_patient_detail(client):
     assert body["risk"]["level"] == "medium"
     assert body["summary"]["text"].strip()
     assert 1 <= len(body["actions"]) <= 4
+    # the console labels a model's wording and leaves the renderer's bare
+    assert body["actions_provider"] in ("fallback", "groq", "ollama")
     assert body["device"]["provider"] == "oura"
 
 

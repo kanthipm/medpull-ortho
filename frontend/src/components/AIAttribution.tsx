@@ -22,17 +22,19 @@ export function NarrativeTile({ provider }: { provider: string }) {
 }
 
 /** A quiet label marking generated narrative and naming what generated it,
- *  in sentence case: [teal sparkle tile] "AI recovery summary · 12 min ago".
+ *  in sentence case: [teal sparkle tile] "AI recovery summary · 12 min ago"
+ *  when a model wrote it; [list tile] "Recovery summary · 12 min ago" when
+ *  the deterministic renderer did.
  *
  *  `provider` is the row's `llm_provider`: "groq" and "ollama" mean a model
  *  wrote the line, "fallback" means the deterministic renderer did — and the
- *  renderer's work must not be headlined as AI (it gets the neutral list
- *  tile and "Rules-based …"). The prop is required, so a narrative whose
- *  provenance the API does not return carries no label at all rather than a
- *  borrowed one.
+ *  renderer's work is never headlined as AI, nor apologised for: it is the
+ *  product's own copy, so it simply goes unqualified. The prop is required,
+ *  so a narrative whose provenance the API does not return carries no label
+ *  at all rather than a borrowed one.
  *
  *  `generating`: the narrative is being written right now. The label reads
- *  "Writing AI summary…" in `.shimmer-text` (Aside's AI signature: the
+ *  "Writing the summary…" in `.shimmer-text` (Aside's AI signature: the
  *  secondary colour with an ink highlight sweeping through it, so every
  *  frame is at least secondary contrast). Under Reduce Motion and forced
  *  colours it is plain static secondary text. It is a status, so it is
@@ -55,20 +57,18 @@ export default function AIAttribution({
   generating?: boolean
   className?: string
 }) {
-  const rulesBased = provider === 'fallback'
-  const source = rulesBased ? 'Rules-based' : 'AI'
+  const ai = provider !== 'fallback'
+  const label = ai ? `AI ${kind}` : kind.charAt(0).toUpperCase() + kind.slice(1)
   return (
     <span className={`inline-flex items-center gap-2 text-label tracking-label text-secondary ${className}`}>
       <NarrativeTile provider={provider} />
       {generating ? (
         <span role="status" className="shimmer-text font-medium">
-          Writing {source === 'AI' ? 'AI' : 'rules-based'} {kind}…
+          Writing the {kind}…
         </span>
       ) : (
         <>
-          <span className="font-medium">
-            {source} {kind}
-          </span>
+          <span className="font-medium">{label}</span>
           {generatedAt && (
             <span className="tabular-nums">
               <span aria-hidden>· </span>

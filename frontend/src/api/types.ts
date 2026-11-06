@@ -90,6 +90,9 @@ export interface PatientDetail {
   trajectory: Trajectory
   summary: { text: string; generated_at: string; provider: string }
   actions: SuggestedAction[]
+  /** Who wrote `actions`: a model ("groq", "ollama") or the deterministic
+   *  renderer ("fallback"). Absent on an API from before the field. */
+  actions_provider?: string
   last_checkin_at: string | null
   /** The summary and/or actions are still rules-based; see WorklistResponse. */
   narratives_pending: number
