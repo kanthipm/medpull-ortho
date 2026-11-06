@@ -25,13 +25,37 @@ ADDITIVE = {
 }
 
 _SUMMARY = str(Granularity.DAILY_SUMMARY)
-# When MedPull's own algorithm (engine/mobility, provider MEDPULL) and a
-# vendor (Apple's walking metrics) both report a metric on the same day, the
-# day's value is MedPull's alone: one algorithm for every patient, whatever
-# phone they carry, is the point of computing it ourselves. The vendor row is
-# kept and shown in the raw data for comparison; it just does not enter the
-# series. Days MedPull did not measure fall back to the vendor.
-PREFERRED_PROVIDER = str(SourceProvider.MEDPULL)
+
+# One source per metric and day. A patient can be reached more than one way
+# for the same measurement: MedPull's own gait algorithm and Apple's walking
+# metrics on an iPhone, or a Fitbit's sleep through Junction's cloud and again
+# through Health Connect on an Android phone. The day's value comes from the
+# best-ranked source that reported that day; the other rows stay in the raw
+# data for comparison and never enter the series. Days the preferred source
+# did not cover fall back down the list.
+#
+# The rank, lowest wins:
+#   0  MedPull's own rows (engine/mobility): one algorithm for every phone.
+#   1  A brand's cloud connector: the device maker's own numbers, delivered
+#      whether or not the phone is on.
+#   2  The phone's health store (Apple Health, Health Connect): the same
+#      numbers relayed by the phone, or the phone's own sensors. Samsung
+#      wearables have no cloud path, so for them this tier is the only one.
+#   3  What a person or clinician typed.
+# Unknown providers rank with the cloud brands.
+_RANK: dict[str, int] = {
+    str(SourceProvider.MEDPULL): 0,
+    str(SourceProvider.APPLE): 2,
+    str(SourceProvider.HEALTH_CONNECT): 2,
+    str(SourceProvider.SAMSUNG): 2,
+    str(SourceProvider.PATIENT_REPORTED): 3,
+    str(SourceProvider.CLINICIAN_ENTERED): 3,
+}
+_DEFAULT_RANK = 1
+
+
+def source_rank(provider: str) -> int:
+    return _RANK.get(str(provider), _DEFAULT_RANK)
 
 
 def load_daily_series(db: Session, patient_id: str, surgery_date: date) -> dict[str, pd.Series]:
@@ -75,10 +99,11 @@ def load_daily_series(db: Session, patient_id: str, surgery_date: date) -> dict[
     df["day"] = df["local_date"].map(lambda d: (d - surgery_date).days)
     df["metric_type"] = df["metric_type"].map(str)
     df["granularity"] = df["granularity"].map(str)
-    df["preferred"] = df["source_provider"].map(str) == PREFERRED_PROVIDER
-    if df["preferred"].any():
-        any_preferred = df.groupby(["metric_type", "day"])["preferred"].transform("any")
-        df = df[df["preferred"] | ~any_preferred]
+    # Pick the source before anything is averaged or summed: two sources'
+    # step rows added together would walk the patient twice as far.
+    df["rank"] = df["source_provider"].map(source_rank)
+    best = df.groupby(["metric_type", "day"])["rank"].transform("min")
+    df = df[df["rank"] == best]
 
     out: dict[str, pd.Series] = {}
     for metric, group in df.groupby("metric_type"):

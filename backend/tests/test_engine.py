@@ -752,3 +752,77 @@ def test_dataload_sums_intraday_buckets_but_keeps_a_daily_summary_alone():
     assert series[str(M.STEPS)].loc[5] == 6000.0   # the summary wins over 24 x 200
     assert series[str(M.STEPS)].loc[6] == 1750.0   # no summary: the buckets are summed
     assert series[str(M.RESTING_HR)].loc[5] == 65.0  # non-additive: mean of rows
+
+
+def test_dataload_takes_one_source_per_day_and_falls_back():
+    """A patient reached two ways (a Fitbit through Junction's cloud and again
+    through Health Connect) must not have both copies of a day added together,
+    and a day the preferred source missed takes the other source instead.
+    MedPull's own rows outrank every vendor; what a person typed ranks last."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.database import Base
+    from app.engine.dataload import load_daily_series, source_rank
+    from app.models.enums import Granularity, ProcedureType, SourceProvider as P
+    from app.models.observation import Observation
+    from app.models.patient import Patient
+
+    assert source_rank(P.MEDPULL) < source_rank(P.FITBIT) < source_rank(P.HEALTH_CONNECT)
+    assert source_rank(P.OURA) == source_rank(P.FITBIT) == source_rank("something_new")
+    assert source_rank(P.APPLE) == source_rank(P.HEALTH_CONNECT)
+    assert source_rank(P.PATIENT_REPORTED) > source_rank(P.HEALTH_CONNECT)
+
+    isolated = create_engine("sqlite://")
+    Base.metadata.create_all(isolated)
+
+    def row(metric: M, day: int, value: float, provider: P, granularity=Granularity.DAILY_SUMMARY,
+            hour: int = 0):
+        start = datetime.combine(SURGERY_DATE, datetime.min.time()) + pd.Timedelta(
+            days=day, hours=hour
+        )
+        return Observation(
+            patient_id="p", source_provider=provider, metric_type=metric,
+            unit="count", value_num=value, start_time=start, end_time=start,
+            local_date=start.date(), granularity=granularity,
+            dedupe_key=f"{provider}:{metric}:{day}:{granularity}:{hour}",
+        )
+
+    with Session(isolated) as session:
+        session.add(Patient(
+            id="p", name="P", initials="P", age=50, sex="F",
+            procedure_type=ProcedureType.TKA, procedure_display="TKA",
+            surgery_date=SURGERY_DATE, discharge_date=SURGERY_DATE,
+            surgeon_id="ct", assigned_provider_id="ct",
+        ))
+        session.add_all([
+            # Day 5: the same 6,000 steps arrive twice, plus the phone's own
+            # hourly buckets through Health Connect. The cloud summary stands alone.
+            row(M.STEPS, 5, 6000.0, P.FITBIT),
+            row(M.STEPS, 5, 6000.0, P.HEALTH_CONNECT),
+            *[row(M.STEPS, 5, 250.0, P.HEALTH_CONNECT, Granularity.INTERVAL, hour=h)
+              for h in range(24)],
+            # Day 6: the cloud missed the day; Health Connect's buckets carry it.
+            *[row(M.STEPS, 6, 300.0, P.HEALTH_CONNECT, Granularity.INTERVAL, hour=h)
+              for h in range(10)],
+            # Day 7: only the phone's own sensors.
+            row(M.STEPS, 7, 4200.0, P.HEALTH_CONNECT),
+            # HRV on day 5 from both paths: the cloud value is the day's value,
+            # not the mean of the two.
+            row(M.HRV_RMSSD, 5, 48.0, P.FITBIT, Granularity.INSTANT),
+            row(M.HRV_RMSSD, 5, 40.0, P.HEALTH_CONNECT, Granularity.INSTANT),
+            # Walking speed on day 5 from Apple and from MedPull's own walk.
+            row(M.WALKING_SPEED, 5, 1.1, P.APPLE, Granularity.INTERVAL),
+            row(M.WALKING_SPEED, 5, 0.9, P.MEDPULL, Granularity.INTERVAL),
+            row(M.WALKING_SPEED, 6, 1.2, P.APPLE, Granularity.INTERVAL),
+        ])
+        session.commit()
+        series = load_daily_series(session, "p", SURGERY_DATE)
+
+    steps = series[str(M.STEPS)]
+    assert steps.loc[5] == 6000.0      # one source, not 12,000 and not 18,000
+    assert steps.loc[6] == 3000.0      # fallback to Health Connect's buckets, summed
+    assert steps.loc[7] == 4200.0
+    assert series[str(M.HRV_RMSSD)].loc[5] == 48.0
+    assert series[str(M.WALKING_SPEED)].loc[5] == 0.9
+    assert series[str(M.WALKING_SPEED)].loc[6] == 1.2
