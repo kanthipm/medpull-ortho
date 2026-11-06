@@ -18,7 +18,6 @@ final class AppModel {
     var me: Me?
     var tasks: TasksResponse = TasksResponse(open: [], recent: [])
     var messages: [ChatMessage] = []
-    var progress: [ProgressDay] = []
     var portfolio: [PortfolioMetric] = []
     /// The patient's own metrics, in their words (Home card, Health section).
     var metrics: PatientMetricsResponse?
@@ -316,11 +315,6 @@ final class AppModel {
     @discardableResult
     func refreshMessages(surface: Bool = true) async -> Outcome {
         await refresh(surface: surface) { self.messages = try await self.api.messages() }
-    }
-
-    @discardableResult
-    func refreshProgress(surface: Bool = true) async -> Outcome {
-        await refresh(surface: surface) { self.progress = try await self.api.progress(days: 14).days }
     }
 
     @discardableResult

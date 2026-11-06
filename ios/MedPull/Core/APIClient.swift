@@ -283,9 +283,6 @@ extension APIClient {
     func wearables() async throws -> WearablesResponse { try await get("/api/mobile/wearables") }
     func refreshWearables() async throws -> WearablesResponse { try await post("/api/mobile/wearables/refresh") }
     func wearableLink() async throws -> LinkResponse { try await post("/api/mobile/wearables/link") }
-    func progress(days: Int = 14) async throws -> ProgressResponse {
-        try await get("/api/mobile/progress", query: ["days": String(days)])
-    }
     func uploadGait(_ upload: GaitUpload) async throws -> GaitUploadResponse {
         try await post("/api/mobile/observations/gait", body: upload)
     }

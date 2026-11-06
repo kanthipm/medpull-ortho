@@ -32,7 +32,7 @@ Parameters:
       deploy.sh writes it; standard parameters are free.
   GroqModel:
     Type: String
-    Default: llama-3.3-70b-versatile
+    Default: openai/gpt-oss-120b
 
   JunctionApiKeyParameter:
     Type: String

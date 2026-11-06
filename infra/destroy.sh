@@ -16,6 +16,14 @@ STACK_NAME="${STACK_NAME:-recovery-copilot}"
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 GROQ_PARAM="${GROQ_PARAM:-/recovery-copilot/groq-api-key}"
 ORIGIN_SECRET_PARAM="${ORIGIN_SECRET_PARAM:-/recovery-copilot/origin-verify-secret}"
+# The rest of what deploy.sh writes; all optional, all removed with --delete-secrets.
+OTHER_PARAMS=(
+  /recovery-copilot/junction-api-key
+  /recovery-copilot/junction-webhook-secret
+  /recovery-copilot/sendblue-api-key
+  /recovery-copilot/sendblue-api-secret
+  /recovery-copilot/sendblue-webhook-secret
+)
 
 DELETE_DATA=false
 DELETE_SECRETS=false
@@ -38,9 +46,14 @@ ARTIFACT_BUCKET="${ARTIFACT_BUCKET:-${STACK_NAME}-artifacts-${ACCOUNT_ID}-${REGI
 DATA_BUCKET="$(aws_ cloudformation describe-stacks --stack-name "$STACK_NAME" \
   --query "Stacks[0].Outputs[?OutputKey=='DataBucketName'].OutputValue" \
   --output text 2>/dev/null || true)"
+PERSONAL_BUCKET="$(aws_ cloudformation describe-stacks --stack-name "$STACK_NAME" \
+  --query "Stacks[0].Outputs[?OutputKey=='PersonalDataBucketName'].OutputValue" \
+  --output text 2>/dev/null || true)"
+[ "$PERSONAL_BUCKET" = "None" ] && PERSONAL_BUCKET=""
 
 log "About to delete stack '$STACK_NAME' in $REGION"
 [ -n "$DATA_BUCKET" ] && info "data bucket: $DATA_BUCKET $($DELETE_DATA && echo '(WILL BE DELETED)' || echo '(retained)')"
+[ -n "$PERSONAL_BUCKET" ] && info "personal bucket: $PERSONAL_BUCKET $($DELETE_DATA && echo '(WILL BE DELETED)' || echo '(retained)')"
 info "artifact bucket: $ARTIFACT_BUCKET (will be emptied and deleted)"
 info "SSM parameters: $($DELETE_SECRETS && echo 'WILL BE DELETED' || echo 'retained')"
 printf '    Type the stack name to confirm: '
@@ -61,6 +74,7 @@ aws_ s3api delete-bucket --bucket "$ARTIFACT_BUCKET" 2>/dev/null || true
 if $DELETE_SECRETS; then
   aws_ ssm delete-parameter --name "$ORIGIN_SECRET_PARAM" 2>/dev/null || true
   aws_ ssm delete-parameter --name "$GROQ_PARAM" 2>/dev/null || true
+  for p in "${OTHER_PARAMS[@]}"; do aws_ ssm delete-parameter --name "$p" 2>/dev/null || true; done
   info "removed the SSM parameters"
 else
   # Standard parameters cost nothing to keep, and deploy.sh reuses both: the
@@ -69,19 +83,32 @@ else
   info "kept the SSM parameters — rerun with --delete-secrets to remove them"
 fi
 
-if $DELETE_DATA && [ -n "$DATA_BUCKET" ]; then
-  log "Deleting the data bucket"
-  # Versioning is on, so every version and delete marker has to go explicitly.
-  aws_ s3api delete-objects --bucket "$DATA_BUCKET" --delete "$(aws_ s3api list-object-versions \
-    --bucket "$DATA_BUCKET" --output json \
+delete_versioned_bucket() {  # delete_versioned_bucket NAME: every version and delete marker, then the bucket
+  aws_ s3api delete-objects --bucket "$1" --delete "$(aws_ s3api list-object-versions \
+    --bucket "$1" --output json \
     --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}')" >/dev/null 2>&1 || true
-  aws_ s3api delete-objects --bucket "$DATA_BUCKET" --delete "$(aws_ s3api list-object-versions \
-    --bucket "$DATA_BUCKET" --output json \
+  aws_ s3api delete-objects --bucket "$1" --delete "$(aws_ s3api list-object-versions \
+    --bucket "$1" --output json \
     --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')" >/dev/null 2>&1 || true
-  aws_ s3api delete-bucket --bucket "$DATA_BUCKET" 2>/dev/null || true
-  info "deleted $DATA_BUCKET"
-elif [ -n "$DATA_BUCKET" ]; then
-  info "kept $DATA_BUCKET — delete it by hand, or rerun with --delete-data"
-fi
+  aws_ s3api delete-bucket --bucket "$1" 2>/dev/null || true
+}
 
-log "Done — nothing left billing"
+KEPT=()
+for bucket in "$DATA_BUCKET" "$PERSONAL_BUCKET"; do
+  [ -n "$bucket" ] || continue
+  if $DELETE_DATA; then
+    log "Deleting $bucket"
+    delete_versioned_bucket "$bucket"
+    info "deleted $bucket"
+  else
+    info "kept $bucket — delete it by hand, or rerun with --delete-data"
+    KEPT+=("$bucket")
+  fi
+done
+$DELETE_SECRETS || KEPT+=("the SSM parameters")
+
+if [ ${#KEPT[@]} -eq 0 ]; then
+  log "Done — nothing left billing"
+else
+  log "Done — still there: ${KEPT[*]} (standard parameters are free; a near-empty bucket costs cents)"
+fi

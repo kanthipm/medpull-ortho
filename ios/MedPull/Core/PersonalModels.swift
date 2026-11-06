@@ -62,11 +62,6 @@ struct PersonalProfileResponse: Codable {
     let profiles: [SpaceProfile]?
 }
 
-struct ProfilesResponse: Codable {
-    let profiles: [SpaceProfile]
-    let current: String
-}
-
 struct SwitchResponse: Codable {
     let sessionToken: String
     let me: Me
@@ -261,12 +256,6 @@ struct WeekReview: Codable, Hashable {
     let sessionMinutes: Double?
     let streaks: WeekStreaks
     let highlights: [String]
-}
-
-struct WeekResponse: Codable {
-    let week: WeekReview?
-    let trends: [String: Trend]?
-    let review: DeepDive
 }
 
 /// The beta consent form, as the server publishes it.
