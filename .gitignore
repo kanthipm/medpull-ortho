@@ -15,3 +15,12 @@ infra/.build/
 ios/MedPull.xcodeproj/
 ios/DerivedData/
 ios/*.xcworkspace/xcuserdata/
+
+# android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+android/*.iml
+android/.idea/
