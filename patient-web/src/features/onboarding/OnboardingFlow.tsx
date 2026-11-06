@@ -6,10 +6,9 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { messageFor, useApp } from '../../core/appModel'
-import { IPHONE_NEEDED } from '../../core/health'
 import { DOT, isRecovery, type Candidate, type Hospital } from '../../core/models'
 import {
-  Card, CardHeader, Chip, cx, EmptyRow, ErrorBanner, IconTile, InsetDivider, MPButton, NavBar, PrimaryButton, Screen,
+  Card, Chip, cx, EmptyRow, ErrorBanner, IconTile, InsetDivider, MPButton, NavBar, PrimaryButton, Screen,
   Spinner, StatusPill, Toggle, type Category,
 } from '../../ui/components'
 import { Sym } from '../../ui/icons'
@@ -27,7 +26,6 @@ export function OnboardingFlow() {
     case 'identity': return <IdentityStep model={model} />
     case 'join': return <JoinStep model={model} />
     case 'verify': return <VerifyStep model={model} />
-    case 'health': return <HealthStep model={model} />
     case 'wearable': return <WearableStep model={model} />
     case 'done': return <DoneStep model={model} />
   }
@@ -44,7 +42,6 @@ function backTitle(step: Step): string {
     case 'identity': return 'Your record'
     case 'join': return 'About you'
     case 'verify': return 'Code'
-    case 'health': return 'Health'
     case 'wearable': return 'Wearables'
     case 'done': return 'All set'
   }
@@ -134,7 +131,7 @@ function WelcomeStep({ model }: { model: OnboardingModel }) {
       <div className="stack" style={{ minHeight: '100%', justifyContent: 'space-between', paddingTop: 32 }}>
         <div className="stack-18" style={{ padding: '0 24px' }}>
           <div className="hstack" style={{ gap: 14 }}>
-            <span className="brand-mark" style={{ ['--side' as string]: '60px' }} aria-hidden="true"><img src="/medpull-mark.svg" alt="" /></span>
+            <span className="brand-mark" style={{ ['--side' as string]: '60px' }} aria-hidden="true"><img src={`${import.meta.env.BASE_URL}medpull-mark.svg`} alt="" /></span>
             <span className="t-subhead-m c-ink" style={{ letterSpacing: '-0.6px' }}>MedPull</span>
           </div>
           <div className="stack-12 rise" style={{ ['--i' as string]: 1 }}>
@@ -376,54 +373,6 @@ function VerifyStep({ model }: { model: OnboardingModel }) {
   )
 }
 
-const reads: { icon: string; family: Category; text: string }[] = [
-  { icon: 'figure.walk', family: 'teal', text: 'Steps, distance and stairs' },
-  { icon: 'bed.double.fill', family: 'indigo', text: 'Sleep and resting heart rate' },
-  { icon: 'figure.walk.motion', family: 'blue', text: 'Walking speed, step length and steadiness' },
-  { icon: 'flame.fill', family: 'violet', text: 'Workouts and exercise minutes' },
-]
-
-/** Apple Health, which a browser cannot reach: the step says so, keeps the
- *  button greyed, and lets the person move on. */
-function HealthStep({ model }: { model: OnboardingModel }) {
-  const app = useApp()
-  return (
-    <StepScaffold model={model} eyebrow={model.eyebrow('health')} title="Connect Apple Health"
-      subtitle="One tap, and your activity, sleep and heart data fill in on their own. Nothing to type."
-      footer={
-        <>
-          <div className="greyed"><PrimaryButton title="Connect Apple Health" icon="heart.fill" disabled /></div>
-          <QuietAction title="Skip for now" onClick={() => model.go('wearable')} />
-        </>
-      }>
-      <div className="stack-12">
-        <Card padding={0} tint>
-          <CardHeader title="What we read" />
-          {reads.map((r, i) => (
-            <div key={r.text}>
-              <div className="hstack" style={{ gap: 14, padding: '9px 16px' }}>
-                <span style={{ background: 'rgb(var(--panel))', borderRadius: 11, padding: 2, display: 'inline-grid' }}><IconTile name={r.icon} family={r.family} /></span>
-                <span className="t-copy c-ink">{r.text}</span>
-              </div>
-              {i < reads.length - 1 && <InsetDivider />}
-            </div>
-          ))}
-          <span className="t-label secondary" style={{ display: 'block', padding: '8px 16px 16px' }}>
-            We never write to Health. Turn any type off in the Health app and we simply won’t read it.
-          </span>
-        </Card>
-        {!(app.me?.features.appleHealth ?? true) && (
-          <ErrorBanner text="This server isn’t connected to Junction yet, so Health data has nowhere to go. You can skip and connect later." />
-        )}
-        <div className="hstack-8" style={{ alignItems: 'flex-start', padding: '0 4px' }}>
-          <span className="c-muted" style={{ paddingTop: 1 }}><Sym name="iphone" size={16} weight="medium" /></span>
-          <span className="t-copy c-body">{IPHONE_NEEDED} Everything else works right here.</span>
-        </div>
-      </div>
-    </StepScaffold>
-  )
-}
-
 const brands = ['Oura', 'Garmin', 'WHOOP', 'Fitbit', 'Withings', 'Polar']
 
 function WearableStep({ model }: { model: OnboardingModel }) {
@@ -437,7 +386,7 @@ function WearableStep({ model }: { model: OnboardingModel }) {
   }, [app])
   return (
     <StepScaffold model={model} eyebrow="Almost done" title="Wear something else?"
-      subtitle="Sign in once and it syncs on its own. Apple Watch is covered by Health on your iPhone."
+      subtitle="Sign in once and it syncs on its own. An Apple Watch syncs through the MedPull iPhone app instead."
       footer={
         <>
           <PrimaryButton title="Add a wearable" icon="link" loading={working} disabled={!(app.me?.features.appleHealth ?? false)} onClick={async () => {

@@ -62,6 +62,7 @@ struct PaywallView: View {
                     Text("Subscriptions renew automatically until cancelled in Settings › Apple ID › Subscriptions. Prices are set by the App Store for your region.")
                         .mpFont(.label).foregroundStyle(MP.muted)
                         .fixedSize(horizontal: false, vertical: true)
+                    LegalLinks()
                 }
                 .padding(.horizontal, 22).padding(.top, 8).padding(.bottom, 28)
             }
@@ -130,8 +131,26 @@ struct PaywallView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// Simulator screenshots only: `-MP_STORE_PREVIEW 1` draws the two plans
+    /// with their App Store prices when no StoreKit configuration is loaded
+    /// (simctl launch applies none). Debug builds only.
+    private var previewPlans: [(id: String, price: String)] {
+        #if DEBUG
+        if AppConfig.debugFlag("MP_STORE_PREVIEW") != nil {
+            return [(Store.annualID, "$79.99"), (Store.monthlyID, "$9.99")]
+        }
+        #endif
+        return []
+    }
+
     @ViewBuilder private var plans: some View {
-        if store.products.isEmpty {
+        if !previewPlans.isEmpty {
+            VStack(spacing: 10) {
+                ForEach(previewPlans, id: \.id) { plan in
+                    planCard(id: plan.id, displayPrice: plan.price, savingPercent: plan.id == Store.annualID ? 33 : nil)
+                }
+            }
+        } else if store.products.isEmpty {
             Card {
                 HStack(spacing: 12) {
                     if store.loading { ProgressView().tint(MP.brand) }
@@ -152,9 +171,14 @@ struct PaywallView: View {
     }
 
     private func planCard(_ product: Product) -> some View {
-        let isSelected = selected == product.id
-        let annual = product.id == Store.annualID
-        return Button { selected = product.id } label: {
+        planCard(id: product.id, displayPrice: product.displayPrice,
+                 savingPercent: product.id == Store.annualID ? store.annualSavingPercent : nil)
+    }
+
+    private func planCard(id: String, displayPrice: String, savingPercent: Int?) -> some View {
+        let isSelected = selected == id
+        let annual = id == Store.annualID
+        return Button { selected = id } label: {
             HStack(spacing: 12) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.systemGlyphs(22, weight: .regular))
@@ -163,7 +187,8 @@ struct PaywallView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {
                         Text(annual ? "Yearly" : "Monthly").mpFont(.copyLargeMedium).foregroundStyle(MP.ink)
-                        if annual, let saving = store.annualSavingPercent, saving > 0 {
+                            .fixedSize()
+                        if annual, let saving = savingPercent, saving > 0 {
                             StatusPill(text: "Save \(saving)%", tone: .low)
                         }
                     }
@@ -172,7 +197,7 @@ struct PaywallView: View {
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text(product.displayPrice).font(.figuresLede).foregroundStyle(MP.ink)
+                    Text(displayPrice).font(.figuresLede).foregroundStyle(MP.ink)
                     Text(annual ? "per year" : "per month").mpFont(.label).foregroundStyle(MP.muted)
                 }
             }
@@ -193,6 +218,9 @@ struct PaywallView: View {
                               icon: "lock.open.fill", loading: working || store.purchasing) {
                     purchase(product)
                 }
+            } else if !previewPlans.isEmpty {
+                PrimaryButton(title: mode == .onboarding ? "Subscribe after the trial" : "Subscribe",
+                              icon: "lock.open.fill") {}
             }
             switch mode {
             case .onboarding:

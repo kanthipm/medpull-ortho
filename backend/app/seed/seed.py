@@ -280,6 +280,12 @@ def run_seed(reset: bool = False) -> dict[str, int]:
         counts = seed_core(db, today)
         for k, v in counts.items():
             print(f"  {k}: {v}")
+        # MedPull Sports: the Rice basketball demo roster and two individual
+        # athletes, beside the clinic roster. Never on a clinician's worklist.
+        from app.sports.seed import seed_sports
+
+        for k, v in seed_sports(db, today).items():
+            print(f"  sports {k}: {v}")
         try:
             warm_engine_and_insights(db)
         except ImportError as e:

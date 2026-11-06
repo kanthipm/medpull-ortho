@@ -163,6 +163,39 @@ app.include_router(api_router)
 # Root-level, registered before the SPA catch-all so it wins the path.
 app.include_router(applinks_router)
 
+def _file_within(root: Path, full_path: str) -> Path | None:
+    """Resolve a catch-all path inside a built bundle, or None if it escapes.
+
+    The path param arrives verbatim: uvicorn normalizes neither dot segments
+    nor percent-encoding, and an absolute param would swallow the join with
+    the bundle root outright. So containment is re-checked after resolution,
+    which settles symlinks pointing out of the tree at the same time."""
+    try:
+        candidate = (root / full_path).resolve()
+    except (OSError, ValueError):
+        # Unresolvable — a null byte, or a symlink loop. Never a bundle file.
+        return None
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return None
+    return candidate
+
+
+# The patient app (patient-web/, built with base /patient/) in the same
+# single-process mode, mounted before the console's catch-all so /patient/*
+# never falls through to the console's index.html. On AWS the CloudFront
+# rewrite function does the same for the objects under web/patient/.
+PATIENT_DIST = (PROJECT_DIR / "patient-web" / "dist").resolve()
+if PATIENT_DIST.exists():
+
+    @app.get("/patient", include_in_schema=False)
+    @app.get("/patient/{full_path:path}", include_in_schema=False)
+    def patient_spa(full_path: str = "") -> Response:
+        candidate = _file_within(PATIENT_DIST, full_path) if full_path else None
+        if candidate is not None:
+            return FileResponse(candidate)
+        return FileResponse(PATIENT_DIST / "index.html", headers={"Cache-Control": "no-cache"})
+
+
 # Single-process demo mode: serve the built SPA. API routes are registered
 # above, so they win; everything else falls back to index.html for client
 # routing (deep links like /patients/steve).
@@ -194,20 +227,8 @@ if DIST.exists():
         return out
 
     def _bundled_file(full_path: str) -> Path | None:
-        """Resolve a catch-all path inside the built SPA, or None if it escapes.
-
-        The path param arrives verbatim: uvicorn normalizes neither dot segments
-        nor percent-encoding, and an absolute param would swallow the join with
-        the bundle root outright. So containment is re-checked after resolution,
-        which settles symlinks pointing out of the tree at the same time."""
-        try:
-            candidate = (DIST / full_path).resolve()
-        except (OSError, ValueError):
-            # Unresolvable — a null byte, or a symlink loop. Never a bundle file.
-            return None
-        if not candidate.is_relative_to(DIST) or not candidate.is_file():
-            return None
-        return candidate
+        """Resolve a catch-all path inside the built console, or None if it escapes."""
+        return _file_within(DIST, full_path)
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa(full_path: str) -> Response:

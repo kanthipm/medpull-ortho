@@ -157,7 +157,7 @@ Parameters:
     Type: String
     Default: ""
     Description: >-
-      Optional. Hostname the console is served on (e.g. app.medpull.org).
+      Optional. Hostname the console is served on (e.g. demo.medpull.app).
       Needs CertificateArn too. The DNS record itself is not managed here:
       the medpull.org zone lives in another AWS account, so someone with
       access to it points this name at the distribution (see infra/README.md).
@@ -192,6 +192,15 @@ Parameters:
       When the personal tier's morning run fires (UTC): today's plan, the
       brief on each subscriber's thread, and a text for those who asked. The
       default is 12:00 UTC, 7am US Central / 8am Eastern.
+  SportsDailyCron:
+    Type: String
+    Default: "cron(0 11 * * ? *)"
+    Description: >-
+      When the MedPull Sports demo is re-anchored to the new day (UTC): the
+      Rice roster rewritten around today and every showcased athlete account
+      refilled, so the team board and the phone never age into "still
+      learning you". The default is 11:00 UTC, 6am US Central, an hour
+      before the personal run.
 
   BudgetAlertEmail:
     Type: String
@@ -635,6 +644,28 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt PersonalDailyRule.Arn
 
+  # The sports demo's morning run: {"action": "sports_daily"} on the same
+  # function, under the same write lock, an hour before the personal run.
+  SportsDailyRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${AWS::StackName}-sports-daily"
+      Description: MedPull Sports demo re-anchored to today (roster and showcased accounts)
+      ScheduleExpression: !Ref SportsDailyCron
+      State: ENABLED
+      Targets:
+        - Id: api
+          Arn: !GetAtt ApiFunction.Arn
+          Input: '{"action": "sports_daily"}'
+
+  SportsDailyPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SportsDailyRule.Arn
+
   ApiFunctionUrl:
     Type: AWS::Lambda::Url
     Properties:
@@ -683,6 +714,17 @@ Resources:
           // path; it is a real object deploy.sh uploads, so it must bypass
           // the rewrite or every universal link answers with index.html.
           if (uri.indexOf('/.well-known/') === 0 || uri === '/apple-app-site-association') {
+            return event.request;
+          }
+          // The patient app lives under /patient/ (patient-web/dist, uploaded
+          // to web/patient/ by deploy.sh) with its own index.html, so its
+          // client routes (/patient/today, /patient/care) rewrite to that
+          // one, never to the console's.
+          if (uri === '/patient' || uri.indexOf('/patient/') === 0) {
+            var rest = uri.substring('/patient'.length);
+            if (rest === '' || rest.endsWith('/') || rest.split('/').pop().indexOf('.') === -1) {
+              event.request.uri = '/patient/index.html';
+            }
             return event.request;
           }
           // Extensionless paths are React Router routes (/patients/marcus),

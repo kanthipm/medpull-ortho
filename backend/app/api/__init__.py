@@ -21,6 +21,7 @@ from app.api import (
 )
 from app.api.auth import require_console
 from app.personal import api as personal
+from app.sports import api as sports
 
 api_router = APIRouter(prefix="/api")
 
@@ -54,3 +55,5 @@ api_router.include_router(plan.router, dependencies=CONSOLE)
 api_router.include_router(attachments.router)
 api_router.include_router(attachments.console_router, dependencies=CONSOLE)
 api_router.include_router(personal.router)
+api_router.include_router(sports.router)
+api_router.include_router(sports.team_router)

@@ -267,7 +267,10 @@ def apply_apple_transaction(
     if product not in product_ids():
         raise SubscriptionError(f"Unknown product {product!r}")
     environment = payload.get("environment") or environment_hint or "Unknown"
-    if strict and environment != settings.apple_environment:
+    # A Production server still honours Sandbox transactions: App Review and
+    # TestFlight testers buy in the sandbox, and a refusal there is a
+    # rejection. Xcode-signed transactions never pass the chain check above.
+    if strict and environment not in {settings.apple_environment, "Sandbox"}:
         raise SubscriptionError(
             f"A {environment} transaction cannot unlock a {settings.apple_environment} server"
         )

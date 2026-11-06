@@ -1,9 +1,9 @@
 /* Apple Health, on the web: it cannot connect here.
    HealthKit lives on the phone. The iPhone app (Core/HealthConnector.swift)
    authorises it in one sheet and the Vital SDK pushes the data; a browser
-   has no access to Health at all. So every screen that offers the
-   connection on the phone greys it out here and says where it does work.
-   What the server already knows (a phone that connected) still shows. */
+   has no access to Health at all. So the web app has no Health step or
+   button: the Connections sheet reports what a phone connected and says
+   where the connection is made. */
 
 export const IPHONE_NEEDED =
   'Apple Health connects from the MedPull iPhone app. Install it on your iPhone, sign in to this same record, and your steps, sleep and heart data show up here on their own.'

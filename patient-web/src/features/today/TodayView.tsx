@@ -158,16 +158,6 @@ export function TodayView() {
 
           <Rise index={3} id="measure"><MeasureRow onClick={() => navigate('/measure')} /></Rise>
           <Rise index={4} id="care"><CareRow onClick={() => navigate('/care')} /></Rise>
-          {me && !me.wearables.appleHealth.connected && me.wearables.devices.length === 0 && me.features.appleHealth && (
-            <Rise index={5}>
-              <CardButton onClick={() => app.setShowConnections(true)}>
-                <Card padding={0} className="greyed">
-                  <ListRow title="Connect Apple Health" subtitle="Needs the MedPull iPhone app. Steps, sleep and heart data fill in on their own from there."
-                    symbol="heart.fill" family="violet" />
-                </Card>
-              </CardButton>
-            </Rise>
-          )}
           {quickError && <ErrorBanner text={quickError} />}
           {app.lastError && <ErrorBanner text={app.lastError} />}
           <span className="footnote">Monitoring signals for your care team — not a diagnosis.</span>
@@ -381,7 +371,7 @@ function CareRow({ onClick }: { onClick: () => void }) {
 export function BrandLockup({ hidden, badge }: { hidden: boolean; badge?: string }) {
   return (
     <span className="lockup" style={{ opacity: hidden ? 0 : 1 }} aria-hidden={hidden || undefined} aria-label={badge ? `MedPull ${badge}` : 'MedPull'}>
-      <span className="lockup-mark"><img src="/medpull-mark.svg" alt="" /></span>
+      <span className="lockup-mark"><img src={`${import.meta.env.BASE_URL}medpull-mark.svg`} alt="" /></span>
       <span className="hstack-6">
         <span className="lockup-word">MedPull</span>
         {badge && <span className="schedule-pill">{badge}</span>}

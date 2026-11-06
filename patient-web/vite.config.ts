@@ -6,6 +6,11 @@ import { defineConfig } from 'vite'
 // console's dev server does it, so nothing is ever cross-origin.
 export default defineConfig({
   plugins: [react()],
+  // Served beside the provider console on the deployed stack, under
+  // /patient/ (CloudFront routes the prefix to patient-web/dist in the web
+  // bucket; infra/cloudformation.yaml and infra/deploy.sh). The dev server
+  // answers at http://localhost:5174/patient/ for the same reason.
+  base: '/patient/',
   server: {
     port: 5174,
     proxy: {

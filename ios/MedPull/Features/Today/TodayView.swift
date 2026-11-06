@@ -440,6 +440,8 @@ struct PlanRow: View {
 struct BrandLockupItem: ToolbarContent {
     let hidden: Bool
     var badge: String? = nil
+    /// A fill for the badge (a team's colour); white text on it.
+    var badgeColor: Color? = nil
 
     var body: some ToolbarContent {
         if #available(iOS 26, *) {
@@ -468,9 +470,9 @@ struct BrandLockupItem: ToolbarContent {
                 if let badge {
                     Text(badge)
                         .mpFont(.labelMedium)
-                        .foregroundStyle(MP.brandInk)
+                        .foregroundStyle(badgeColor == nil ? MP.brandInk : Color.white)
                         .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(MP.capsuleShape.fill(MP.brandTint))
+                        .background(MP.capsuleShape.fill(badgeColor ?? MP.brandTint))
                 }
             }
             .dynamicTypeSize(...DynamicTypeSize.accessibility1)

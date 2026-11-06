@@ -1,14 +1,14 @@
 /* Where the data comes from: Apple Health and any linked wearable. A
    settings screen, reached from Profile, the Today nudge and a
    `medpull://wearables` link (Features/Profile/ConnectionsView.swift).
-   On the web Apple Health cannot connect: the card is greyed out and says
-   where it does. */
+   On the web Apple Health cannot connect, so its card only reports what
+   the phone connected and says where the connection is made. */
 
 import { useEffect, useState } from 'react'
 import { messageFor, useApp } from '../../core/appModel'
 import { IPHONE_NEEDED } from '../../core/health'
 import { Dates } from '../../core/models'
-import { Card, CloseButton, ErrorBanner, InsetDivider, NavBar, PrimaryButton, Screen, SecondaryButton } from '../../ui/components'
+import { Card, CloseButton, ErrorBanner, InsetDivider, NavBar, Screen, SecondaryButton } from '../../ui/components'
 import { Sym } from '../../ui/icons'
 import { Glyph, ListRow, StateLabel } from '../../ui/rows'
 
@@ -63,17 +63,10 @@ export function ConnectionsView({ onDone }: { onDone: () => void }) {
                 <span className="t-label c-muted">Syncing runs on your iPhone, where Health lives. Open the MedPull iPhone app to sync now or send walking data.</span>
               </>
             ) : (
-              <>
-                <span className="t-copy c-body">One tap connects steps, sleep, heart rate, workouts and Apple’s walking metrics.</span>
-                {!junctionReady && <ErrorBanner text="This server isn’t connected to Junction yet, so there is nowhere for Health data to go." />}
-                <div className="greyed">
-                  <PrimaryButton title="Connect Apple Health" icon="heart.fill" disabled />
-                </div>
-                <div className="hstack-8" style={{ alignItems: 'flex-start' }}>
-                  <span className="c-muted" style={{ paddingTop: 1 }}><Sym name="iphone" size={16} weight="medium" /></span>
-                  <span className="t-label c-muted">{IPHONE_NEEDED}</span>
-                </div>
-              </>
+              <div className="hstack-8" style={{ alignItems: 'flex-start' }}>
+                <span className="c-muted" style={{ paddingTop: 2 }}><Sym name="iphone" size={16} weight="medium" /></span>
+                <span className="t-copy c-body">{IPHONE_NEEDED}</span>
+              </div>
             )}
           </div>
         </Card>

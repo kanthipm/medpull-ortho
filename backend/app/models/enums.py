@@ -186,6 +186,13 @@ class InsightKind(StrEnum):
     # the on-demand deep dives per domain (recovery, training, sleep, weekly).
     PERSONAL_BRIEF = "personal_brief"
     PERSONAL_DEEP = "personal_deep"
+    # MedPull Sports (app/sports): the athlete's morning brief and the
+    # staff-facing team briefing.
+    SPORTS_BRIEF = "sports_brief"
+    SPORTS_TEAM_BRIEF = "sports_team_brief"
+    # The Stats tab's read of the battery, and the injury plan's read.
+    SPORTS_PERFORMANCE_BRIEF = "sports_performance_brief"
+    SPORTS_INJURY_READ = "sports_injury_read"
 
 
 class NotificationChannel(StrEnum):
@@ -223,3 +230,6 @@ GUARDRAIL_SENTENCE = "Monitoring signals for clinician review — not a diagnosi
 # The personal tier has no clinician behind it, so its sentence says what the
 # product is instead: guidance for training and recovery, never medicine.
 PERSONAL_GUARDRAIL_SENTENCE = "Guidance for training and recovery — not medical advice."
+# The sports tier has athletic trainers and physicians behind an org-linked
+# athlete, but the app itself never clears anyone to play.
+SPORTS_GUARDRAIL_SENTENCE = "Performance and recovery guidance — return-to-play is your medical staff's call."
