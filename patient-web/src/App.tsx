@@ -2,22 +2,60 @@
    then the launch spinner, the onboarding flow, or the four tabs of a
    hospital record. Devices and settings live behind the avatar. */
 
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { app, useApp } from './core/appModel'
 import { needsConsent } from './core/models'
-import { CareView } from './features/care/CareView'
 import { ConsentGate } from './features/consent/ConsentView'
-import { MeasureTab } from './features/measure/MeasureTab'
-import { OnboardingFlow } from './features/onboarding/OnboardingFlow'
-import { ConnectionsView } from './features/profile/ConnectionsView'
-import { CareMetricDetailRoute } from './features/progress/CareMetricDetailView'
-import { ProgressTab } from './features/progress/ProgressTab'
-import { SignalDetailRoute } from './features/progress/SignalDetailView'
-import { TaskDestination, TaskHistoryView } from './features/tasks/TasksView'
 import { TodayView } from './features/today/TodayView'
 import { Sheet, SheetHostProvider, Spinner } from './ui/components'
 import { Sym } from './ui/icons'
+
+/* Code splitting by screen. Today is the home tab and ships in the entry
+ * chunk with the shell and the consent gate; onboarding, the other three
+ * tabs, their detail screens and the Connections sheet are each their own
+ * chunk, so a returning patient's first paint no longer downloads the
+ * measurement engine, the thread, or a sign-up flow they finished weeks ago.
+ * `preloadTabs` fetches the tab chunks a moment after the home tab is up, and
+ * react-router runs navigations inside React's startTransition, so a tap on
+ * a tab keeps the current screen until the next one is ready — the fallback
+ * below (the launch spinner) is only seen on a cold deep link. */
+const loadOnboarding = () => import('./features/onboarding/OnboardingFlow')
+const loadCare = () => import('./features/care/CareView')
+const loadMeasure = () => import('./features/measure/MeasureTab')
+const loadConnections = () => import('./features/profile/ConnectionsView')
+const loadProgress = () => import('./features/progress/ProgressTab')
+const loadSignalDetail = () => import('./features/progress/SignalDetailView')
+const loadCareMetricDetail = () => import('./features/progress/CareMetricDetailView')
+const loadTasks = () => import('./features/tasks/TasksView')
+
+const OnboardingFlow = lazy(() => loadOnboarding().then((m) => ({ default: m.OnboardingFlow })))
+const CareView = lazy(() => loadCare().then((m) => ({ default: m.CareView })))
+const MeasureTab = lazy(() => loadMeasure().then((m) => ({ default: m.MeasureTab })))
+const ConnectionsView = lazy(() => loadConnections().then((m) => ({ default: m.ConnectionsView })))
+const ProgressTab = lazy(() => loadProgress().then((m) => ({ default: m.ProgressTab })))
+const SignalDetailRoute = lazy(() => loadSignalDetail().then((m) => ({ default: m.SignalDetailRoute })))
+const CareMetricDetailRoute = lazy(() =>
+  loadCareMetricDetail().then((m) => ({ default: m.CareMetricDetailRoute })),
+)
+const TaskHistoryView = lazy(() => loadTasks().then((m) => ({ default: m.TaskHistoryView })))
+const TaskDestination = lazy(() => loadTasks().then((m) => ({ default: m.TaskDestination })))
+
+function preloadTabs() {
+  void loadProgress()
+  void loadSignalDetail()
+  void loadCareMetricDetail()
+  void loadMeasure()
+  void loadCare()
+  void loadTasks()
+  void loadConnections()
+}
+
+/** The launch screen: the canvas and a spinner, which is also what a screen
+ *  shows for the instant before its chunk lands on a cold deep link. */
+function Launch() {
+  return <div className="launch"><Spinner size={24} /></div>
+}
 
 export default function App() {
   useEffect(() => { void app.bootstrap() }, [])
@@ -44,9 +82,9 @@ function RootView() {
   const model = useApp()
   switch (model.phase) {
     case 'launching':
-      return <div className="launch"><Spinner size={24} /></div>
+      return <Launch />
     case 'onboarding':
-      return <OnboardingFlow />
+      return <Suspense fallback={<Launch />}><OnboardingFlow /></Suspense>
     case 'home':
       return <MainTabs />
   }
@@ -72,29 +110,40 @@ function MainTabs() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [model])
 
+  // The other tabs' code, fetched once the home tab is up so the first tap
+  // on any of them is instant.
+  useEffect(() => {
+    const timer = window.setTimeout(preloadTabs, 1_500)
+    return () => window.clearTimeout(timer)
+  }, [])
+
   // The beta consent, for an account that has never accepted it or met a
   // new version: nothing else is usable until it is read.
   if (needsConsent(model.me)) return <ConsentGate />
 
   return (
     <>
-      <Routes>
-        <Route path="/today" element={<TodayView />} />
-        <Route path="/today/tasks" element={<TaskHistoryView />} />
-        <Route path="/today/tasks/:id" element={<TaskDestination />} />
-        <Route path="/progress" element={<ProgressTab />} />
-        <Route path="/progress/signals/:key" element={<SignalDetailRoute root="/progress" />} />
-        <Route path="/progress/metrics/:id" element={<CareMetricDetailRoute />} />
-        <Route path="/measure" element={<MeasureTab />} />
-        <Route path="/measure/signals/:key" element={<SignalDetailRoute root="/measure" />} />
-        <Route path="/care" element={<CareView />} />
-        <Route path="/tasks/:id" element={<TaskLink />} />
-        <Route path="/connections" element={<ConnectionsLink />} />
-        <Route path="*" element={<Navigate to="/today" replace />} />
-      </Routes>
+      <Suspense fallback={<Launch />}>
+        <Routes>
+          <Route path="/today" element={<TodayView />} />
+          <Route path="/today/tasks" element={<TaskHistoryView />} />
+          <Route path="/today/tasks/:id" element={<TaskDestination />} />
+          <Route path="/progress" element={<ProgressTab />} />
+          <Route path="/progress/signals/:key" element={<SignalDetailRoute root="/progress" />} />
+          <Route path="/progress/metrics/:id" element={<CareMetricDetailRoute />} />
+          <Route path="/measure" element={<MeasureTab />} />
+          <Route path="/measure/signals/:key" element={<SignalDetailRoute root="/measure" />} />
+          <Route path="/care" element={<CareView />} />
+          <Route path="/tasks/:id" element={<TaskLink />} />
+          <Route path="/connections" element={<ConnectionsLink />} />
+          <Route path="*" element={<Navigate to="/today" replace />} />
+        </Routes>
+      </Suspense>
       <TabBar />
       <Sheet open={model.showConnections} onClose={() => model.setShowConnections(false)}>
-        <ConnectionsView onDone={() => model.setShowConnections(false)} />
+        <Suspense fallback={null}>
+          <ConnectionsView onDone={() => model.setShowConnections(false)} />
+        </Suspense>
       </Sheet>
     </>
   )

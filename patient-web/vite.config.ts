@@ -11,6 +11,24 @@ export default defineConfig({
   // bucket; infra/cloudformation.yaml and infra/deploy.sh). The dev server
   // answers at http://localhost:5174/patient/ for the same reason.
   base: '/patient/',
+  build: {
+    rolldownOptions: {
+      output: {
+        // The framework in its own long-lived chunk beside the tab chunks
+        // App.tsx splits off: it changes only when a dependency is bumped,
+        // so a deploy of app code leaves it cached on every phone that has
+        // opened the app before.
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor',
+              test: /node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/,
+            },
+          ],
+        },
+      },
+    },
+  },
   server: {
     port: 5174,
     proxy: {

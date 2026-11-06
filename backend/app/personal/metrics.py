@@ -134,12 +134,32 @@ def _finite(values: pd.Series) -> pd.Series:
     return values[np.isfinite(values.values.astype(float))]
 
 
+def _window_values(series: pd.Series, start: date | None, end: date, *,
+                   inclusive: bool) -> np.ndarray:
+    """The finite values of ``series`` dated from ``start`` (or the beginning)
+    up to ``end`` — inclusive or exclusive — in index order, as one array.
+
+    These windows used to be cut with a Python list comprehension over the
+    index and a pandas boolean take, several thousand times per dashboard
+    (every day of the readiness history, against every signal's trailing
+    baseline). The vectorised comparison and plain ndarray reductions below
+    give the same numbers — pandas reduces through numpy here — in a fraction
+    of the time, which is most of what a team board costs.
+    """
+    if len(series) == 0:
+        return np.empty(0, dtype=float)
+    index = series.index.to_numpy()
+    mask = (index <= end) if inclusive else (index < end)
+    if start is not None:
+        mask &= index >= start
+    values = series.to_numpy(dtype=float)[mask]
+    return values[np.isfinite(values)]
+
+
 def _baseline(series: pd.Series, day: date, floor: float = 0.0,
               days: int = BASELINE_DAYS) -> tuple[float, float, int] | None:
     """(mean, sd, n) over the window ending the day before ``day``."""
-    start = day - timedelta(days=days)
-    window = series[[start <= d < day for d in series.index]]
-    window = _finite(window)
+    window = _window_values(series, day - timedelta(days=days), day, inclusive=False)
     if len(window) < BASELINE_MIN:
         return None
     mean = float(window.mean())
@@ -148,16 +168,20 @@ def _baseline(series: pd.Series, day: date, floor: float = 0.0,
 
 
 def _recent_mean(series: pd.Series, day: date, days: int = RECENT_DAYS) -> float | None:
-    start = day - timedelta(days=days - 1)
-    window = _finite(series[[start <= d <= day for d in series.index]])
+    window = _window_values(series, day - timedelta(days=days - 1), day, inclusive=True)
     return float(window.mean()) if len(window) else None
 
 
 def _latest(series: pd.Series, day: date) -> tuple[date, float] | None:
-    s = _finite(series[[d <= day for d in series.index]])
-    if len(s) == 0:
+    if len(series) == 0:
         return None
-    return s.index[-1], float(s.iloc[-1])
+    index = series.index.to_numpy()
+    values = series.to_numpy(dtype=float)
+    hits = np.flatnonzero((index <= day) & np.isfinite(values))
+    if len(hits) == 0:
+        return None
+    last = hits[-1]
+    return index[last], float(values[last])
 
 
 def _stale(latest_day: date | None, today: date) -> bool:
@@ -240,8 +264,7 @@ def _sleep_need_for(data: PersonalData, day: date, target: float | None,
     base = _baseline(nights[nights >= 3.0] if len(nights) else nights, day,
                      floor=SD_FLOORS[str(M.SLEEP_DURATION)])
     need = target if target else (
-        float(np.median(_finite(nights[[day - timedelta(days=28) <= d < day
-                                         for d in nights.index]])))
+        float(np.median(_window_values(nights, day - timedelta(days=28), day, inclusive=False)))
         if base is not None else SLEEP_NEED_DEFAULT
     )
     need = float(min(10.0, max(6.0, need)))

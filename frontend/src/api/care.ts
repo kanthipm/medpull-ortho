@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { fetchJson } from './client'
+import { patientKeys, SEEDED } from './keys'
 import type { ConfidenceLevel, MetricStatus } from '../lib/risk'
 
 /** Care-metrics contract (`GET /api/patients/{id}/care-metrics`): the stored
@@ -178,11 +179,17 @@ export function fetchCareMetrics(id: string) {
   return fetchJson<CareMetricsResponse>(`/api/patients/${id}/care-metrics`)
 }
 
-export function useCareMetrics(id: string) {
+/** `enabled` lets a caller that mounts beside the record's own query wait
+ *  for it: the overview read seeds this cache, and a hook that fires in the
+ *  same instant would fetch the same bytes a second time. */
+export function useCareMetrics(id: string, enabled = true) {
   return useQuery({
-    queryKey: ['patient', id, 'care-metrics'],
+    queryKey: patientKeys.careMetrics(id),
     queryFn: () => fetchCareMetrics(id),
-    refetchInterval: 5 * 60_000,
+    enabled,
+    // Seeded (and re-seeded every five minutes) by the record's overview
+    // read, so it carries no refetchInterval of its own.
+    ...SEEDED,
   })
 }
 

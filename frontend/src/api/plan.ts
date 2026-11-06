@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchJson } from './client'
+import { patientKeys, SEEDED } from './keys'
 import type { PatientDetail, TaskStatus, WorklistPatient } from './types'
 import type { Urgency } from '../lib/risk'
 
@@ -366,6 +367,9 @@ export function useTaskTemplates(pathway?: string, includeArchived = false) {
       fetchJson<TaskTemplatesResponse>(
         `/api/task-templates${qs({ pathway, include_archived: includeArchived })}`,
       ),
+    // The library changes through this console's own mutations, which
+    // invalidate it; a tab regaining focus is not a reason to re-read 46 kB.
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -415,10 +419,15 @@ export function useSuggestPlan(id: string) {
 
 // --- hooks: the patient's plan ----------------------------------------------
 
-export function usePatientPlan(id: string) {
+/** `enabled` lets a caller that mounts beside the record's own query wait
+ *  for it: the overview read seeds this cache, and a hook that fires in the
+ *  same instant would fetch the same bytes a second time. */
+export function usePatientPlan(id: string, enabled = true) {
   return useQuery({
-    queryKey: ['patient', id, 'plan'],
+    queryKey: patientKeys.plan(id),
     queryFn: () => fetchJson<PlanResponse>(`/api/patients/${id}/plan`),
+    enabled,
+    ...SEEDED,
   })
 }
 
@@ -426,8 +435,12 @@ export function usePatientPlan(id: string) {
  *  phone column, so the plan summary is consulted too; with neither saying
  *  anything, texting is assumed unavailable — the builder then explains why
  *  its checkbox is off rather than promising a text that cannot go. */
-export function usePatientDelivery(id: string, detail: PatientDetail | null | undefined) {
-  const plan = usePatientPlan(id)
+export function usePatientDelivery(
+  id: string,
+  detail: PatientDetail | null | undefined,
+  enabled = true,
+) {
+  const plan = usePatientPlan(id, enabled)
   const phone = patientPhone(detail) ?? plan.data?.summary?.phone ?? null
   // The chart itself says whether this server can text at all (Sendblue keys
   // present); the plan summary is a fallback for callers that have no detail.
@@ -517,6 +530,7 @@ export function useMessageTemplates(includeArchived = false) {
       fetchJson<{ templates: MessageTemplate[]; tones?: string[] }>(
         `/api/message-templates${qs({ include_archived: includeArchived })}`,
       ),
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -559,9 +573,10 @@ export function useDraftPatientMessage(id: string) {
 
 export function useNextSteps(id: string, enabled = true) {
   return useQuery({
-    queryKey: ['patient', id, 'next-steps'],
+    queryKey: patientKeys.nextSteps(id),
     queryFn: () => fetchJson<NextStepsResponse>(`/api/patients/${id}/next-steps`),
     enabled,
+    ...SEEDED,
   })
 }
 

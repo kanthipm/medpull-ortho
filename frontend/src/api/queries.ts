@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { InvalidateQueryFilters, QueryKey } from '@tanstack/react-query'
+import type { InvalidateQueryFilters, QueryClient, QueryKey } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { fetchCareMetrics } from './care'
+import type { CareMetricsResponse } from './care'
 import { fetchJson } from './client'
+import { patientKeys, SEEDED } from './keys'
+import type { NextStepsResponse, PlanResponse } from './plan'
 import type {
   AppNotification,
   AssignTaskResult,
@@ -43,28 +45,55 @@ export function useWorklist() {
   })
 }
 
-export function fetchPatient(id: string) {
-  return fetchJson<PatientDetail>(`/api/patients/${id}`)
+/** `GET /api/patients/{id}/overview`: the record plus everything the patient
+ *  page's cards read, each part byte-identical to its own route. */
+export interface PatientOverview {
+  detail: PatientDetail
+  care_metrics: CareMetricsResponse
+  next_steps: NextStepsResponse
+  plan: PlanResponse
+  checkins: { checkins: Checkin[] }
+  timeline: { events: TimelineEvent[] }
+  messages: { messages: PatientMessage[] }
+  wearables: PatientWearables
+}
+
+/** The patient page's eight reads in one request. The seven sub-resources
+ *  are written straight into their own cache entries (`patientKeys`), so the
+ *  hooks below find them fresh when their cards mount and issue nothing; the
+ *  record is what the detail query itself holds. Opening a patient used to
+ *  fan out into eleven requests in two waves, which on Lambda competes with
+ *  every phone for the function's reserved concurrency. */
+async function loadPatientOverview(qc: QueryClient, id: string): Promise<PatientDetail> {
+  const o = await fetchJson<PatientOverview>(`/api/patients/${id}/overview`)
+  qc.setQueryData(patientKeys.careMetrics(id), o.care_metrics)
+  qc.setQueryData(patientKeys.nextSteps(id), o.next_steps)
+  qc.setQueryData(patientKeys.plan(id), o.plan)
+  qc.setQueryData(patientKeys.checkins(id), o.checkins)
+  qc.setQueryData(patientKeys.timeline(id), o.timeline)
+  qc.setQueryData(patientKeys.messages(id), o.messages)
+  qc.setQueryData(patientKeys.wearables(id), o.wearables)
+  return o.detail
 }
 
 export function usePatient(id: string) {
+  const qc = useQueryClient()
   return useQuery({
-    queryKey: ['patient', id],
-    queryFn: () => fetchPatient(id),
+    queryKey: patientKeys.detail(id),
+    queryFn: () => loadPatientOverview(qc, id),
     refetchInterval: LIVE_REFETCH_MS,
   })
 }
 
-/** Warm the patient page's two eager queries before the row is clicked, so
- *  the chart paints from the cache. Fired on hover/focus of a worklist row;
+/** Warm the whole patient page before the row is clicked, so every card
+ *  paints from the cache. Fired on hover/focus of a worklist row;
  *  prefetchQuery is a no-op while the cache is fresh. */
 export function usePrefetchPatient() {
   const qc = useQueryClient()
   return (id: string) => {
-    void qc.prefetchQuery({ queryKey: ['patient', id], queryFn: () => fetchPatient(id) })
     void qc.prefetchQuery({
-      queryKey: ['patient', id, 'care-metrics'],
-      queryFn: () => fetchCareMetrics(id),
+      queryKey: patientKeys.detail(id),
+      queryFn: () => loadPatientOverview(qc, id),
     })
   }
 }
@@ -132,8 +161,12 @@ export function useNarrativeWarming(
     setBusy(true)
     warm.mutate(body, {
       onSuccess: () => {
+        // Exact, not by prefix: a warm rewrites narratives, which live on the
+        // record and the worklist. The patient record's refetch is the
+        // overview read, which re-seeds the cards' caches anyway, so a prefix
+        // sweep here only added eight requests per round for the same bytes.
         for (const queryKey of JSON.parse(keysKey) as QueryKey[]) {
-          void qc.invalidateQueries({ queryKey })
+          void qc.invalidateQueries({ queryKey, exact: true })
         }
       },
       onSettled: () => {
@@ -151,15 +184,17 @@ export function useNarrativeWarming(
 
 export function usePatientTimeline(id: string) {
   return useQuery({
-    queryKey: ['patient', id, 'timeline'],
+    queryKey: patientKeys.timeline(id),
     queryFn: () => fetchJson<{ events: TimelineEvent[] }>(`/api/patients/${id}/timeline`),
+    ...SEEDED,
   })
 }
 
 export function usePatientCheckins(id: string) {
   return useQuery({
-    queryKey: ['patient', id, 'checkins'],
+    queryKey: patientKeys.checkins(id),
     queryFn: () => fetchJson<{ checkins: Checkin[] }>(`/api/patients/${id}/checkins`),
+    ...SEEDED,
   })
 }
 
@@ -218,8 +253,9 @@ export function wearableFilters(id: string): InvalidateQueryFilters[] {
 
 export function usePatientWearables(id: string) {
   return useQuery({
-    queryKey: ['patient', id, 'wearables'],
+    queryKey: patientKeys.wearables(id),
     queryFn: () => fetchJson<PatientWearables>(`/api/patients/${id}/wearables`),
+    ...SEEDED,
   })
 }
 
@@ -387,9 +423,10 @@ export function usePatientTasks(id: string) {
 
 export function usePatientMessages(id: string) {
   return useQuery({
-    queryKey: ['patient', id, 'messages'],
+    queryKey: patientKeys.messages(id),
     queryFn: () => fetchJson<{ messages: PatientMessage[] }>(`/api/patients/${id}/messages`),
     refetchInterval: 30_000,
+    ...SEEDED,
   })
 }
 

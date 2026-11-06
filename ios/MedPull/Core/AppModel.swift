@@ -325,27 +325,47 @@ final class AppModel {
         // which is how a working app ended up claiming it could not reach the
         // server while the three calls before it had just succeeded. The
         // banner now means what it says: nothing got through.
+        //
+        // Only /me has to come first: it says which kind of account this is.
+        // A subscriber's or an athlete's open then writes the day's plan
+        // before the tasks are read, so the Plan tab shows today rather than
+        // yesterday. Everything after that is independent, so it goes out
+        // together — one round trip to the server instead of four in a row,
+        // which on a phone is the difference between the tabs filling in at
+        // once and filling in one by one. Each call still records its own
+        // outcome, so the banner rule below is unchanged.
         var outcomes = [
             await refresh(surface: false) { self.me = try await self.api.me() },
         ]
         rememberSport()
         if isPersonal {
-            // A subscriber's open writes the day's plan before the tasks
-            // are read, so the Plan tab shows today rather than yesterday.
             outcomes.append(await refreshDashboard(startDay: true))
         }
         if isSports {
             outcomes.append(await refreshSports(startDay: true))
         }
-        outcomes += [
-            await refresh(surface: false) { self.tasks = try await self.api.tasks() },
-            await refresh(surface: false) { self.messages = try await self.api.messages() },
-            await refresh(surface: false) {
-                self.portfolio = try await self.api.portfolio(days: 14).metrics
-            },
-        ]
-        if !isPersonal && !isSports {
-            outcomes.append(await refreshMetrics(surface: false))
+        let clinic = !isPersonal && !isSports
+        // The children run on the main actor like the rest of this class, so
+        // the feeds are written where they are read; only the network waits
+        // overlap, which is all the concurrency that was wanted.
+        outcomes += await withTaskGroup(of: Outcome.self, returning: [Outcome].self) { group in
+            group.addTask { @MainActor in
+                await self.refresh(surface: false) { self.tasks = try await self.api.tasks() }
+            }
+            group.addTask { @MainActor in
+                await self.refresh(surface: false) { self.messages = try await self.api.messages() }
+            }
+            group.addTask { @MainActor in
+                await self.refresh(surface: false) {
+                    self.portfolio = try await self.api.portfolio(days: 14).metrics
+                }
+            }
+            if clinic {
+                group.addTask { @MainActor in await self.refreshMetrics(surface: false) }
+            }
+            var collected: [Outcome] = []
+            for await outcome in group { collected.append(outcome) }
+            return collected
         }
         if outcomes.contains(.ok) {
             clearError()

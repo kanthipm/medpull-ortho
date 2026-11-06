@@ -139,8 +139,10 @@ export default function PatientDetailPage() {
   const toast = useToast()
   const [minHold, setMinHold] = useState(false)
   // The care-metrics query is shared by the header's pathway line, the
-  // headline tiles and Full stats — one request, one cache entry.
-  const care = useCareMetrics(id)
+  // headline tiles and Full stats — one request, one cache entry. It waits
+  // for the record: the overview read behind `usePatient` seeds this cache
+  // (and the plan's below), so neither hook ever fetches on page open.
+  const care = useCareMetrics(id, p != null)
   // Full stats is controlled from here so a headline tile can open it on
   // its own metric's card; the focus clears once the card has been scrolled to.
   const [fullStatsOpen, setFullStatsOpen] = useState(false)
@@ -152,7 +154,7 @@ export default function PatientDetailPage() {
   const clearFocus = useCallback(() => setFocusMetricId(null), [])
   // Whether a text can reach this patient — the builder's "Text the plan"
   // checkbox and the composer's button label read it.
-  const delivery = usePatientDelivery(id, p)
+  const delivery = usePatientDelivery(id, p, p != null)
   // An `open` next step lands on a metric card or scrolls to a section.
   const openTarget = useCallback(
     (target: string) => {
