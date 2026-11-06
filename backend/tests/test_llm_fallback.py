@@ -1,9 +1,10 @@
 import re
 import time
+from datetime import datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.llm import groq as groq_mod
 from app.llm import insights as insights_mod
@@ -221,10 +222,16 @@ def test_repeated_invalid_output_degrades_like_an_outage(db, groq_configured, mo
         lambda *a, **kw: calls.append(1) or {"reason": "x" * 200},  # over the 110-char cap
     )
     monkeypatch.setattr(insights_mod, "PROMPT_VERSION", "storm-test")
+    started = datetime.now()
     patient_ids = ["aisha", "linda", "steve", "priya", "robert", "sofia"]
     for patient_id in patient_ids:
         insight = get_patient_insight(db, InsightKind.WORKLIST_REASON, patient_id)
-        assert insight.llm_provider == "fallback"
+        # Nothing written during the storm is a model row. A patient whose
+        # last ACCEPTED answer is still on file keeps it while the provider
+        # cools down (insights._recent_model_row); everyone else reads the
+        # deterministic text.
+        if insight.llm_provider != "fallback":
+            assert insight.generated_at < started
     assert len(calls) == provider_mod._REJECT_STRIKES
     assert groq_configured.provider_name() == "fallback"
 
@@ -500,3 +507,171 @@ def test_zero_coverage_reads_as_no_device_data():
     )["summary"]
     assert "0%" not in summary
     assert "no recent device data" in summary
+
+
+# --- the renderer reads the conversation too ----------------------------------------
+
+
+def test_fallback_summary_leads_with_what_the_patient_reported():
+    """A dark watch is not an empty chart: the patient's own words from the
+    last check-in are the picture, and the deterministic paragraph says
+    them — with when — before it talks about charging the device."""
+    from app.llm import fallback
+
+    checkin = {"days_ago": 0, "date": "Nov 6", "topics": ["Fever/chills", "Warmth"],
+               "tone": "worse",
+               "highlight": "Chills around two in the morning. I took my temperature, 100.9."}
+    text = fallback.patient_summary(
+        {"name": "Dana Okonkwo", "sex": "F", "procedure": "Total Knee Replacement (TKA)"},
+        {"postop_day": 24, "risk": {"level": "missing_data", "reasons": []},
+         "confidence": {"score": 0.0}},
+        checkin,
+    )["summary"]
+    assert "She checked in today and mentioned fever or chills and warmth" in text
+    assert "“Chills around two in the morning. I took my temperature, 100.9.”" in text
+    assert text.index("checked in") < text.index("charged")
+    assert text.endswith(GUARDRAIL_SENTENCE)
+
+    # older conversations are dated, not called "today"
+    old = dict(checkin, days_ago=16, date="Oct 21")
+    text = fallback.patient_summary({"name": "Dana", "sex": "F"},
+                                    {"postop_day": 24, "risk": {"level": "high", "reasons": []},
+                                     "confidence": {}}, old)["summary"]
+    assert "She checked in on Oct 21" in text
+
+    # and a check-in with nothing clinical in it adds nothing
+    quiet = fallback.patient_summary({"name": "Dana", "sex": "F"},
+                                     {"postop_day": 24, "risk": {"level": "low", "reasons": []},
+                                      "confidence": {}}, {"days_ago": 1, "topics": [],
+                                                          "highlight": None})["summary"]
+    assert "checked in" not in quiet
+
+
+def test_fallback_actions_answer_a_reported_red_flag_first():
+    from app.llm import fallback
+
+    analytics = {"risk": {"level": "missing_data", "reasons": [{"code": "LOW_COVERAGE"}]}}
+    fever = {"days_ago": 1, "topics": ["Fever/chills"], "tone": None, "highlight": "chills"}
+    actions = fallback.suggested_actions(analytics, fever)["actions"]
+    assert actions[0]["urgency"] == "today"
+    assert actions[0]["title"] == "Ask about the fever or chills"
+    assert actions[1]["title"] == "Check the device connection"
+
+    # pain that got worse is a this-week follow-up; a stale report is nothing
+    worse = {"days_ago": 2, "topics": ["Pain"], "tone": "worse", "highlight": "worse"}
+    assert fallback.suggested_actions(analytics, worse)["actions"][0]["urgency"] == "this_week"
+    stale = dict(fever, days_ago=9)
+    assert fallback.suggested_actions(analytics, stale)["actions"][0]["title"] == (
+        "Check the device connection")
+
+
+def test_briefing_names_a_few_and_counts_the_rest():
+    from app.llm import fallback
+
+    roster = [{"name": f"Patient {i}", "priority": "missing_data", "reason": ""}
+              for i in range(19)]
+    text = fallback.daily_briefing(roster)["briefing"]
+    assert "Patient 0, Patient 1, Patient 2 and 16 others have too little device data" in text
+    assert "Patient 7" not in text
+    few = fallback.daily_briefing(roster[:3])["briefing"]
+    assert "Patient 0, Patient 1 and Patient 2 have too little" in few
+
+
+def test_model_one_liners_are_polished_on_the_way_in():
+    """The model drifts on house style: a scan line that starts in lower
+    case or ends in a full stop reads as a draft, so validation fixes both
+    rather than re-asking."""
+    reason = insights_mod._validate(
+        InsightKind.WORKLIST_REASON,
+        {"reason": "trajectory behind -14% vs expected ·  no device data this week."},
+    )
+    assert reason == {"reason": "Trajectory behind -14% vs expected · no device data this week"}
+    actions = insights_mod._validate(
+        InsightKind.SUGGESTED_ACTIONS,
+        {"actions": [{"title": "call dana about the chills.", "detail": "she said so",
+                      "urgency": "today"}]},
+    )["actions"]
+    assert actions[0]["title"] == "Call dana about the chills"
+    assert actions[0]["detail"] == "She said so"
+
+
+# --- the last good narrative stands in while a new one is written -------------------
+
+
+def _model_row(db, patient_id, kind, provider_mod_, text, age=timedelta(0)):
+    """Writes a model-written row under the CURRENT key for its scope, then
+    turns the key over so the next read misses it."""
+    from app.llm.insights import _insight_key, _latest_assessment, _scope, _transcript
+
+    assessment = _latest_assessment(db, patient_id)
+    transcript = _transcript(db, patient_id)
+    row = Insight(
+        patient_id=patient_id, kind=kind, content={"summary": text},
+        input_hash=_insight_key(kind, assessment, transcript, "groq"),
+        llm_provider="groq", model="test-model",
+        generated_at=datetime.now() - age,
+        scope=_scope(assessment, transcript),
+    )
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_a_page_read_keeps_the_last_model_summary_while_it_is_rewritten(
+    db, groq_configured, monkeypatch
+):
+    """The key turns over every midnight and on every recompute. A page read
+    may not spend a model call, so it used to drop to the deterministic text
+    the moment the key changed and jump back when the warm call landed —
+    two voices in an hour. Now the model's last paragraph about the same
+    tier and conversation is served until the rewrite is on file."""
+    patient_id, kind = "linda", InsightKind.PATIENT_SUMMARY
+    db.execute(delete(Insight).where(Insight.patient_id == patient_id, Insight.kind == kind))
+    db.commit()
+    monkeypatch.setattr(
+        insights_mod, "complete_json",
+        lambda *a, **kw: pytest.fail("a page read must not call the model"),
+    )
+    try:
+        kept = _model_row(db, patient_id, kind, groq_configured, LONG_BODY)
+        monkeypatch.setattr(insights_mod, "PROMPT_VERSION", "rollover-test")  # key turns over
+
+        assert insights_mod.insight_is_cached(db, kind, patient_id) is False  # still pending
+        served = get_patient_insight(db, kind, patient_id, allow_llm=False)
+        assert served.id == kept.id  # the model's own words, not the renderer's
+        assert insights_mod.insight_is_cached(db, kind, patient_id) is False  # warm still has work
+
+        # The same stand-in rule covers a provider that is cooling down.
+        groq_configured.note_groq_failure()
+        assert groq_configured.degraded()
+        assert get_patient_insight(db, kind, patient_id).id == kept.id
+
+        # Too old to stand in: the numbers in it have drifted. Deterministic text instead.
+        db.delete(kept)
+        db.commit()
+        old = _model_row(db, patient_id, kind, groq_configured, LONG_BODY,
+                         age=insights_mod.REUSE_MAX_AGE + timedelta(hours=1))
+        served = get_patient_insight(db, kind, patient_id, allow_llm=False)
+        assert served.id != old.id
+        assert served.llm_provider == "fallback"
+    finally:
+        db.execute(delete(Insight).where(Insight.patient_id == patient_id, Insight.kind == kind))
+        db.commit()
+
+
+def test_a_model_row_for_another_tier_never_stands_in(db, groq_configured, monkeypatch):
+    """Scope is the tier and the conversation: a paragraph written while the
+    patient was stable must not be shown over a high-risk header."""
+    patient_id, kind = "robert", InsightKind.PATIENT_SUMMARY
+    db.execute(delete(Insight).where(Insight.patient_id == patient_id, Insight.kind == kind))
+    db.commit()
+    try:
+        row = _model_row(db, patient_id, kind, groq_configured, LONG_BODY)
+        row.scope = "low:0000000000000000"  # written for a different tier
+        db.commit()
+        monkeypatch.setattr(insights_mod, "PROMPT_VERSION", "scope-test")
+        served = get_patient_insight(db, kind, patient_id, allow_llm=False)
+        assert served.llm_provider == "fallback"
+    finally:
+        db.execute(delete(Insight).where(Insight.patient_id == patient_id, Insight.kind == kind))
+        db.commit()

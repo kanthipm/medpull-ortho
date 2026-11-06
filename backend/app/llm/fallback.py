@@ -202,7 +202,69 @@ def _signal_sentences(
     return out
 
 
-def patient_summary(patient_header: dict[str, Any], analytics: dict[str, Any]) -> dict[str, str]:
+def _when_phrase(checkin: dict[str, Any]) -> str:
+    """"this morning"-style anchor for the last check-in: today, yesterday,
+    "3 days ago", or the date once it is more than a week old."""
+    days = int(checkin.get("days_ago") or 0)
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if days < 7:
+        return f"{days} days ago"
+    return f"on {checkin['date']}" if checkin.get("date") else "at the last check-in"
+
+
+# The check-in digest's topic labels (engine/checkin_digest.py) as the words
+# a sentence uses, most urgent first — so a report of chills is never pushed
+# out of a three-topic clause by the pain that was mentioned before it.
+_TOPIC_PHRASE = {
+    "Fever/chills": "fever or chills",
+    "Incision": "the incision",
+    "Warmth": "warmth",
+    "Dizziness": "dizziness",
+    "Pain": "pain",
+    "Swelling": "swelling",
+    "Sleep": "sleep",
+    "Exercises": "the exercises",
+    "Activity": "activity",
+    "Medication": "medication",
+}
+
+
+def _ranked_topics(topics: list[str]) -> list[str]:
+    order = list(_TOPIC_PHRASE)
+    return sorted(topics, key=lambda t: order.index(t) if t in order else len(order))
+
+
+def _topic_words(topics: list[str]) -> str:
+    """"Pain", "Fever/chills" -> "fever or chills and pain"."""
+    return _join([_TOPIC_PHRASE.get(t, t.lower()) for t in _ranked_topics(topics)])
+
+
+def _reported_sentence(checkin: dict[str, Any] | None, subj: str, verb_has: str) -> str | None:
+    """What the patient said last time, in their own words where there are
+    any — the sentence a colleague would open with at handoff."""
+    if not checkin:
+        return None
+    topics = _ranked_topics(list(checkin.get("topics") or []))
+    highlight = (checkin.get("highlight") or "").strip().strip("“”\"")
+    if not topics and not highlight:
+        return None
+    when = _when_phrase(checkin)
+    lead = f"{_cap(subj)} checked in {when}"
+    if topics:
+        lead += f" and mentioned {_topic_words(topics[:3])}"
+    if highlight:
+        return f"{lead}: “{highlight}”"
+    return lead + "."
+
+
+def patient_summary(
+    patient_header: dict[str, Any],
+    analytics: dict[str, Any],
+    latest_checkin: dict[str, Any] | None = None,
+) -> dict[str, str]:
     name = patient_header.get("name", "The patient").split()[0]
     subj, pos, _obj, verb_is, verb_has = _pronouns(patient_header)
     day = analytics.get("postop_day")
@@ -213,6 +275,7 @@ def patient_summary(patient_header: dict[str, Any], analytics: dict[str, Any]) -
     trajectory = analytics.get("trajectory", {})
     confidence = analytics.get("confidence", {})
     adherence = analytics.get("adherence", {})
+    reported = _reported_sentence(latest_checkin, subj, verb_has)
 
     if procedure and day is not None:
         since = f"on post-op day {day} after {procedure}"
@@ -226,18 +289,25 @@ def patient_summary(patient_header: dict[str, Any], analytics: dict[str, Any]) -
         pct = int(round((confidence.get("score") or 0) * 100))
         seen = ("there is no recent device data" if pct <= 0
                 else f"only about {pct}% of recent days have device data")
-        parts.append(f"{name} can't be assessed yet: {seen}. {_cap(subj)} {verb_is} {since}, "
-                     f"so the picture should fill in quickly once the watch is charged, worn "
-                     f"and syncing.")
+        parts.append(f"{name} can't be assessed from the watch yet: {seen}.")
+        if reported:
+            # With the device dark, the conversation is the whole picture.
+            parts.append(reported)
+        parts.append(f"{_cap(subj)} {verb_is} {since}, so the picture should fill in quickly "
+                     f"once the watch is charged, worn and syncing.")
     else:
         signals = _signal_sentences(reasons, subj, pos, verb_is, verb_has, day)
         pct = trajectory.get("pct")
         state = trajectory.get("state")
         if level == RiskLevel.HIGH:
             parts.append(f"{name} needs a call today.")
+            if reported:
+                parts.append(reported)
             parts.extend(signals)
         elif level == RiskLevel.MEDIUM:
             parts.append(f"{name} is worth a look this week.")
+            if reported:
+                parts.append(reported)
             parts.extend(signals)
         else:
             if surgical:
@@ -245,6 +315,8 @@ def patient_summary(patient_header: dict[str, Any], analytics: dict[str, Any]) -
             else:
                 parts.append(f"{name} is {since} and tracking at {pos} usual baseline.")
             parts.extend(signals)
+            if reported:
+                parts.append(reported)
         if surgical and state == "behind" and pct is not None:
             parts.append(f"Overall {subj} {verb_is} running about {abs(round(pct))}% behind the "
                          f"expected curve for {procedure or 'this procedure'}.")
@@ -264,9 +336,49 @@ def patient_summary(patient_header: dict[str, Any], analytics: dict[str, Any]) -
     return {"summary": " ".join(parts)}
 
 
-def suggested_actions(analytics: dict[str, Any]) -> dict[str, Any]:
+# Check-in topics (engine/checkin_digest.py labels) that earn an action of
+# their own when the patient raised them in the last few days: the first set
+# is asked about today, the second this week.
+_URGENT_TOPICS = ("Fever/chills", "Warmth", "Incision", "Dizziness")
+_WATCH_TOPICS = ("Pain", "Swelling")
+_REPORTED_WITHIN_DAYS = 3
+
+
+def _reported_action(checkin: dict[str, Any] | None) -> dict[str, str] | None:
+    """An action from what the patient said, not from the watch: the one
+    thing the renderer can add that the reason codes do not carry."""
+    if not checkin or int(checkin.get("days_ago") or 0) > _REPORTED_WITHIN_DAYS:
+        return None
+    topics = _ranked_topics(list(checkin.get("topics") or []))
+    urgent = [t for t in topics if t in _URGENT_TOPICS]
+    watch = [t for t in topics if t in _WATCH_TOPICS]
+    when = _when_phrase(checkin)
+    if urgent:
+        what = _topic_words(urgent[:2])
+        return {
+            "title": f"Ask about the {_topic_words(urgent[:1])}"[:60],
+            "detail": f"The patient mentioned {what} at the check-in {when}; a quick call can "
+                      "establish whether the follow-up should be brought forward.",
+            "urgency": "today",
+        }
+    if watch and checkin.get("tone") == "worse":
+        what = _topic_words(watch[:2])
+        return {
+            "title": f"Follow up on the {what}"[:60],
+            "detail": f"The patient said the {what} got worse at the check-in {when}.",
+            "urgency": "this_week",
+        }
+    return None
+
+
+def suggested_actions(
+    analytics: dict[str, Any], latest_checkin: dict[str, Any] | None = None
+) -> dict[str, Any]:
     codes = {r["code"] for r in analytics.get("risk", {}).get("reasons", [])}
     actions: list[dict[str, str]] = []
+    reported = _reported_action(latest_checkin)
+    if reported:
+        actions.append(reported)
     for trigger_codes, action in _ACTION_LIBRARY:
         if codes.intersection(trigger_codes) and action not in actions:
             actions.append(action)
@@ -293,6 +405,22 @@ def _lower_reason(reason: str) -> str:
     return _join(bits)
 
 
+# A handoff names a few people and counts the rest. Nineteen names in one
+# sentence is a roster, not a briefing — the console lists them below.
+_NAMES_IN_BRIEFING = 3
+
+
+def _some_names(patients: list[dict[str, Any]]) -> str:
+    """"Ana, Ben and Cy" up to the cap, then "Ana, Ben, Cy and 16 others".
+    One name over the cap is still named: "and 1 other" hides a person to
+    save no words at all."""
+    names = [p["name"] for p in patients]
+    if len(names) <= _NAMES_IN_BRIEFING + 1:
+        return _join(names)
+    rest = len(names) - _NAMES_IN_BRIEFING
+    return ", ".join(names[:_NAMES_IN_BRIEFING]) + f" and {rest} others"
+
+
 def daily_briefing(roster: list[dict[str, Any]]) -> dict[str, str]:
     high = [p for p in roster if p["priority"] == RiskLevel.HIGH]
     medium = [p for p in roster if p["priority"] == RiskLevel.MEDIUM]
@@ -306,20 +434,22 @@ def daily_briefing(roster: list[dict[str, Any]]) -> dict[str, str]:
         if first.get("reason"):
             lead += f": {_lower_reason(first['reason'])}"
         parts.append(lead + ".")
-        for p in high[1:]:
+        for p in high[1:_NAMES_IN_BRIEFING + 1]:
             line = f"{p['name']} needs a call today too"
             if p.get("reason"):
                 line += f", with {_lower_reason(p['reason'])}"
             parts.append(line + ".")
+        if len(high) > _NAMES_IN_BRIEFING + 1:
+            rest = len(high) - _NAMES_IN_BRIEFING - 1
+            parts.append(f"{rest} more {'patient needs' if rest == 1 else 'patients need'} a "
+                         "call today as well.")
     if medium:
-        names = _join([p["name"] for p in medium])
         verb = "is" if len(medium) == 1 else "are"
-        parts.append(f"{names} {verb} worth a look when you have a moment.")
+        parts.append(f"{_some_names(medium)} {verb} worth a look when you have a moment.")
     if missing:
-        names = _join([p["name"] for p in missing])
         has = "has" if len(missing) == 1 else "have"
-        parts.append(f"{names} {has} too little device data to assess; worth a nudge about "
-                     "wearing and syncing.")
+        parts.append(f"{_some_names(missing)} {has} too little device data to assess; worth a "
+                     "nudge about wearing and syncing.")
     if stable:
         parts.append(_stable_sentence(len(stable), everyone=len(stable) == len(roster)))
     if not parts:

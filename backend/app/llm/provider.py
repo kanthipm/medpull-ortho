@@ -119,6 +119,21 @@ def provider_name() -> str:
     return "fallback"
 
 
+def model_configured() -> bool:
+    """Whether this deployment has a real model at all (a key or a local
+    Ollama), whatever its state right now."""
+    return bool(settings.groq_api_key) or bool(settings.ollama_url)
+
+
+def degraded() -> bool:
+    """A real model is configured but unavailable right now — cooling down
+    after a rate-limit burst or an outage. The deterministic renderer is
+    standing in for it, not replacing it, so a page may keep serving the
+    model's last narrative (insights.py) instead of flipping its copy back
+    and forth while the provider recovers."""
+    return model_configured() and provider_name() == "fallback"
+
+
 def model_name() -> str | None:
     provider = provider_name()
     if provider == "groq":

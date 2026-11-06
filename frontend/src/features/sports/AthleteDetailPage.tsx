@@ -7,7 +7,7 @@ import Avatar from '../../components/Avatar'
 import EmptyState from '../../components/EmptyState'
 import SectionCard from '../../components/SectionCard'
 import { SkeletonCard, SkeletonLine } from '../../components/Skeleton'
-import { relativeTime } from '../../lib/format'
+import { narrativeSource, relativeTime } from '../../lib/format'
 import DotLine from '../patient/DotLine'
 import AthleteStatusControl from './AthleteStatusControl'
 import AthleteThread from './AthleteThread'
@@ -182,7 +182,6 @@ export default function AthleteDetailPage() {
 /** The brief as the athlete reads it in the app, on the briefing wash, with
  *  its provenance: the renderer's work is never headlined as AI. */
 function BriefCard({ brief }: { brief: AthleteBrief }) {
-  const rulesBased = brief.provider === 'fallback'
   return (
     <SectionCard
       sum
@@ -191,7 +190,7 @@ function BriefCard({ brief }: { brief: AthleteBrief }) {
       aside={
         <DotLine
           className="meta tabular-nums"
-          parts={[rulesBased ? 'Rules-based' : 'Written by AI', relativeTime(brief.generated_at)]}
+          parts={[narrativeSource(brief.provider), relativeTime(brief.generated_at)]}
         />
       }
     >

@@ -9,6 +9,13 @@ import { RefreshOverlay } from '../../components/Skeleton'
 import Tile from '../../components/Tile'
 import { relativeTime } from '../../lib/format'
 
+/** "latest today · 8:12 AM", "latest 3 days ago", "latest Oct 24": the
+ *  relative time mid-sentence, so only its day words lose their capital —
+ *  never a date, which lower-cased reads as a typo ("oct 24"). */
+function lastSeen(iso: string): string {
+  return relativeTime(iso).replace(/^(Today|Yesterday)/, (d) => d.toLowerCase())
+}
+
 /** The digest tone is the ONE chip on a check-in row: it is state, in words,
  *  on its own tint (4.835 / 5.701 high, 5.369-on-panel low pair measured in
  *  lib/risk.ts). Topics and channel are plain secondary text. */
@@ -53,8 +60,10 @@ function CheckinRow({ checkin }: { checkin: Checkin }) {
   return (
     <li>
       {/* The time is the row's one button; its ::after covers the row, so the
-          whole row toggles. The chip and chevron are decoration under it. */}
-      <div className="card-row group grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3">
+          whole row toggles. The chip and chevron are decoration under it. On
+          a phone they drop under the text instead of squeezing the topics
+          and the quote into a narrow column beside them. */}
+      <div className="card-row group grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
         <span className="pt-0.5">
           <Tile
             family="blue"
@@ -79,7 +88,10 @@ function CheckinRow({ checkin }: { checkin: Checkin }) {
             </p>
           )}
         </div>
-        <div aria-hidden className="flex items-center gap-2 pt-0.5">
+        <div
+          aria-hidden
+          className="flex items-center gap-2 pt-0.5 max-sm:col-start-2 max-sm:row-start-2 max-sm:mt-2"
+        >
           {tone && <span className={`chip ${tone.cls}`}>{tone.label}</span>}
           <ChevronRight
             size={16}
@@ -124,7 +136,9 @@ export default function CheckinHistory({
       icon={<Tile size="sm" family="blue" icon={<MessageCircle />} />}
       aside={
         checkins.length > 0
-          ? `${checkins.length} total · last ${relativeTime(checkins[0].occurred_at).toLowerCase()}`
+          ? `${checkins.length} ${checkins.length === 1 ? 'check-in' : 'check-ins'} · latest ${lastSeen(
+              checkins[0].occurred_at,
+            )}`
           : undefined
       }
       action={

@@ -54,6 +54,15 @@ class Insight(Base):
     llm_provider: Mapped[str] = mapped_column(String)  # "groq" | "fallback"
     model: Mapped[str | None] = mapped_column(String, nullable=True)
     generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    # What the narrative is ABOUT, coarser than the cache key: the risk tier
+    # and the check-in transcript it was written for (the roster's tiers, for
+    # the briefing). The key turns over every day and on every engine
+    # recompute, so a page read that misses it can still re-serve a recent
+    # model-written row with the same scope while the new one is written —
+    # the reader sees yesterday's AI paragraph under an "updating" mark, not
+    # a different renderer's copy that flips back an hour later. Nullable so
+    # existing deployments pick it up with an ALTER TABLE (database.py).
+    scope: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class EstablishedBaseline(Base):

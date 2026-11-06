@@ -176,9 +176,13 @@ function AttentionStrip({
   if (metrics.length === 0) return null
   return (
     <div className="card-group mt-3">
-      <div className="flex items-center gap-2 px-4 pb-1 pt-3">
-        <Sparkles aria-hidden size={14} className="text-cat-teal-ink" />
-        <h3 className="text-[15px] font-medium text-ink">Brought to your attention</h3>
+      {/* The caption wraps under the title on a phone instead of squeezing
+          beside it. */}
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-4 pb-1 pt-3">
+        <h3 className="flex items-center gap-2 text-[15px] font-medium text-ink">
+          <Sparkles aria-hidden size={14} className="text-cat-teal-ink" />
+          Brought to your attention
+        </h3>
         <span className="meta">outside the six, picked by the engine</span>
       </div>
       <ul className="divide-y divide-hairline">
@@ -201,7 +205,7 @@ function AttentionStrip({
               <span className="above-stretch shrink-0">
                 <InfoTip entry={explainMetric(glossary, m.id)} placement="bottom-end" />
               </span>
-              <ChevronRight aria-hidden size={16} className="shrink-0 text-secondary" />
+              <ChevronRight aria-hidden size={16} className="hidden shrink-0 text-secondary sm:block" />
             </li>
           )
         })}

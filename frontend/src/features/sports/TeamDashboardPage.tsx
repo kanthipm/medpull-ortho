@@ -179,7 +179,7 @@ function BriefingCard({ d }: { d: TeamDashboard }) {
       sum
       title="Morning briefing"
       icon={<NarrativeTile provider="fallback" />}
-      aside={<DotLine className="meta tabular-nums" parts={['Rules-based', longDateOf(d.as_of)]} />}
+      aside={<span className="meta tabular-nums">{longDateOf(d.as_of)}</span>}
     >
       <p className="text-lede font-medium text-ink">{d.briefing.headline}</p>
       <p className="mt-1 max-w-[64ch] text-copy-lg text-ink">{d.briefing.text}</p>

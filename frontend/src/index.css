@@ -948,7 +948,7 @@ body {
      sliding `.nav-rule` behind the links. The hidden ::before reserves the
      500 width so the row never jitters. */
   .appbar-link {
-    @apply relative z-[1] inline-flex min-h-10 cursor-pointer flex-col items-center justify-center rounded-pill px-2 text-[14px] sm:px-4 sm:text-[15px];
+    @apply relative z-[1] inline-flex min-h-10 cursor-pointer flex-col items-center justify-center rounded-pill px-1 text-[13px] min-[400px]:px-2 min-[400px]:text-[14px] sm:px-4 sm:text-[15px];
     color: rgb(var(--body));
     font-weight: var(--weight-body);
     letter-spacing: -0.005em;
