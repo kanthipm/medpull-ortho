@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api-local",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "cd backend && DATABASE_URL=sqlite:///./data/patientweb-dev.db GROQ_API_KEY= SENDBLUE_API_KEY= SENDBLUE_API_SECRET= S3_BUCKET= WARM_CACHES_ON_STARTUP=false uv run uvicorn app.main:app --port 8000"],
+      "port": 8000
+    },
+    {
+      "name": "patient-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "cd patient-web && npm run dev"],
+      "port": 5174
+    }
+  ]
+}
