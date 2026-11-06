@@ -32,7 +32,7 @@ from app.models.enums import AdherenceStatus, NotificationChannel
 from app.models.mobile import Message
 from app.models.notification import Notification
 from app.models.patient import CareTeamMember, Patient
-from app.notifications import sendblue
+from app.notifications import reachability, sendblue
 
 logger = logging.getLogger(__name__)
 
@@ -505,8 +505,8 @@ def dispatch(
                 member=member, link=url, link_label="Open the task",
             ),
             authored_by="care_team" if member is not None else "ai",
-            delivery_status="sent" if result.sent else "failed",
-            delivery_detail=None if result.sent else result.detail,
+            delivery_status=sendblue.delivery_status_for(result),
+            delivery_detail=sendblue.delivery_detail_for(result),
             external_handle=result.message_handle,
             # A patient who opens the app instead of the text should land in
             # the same place: the link in the text and this button are two
@@ -1011,6 +1011,14 @@ def handle_inbound_sms(
             token = mint_token(task)
             url = task_url(base_url, token) if base_url else deep_link(task)
             reply, kind = f"Here you go: {url}", "link_sent"
+    elif lowered == reachability.text_first_body().lower():
+        # The greeting the app pre-fills so a number becomes reachable. The
+        # webhook has already recorded that; when no code was waiting, the
+        # person is simply told it worked rather than handed to the model.
+        reply, kind = (
+            "Thanks — you're connected. Texts from your care team reach you here from now on.",
+            "verified",
+        )
     else:
         from app.agent.copilot import respond
 
@@ -1049,8 +1057,8 @@ def handle_inbound_sms(
             channel="sms",
             text=reply,
             authored_by="ai",
-            delivery_status="sent" if delivery.sent else "failed",
-            delivery_detail=None if delivery.sent else delivery.detail,
+            delivery_status=sendblue.delivery_status_for(delivery),
+            delivery_detail=sendblue.delivery_detail_for(delivery),
             external_handle=delivery.message_handle,
         )
     )

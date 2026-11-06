@@ -93,7 +93,7 @@ def start_day(db: Session, patient: Patient, profile: PersonalProfile, *,
         else:
             # Left on "app" so the next run tries again; the reason is
             # kept on the line so the thread can say the text did not go.
-            line.delivery_status = "failed"
+            line.delivery_status = sendblue.delivery_status_for(delivery)
             line.delivery_detail = delivery.detail
             logger.warning("Brief text for %s failed: %s", patient.id, delivery.detail)
     db.commit()

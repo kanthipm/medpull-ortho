@@ -214,7 +214,7 @@ def send_daily_checkin(patient_id: str, request: Request, db: Session = Depends(
         authored_by="care_team" if member is not None else "ai",
         # No phone means nothing was sent out of band, which is not a failure
         # and must not draw the thread's red "not delivered" badge.
-        delivery_status=("sent" if result.sent else "failed") if patient.phone else None,
+        delivery_status=sendblue.delivery_status_for(result) if patient.phone else None,
         delivery_detail=None if result.sent else result.detail,
         external_handle=result.message_handle,
         action_kind="open_task",

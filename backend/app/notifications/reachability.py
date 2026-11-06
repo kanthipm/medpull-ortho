@@ -67,16 +67,18 @@ _confirmed: dict[str, float] = {}      # phone -> when a text went through
 _refused: dict[str, float] = {}        # phone -> when a send was refused
 _contacts: dict[str, tuple[float, bool | None]] = {}  # phone -> (when, verified)
 _line_for: dict[str, tuple[float, str | None]] = {}   # phone -> (when, the line to text)
+_legacy: tuple[float, dict[str, bool]] | None = None    # the whole older contact list
 _plan: tuple[float, str | None] | None = None
 
 
 def reset_caches() -> None:
     """For tests, and for the health check after a configuration change."""
-    global _plan
+    global _plan, _legacy
     _confirmed.clear()
     _refused.clear()
     _contacts.clear()
     _line_for.clear()
+    _legacy = None
     _plan = None
 
 
@@ -163,17 +165,24 @@ def _recently_refused(phone: str) -> bool:
     return when is not None and time.monotonic() - when < REFUSAL_TTL_S
 
 
-def lookup(db: Session, phone: str) -> str:
+def lookup(db: Session, phone: str, *, fresh: bool = False) -> str:
     """``verified`` | ``unverified`` | ``unknown`` for an E.164 number.
 
     Order: what we already know (table, confirmed sends, a fresh refusal),
     then — only when the account's rules make the question meaningful — the
     provider's own verified-contact list. A provider error is ``unknown``,
     which callers treat as "try, and learn".
+
+    ``fresh`` drops what was remembered *against* the number (a refusal, a
+    cached "pending") and asks again: the person tapping "I've sent it" has
+    just changed the answer, and the webhook may be a few seconds behind.
     """
     if known_verified(db, phone):
         return "verified"
-    if _recently_refused(phone):
+    if fresh:
+        _refused.pop(phone, None)
+        _contacts.pop(phone, None)
+    elif _recently_refused(phone):
         return "unverified"
     mode = (settings.sendblue_verified_contacts_only or "auto").strip().lower()
     if mode in ("false", "0", "no", "never"):
@@ -317,9 +326,13 @@ def _fetch_contact(phone: str) -> bool | None:
 
 def _fetch_legacy_contacts() -> dict[str, bool] | None:
     """Every contact on the account by E.164 number -> verified flag, from
-    the older ``/accounts/contacts`` list. ``None`` when it cannot be read."""
+    the older ``/accounts/contacts`` list. ``None`` when it cannot be read.
+    Cached briefly: one list answers for every number asked about in turn."""
+    global _legacy
     from app.notifications.sendblue import normalize_phone
 
+    if _legacy is not None and time.monotonic() - _legacy[0] < CONTACTS_TTL_S:
+        return _legacy[1]
     try:
         response = _request("GET", "/accounts/contacts")
     except httpx.HTTPError as exc:
@@ -337,6 +350,7 @@ def _fetch_legacy_contacts() -> dict[str, bool] | None:
         normalized = normalize_phone(number) if number else None
         if normalized:
             out[normalized] = bool(_contact_verified_flag(contact))
+    _legacy = (time.monotonic(), out)
     return out
 
 
@@ -377,8 +391,11 @@ def account_plan() -> str | None:
     global _plan
     if not _configured():
         return None
-    if _plan is not None and time.monotonic() - _plan[0] < PLAN_TTL_S:
-        return _plan[1]
+    if _plan is not None:
+        # An answer is trusted for a while; a failure to get one only briefly.
+        ttl = PLAN_TTL_S if _plan[1] is not None else CONTACTS_TTL_S
+        if time.monotonic() - _plan[0] < ttl:
+            return _plan[1]
     plan: str | None = None
     try:
         response = _request("GET", "/accounts")

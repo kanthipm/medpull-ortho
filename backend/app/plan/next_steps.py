@@ -491,8 +491,8 @@ def _execute_message(db: Session, patient: Patient, action: dict[str, Any],
     delivery = None
     if patient.phone:
         delivery = sendblue.send_sms(patient.phone, f"From your MedPull care team: {text}")
-        message.delivery_status = "sent" if delivery.sent else "failed"
-        message.delivery_detail = None if delivery.sent else delivery.detail
+        message.delivery_status = sendblue.delivery_status_for(delivery)
+        message.delivery_detail = sendblue.delivery_detail_for(delivery)
         message.external_handle = delivery.message_handle
     template_key = action.get("template_key")
     if template_key:
@@ -500,13 +500,10 @@ def _execute_message(db: Session, patient: Patient, action: dict[str, Any],
         if template is not None:
             template.usage_count = int(template.usage_count or 0) + 1
     db.flush()
-    if delivery is not None and delivery.sent:
-        status = "sent_sms"
-    elif patient.phone:
-        status = "stored_sms_failed"
-    else:
-        status = "stored_app_only"
-    return {"message_id": message.id, "status": status,
+    from app.api.patients import message_outcome
+
+    status, reason = message_outcome(delivery, patient.phone)
+    return {"message_id": message.id, "status": status, "reason": reason,
             "detail": delivery.detail if delivery else "patient has no phone number on file"}
 
 

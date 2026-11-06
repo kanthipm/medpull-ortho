@@ -25,6 +25,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import get_db
 from app.models.mobile import Message
+from app.notifications import reachability, sendblue
 from app.tasks.service import handle_inbound_sms
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,35 @@ def _media_urls(body: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(found))[:4]
 
 
+def _send_waiting_code(db: Session, phone: str) -> dict | None:
+    """Text the code a phone verification has been waiting on, now that
+    ``phone`` has texted the line. None when nothing was waiting."""
+    from app.api import mobile
+    from app.aws import storage
+
+    verification = mobile.waiting_verification(db, phone)
+    if verification is None:
+        return None
+    # Same rule as a reply: a code texted from rows the persist will discard
+    # would never verify. Send nothing; the provider's retry runs this again.
+    if not storage.holds_lock(unknown_as_held=True):
+        logger.warning("Not texting a code to %s: the database write lock was taken over", phone)
+        return {"handled": False, "kind": "lock_lost", "replied": False,
+                "matched_patient": True, "attachments": 0}
+    delivery = mobile.deliver_code(db, verification)
+    if not delivery.sent:
+        logger.warning("Code for verification %s did not go out after the first text: %s",
+                       verification.id, delivery.detail)
+    return {
+        "handled": delivery.sent,
+        "kind": "verification_code_sent" if delivery.sent else "verification_code_failed",
+        "replied": delivery.sent,
+        "matched_patient": True,
+        "attachments": 0,
+        "verification_id": verification.id,
+    }
+
+
 def _handle(request: Request, body: dict[str, Any], db: Session) -> dict:
     if body.get("is_outbound") is True:
         return _outbound_status(body, db)
@@ -131,6 +161,19 @@ def _handle(request: Request, body: dict[str, Any], db: Session) -> dict:
     handle = body.get("message_handle")
     if not isinstance(handle, str) or not handle:
         handle = None
+
+    phone = sendblue.normalize_phone(from_number)
+    if phone is not None:
+        # Whatever this text says, its arrival is the one proof Sendblue's
+        # free plan accepts: from now on texts to this number go through,
+        # and no admin had to approve anything. If a one-time code has been
+        # waiting for exactly this text, it goes out now and the exchange
+        # ends here — the greeting is not a message for the care team.
+        reachability.mark_verified(db, phone, source="inbound")
+        db.commit()
+        woken = _send_waiting_code(db, phone)
+        if woken is not None:
+            return woken
 
     base = settings.checkin_base_url or str(request.base_url).rstrip("/")
     outcome = handle_inbound_sms(db, from_number, content, base_url=base, message_handle=handle,

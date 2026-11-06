@@ -22,6 +22,7 @@ from app.database import SessionLocal
 from app.models.enums import NotificationStatus
 from app.models.notification import Notification
 from app.models.patient import CareTeamMember
+from app.notifications import reachability
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,10 @@ _last_config_fault: str | None = None
 # texting is failing even when the cause is one recipient rather than the
 # account. Silence is not evidence of health.
 _last_failure: str | None = None
+# Last number refused for never having texted the line. Not a failure of the
+# deployment — the apps and the console both know what to do about it — so it
+# is reported apart from the two above.
+_last_unreachable: str | None = None
 
 # Sendblue's own wording, and what an operator has to do about it. The reason
 # alone reads as a dead end ("must be verified" — by whom, how?), and it is
@@ -60,13 +65,13 @@ _last_failure: str | None = None
 _HINTS: tuple[tuple[str, str], ...] = (
     (
         "must be verified",
-        "This number is not a verified Sendblue contact. Have them text {sender} once, "
-        "or verify it in the Sendblue dashboard.",
+        "Not reachable by text yet: this number hasn't texted MedPull ({sender}) before. "
+        "Ask them to text it once — texts go through from then on.",
     ),
     (
         "no contact found",
-        "This number is not a Sendblue contact yet. Have them text {sender} once, "
-        "or add it in the Sendblue dashboard.",
+        "Not reachable by text yet: this number hasn't texted MedPull ({sender}) before. "
+        "Ask them to text it once — texts go through from then on.",
     ),
     (
         "phone number is not defined",
@@ -117,7 +122,21 @@ def status() -> dict:
         "config_fault": _last_config_fault,
         "last_failure": _last_failure,
         "hint": _hint_for(_last_failure) if _last_failure else None,
+        # The verified-contact rule in force and what has been learned about
+        # which numbers can be reached (app/notifications/reachability.py).
+        "reachability": {**reachability.status(), "last_unreachable": _last_unreachable},
     }
+
+
+def unreachable_detail(sender: str | None = None) -> str:
+    """The one honest sentence for a number that has never texted the line:
+    what is true, and what fixes it. Shown to the clinician under the thread
+    line and returned to the console when a message is stored unsent."""
+    line = sender or reachability.line_number() or "the MedPull number"
+    return (
+        f"Not reachable by text yet — ask them to text MedPull first at {line}. "
+        "Texts go through the moment they do."
+    )
 
 
 def _e164(phone: str) -> str | None:
@@ -298,6 +317,26 @@ class CheckinSendResult:
     # True when the failure is about this deployment's Sendblue account rather
     # than about the recipient: nothing will send until it is fixed.
     config_fault: bool = False
+    # True when the provider refused the number for never having texted the
+    # line (Sendblue's free plan). Not a fault of ours and not a dead end:
+    # the number becomes reachable the moment the person texts MedPull once.
+    unreachable: bool = False
+
+
+def delivery_status_for(result: CheckinSendResult) -> str:
+    """The thread line's state for one send: ``sent``, ``unreachable`` (the
+    honest word for a number that has not texted the line yet — the console
+    says what to do, not "failed") or ``failed``."""
+    if result.sent:
+        return "sent"
+    if result.unreachable:
+        return "unreachable"
+    return "failed"
+
+
+def delivery_detail_for(result: CheckinSendResult) -> str | None:
+    """Why a send did not go, for the thread line; None when it went."""
+    return None if result.sent else result.detail
 
 
 def configured() -> bool:
@@ -339,6 +378,8 @@ def send_sms(phone_number: str, content: str, *, media_url: str | None = None) -
                     else _post_message(phone, content))
     except httpx.HTTPStatusError as exc:
         reason = _error_reason(exc.response)
+        if reachability.is_verification_refusal(reason):
+            return _refused_unverified(phone, reason, exc.response.status_code)
         logger.warning("Sendblue send to %s failed: %s %s", phone, exc, reason or "")
         if reason:
             _note_fault(reason)
@@ -371,6 +412,8 @@ def send_sms(phone_number: str, content: str, *, media_url: str | None = None) -
     # "status": "ERROR" for a rejection it decided before queueing.
     if body and str(body.get("status", "")).upper() == "ERROR":
         reason = _error_reason(response) or "Sendblue rejected the message"
+        if reachability.is_verification_refusal(reason):
+            return _refused_unverified(phone, reason, response.status_code)
         _note_fault(reason)
         logger.warning("Sendblue rejected a send to %s: %s", phone, reason)
         hint = _hint_for(reason)
@@ -382,7 +425,23 @@ def send_sms(phone_number: str, content: str, *, media_url: str | None = None) -
         )
     global _last_failure
     _last_failure = None  # a delivered message clears the banner
+    # A text that went through is the proof the free plan wants: from now
+    # on this number needs no first text from the patient.
+    reachability.note_sent(phone)
     return CheckinSendResult(sent=True, detail="sent", message_handle=handle)
+
+
+def _refused_unverified(phone: str, reason: str, status_code: int | None) -> CheckinSendResult:
+    """Sendblue refused ``phone`` for never having texted the line. Recorded
+    as what it is — a number we cannot reach *yet* — rather than as a fault:
+    the apps ask the patient for that one text and the console says so."""
+    global _last_unreachable
+    _last_unreachable = phone
+    reachability.note_refused(phone)
+    logger.info("Sendblue will not text %s until they text the line first: %s", phone, reason)
+    return CheckinSendResult(
+        sent=False, detail=unreachable_detail(), status_code=status_code, unreachable=True,
+    )
 
 
 def _error_reason(response: httpx.Response) -> str:
