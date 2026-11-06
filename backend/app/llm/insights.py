@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.llm import fallback
 from app.llm.prompts import PROMPT_VERSION, SYSTEM, briefing_prompt, patient_prompt
@@ -216,8 +216,13 @@ def _latest_assessment(db: Session, patient_id: str) -> RiskAssessment:
 
 
 def _transcript(db: Session, patient_id: str, n_checkins: int = 3) -> list[dict[str, str]]:
+    # The messages come along in one query rather than one per check-in: this
+    # runs twice per narrative read and once per worklist row, so the lazy
+    # loads were the single largest query count on the patient page. The
+    # relationship's own order (seq) still applies.
     checkins = db.scalars(
         select(Checkin)
+        .options(selectinload(Checkin.messages))
         .where(Checkin.patient_id == patient_id)
         .order_by(Checkin.occurred_at.desc())
         .limit(n_checkins)

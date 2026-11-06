@@ -12,6 +12,7 @@ from app.api import (
     mobility,
     narratives,
     notifications,
+    overview,
     patients,
     plan,
     sendblue_webhook,
@@ -37,6 +38,7 @@ CONSOLE = [Depends(require_console)]
 api_router.include_router(system.router)
 api_router.include_router(worklist.router, dependencies=CONSOLE)
 api_router.include_router(patients.router, dependencies=CONSOLE)
+api_router.include_router(overview.router, dependencies=CONSOLE)
 api_router.include_router(notifications.router, dependencies=CONSOLE)
 api_router.include_router(integrations.router, dependencies=CONSOLE)
 api_router.include_router(webhooks.router)

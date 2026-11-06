@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.worklist import ensure_fresh_assessment
 from app.config import settings
@@ -190,8 +190,11 @@ def patient_checkins(patient_id: str, db: Session = Depends(get_db)) -> dict:
     from app.engine.checkin_digest import digest
 
     _get_patient(db, patient_id)
+    # One query for every check-in's messages instead of one per check-in;
+    # the relationship's own order (seq) still applies.
     checkins = db.scalars(
         select(Checkin)
+        .options(selectinload(Checkin.messages))
         .where(Checkin.patient_id == patient_id)
         .order_by(Checkin.occurred_at.desc())
     ).all()
