@@ -182,8 +182,10 @@ def test_android_frame_gives_the_same_numbers_as_ios():
     tagged = range_of_motion("knee_extension_supine", -_gravity(0.0), -_gravity(7.0),
                              platform="android")
     assert tagged.angle_deg == deficit.angle_deg
+    # Unconverted, the flat reference hold straddles the ±180° wrap: the
+    # spread explodes and a perfectly still phone is reported as moving.
     untagged = range_of_motion("knee_extension_supine", -_gravity(0.0), -_gravity(7.0))
-    assert abs(untagged.angle_deg - 7.0) > 100  # the wrap-around an unconverted frame causes
+    assert untagged.reference_sd_deg > 100 and not untagged.steady and deficit.steady
 
 
 def test_range_of_motion_reads_the_full_arc_and_flags_an_unsteady_hold():
