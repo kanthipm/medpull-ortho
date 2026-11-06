@@ -8,7 +8,10 @@ secret as the URL's last path segment (for an account with no header secret
 set), and nothing else; with no secret configured it answers 503 and no
 inbound text is processed. The number is matched to a patient through
 ``patients.phone`` and nothing else: a text from an unknown number is logged
-and dropped, never stored.
+and dropped, never stored — except that its arrival is what makes the number
+reachable on Sendblue's free plan, so the number alone is remembered in
+``verified_contacts``, and a one-time code waiting on that first text goes
+out at once (``_send_waiting_code``).
 """
 
 from __future__ import annotations

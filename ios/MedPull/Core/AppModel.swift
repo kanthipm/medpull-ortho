@@ -218,7 +218,6 @@ final class AppModel {
         paywall = nil
         tasks = TasksResponse(open: [], recent: [])
         messages = []
-        progress = []
         portfolio = []
         metrics = nil
         wearables = nil

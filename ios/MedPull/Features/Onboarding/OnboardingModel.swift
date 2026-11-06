@@ -502,7 +502,8 @@ final class OnboardingModel {
                 textFirst = false
                 return
             }
-            try handle(api.resendVerification(id: verificationId), app: app)
+            let r = try await api.resendVerification(id: verificationId)
+            try handle(r, app: app)
             if textFirst {
                 error = "We haven’t got your text yet — give it a moment, or send it again."
             }

@@ -116,7 +116,10 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     read_by_patient_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     read_by_care_team_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # sent | delivered | failed | None (nothing was sent out-of-band for this line)
+    # sent | delivered | failed | unreachable | None (nothing was sent
+    # out-of-band for this line). ``unreachable`` is not a failure of ours:
+    # the number has never texted MedPull and the texting plan cannot reach
+    # it until it does, which the console says in those words.
     # Who stands behind this message: "care_team" when a clinician wrote,
     # approved or triggered it, "ai" when the copilot produced it on its own.
     # NULL on rows written before the distinction existed, read as "ai" —
