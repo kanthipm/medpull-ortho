@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
+# Routes a clinic's own system calls with its hospital access token. They
+# are wired without the console token: a bearer header carries one credential,
+# and these already demand the hospital's.
+hospital_router = APIRouter(prefix="/patients", tags=["patients"])
+
 
 def _get_patient(db: Session, patient_id: str) -> Patient:
     patient = db.get(Patient, patient_id)
@@ -668,7 +673,7 @@ def require_hospital_auth(
     return hospital
 
 
-@router.post("/")
+@hospital_router.post("/")
 def create_patient(
     body: CreatePatientBody, 
     hospital: Hospital = Depends(require_hospital_auth),

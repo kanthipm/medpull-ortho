@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.auth import console_auth_enabled
 from app.api.mobile import current_patient
 from app.api.patients import require_hospital_auth
 from app.database import get_db
@@ -441,18 +442,23 @@ def console_patient(
 ) -> Patient:
     """The chart a console request is about.
 
-    The console has no sign-in in this deployment: every other route on this
+    Locked console (CONSOLE_ACCESS_TOKEN set): the bearer on every console
+    call is the console token, already checked by the router's dependency
+    before this runs. It is not a hospital token and must not be read as
+    one, or every attachment route answers 401 the moment the console is
+    locked, and the SPA reads that as "signed out".
+
+    Open console (the public demo): no sign-in, every other route on this
     surface answers on CloudFront origin verification alone. Demanding a
     hospital token here alone would make the feature unreachable without
     making the thread these files hang on any more private — the message
-    text beside a wound photo is already served without one.
-
-    So a token is honoured rather than required. Sent, it is checked (a
-    wrong one is refused, not ignored) and it pins the lookup to that
-    hospital, which is the guarantee a multi-tenant console will need.
-    Absent, this behaves like the rest of the console.
+    text beside a wound photo is already served without one. So a bearer
+    is honoured rather than required: sent, it is checked (a wrong one is
+    refused, not ignored) and it pins the lookup to that hospital, the
+    guarantee a multi-tenant console will need. Absent, this behaves like
+    the rest of the console.
     """
-    if authorization is not None:
+    if authorization is not None and not console_auth_enabled():
         hospital = require_hospital_auth(authorization, db)
         patient = db.get(Patient, patient_id)
         if patient is None or patient.hospital_id != hospital.id:

@@ -1,4 +1,4 @@
-import { ApiError, REQUEST_TIMEOUT_MS, fetchJson } from './client'
+import { ApiError, REQUEST_TIMEOUT_MS, consoleAuthHeaders, fetchJson } from './client'
 import type { MessageAttachment } from './types'
 
 /** Images and files on the thread, from the console's side.
@@ -51,10 +51,12 @@ export async function uploadAttachment(
   }
 
   if (ticket.direct || !ticket.upload) {
+    // Straight to the API, so this is a console call like any other and
+    // carries the console's token when there is one.
     const res = await post(
       `${base}/direct?filename=${encodeURIComponent(file.name)}`,
       file,
-      { 'Content-Type': type },
+      { 'Content-Type': type, ...consoleAuthHeaders() },
     )
     if (!res.ok) throw new ApiError(res.status, await reason(res))
     return (await res.json()).attachment as MessageAttachment
@@ -110,7 +112,7 @@ export async function attachmentSrc(
   const base = `/api/patients/${patientId}/attachments/${id}`
   const { attachment } = await fetchJson<{ attachment: MessageAttachment & { url?: string } }>(base)
   if (attachment.url) return { src: attachment.url, objectUrl: false }
-  const res = await fetch(`${base}/raw`)
+  const res = await fetch(`${base}/raw`, { headers: consoleAuthHeaders() })
   if (!res.ok) throw new ApiError(res.status, await reason(res))
   return { src: URL.createObjectURL(await res.blob()), objectUrl: true }
 }

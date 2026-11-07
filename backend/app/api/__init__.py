@@ -21,6 +21,7 @@ from app.api import (
     worklist,
 )
 from app.api.auth import require_console
+from app.hep import api as hep
 from app.personal import api as personal
 from app.sports import api as sports
 
@@ -38,6 +39,7 @@ CONSOLE = [Depends(require_console)]
 api_router.include_router(system.router)
 api_router.include_router(worklist.router, dependencies=CONSOLE)
 api_router.include_router(patients.router, dependencies=CONSOLE)
+api_router.include_router(patients.hospital_router)
 api_router.include_router(overview.router, dependencies=CONSOLE)
 api_router.include_router(notifications.router, dependencies=CONSOLE)
 api_router.include_router(integrations.router, dependencies=CONSOLE)
@@ -54,6 +56,7 @@ api_router.include_router(care.router, dependencies=CONSOLE)
 api_router.include_router(explain.router, dependencies=CONSOLE)
 api_router.include_router(narratives.router, dependencies=CONSOLE)
 api_router.include_router(plan.router, dependencies=CONSOLE)
+api_router.include_router(hep.router, dependencies=CONSOLE)
 api_router.include_router(attachments.router)
 api_router.include_router(attachments.console_router, dependencies=CONSOLE)
 api_router.include_router(personal.router)
