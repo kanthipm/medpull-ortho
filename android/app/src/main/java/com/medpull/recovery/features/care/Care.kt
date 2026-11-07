@@ -188,7 +188,7 @@ fun CareScreen(nav: NavHostController) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("CARE TEAM", style = MaterialTheme.typography.labelSmall, color = c.muted)
-                Text(state.me?.patient?.hospital?.ifBlank { null } ?: "Your care team", style = MaterialTheme.typography.titleLarge, color = c.ink)
+                Text(state.me?.patient?.hospital?.name?.ifBlank { null } ?: "Your care team", style = MaterialTheme.typography.titleLarge, color = c.ink)
             }
             Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
                 state.me?.patient?.careTeam?.take(3)?.forEach { Initials(it.name, size = 30.dp, tone = Tone.MISSING) }

@@ -184,7 +184,7 @@ private fun ConsentStep(nav: NavHostController, model: OnboardingModel) {
 private fun HospitalStep(nav: NavHostController, model: OnboardingModel) {
     val s by model.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { if (s.hospitals.isEmpty()) model.loadHospitals() }
-    StepFrame(nav, "Step 1 of 5", "Where are you being treated?") {
+    StepFrame(nav, "Step 1 of 6", "Where are you being treated?") {
         s.error?.let { if (s.hospitals.isEmpty()) { ErrorBanner(it); Gap() } }
         Field(s.hospitalQuery, { model.state.value = s.copy(hospitalQuery = it) }, "Search hospitals")
         Gap()
@@ -205,7 +205,7 @@ private fun HospitalStep(nav: NavHostController, model: OnboardingModel) {
 @Composable
 private fun PathStep(nav: NavHostController, model: OnboardingModel) {
     val s by model.state.collectAsStateWithLifecycle()
-    StepFrame(nav, "Step 2 of 5", s.hospital?.name ?: "Your hospital") {
+    StepFrame(nav, "Step 2 of 6", s.hospital?.name ?: "Your hospital") {
         Panel(onClick = { model.state.value = s.copy(path = Path.FIND_RECORD); nav.navigate(Step.IDENTITY.name) }) {
             Text("My care team set me up", style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
             Text("Find the record they made for you.", style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
@@ -224,7 +224,7 @@ private fun IdentityStep(nav: NavHostController, model: OnboardingModel) {
     val scope = rememberCoroutineScope()
     val c = MP.colors
     LaunchedEffect(s.name, s.phone) { delay(350); model.search() }
-    StepFrame(nav, "Step 3 of 5", "Find your record", blurb = "Your name and mobile number, as your care team has them.") {
+    StepFrame(nav, "Step 3 of 6", "Find your record", blurb = "Your name and mobile number, as your care team has them.") {
         s.error?.let { ErrorBanner(it, onDismiss = { model.state.value = s.copy(error = null) }); Gap() }
         Field(s.name, { model.state.value = s.copy(name = it) }, "Full name")
         Gap(8.dp)
@@ -265,7 +265,7 @@ private fun JoinStep(nav: NavHostController, model: OnboardingModel) {
     var pickDob by remember { mutableStateOf(false) }
     var pickSurgery by remember { mutableStateOf(false) }
     LaunchedEffect(s.hadSurgery) { if (s.hadSurgery) model.loadProcedures() }
-    StepFrame(nav, "Step 3 of 5", "Join as a new patient") {
+    StepFrame(nav, "Step 3 of 6", "Join as a new patient") {
         s.error?.let { ErrorBanner(it, onDismiss = { model.state.value = s.copy(error = null) }); Gap() }
         Field(s.name, { model.state.value = s.copy(name = it) }, "Full name")
         Gap(8.dp)
@@ -309,7 +309,7 @@ private fun JoinStep(nav: NavHostController, model: OnboardingModel) {
 private fun VerifyStep(nav: NavHostController, model: OnboardingModel) {
     val s by model.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    StepFrame(nav, "Step 4 of 5", "Enter the code we texted",
+    StepFrame(nav, "Step 4 of 6", "Enter the code we texted",
         blurb = "Sent to ${s.phoneMasked ?: "your number"}. It expires in ten minutes.") {
         s.error?.let { ErrorBanner(it, onDismiss = { model.state.value = s.copy(error = null) }); Gap() }
         Field(s.code, { model.state.value = s.copy(code = it.filter { ch -> ch.isDigit() }.take(8)) }, "6-digit code",

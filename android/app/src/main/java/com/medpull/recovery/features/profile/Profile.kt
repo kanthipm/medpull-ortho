@@ -86,7 +86,7 @@ fun ProfileScreen(nav: NavHostController) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(me.patient.name, style = MaterialTheme.typography.titleLarge, color = c.ink)
-                        Text(listOfNotNull(me.patient.procedureDisplay.takeIf { it.isNotBlank() }, me.patient.hospital).joinToString(" · "),
+                        Text(listOfNotNull(me.patient.procedureDisplay.takeIf { it.isNotBlank() }, me.patient.hospital?.name).joinToString(" · "),
                             color = c.muted, style = MaterialTheme.typography.bodyMedium)
                     }
                 }

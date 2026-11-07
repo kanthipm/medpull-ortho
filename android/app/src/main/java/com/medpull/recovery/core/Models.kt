@@ -63,7 +63,7 @@ import kotlinx.serialization.json.jsonPrimitive
     val mode: String = "recovery", val accountKind: String = "clinic", val procedureDisplay: String = "",
     val surgeryDate: String? = null, val joinedDate: String? = null, val postopDay: Int? = null,
     val daysEnrolled: Int = 0, val carePathway: String? = null, val phoneMasked: String? = null,
-    val email: String? = null, val hospital: String? = null, val careTeam: List<CareTeamMember> = emptyList(),
+    val email: String? = null, val hospital: Hospital? = null, val careTeam: List<CareTeamMember> = emptyList(),
 ) {
     val isRecovery get() = mode == "recovery"
     val isPersonal get() = mode == "personal" || accountKind == "personal"
@@ -214,19 +214,25 @@ object AnswerValueSerializer : KSerializer<AnswerValue> {
 
 @Serializable data class MetricReadiness(
     val ready: Boolean? = null, val stage: String? = null, val have: Int? = null, val need: Int? = null,
-    val left: Int? = null, val firmLeft: Int? = null, val note: String? = null,
+    val firm: Int? = null, val left: Int? = null, val firmLeft: Int? = null, val unit: String = "days",
+    val note: String? = null,
 )
-@Serializable data class MetricExplain(val what: String? = null, val why: String? = null, val how: String? = null,
-                                       val reading: String? = null, val help: String? = null)
+/** The three patient-facing lines the server writes for a metric (engine/explain.py). */
+@Serializable data class MetricExplain(val title: String = "", val what: String = "", val why: String = "",
+                                       val help: String = "")
 @Serializable data class ChartPoint(val x: Double? = null, val y: Double? = null)
 @Serializable data class PatientMetricChart(val kind: String = "line", val points: List<ChartPoint> = emptyList(),
                                             val xLabel: String = "Post-op day")
 @Serializable data class PatientMetric(
     val id: String, val key: String? = null, val title: String = "", val state: String = "waiting",
-    val stateLabel: String = "", val headline: String = "", val value: Double? = null, val unit: String = "",
+    val stateLabel: String = "", val headline: String = "",
+    /** Already formatted by the server ("120/80", "85%"), never a number. */
+    val value: String? = null, val unit: String = "",
     val readiness: MetricReadiness? = null, val daysLeftText: String? = null, val explain: MetricExplain? = null,
     val chart: PatientMetricChart? = null,
-)
+) {
+    val isWaiting get() = state == "waiting"
+}
 @Serializable data class PatientSignal(
     val key: String, val title: String = "", val state: String = "waiting", val stateLabel: String = "",
     val availability: String? = null, val headline: String = "", val latest: PortfolioPoint? = null,
@@ -234,7 +240,7 @@ object AnswerValueSerializer : KSerializer<AnswerValue> {
     val explain: MetricExplain? = null, val series: List<PortfolioPoint> = emptyList(),
 )
 @Serializable data class PatientMetricOverall(val showing: Int = 0, val waiting: Int = 0,
-                                              val daysUntilFullPicture: Int? = null, val headline: String = "")
+                                              val daysUntilFullPicture: Int? = null, val blurb: String? = null)
 @Serializable data class PatientMetricsResponse(
     val metrics: List<PatientMetric> = emptyList(), val signals: List<PatientSignal> = emptyList(),
     val overall: PatientMetricOverall = PatientMetricOverall(), val trajectory: JsonElement? = null,
@@ -261,12 +267,14 @@ object AnswerValueSerializer : KSerializer<AnswerValue> {
                                       val deviceModel: String? = null)
 @Serializable data class StairSummary(val direction: String = "", val speedMps: Double? = null)
 @Serializable data class MotionWindowSummary(
-    val bouts: Int = 0, val nSteps: Int? = null, val cadenceSpm: Double? = null, val walkingSpeedMps: Double? = null,
+    val durationS: Double? = null, val walkingS: Double? = null,
+    val bouts: Int = 0, val steps: Int? = null, val cadenceSpm: Double? = null, val walkingSpeedMps: Double? = null,
     val stepLengthM: Double? = null, val asymmetryPct: Double? = null, val doubleSupportPct: Double? = null,
     val steadiness: Double? = null, val stairs: List<StairSummary> = emptyList(), val notes: List<String> = emptyList(),
 )
 @Serializable data class MotionUploadResponse(val version: String = "", val windows: List<MotionWindowSummary> = emptyList(),
-                                              val rows: Int = 0, val ingested: Int = 0, val updated: Int = 0)
+                                              val rows: Int = 0, val ingested: Int = 0, val updated: Int = 0,
+                                              val duplicates: Int = 0)
 @Serializable data class SixMinuteWalkUpload(
     val startedAt: String, val durationS: Double, val steps: Int? = null, val pedometerDistanceM: Double? = null,
     val gpsDistanceM: Double? = null, val gpsAccuracyM: Double? = null, val minuteSteps: List<Int>? = null,

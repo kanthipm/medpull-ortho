@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.medpull.recovery.core.Dates
+import com.medpull.recovery.core.MetricExplain
+import com.medpull.recovery.core.MetricReadiness
 import com.medpull.recovery.core.PatientMetric
 import com.medpull.recovery.core.PatientSignal
 import com.medpull.recovery.core.PortfolioMetric
@@ -109,6 +111,7 @@ fun ProgressScreen(nav: NavHostController) {
                     SectionTitle("What your care team sees", action = {
                         if (metrics.metrics.size > 3) PlainButton(if (showAll) "Fewer" else "Show all") { showAll = !showAll }
                     })
+                    metrics.overall.blurb?.takeIf { it.isNotBlank() }?.let { Gap(4.dp); Text(it, color = c.body, style = MaterialTheme.typography.bodyMedium); Gap(4.dp) }
                     val shown = if (showAll) metrics.metrics else metrics.metrics.take(3)
                     shown.forEachIndexed { i, m ->
                         MetricRow(m) { nav.navigate(Routes.metric(m.id)) }
@@ -225,15 +228,7 @@ fun SignalDetailScreen(nav: NavHostController, key: String) {
         Gap()
         s?.let { sig ->
             if (sig.headline.isNotBlank()) Panel { Text(sig.stateLabel, style = MaterialTheme.typography.labelMedium, color = c.muted); Text(sig.headline, color = c.ink) }
-            sig.explain?.let { e ->
-                Gap()
-                Panel {
-                    e.what?.let { Explain("What it is", it) }
-                    e.why?.let { Explain("Why it matters", it) }
-                    e.how?.let { Explain("How to help it show", it) }
-                    e.reading?.let { Explain("Where it stands", it) }
-                }
-            }
+            sig.explain?.let { e -> Gap(); ExplainCard(e, sig.readiness) }
         }
         Gap(24.dp)
     }
@@ -243,6 +238,31 @@ fun SignalDetailScreen(nav: NavHostController, key: String) {
 private fun Stat(label: String, value: String) {
     Column { Text(label, style = MaterialTheme.typography.labelSmall, color = MP.colors.muted); Text(value, style = MaterialTheme.typography.titleMedium, color = MP.colors.ink) }
 }
+
+/** The explanation the server wrote, word for word, plus how far the reading is from showing. */
+@Composable
+fun ExplainCard(e: MetricExplain, readiness: MetricReadiness? = null) {
+    Panel {
+        if (e.what.isNotBlank()) Explain("What it is", e.what)
+        if (e.why.isNotBlank()) Explain("Why it matters", e.why)
+        if (e.help.isNotBlank()) Explain("How to help it show", e.help)
+        readiness?.sentence()?.let { Explain("Where it stands", it) }
+    }
+}
+
+/** "Needs 5 days of steps; you have 3." (ios MetricReadiness.sentence). */
+fun MetricReadiness.sentence(): String? {
+    val what = note?.let { " of $it" } ?: ""
+    val have = have ?: return null
+    val need = need ?: return null
+    if (ready == true) {
+        val firmLeft = firmLeft ?: 0
+        return if (stage == "provisional" && firmLeft > 0 && firm != null) "Showing from $have ${unitWord(have)}$what; settles after $firm." else null
+    }
+    return "Needs $need ${unitWord(need)}$what; you have $have."
+}
+
+private fun MetricReadiness.unitWord(n: Int): String = if (n == 1 && unit.endsWith("s")) unit.dropLast(1) else unit
 
 @Composable
 private fun Explain(title: String, body: String) {
@@ -267,17 +287,12 @@ fun CareMetricDetailScreen(nav: NavHostController, id: String) {
             m.daysLeftText?.let { Gap(4.dp); Text(it, color = c.muted, style = MaterialTheme.typography.bodyMedium) }
             val pts = m.chart?.points.orEmpty().mapNotNull { it.y }
             if (pts.size >= 2) { Gap(12.dp); SeriesChart(pts, bars = m.chart?.kind == "bars", height = 150.dp) }
-            m.value?.let { Gap(8.dp); Text(fmt(it, m.unit), style = MaterialTheme.typography.displaySmall, color = c.ink) }
-        }
-        m.explain?.let { e ->
-            Gap()
-            Panel {
-                e.what?.let { Explain("What it is", it) }
-                e.why?.let { Explain("Why it matters", it) }
-                e.how?.let { Explain("How to help it show", it) }
-                e.reading?.let { Explain("Where it stands", it) }
+            if (!m.isWaiting) m.value?.takeIf { it.isNotBlank() }?.let {
+                Gap(8.dp)
+                Text(if (m.unit.isBlank()) it else "$it ${m.unit}", style = MaterialTheme.typography.displaySmall, color = c.ink)
             }
         }
+        m.explain?.let { e -> Gap(); ExplainCard(e, m.readiness) }
         Gap(24.dp)
     }
 }
