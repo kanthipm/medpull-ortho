@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react'
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { clearConsoleToken, getConsoleToken } from '../../api/client'
+import { useConsoleSession } from '../../api/queries'
+import type { ConsoleScopeKind } from '../../api/types'
 import { useReveal, useSpotlight } from '../../lib/useReveal'
 import { useScrollEdge } from '../../lib/useScrollEdge'
 import DemoWelcome from '../DemoWelcome'
@@ -35,6 +37,26 @@ const NAV = [
     match: (pathname: string) => pathname.startsWith('/settings'),
   },
 ]
+
+/** Which destinations a console credential can use (the server enforces the
+ *  same lines: a hospital token 404s on the team boards and 403s on the staff
+ *  pages, a team token sees no clinic chart). Staff see everything. */
+const NAV_FOR: Record<ConsoleScopeKind, string[]> = {
+  all: NAV.map((item) => item.key),
+  hospital: ['worklist'],
+  sports_org: ['teams'],
+  team: ['teams'],
+}
+
+/** Where the brand goes and where an out-of-scope path is sent. */
+function homeFor(kind: ConsoleScopeKind | undefined): string {
+  return kind === 'team' || kind === 'sports_org' ? '/sports' : '/'
+}
+
+function navMatches(item: (typeof NAV)[number], pathname: string): boolean {
+  if (item.match) return item.match(pathname)
+  return pathname === item.to || pathname.startsWith(`${item.to}/`)
+}
 
 /** The page head the sky window wraps: an explicit `[data-hero]`, else the
  *  page's first <header>, else its h1. */
@@ -112,12 +134,24 @@ function useSkyHeight(
  *  under it. The flat modes make it opaque with a real edge (index.css).
  *
  *  ALIGNMENT. The bar's row and <main> use the same per-route width class,
- *  so the logo lines up with the page's left edge on every page. */
+ *  so the logo lines up with the page's left edge on every page.
+ *
+ *  SCOPE. The session says what the stored token is good for. An org's
+ *  console shows that org's name beside the brand and only the destinations
+ *  it can use, and a path outside them is sent to its home; until a stored
+ *  token's scope is known the bar shows no destinations rather than every
+ *  one. With no token at all the console is open, and the scope is `all`. */
 export default function AppShell() {
   const { pathname } = useLocation()
   const { sentinelRef, scrolled } = useScrollEdge<HTMLSpanElement>()
-  const active = useActiveRoute(NAV)
-  const { trackRef, style } = useSlidingIndicator(active, NAV.length)
+  const { data: session } = useConsoleSession()
+  const scope = session?.scope
+  const signedIn = getConsoleToken() != null
+  const items = scope ? NAV.filter((item) => NAV_FOR[scope.kind].includes(item.key)) : signedIn ? [] : NAV
+  const home = homeFor(scope?.kind)
+  const inScope = !scope || items.some((item) => navMatches(item, pathname))
+  const active = useActiveRoute(items)
+  const { trackRef, style } = useSlidingIndicator(active, items.length)
   const pageClass = PAGE_CLASS[pageWidthFor(pathname)]
   const shellRef = useRef<HTMLDivElement>(null)
   const mainRef = useRef<HTMLElement>(null)
@@ -156,7 +190,7 @@ export default function AppShell() {
         <div className={pageClass}>
           <div className="appbar-inner flex items-center gap-2 sm:gap-4">
             <Link
-              to="/"
+              to={home}
               aria-label="MedPull home"
               className="brand-lockup shrink-0 rounded-pill pr-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             >
@@ -165,6 +199,14 @@ export default function AppShell() {
               </span>
               <span className="hidden sm:inline">MedPull</span>
             </Link>
+            {scope && scope.kind !== 'all' && (
+              <span
+                className="meta hidden min-w-0 max-w-[24ch] truncate border-l border-line pl-3 sm:inline"
+                title={scope.label}
+              >
+                {scope.name}
+              </span>
+            )}
 
             <nav
               aria-label="Primary"
@@ -172,7 +214,7 @@ export default function AppShell() {
             >
               <div ref={trackRef} className="relative flex items-center gap-0.5 py-2">
                 <span aria-hidden className="nav-rule" style={style} />
-                {NAV.map((item) => {
+                {items.map((item) => {
                   const current = item.key === active
                   return (
                     <Link
@@ -197,11 +239,13 @@ export default function AppShell() {
                 <ThemeToggle />
               </span>
               <NotificationsPopover />
-              {getConsoleToken() && (
+              {signedIn && (
                 <button
                   type="button"
-                  className="btn-plain btn-sm hidden sm:inline-flex"
+                  className="btn-plain btn-sm"
                   onClick={() => {
+                    // A full load, not a route change: every cached query
+                    // belongs to the token being dropped.
                     clearConsoleToken()
                     window.location.assign('/login')
                   }}
@@ -220,7 +264,7 @@ export default function AppShell() {
         tabIndex={-1}
         className={`${pageClass} flex-1 pb-20 pt-8 outline-0 [outline-style:none] sm:pt-12`}
       >
-        <Outlet />
+        {inScope ? <Outlet /> : <Navigate to={home} replace />}
       </main>
       <DemoWelcome />
     </div>

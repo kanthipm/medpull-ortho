@@ -526,3 +526,22 @@ export function useHealth() {
 export function useIsDemo(): boolean {
   return useHealth().data?.demo === true
 }
+
+// Appended rather than folded into the import list above: another stream owns
+// the top of this file, and an import declaration is hoisted wherever it sits.
+import type { ConsoleSession } from './types'
+
+export const CONSOLE_SESSION_KEY: QueryKey = ['console-session']
+
+/** Who the console is signed in as: the stored token's scope, or `all` on an
+ *  open console with no token. Fetched once per page load — a token cannot
+ *  change under a page, since signing in or out reloads it — and seeded by
+ *  the login page the moment a token is accepted. A 401 here is handled like
+ *  every other console 401: the client forgets the token and goes to /login. */
+export function useConsoleSession() {
+  return useQuery({
+    queryKey: CONSOLE_SESSION_KEY,
+    queryFn: () => fetchJson<ConsoleSession>('/api/console/session'),
+    staleTime: Infinity,
+  })
+}

@@ -478,3 +478,20 @@ export interface Health {
   llm_provider: string
   model: string | null
 }
+
+/** What a console credential may see: everything (staff, or an open
+ *  console), one hospital's charts, one sports org's boards, or one team's. */
+export type ConsoleScopeKind = 'all' | 'hospital' | 'sports_org' | 'team'
+
+/** GET /api/console/session — who this console is signed in as. */
+export interface ConsoleSession {
+  scope: {
+    kind: ConsoleScopeKind
+    /** The hospital, sports org or team id; null for staff. */
+    org_id: string | null
+    /** Who holds the credential, as it was minted ("HIRT console"). */
+    label: string
+    /** The org's display name, or "MedPull" for staff. */
+    name: string
+  }
+}
