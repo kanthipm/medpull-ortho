@@ -27,7 +27,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,6 +64,7 @@ import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Status
 import com.medpull.recovery.MedPullApp
 import com.medpull.recovery.core.AppModel
+import com.medpull.recovery.features.consent.ConsentForm
 import com.medpull.recovery.features.profile.HealthConnectCard
 import com.medpull.recovery.features.profile.WearableLinkCard
 import com.medpull.recovery.features.profile.rememberPassiveWalkEnabler

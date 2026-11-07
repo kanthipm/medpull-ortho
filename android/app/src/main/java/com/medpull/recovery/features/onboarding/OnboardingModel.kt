@@ -21,9 +21,10 @@ import com.medpull.recovery.core.join
 import com.medpull.recovery.core.procedures
 import com.medpull.recovery.core.search
 import com.medpull.recovery.core.verify
+import com.medpull.recovery.features.consent.agreed
+import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
-import java.time.LocalDate
 
 enum class Step { WELCOME, MODE, CONSENT, HOSPITAL, PATH, IDENTITY, JOIN, VERIFY, HEALTH, WALKS, WEARABLE, DONE, PERSONAL_SOON }
 enum class Path { FIND_RECORD, JOIN_GENERAL, JOIN_AFTER_SURGERY }
@@ -43,8 +44,7 @@ data class OnboardingState(
     val canEnroll get() = selected != null && phoneDigits(phone).length >= 10 && hospital != null
     val canJoin get() = name.trim().length >= 2 && phoneDigits(phone).length >= 10 && hospital != null &&
         (!hadSurgery || procedure != null)
-    val canAgree get() = consent != null && consent.scopes.filter { it.required }.all { consentScopes[it.key] == true } &&
-        signature.trim().length >= 2
+    val canAgree get() = consent?.agreed(consentScopes, signature) == true
 }
 
 fun phoneDigits(s: String) = s.filter { it.isDigit() }

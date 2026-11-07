@@ -1,14 +1,12 @@
 package com.medpull.recovery.features.personal
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,17 +16,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.medpull.recovery.core.ConsentDocument
 import com.medpull.recovery.core.consentDocument
-import com.medpull.recovery.ui.Field
+import com.medpull.recovery.features.consent.ConsentForm
+import com.medpull.recovery.features.consent.agreed
 import com.medpull.recovery.ui.ErrorBanner
 import com.medpull.recovery.ui.Gap
 import com.medpull.recovery.ui.MP
-import com.medpull.recovery.ui.Panel
 import com.medpull.recovery.ui.PlainButton
 import com.medpull.recovery.ui.PrimaryButton
 import com.medpull.recovery.ui.SecondaryButton
@@ -57,19 +54,9 @@ fun ConsentGate() {
         error?.let { ErrorBanner(it); Gap() }
         val d = doc
         if (d != null) {
-            Panel { Text(d.text, style = MaterialTheme.typography.bodyMedium, color = c.body) }
-            Gap()
-            d.scopes.forEach { sc ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = scopes[sc.key] == true, onCheckedChange = { scopes = scopes + (sc.key to it) })
-                    Column { Text(sc.label, color = c.ink); Text(if (sc.required) "Needed to use MedPull" else "Your choice.", color = c.muted, style = MaterialTheme.typography.bodyMedium) }
-                }
-            }
-            Gap()
-            Field(signature, { signature = it }, "Type your name to sign")
+            ConsentForm(d, scopes, onScope = { k, v -> scopes = scopes + (k to v) }, signature = signature, onSignature = { signature = it })
             Gap(16.dp)
-            val ok = d.scopes.filter { it.required }.all { scopes[it.key] == true } && signature.trim().length >= 2
-            PrimaryButton("Agree", enabled = ok, loading = working) {
+            PrimaryButton("Agree", enabled = d.agreed(scopes, signature), loading = working) {
                 scope.launch {
                     working = true
                     try { app.acceptConsent(d, scopes, signature.trim()) } catch (e: Exception) { error = e.message }
