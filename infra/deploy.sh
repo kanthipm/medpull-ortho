@@ -65,6 +65,12 @@ DEMO_MODE="${DEMO_MODE:-false}"
 case "$DEMO_MODE" in true|false) ;; *) echo "DEMO_MODE must be true or false" >&2; exit 1 ;; esac
 ALLOW_MOCK_WEBHOOK="${ALLOW_MOCK_WEBHOOK:-$(dotenv_value ALLOW_MOCK_WEBHOOK)}"
 ALLOW_MOCK_WEBHOOK="${ALLOW_MOCK_WEBHOOK:-false}"
+# auto | true | false: whether a text waits for the number to text MedPull
+# first. Only the stack Sendblue's webhook points at can see that first
+# text, so a second stack on the same number sets false (see .env.demo.example).
+SENDBLUE_VERIFIED_CONTACTS_ONLY="${SENDBLUE_VERIFIED_CONTACTS_ONLY:-$(dotenv_value SENDBLUE_VERIFIED_CONTACTS_ONLY)}"
+SENDBLUE_VERIFIED_CONTACTS_ONLY="${SENDBLUE_VERIFIED_CONTACTS_ONLY:-auto}"
+case "$SENDBLUE_VERIFIED_CONTACTS_ONLY" in auto|true|false) ;; *) echo "SENDBLUE_VERIFIED_CONTACTS_ONLY must be auto, true or false" >&2; exit 1 ;; esac
 # demo | none: whether this script ever invokes the seed function. Defaults
 # from DEMO_MODE, so the real app never seeds unless told to in so many words.
 SEED="${SEED:-$(dotenv_value SEED)}"
@@ -366,6 +372,7 @@ PARAMS=(
   "ConsoleAccessTokenParameter=$CONSOLE_TOKEN_PARAM"
   "DemoMode=$DEMO_MODE"
   "AllowMockWebhook=$ALLOW_MOCK_WEBHOOK"
+  "SendblueVerifiedContactsOnly=$SENDBLUE_VERIFIED_CONTACTS_ONLY"
   "PublicBaseUrl=$PUBLIC_BASE_URL"
   "SendblueFromNumber=$SENDBLUE_FROM_NUMBER"
   "CareTeamPhones=$CARE_TEAM_PHONES"

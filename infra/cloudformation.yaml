@@ -125,6 +125,16 @@ Parameters:
     Description: >-
       Opens the unsigned demo webhook (POST /api/webhooks/wearables/mock),
       which trusts the patient id in its body. Demo stack only.
+  SendblueVerifiedContactsOnly:
+    Type: String
+    Default: auto
+    AllowedValues: [auto, "true", "false"]
+    Description: >-
+      Whether an outbound text waits for the number to text MedPull first
+      (Sendblue's inbound-first rule). auto follows the account's plan. A
+      second stack sharing the one Sendblue number must say "false": the
+      number's inbound texts reach only the stack whose webhook Sendblue
+      calls, so the other can never see the first text arrive.
   PublicBaseUrl:
     Type: String
     Default: ""
@@ -759,6 +769,7 @@ Resources:
           CONSOLE_ACCESS_TOKEN_PARAMETER: !Ref ConsoleAccessTokenParameter
           DEMO_MODE: !Ref DemoMode
           ALLOW_MOCK_WEBHOOK: !Ref AllowMockWebhook
+          SENDBLUE_VERIFIED_CONTACTS_ONLY: !Ref SendblueVerifiedContactsOnly
           SENDBLUE_FROM_NUMBER: !Ref SendblueFromNumber
           CARE_TEAM_PHONES: !Ref CareTeamPhones
           IOS_TEAM_ID: !Ref IosTeamId
