@@ -475,6 +475,8 @@ export interface Health {
   console_auth: boolean
   /** The public demo stack, or the real app. The server decides, not the hostname. */
   demo: boolean
+  /** The home exercise program is on: the console shows the Exercise Library nav. */
+  hep?: boolean
   llm_provider: string
   model: string | null
 }

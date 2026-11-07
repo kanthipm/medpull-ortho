@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react'
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { clearConsoleToken, getConsoleToken } from '../../api/client'
+import { useHealth } from '../../api/queries'
 import { useReveal, useSpotlight } from '../../lib/useReveal'
 import { useScrollEdge } from '../../lib/useScrollEdge'
 import DemoWelcome from '../DemoWelcome'
@@ -27,6 +28,12 @@ const NAV = [
     key: 'integrations',
     label: 'Integrations',
     to: '/integrations',
+  },
+  {
+    key: 'exercises',
+    label: 'Exercises',
+    to: '/exercise-plans',
+    match: (pathname: string) => pathname.startsWith('/exercise-'),
   },
   {
     key: 'settings',
@@ -116,8 +123,12 @@ function useSkyHeight(
 export default function AppShell() {
   const { pathname } = useLocation()
   const { sentinelRef, scrolled } = useScrollEdge<HTMLSpanElement>()
-  const active = useActiveRoute(NAV)
-  const { trackRef, style } = useSlidingIndicator(active, NAV.length)
+  // The exercise pages ride on the server's HEP flag; until health has
+  // answered (or where it is off) the bar keeps its other items.
+  const hep = useHealth().data?.hep === true
+  const nav = hep ? NAV : NAV.filter((item) => item.key !== 'exercises')
+  const active = useActiveRoute(nav)
+  const { trackRef, style } = useSlidingIndicator(active, nav.length)
   const pageClass = PAGE_CLASS[pageWidthFor(pathname)]
   const shellRef = useRef<HTMLDivElement>(null)
   const mainRef = useRef<HTMLElement>(null)
@@ -172,7 +183,7 @@ export default function AppShell() {
             >
               <div ref={trackRef} className="relative flex items-center gap-0.5 py-2">
                 <span aria-hidden className="nav-rule" style={style} />
-                {NAV.map((item) => {
+                {nav.map((item) => {
                   const current = item.key === active
                   return (
                     <Link

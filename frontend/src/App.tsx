@@ -31,6 +31,9 @@ const AthleteDetailPage = lazy(loadAthleteDetailPage)
 const IntegrationsPage = lazy(() => import('./features/integrations/IntegrationsPage'))
 const NotificationSettingsPage = lazy(() => import('./features/settings/NotificationSettingsPage'))
 const LibraryPage = lazy(() => import('./features/settings/LibraryPage'))
+const ExerciseLibraryPage = lazy(() => import('./features/hep/ExerciseLibraryPage'))
+const ExercisePlansPage = lazy(() => import('./features/hep/ExercisePlansPage'))
+const PlanEditorPage = lazy(() => import('./features/hep/PlanEditorPage'))
 
 function preloadRoutes() {
   void loadPatientDetailPage()
@@ -86,6 +89,9 @@ export default function App() {
           element={<Page><AthleteDetailPage /></Page>}
         />
         <Route path="integrations" element={<Page><IntegrationsPage /></Page>} />
+        <Route path="exercise-library" element={<Page><ExerciseLibraryPage /></Page>} />
+        <Route path="exercise-plans" element={<Page><ExercisePlansPage /></Page>} />
+        <Route path="exercise-plans/:id" element={<Page><PlanEditorPage /></Page>} />
         <Route path="settings/notifications" element={<Page><NotificationSettingsPage /></Page>} />
         <Route path="settings/library" element={<Page><LibraryPage /></Page>} />
         <Route path="*" element={<Navigate to="/" replace />} />

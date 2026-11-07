@@ -3,7 +3,7 @@
  *  the sky window's frame all use the page's own cap.
  *    worklist  1080px   ('/')
  *    patient   1240px   ('/patients/…', '/sports…' — the team boards)
- *    settings   960px   ('/settings…', '/integrations')
+ *    settings   960px   ('/settings…', '/integrations', '/exercise-…')
  *    wide      --container-max (any other route)
  *  Kept out of AppShell.tsx so that file exports components only. */
 export type PageWidth = 'worklist' | 'patient' | 'settings' | 'wide'
@@ -11,8 +11,15 @@ export type PageWidth = 'worklist' | 'patient' | 'settings' | 'wide'
 export function pageWidthFor(pathname: string): PageWidth {
   if (pathname === '/') return 'worklist'
   if (pathname.startsWith('/patients/')) return 'patient'
+  // the plan editor is two columns, like the patient page
+  if (/^\/exercise-plans\/[^/]+/.test(pathname)) return 'patient'
   if (pathname === '/sports' || pathname.startsWith('/sports/')) return 'patient'
-  if (pathname.startsWith('/settings') || pathname.startsWith('/integrations')) return 'settings'
+  if (
+    pathname.startsWith('/settings') ||
+    pathname.startsWith('/integrations') ||
+    pathname.startsWith('/exercise-')
+  )
+    return 'settings'
   return 'wide'
 }
 

@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # True on the public demo stack only: the console shows the welcome and
     # the roster caption, and the seed may run. The real app leaves it off.
     demo_mode: bool = False
+    # --- the home exercise program (app/hep) -------------------------------
+    # Off hides the Exercise Plans nav and answers 404 on every /api/hep route.
+    hep_enabled: bool = True
+    # The hospital row the console's HEP library and plans belong to. Empty
+    # picks the first active hospital; one shared console token means one
+    # clinic per deployment until clinicians get their own logins.
+    hep_clinic_id: str = ""
     # Junction (fka Vital), the wearable aggregator. The API key is the switch:
     # without it the registry reports Junction as needing setup and every
     # Junction endpoint answers 503, while signed deliveries to the webhook are
