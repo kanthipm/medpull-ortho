@@ -9,9 +9,10 @@ texts them that it is waiting."""
 import hashlib
 import secrets
 from datetime import datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -25,7 +26,7 @@ from app.models.patient import Patient
 from app.notifications import sendblue
 from app.notifications.sendblue import send_checkin_message
 from app.tasks import service as tasks_service
-from app.tasks.service import CHECKIN_QUESTIONS, PHRASES
+from app.tasks.service import CHECKIN_QUESTIONS, PHRASES, QUESTION_SETS
 
 # Two doors: the patient's page, let in by the token in its link, and the
 # clinician's actions, which api/__init__ puts behind the console's token.
@@ -34,10 +35,19 @@ console_router = APIRouter(tags=["checkin"])
 
 INVITE_TTL = timedelta(hours=72)
 
-# One question list for every check-in surface: the tokenized web form here,
-# the app's check-in task, and the texted conversation (tasks/service.py).
+# One question list per kind of patient, shared by every check-in surface:
+# the tokenized web form here, the app's check-in task, and the texted
+# conversation (tasks/service.py). The recovery set is the default; a general
+# patient gets the set without an incision, and a patient on a clinic's
+# training program (the lifter roster) the set that asks about the program
+# and the day's training. ``tasks_service.checkin_qset`` decides.
 QUESTIONS = CHECKIN_QUESTIONS
 _PHRASES = PHRASES
+
+
+def _questions_for(patient: Patient) -> tuple[str, list[dict[str, Any]]]:
+    qset = tasks_service.checkin_qset(patient)
+    return qset, QUESTION_SETS[qset]
 
 
 def _hash(token: str) -> str:
@@ -87,10 +97,21 @@ def send_invite(
 def get_checkin(token: str, db: Session = Depends(get_db)) -> dict:
     invite = _valid_invite(db, token)
     patient = db.get(Patient, invite.patient_id)
-    return {"patient_name": patient.name.split()[0], "questions": QUESTIONS}
+    qset, questions = _questions_for(patient)
+    return {"patient_name": patient.name.split()[0], "questions": questions, "qset": qset}
 
 
 class CheckinAnswers(BaseModel):
+    """The form's answers, keyed by question id.
+
+    The recovery set's questions are named so the contract (and the clients
+    generated from it) keep their fields; any other question id — the lifter
+    set's ``new_pain``, ``program``, ``rpe``, ``minutes`` — is allowed through
+    and validated against the question set the patient was served.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
     pain: int | None = Field(default=None, ge=0, le=10)
     swelling: str | None = None
     fever: str | None = None
@@ -98,31 +119,34 @@ class CheckinAnswers(BaseModel):
     exercises: str | None = None
     note: str | None = Field(default=None, max_length=2000)
 
+    def given(self) -> dict[str, Any]:
+        answers = {**self.model_dump(exclude_none=True), **(self.model_extra or {})}
+        return {k: v for k, v in answers.items() if v is not None and v != ""}
+
 
 @router.post("/checkin/{token}")
 def submit_checkin(token: str, answers: CheckinAnswers, db: Session = Depends(get_db)) -> dict:
     invite = _valid_invite(db, token)
+    patient = db.get(Patient, invite.patient_id)
+    qset, questions = _questions_for(patient)
+    given = answers.given()
 
     pairs: list[tuple[str, str]] = []
-    for q in QUESTIONS:
-        raw = getattr(answers, q["id"])
-        if raw is None or raw == "":
+    for q in questions:
+        raw = given.get(q["id"])
+        if raw is None:
             continue
-        if q["id"] == "pain":
-            text = f"My pain is about {raw} out of 10."
-        elif q["id"] == "note":
-            text = str(raw).strip()
-        else:
-            phrase = _PHRASES[q["id"]].get(str(raw))
-            if phrase is None:
-                raise HTTPException(status_code=422, detail=f"Invalid answer for {q['id']}")
-            text = phrase
+        try:
+            text = tasks_service.answer_to_text(q, raw)
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"Invalid answer for {q['id']}")
         pairs.append((q["prompt"], text))
 
     if not pairs:
         raise HTTPException(status_code=422, detail="No answers given")
 
-    checkin = Checkin(patient_id=invite.patient_id, occurred_at=datetime.now(), channel="sms")
+    now = datetime.now()
+    checkin = Checkin(patient_id=invite.patient_id, occurred_at=now, channel="sms")
     db.add(checkin)
     db.flush()
     seq = 0
@@ -130,7 +154,13 @@ def submit_checkin(token: str, answers: CheckinAnswers, db: Session = Depends(ge
         db.add(CheckinMessage(checkin_id=checkin.id, seq=seq, who="copilot", text=prompt))
         db.add(CheckinMessage(checkin_id=checkin.id, seq=seq + 1, who="patient", text=text))
         seq += 2
-    invite.used_at = datetime.now()
+    invite.used_at = now
+    if qset == "checkin_lifter":
+        # The training answers become observations, like the app and the
+        # texted conversation write them (tasks/reported.py).
+        from app.tasks.reported import record_reported
+
+        record_reported(db, patient, given, now)
     db.commit()
     return {"ok": True}
 

@@ -104,9 +104,38 @@ PERSONAL_RECOVERY_CHECKIN_QUESTIONS: list[dict[str, Any]] = [
     {"id": "note", "prompt": "Anything you want to remember about today?", "kind": "text"},
 ]
 
+# The lifter check-in: a person training in a gym between visits to a
+# physical therapist (the HIRT roster, app/seed/hirt.py). No incision, no
+# wearable; what the clinic needs each morning is pain, anything new since the
+# visit, the night, whether today's program got done, and how much training
+# happened, so the load can be judged against the lifter's own prior weeks.
+# The effort and minutes answers become SESSION_LOAD observations and the
+# program answer a PROGRAM_DONE observation (tasks/reported.py); pain and the
+# new-pain line stay in the transcript, where the care loaders read them.
+# ``phrase`` is the patient's sentence for a numeric answer whose default
+# wording ("I walked about N minutes") would be wrong here.
+LIFTER_CHECKIN_QUESTIONS: list[dict[str, Any]] = [
+    {"id": "pain", "prompt": "How's the pain today, 0 to 10?", "kind": "scale"},
+    {"id": "swelling", "prompt": "Any swelling you didn't have yesterday?", "kind": "yes_no"},
+    {"id": "new_pain", "prompt": "Any new pain that wasn't there at your last visit?",
+     "kind": "yes_no"},
+    {"id": "sleep", "prompt": "How did you sleep?", "kind": "choice",
+     "options": ["well", "rough"]},
+    {"id": "program", "prompt": "Did you get today's program in?", "kind": "choice",
+     "options": ["all", "some", "none"]},
+    {"id": "rpe", "prompt": "Training today: how hard was it, 0 to 10?", "kind": "scale",
+     "phrase": "Today's training felt like a {value} out of 10.",
+     "phrase_zero": "No real effort today."},
+    {"id": "minutes", "prompt": "And how many minutes did you train?", "kind": "number",
+     "min": 0, "max": 600, "phrase": "I trained for about {value} minutes.",
+     "phrase_zero": "Rest day, no training today."},
+    {"id": "note", "prompt": "Anything else you want the clinic to know?", "kind": "text"},
+]
+
 QUESTION_SETS: dict[str, list[dict[str, Any]]] = {
     "checkin": CHECKIN_QUESTIONS,
     "checkin_general": GENERAL_CHECKIN_QUESTIONS,
+    "checkin_lifter": LIFTER_CHECKIN_QUESTIONS,
     "checkin_personal": PERSONAL_CHECKIN_QUESTIONS,
     "checkin_personal_recovery": PERSONAL_RECOVERY_CHECKIN_QUESTIONS,
     # MedPull Sports: the morning wellness questionnaire (app/sports/plan.py).
@@ -190,10 +219,21 @@ PHRASES: dict[str, dict[str, str]] = {
         "rough": "It was a rough night, I kept waking up.",
     },
     "mood": {"good": "My mood is good.", "flat": "I'm feeling flat.", "low": "I'm feeling low."},
+    # The lifter check-in. The yes line names the thing the clinic holds a
+    # lifter back for, in words engine/reported.py reads back.
+    "new_pain": {
+        "yes": "There's a new pain that wasn't there at my last visit.",
+        "no": "No new pain since my last visit.",
+    },
+    "program": {
+        "all": "I got all of today's program in.",
+        "some": "I got some of today's program in.",
+        "none": "I didn't get today's program in.",
+    },
 }
 
 # Answers that should reach the care team as an alert, not just a transcript.
-_ALERT_ANSWERS = {("fever", "yes"), ("drainage", "yes"), ("redness", "yes")}
+_ALERT_ANSWERS = {("fever", "yes"), ("drainage", "yes"), ("redness", "yes"), ("new_pain", "yes")}
 _ALERT_PAIN = 8
 
 _YES = {"yes", "y", "yeah", "yep", "yup", "sure", "true", "1"}
@@ -204,6 +244,34 @@ _NO = {"no", "n", "nope", "nah", "false", "0", "none"}
 def surgical(patient: Patient) -> bool:
     """Had an operation (followed along a recovery curve) vs. a general patient."""
     return str(patient.procedure_type) != "NONE"
+
+
+def training_program(patient: Patient) -> str | None:
+    """The clinic-authored program a general patient is on, when there is one.
+
+    ``care_pathway`` normally holds one of the engine's pathway keys
+    ("general_recovery", "heart_failure", ...). A clinic that writes its own
+    program name there instead ("Patellar tendinopathy · progressive loading",
+    the HIRT roster) is saying this person trains between visits, and the
+    check-in they get asks about that training rather than about an
+    incision or a walk. Surgical patients always keep the recovery check-in.
+    """
+    from app.engine.care.pathways import PATHWAYS
+
+    pathway = (getattr(patient, "care_pathway", None) or "").strip()
+    if surgical(patient) or not pathway or pathway in PATHWAYS:
+        return None
+    return pathway
+
+
+def checkin_qset(patient: Patient) -> str:
+    """Which check-in this patient is asked: the recovery set after an
+    operation, the lifter set on a clinic program, the general set otherwise."""
+    if surgical(patient):
+        return "checkin"
+    if training_program(patient) is not None:
+        return "checkin_lifter"
+    return "checkin_general"
 
 
 # A care-plan task carries its schedule under payload["care"]. "once" is the
@@ -288,15 +356,15 @@ def answer_to_text(question: dict[str, Any], raw: Any) -> str:
             raise ValueError(f"{qid} must be a whole number from 0 to 10")
         if qid == "pain":
             return f"My pain is about {value} out of 10."
-        return f"{question['prompt']} {value}."
+        return _numeric_phrase(question, value)
     if kind == "number":
         value = _int(raw)
         lo, hi = question.get("min", 0), question.get("max", 10_000)
         if value is None or not lo <= value <= hi:
             raise ValueError(f"{qid} must be a whole number from {lo} to {hi}")
-        if qid == "minutes":
+        if "phrase" not in question and qid == "minutes":
             return f"I walked about {value} minutes."
-        return f"{question['prompt']} {value}."
+        return _numeric_phrase(question, value)
     if kind in ("yes_no", "choice"):
         options = question.get("options") or ["yes", "no"]
         value = str(raw).strip().lower()
@@ -312,6 +380,16 @@ def answer_to_text(question: dict[str, Any], raw: Any) -> str:
             raise ValueError("note is empty")
         return text
     raise ValueError(f"Unknown question kind {kind}")
+
+
+def _numeric_phrase(question: dict[str, Any], value: int) -> str:
+    """The patient's sentence for a number: the question's own ``phrase``
+    (``phrase_zero`` for a zero, when it has one), else the prompt restated."""
+    if value == 0 and question.get("phrase_zero"):
+        return str(question["phrase_zero"])
+    if question.get("phrase"):
+        return str(question["phrase"]).format(value=value)
+    return f"{question['prompt']} {value}."
 
 
 def parse_free_answer(question: dict[str, Any], text: str) -> Any | None:
@@ -455,8 +533,10 @@ def create_task(
         due_at=due_at,
         payload={"created_by": created_by} if created_by else {},
     )
-    if kind == "checkin" and not surgical(patient):
-        task.payload = {**(task.payload or {}), "qset": "checkin_general"}
+    if kind == "checkin":
+        qset = checkin_qset(patient)
+        if qset != "checkin":
+            task.payload = {**(task.payload or {}), "qset": qset}
     db.add(task)
     db.flush()
     result = dispatch(db, task, patient, base_url) if notify else None
@@ -596,6 +676,7 @@ def _alerts(answers: dict[str, Any]) -> list[str]:
                     "fever": "Reported fever or chills",
                     "drainage": "Reported drainage from the incision",
                     "redness": "Reported spreading redness around the incision",
+                    "new_pain": "Reported a new pain since the last visit",
                 }[qid]
             )
     pain = _int(answers.get("pain"))
@@ -700,6 +781,12 @@ def complete_task(
 
         record_task_answers(db, task, answers, today)
     elif patient is not None:
+        if qset == "checkin_lifter":
+            # The training answers become observations, so the load ratio,
+            # the tier and the progress line read them like any other series.
+            from app.tasks.reported import record_reported
+
+            record_reported(db, patient, answers, now)
         for alert in _alerts(answers):
             notify_care_team(
                 db, patient, f"{patient.name} — {alert}",

@@ -333,6 +333,8 @@
         "type": "object"
       },
       "CheckinAnswers": {
+        "additionalProperties": true,
+        "description": "The form's answers, keyed by question id.\n\nThe recovery set's questions are named so the contract (and the clients\ngenerated from it) keep their fields; any other question id — the lifter\nset's ``new_pain``, ``program``, ``rpe``, ``minutes`` — is allowed through\nand validated against the question set the patient was served.",
         "properties": {
           "exercises": {
             "anyOf": [
