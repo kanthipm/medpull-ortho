@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -83,6 +84,7 @@ import com.medpull.recovery.ui.ErrorBanner
 import com.medpull.recovery.ui.Gap
 import com.medpull.recovery.ui.Initials
 import com.medpull.recovery.ui.MP
+import com.medpull.recovery.ui.Panel
 import com.medpull.recovery.ui.PlainButton
 import com.medpull.recovery.ui.StatusPill
 import com.medpull.recovery.ui.Tone
@@ -206,6 +208,7 @@ fun CareScreen(nav: NavHostController) {
         }
         LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (state.messages.isEmpty()) item { IntroCard() }
             items(state.messages, key = { it.id }) { m -> Bubble(m, cache, onOpenTask = { id ->
                 scope.launch { app.refreshTasks(false) }
                 app.handle(Uri.parse("${app.config.scheme}://tasks/$id"))
@@ -236,7 +239,22 @@ fun CareScreen(nav: NavHostController) {
             }
             Gap(6.dp)
         }
-        Row(Modifier.fillMaxWidth().background(c.panel).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (toAssistant && draft.isNotBlank()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AutoAwesome, null, tint = c.brandInk, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("To MedPull, which logs it for you", style = MaterialTheme.typography.labelMedium, color = c.brandInk)
+                Spacer(Modifier.weight(1f))
+                PlainButton("Clear", color = c.muted) { draft = ""; toAssistant = false }
+            }
+        }
+        if (recordingNote) RecordingBar(
+            onCancel = { recorder.cancel(); recordingNote = false },
+            onStop = {
+                recordingNote = false
+                recorder.stop()?.let { p -> scope.launch { uploading = true; try { pending.add(graph.api.uploadAttachment(p.bytes, p.contentType, p.filename)) } catch (e: Exception) { error = e.message }; uploading = false } }
+            },
+        ) else Row(Modifier.fillMaxWidth().background(c.panel).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box {
                 IconButton(onClick = { menuOpen = true }, enabled = !uploading) { Icon(Icons.Default.Add, "Attach", tint = c.ink) }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -288,6 +306,37 @@ fun CareScreen(nav: NavHostController) {
                 }
             }
         }
+    }
+}
+
+/** How the thread works, shown until there is a thread. */
+@Composable
+private fun IntroCard() {
+    val c = MP.colors
+    Panel {
+        Text("How this works", style = MaterialTheme.typography.titleMedium, color = c.ink)
+        Gap(6.dp)
+        Text("Anything you type goes to your care team, and the plus button sends them a photo, a short video, a voice note or a file. Tap the mic, or one of the quick logs, to tell MedPull how you feel: it logs it for you, answers straight away, and passes anything serious to the team.",
+            style = MaterialTheme.typography.bodyMedium, color = c.body)
+    }
+}
+
+/** The composer while a voice note records: cancel, the clock, and the stop that attaches it. */
+@Composable
+private fun RecordingBar(onCancel: () -> Unit, onStop: () -> Unit) {
+    val c = MP.colors
+    var seconds by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) { while (isActive) { delay(1000); seconds += 1; if (seconds >= 180) { onStop(); break } } }
+    Row(Modifier.fillMaxWidth().background(c.panel).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onCancel) { Icon(Icons.Default.Close, "Cancel the voice note", tint = c.ink) }
+        Row(Modifier.weight(1f).clip(RoundedCornerShape(22.dp)).background(c.soft).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(c.riskHigh))
+            Spacer(Modifier.width(10.dp))
+            Text(String.format(Locale.getDefault(), "%d:%02d", seconds / 60, seconds % 60), style = MaterialTheme.typography.bodyLarge, color = c.ink)
+            Spacer(Modifier.width(10.dp))
+            Text("Recording", style = MaterialTheme.typography.labelMedium, color = c.muted)
+        }
+        IconButton(onClick = onStop) { Icon(Icons.Default.Stop, "Stop and attach the voice note", tint = c.riskHigh) }
     }
 }
 
@@ -363,7 +412,7 @@ private fun MediaTile(a: ChatAttachment, cache: MediaCache) {
     LaunchedEffect(a.id) { if (file == null) file = cache.fetch(a) }
     val c = MP.colors
     Row(Modifier.clip(RoundedCornerShape(12.dp)).background(c.soft).clickable(enabled = file != null) { playing = !playing }.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (playing) Icons.Default.Stop else Icons.Default.PlayArrow, null, tint = c.brandInk)
+        Icon(if (playing) Icons.Default.Stop else Icons.Default.PlayArrow, if (playing) "Stop" else "Play", tint = c.brandInk)
         Spacer(Modifier.width(8.dp))
         Text("${a.displayName()} · ${a.sizeLabel()}", style = MaterialTheme.typography.bodyMedium, color = c.ink)
     }
