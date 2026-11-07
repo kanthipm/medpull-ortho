@@ -42,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -78,7 +80,7 @@ fun taskIcon(kind: String): ImageVector = when (kind) {
 fun TaskRow(task: RecoveryTask, onOpen: () -> Unit, onDone: (() -> Unit)? = null) {
     val c = MP.colors
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(taskIcon(task.kind), null, tint = c.teal)
+        Icon(taskIcon(task.kind), task.kindLabel.ifBlank { null }, tint = c.teal)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f).clickable(onClick = onOpen)) {
             Text(task.title.ifBlank { task.kindLabel }, style = MaterialTheme.typography.bodyLarge, color = c.ink)
@@ -126,7 +128,9 @@ fun TaskDetailScreen(nav: NavHostController, id: Int?) {
     if (task == null) { Column(Modifier.padding(16.dp)) { BackBar(nav, "Task"); Text("This task is no longer here.", color = c.muted) }; return }
     if (task.isCheckin) { CheckinScreen(nav, id); return }
 
-    LaunchedEffect(done) { if (done) { delay(1200); nav.popBackStack() } }
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(error) { if (error != null) haptic.performHapticFeedback(HapticFeedbackType.Reject) }
+    LaunchedEffect(done) { if (done) { haptic.performHapticFeedback(HapticFeedbackType.Confirm); delay(1200); nav.popBackStack() } }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 16.dp)) {
         BackBar(nav, task.kindLabel.ifBlank { "Task" })
@@ -178,7 +182,11 @@ fun QuestionView(q: Question, value: AnswerValue?, onChange: (AnswerValue?) -> U
             val current = (value as? AnswerValue.Num)?.value
             Text(if (current == null) "Drag to answer" else painWords(q.id, current), style = MaterialTheme.typography.bodyLarge,
                 color = if (current == null) c.muted else c.ink)
-            Slider(value = (current ?: lo.toInt()).toFloat(), onValueChange = { onChange(AnswerValue.Num(it.toInt())) },
+            val haptic = LocalHapticFeedback.current
+            Slider(value = (current ?: lo.toInt()).toFloat(), onValueChange = { v ->
+                if (v.toInt() != current) haptic.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+                onChange(AnswerValue.Num(v.toInt()))
+            },
                 valueRange = lo..hi, steps = (hi - lo).toInt() - 1,
                 colors = SliderDefaults.colors(thumbColor = c.brand, activeTrackColor = c.brand, inactiveTrackColor = c.line))
         }

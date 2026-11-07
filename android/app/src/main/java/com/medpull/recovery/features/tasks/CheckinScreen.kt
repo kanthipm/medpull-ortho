@@ -34,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -66,7 +68,11 @@ fun CheckinScreen(nav: NavHostController, id: Int?) {
     if (task == null) { Column(Modifier.padding(16.dp)) { Text("This check-in is no longer here.", color = c.muted) }; return }
     val qs = task.questions
     val reviewing = step >= qs.size
-    LaunchedEffect(done) { if (done) { delay(1400); nav.popBackStack() } }
+    // Felt as well as seen: a tick per step, a confirm when sent, a buzz on failure.
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(step) { if (step > 0) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+    LaunchedEffect(error) { if (error != null) haptic.performHapticFeedback(HapticFeedbackType.Reject) }
+    LaunchedEffect(done) { if (done) { haptic.performHapticFeedback(HapticFeedbackType.Confirm); delay(1400); nav.popBackStack() } }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
