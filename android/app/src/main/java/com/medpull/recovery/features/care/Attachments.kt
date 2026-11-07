@@ -8,9 +8,11 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import androidx.annotation.OptIn as AndroidOptIn
 import androidx.exifinterface.media.ExifInterface
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -100,6 +102,9 @@ object AttachmentPrep {
         return Prepared(bytes, "video/mp4", name.substringBeforeLast('.').ifBlank { "video" } + ".mp4")
     }
 
+    // Transformer is still an opt-in API in media3; it is the one way to
+    // re-encode a clip without ffmpeg, so the opt-in is deliberate.
+    @AndroidOptIn(UnstableApi::class)
     private suspend fun transcode(context: Context, uri: Uri, out: File) = withContext(Dispatchers.Main) {
         val done = CompletableDeferred<Unit>()
         val transformer = Transformer.Builder(context)
