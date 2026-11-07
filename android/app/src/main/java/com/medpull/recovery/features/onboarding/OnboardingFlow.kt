@@ -342,7 +342,7 @@ private fun VerifyStep(nav: NavHostController, model: OnboardingModel) {
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
         val message = result.data?.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE).orEmpty()
-        Regex("""b(\d{6})b""").find(message)?.value?.let { code -> model.state.update { it.copy(code = code) } }
+        Regex("""\b(\d{6})\b""").find(message)?.value?.let { code -> model.state.update { it.copy(code = code) } }
     }
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
