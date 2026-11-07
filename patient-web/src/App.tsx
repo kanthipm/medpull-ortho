@@ -22,7 +22,7 @@ import { Sym } from './ui/icons'
 export default function App() {
   useEffect(() => { void app.bootstrap() }, [])
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <Shell />
     </BrowserRouter>
   )
