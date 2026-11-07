@@ -1,5 +1,6 @@
 package com.medpull.recovery.core
 
+import com.medpull.recovery.R
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.serializer
 
@@ -74,7 +75,7 @@ suspend fun ApiClient.uploadAttachment(bytes: ByteArray, contentType: String, fi
     val ticket: UploadTicket = get("/api/mobile/attachments/upload-ticket",
         mapOf("content_type" to contentType, "byte_size" to bytes.size.toString()))
     if (ticket.maxBytes > 0 && bytes.size > ticket.maxBytes) {
-        throw ApiException(413, "That file is over ${ticket.maxBytes / 1_000_000} MB.")
+        throw ApiException(413, strings.get(R.string.api_file_too_big, ticket.maxBytes / 1_000_000))
     }
     val form = ticket.upload
     if (ticket.direct || form == null) {

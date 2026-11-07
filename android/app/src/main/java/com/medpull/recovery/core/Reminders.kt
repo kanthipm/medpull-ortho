@@ -38,8 +38,8 @@ object Reminders {
             val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
             val n = NotificationCompat.Builder(context, MedPullApp.CHANNEL_REMINDER)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle("Your check-in is waiting")
-                .setContentText("Open MedPull for today's plan.")
+                .setContentTitle(context.getString(R.string.reminder_notification_title))
+                .setContentText(context.getString(R.string.reminder_notification_body))
                 .setContentIntent(open).setAutoCancel(true).build()
             try { context.getSystemService(NotificationManager::class.java).notify(REQUEST, n) } catch (_: SecurityException) {}
         }

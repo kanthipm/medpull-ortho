@@ -9,9 +9,10 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import com.medpull.recovery.R
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.util.Locale
 
 /**
  * Speech in and out for the Care tab: the platform recogniser with partial
@@ -39,7 +40,7 @@ class SpeechController(private val context: Context) {
 
     fun startListening() {
         stopSpeaking()
-        if (!available) { _error.value = "Speech recognition isn't available on this phone."; return }
+        if (!available) { _error.value = context.getString(R.string.speech_unavailable); return }
         val r = recognizer ?: SpeechRecognizer.createSpeechRecognizer(context).also { recognizer = it }
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) { _listening.value = true }
@@ -49,7 +50,7 @@ class SpeechController(private val context: Context) {
             override fun onEndOfSpeech() { _listening.value = false }
             override fun onError(error: Int) {
                 _listening.value = false
-                if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_CLIENT) _error.value = "Couldn't hear that. Try again."
+                if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_CLIENT) _error.value = context.getString(R.string.speech_not_heard)
             }
             override fun onResults(results: Bundle?) {
                 results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { _transcript.value = it }
@@ -89,7 +90,7 @@ class SpeechController(private val context: Context) {
         if (tts != null) return
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
-            if (!ttsReady) { queued = null; _error.value = "Spoken replies aren't available on this phone."; return@TextToSpeech }
+            if (!ttsReady) { queued = null; _error.value = context.getString(R.string.tts_unavailable); return@TextToSpeech }
             pickVoice()
             queued?.let { say(it) }
             queued = null

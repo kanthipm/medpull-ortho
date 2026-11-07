@@ -421,4 +421,39 @@
     <string name="onboarding_open_medpull">Open MedPull</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
+
+    <!-- Errors and background messages -->
+    <string name="error_generic">Something went wrong.</string>
+    <string name="error_no_session">The server didn\'t return a session.</string>
+    <string name="error_no_profile">The server didn\'t return a profile.</string>
+    <string name="api_unreachable">Can\'t reach MedPull right now. Check your connection.</string>
+    <string name="api_unexpected_answer">Unexpected answer from the server (%1$s)</string>
+    <string name="api_upload_refused">The upload was refused by storage.</string>
+    <string name="api_fetch_failed">Could not fetch the file.</string>
+    <string name="api_server_answered">The server answered %1$d.</string>
+    <string name="api_file_too_big">That file is over %1$d MB.</string>
+    <string name="onboarding_number_on_record">This number is already on a record. Find it below.</string>
+    <string name="onboarding_text_not_yet">We haven\'t got your text yet — give it a moment, or send it again.</string>
+    <string name="onboarding_unexpected_status">Unexpected status %1$s</string>
+    <string name="hc_install">Install the Health Connect app from Google Play, then try again.</string>
+    <string name="hc_open_once">Open Health Connect once to finish setting it up, then try again.</string>
+    <string name="hc_sign_in_first">Sign in first.</string>
+    <string name="hc_connect_failed">Couldn\'t connect to the wearable service.</string>
+    <string name="hc_connected_syncing_now">Connected. Syncing…</string>
+    <string name="hc_permissions_denied">Permissions were not granted.</string>
+    <string name="hc_refused">Health Connect refused the request. Try again.</string>
+    <string name="hc_syncing">Syncing…</string>
+    <string name="hc_synced_just_now">Synced just now.</string>
+    <string name="hc_up_to_date">Up to date.</string>
+    <string name="hc_sync_failed">A sync failed; it will retry.</string>
+    <string name="speech_unavailable">Speech recognition isn\'t available on this phone.</string>
+    <string name="speech_not_heard">Couldn\'t hear that. Try again.</string>
+    <string name="tts_unavailable">Spoken replies aren\'t available on this phone.</string>
+    <string name="reminder_notification_title">Your check-in is waiting</string>
+    <string name="reminder_notification_body">Open MedPull for today\'s plan.</string>
+    <string name="motion_channel_description">Shows while a walk is being recorded. Silent; safe to swipe away.</string>
+    <string name="measure_test">Measure test</string>
+    <string name="motion_starting">Starting…</string>
+    <string name="passive_recording">Recording your walk</string>
+    <string name="voice_note_filename">Voice note %1$s.m4a</string>
 </resources>

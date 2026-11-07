@@ -96,7 +96,7 @@ fun OnboardingFlow() {
     val context = LocalContext.current
     val graph = (context.applicationContext as MedPullApp).graph
     val app = appModel()
-    val model = remember { OnboardingModel(graph.api, app, graph.config) }
+    val model = remember { OnboardingModel(graph.api, app, graph.config, graph.strings) }
     val nav = rememberNavController()
     NavHost(nav, startDestination = Step.WELCOME.name, modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
         composable(Step.WELCOME.name) { Welcome(nav) }

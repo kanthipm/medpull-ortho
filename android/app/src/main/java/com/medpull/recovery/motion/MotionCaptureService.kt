@@ -44,7 +44,7 @@ class MotionCaptureService : Service() {
             else -> {
                 val durationS = intent?.getIntExtra(EXTRA_DURATION_S, 180) ?: 180
                 val outdoors = intent?.getBooleanExtra(EXTRA_OUTDOORS, false) ?: false
-                val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Measure test"
+                val title = intent?.getStringExtra(EXTRA_TITLE) ?: getString(R.string.measure_test)
                 begin(title, durationS, outdoors, intent?.getBooleanExtra(EXTRA_FREE_LIVING, false) ?: false)
             }
         }
@@ -56,7 +56,7 @@ class MotionCaptureService : Service() {
     private fun begin(title: String, durationS: Int, outdoors: Boolean, freeLiving: Boolean) {
         val recorder = MotionRecorder(applicationContext)
         CaptureSession.begin(recorder, freeLiving)
-        val notification = notification(title, "Starting…")
+        val notification = notification(title, getString(R.string.motion_starting))
         if (Build.VERSION.SDK_INT >= 34) startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
         else startForeground(NOTIFICATION_ID, notification)
         wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "medpull:measure").apply {
@@ -116,7 +116,7 @@ class MotionCaptureService : Service() {
             // buttons, or it shows at once) and let the person swipe it away; the capture carries on.
             b.setOngoing(false).setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
         } else {
-            b.setOngoing(true).addAction(0, "Stop", stop)
+            b.setOngoing(true).addAction(0, getString(R.string.stop), stop)
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
         }
         return b.build()
