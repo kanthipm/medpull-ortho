@@ -137,6 +137,7 @@ mid-change without shipping that change.
 | `STACK_NAME` | `recovery-copilot` | CloudFormation stack name, and the SSM prefix its secrets live under; also read from the env file |
 | `DEMO_MODE` | `false` | `true` on the public demo only: welcome screen, roster caption, seed allowed |
 | `SEED` | follows `DEMO_MODE` | `demo` invokes the seed function when the database is missing (or `--reseed`); `none` never does |
+| `PERSONAL_PAYWALL` | `false` | Whether the personal tier's trial and App Store subscription decide access; `false` while there is no paid product |
 | `ALLOW_MOCK_WEBHOOK` | `false` | Opens the unsigned demo webhook; demo stack only |
 | `GROQ_API_KEY` | — | Skips the prompt; also read from the env file |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | Overrides the model |

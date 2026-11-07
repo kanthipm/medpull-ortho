@@ -118,6 +118,14 @@ Parameters:
       "true" on the public demo stack only: the console shows the demo
       welcome and the roster caption, and the seed function may rebuild the
       database. The real app leaves it "false" and its seed refuses to run.
+  PersonalPaywall:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Whether the personal tier's 14-day trial and App Store subscription
+      decide access. "false" while there is no paid product: every personal
+      account is entitled and the apps draw no plan step.
   AllowMockWebhook:
     Type: String
     Default: "false"
@@ -569,6 +577,7 @@ Resources:
           SENDBLUE_WEBHOOK_SECRET_PARAMETER: !Ref SendblueWebhookSecretParameter
           CONSOLE_ACCESS_TOKEN_PARAMETER: !Ref ConsoleAccessTokenParameter
           DEMO_MODE: !Ref DemoMode
+          PERSONAL_PAYWALL: !Ref PersonalPaywall
           ALLOW_MOCK_WEBHOOK: !Ref AllowMockWebhook
           SENDBLUE_FROM_NUMBER: !Ref SendblueFromNumber
           CARE_TEAM_PHONES: !Ref CareTeamPhones

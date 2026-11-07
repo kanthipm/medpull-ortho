@@ -63,6 +63,11 @@ ORIGIN_SECRET_PARAM="${ORIGIN_SECRET_PARAM:-/$STACK_NAME/origin-verify-secret}"
 DEMO_MODE="${DEMO_MODE:-$(dotenv_value DEMO_MODE)}"
 DEMO_MODE="${DEMO_MODE:-false}"
 case "$DEMO_MODE" in true|false) ;; *) echo "DEMO_MODE must be true or false" >&2; exit 1 ;; esac
+# The personal tier's trial and App Store paywall. Off until there is a paid
+# product; on, the apps show the plan step and lapsed accounts are closed.
+PERSONAL_PAYWALL="${PERSONAL_PAYWALL:-$(dotenv_value PERSONAL_PAYWALL)}"
+PERSONAL_PAYWALL="${PERSONAL_PAYWALL:-false}"
+case "$PERSONAL_PAYWALL" in true|false) ;; *) echo "PERSONAL_PAYWALL must be true or false" >&2; exit 1 ;; esac
 ALLOW_MOCK_WEBHOOK="${ALLOW_MOCK_WEBHOOK:-$(dotenv_value ALLOW_MOCK_WEBHOOK)}"
 ALLOW_MOCK_WEBHOOK="${ALLOW_MOCK_WEBHOOK:-false}"
 # demo | none: whether this script ever invokes the seed function. Defaults
@@ -350,6 +355,7 @@ PARAMS=(
   "SendblueWebhookSecretParameter=$SENDBLUE_WEBHOOK_PARAM"
   "ConsoleAccessTokenParameter=$CONSOLE_TOKEN_PARAM"
   "DemoMode=$DEMO_MODE"
+  "PersonalPaywall=$PERSONAL_PAYWALL"
   "AllowMockWebhook=$ALLOW_MOCK_WEBHOOK"
   "PublicBaseUrl=$PUBLIC_BASE_URL"
   "SendblueFromNumber=$SENDBLUE_FROM_NUMBER"

@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     # Every personal account starts on a trial this long; the paywall closes
     # after it unless an Apple subscription is on file.
     personal_trial_days: int = 14
+    # Whether the trial and the App Store receipt decide access at all. Off
+    # (the default) while there is no paid product: every personal account is
+    # entitled, the apps show no plan step and no subscription rows, and the
+    # receipt and notification code below sits dormant until this is true.
+    personal_paywall: bool = False
     # The App Store product ids the iOS app sells (comma separated). A signed
     # transaction for any other product is refused.
     personal_product_ids: str = (

@@ -495,6 +495,9 @@ def me_view(db: Session, patient: Patient) -> dict[str, Any]:
             # in onboarding and Profile.
             "beta": True,
             "consent_version": personal_auth.CONSENT_VERSION,
+            # False while there is no paid product: the apps skip the plan
+            # step and hide the subscription rows.
+            "paywall": settings.personal_paywall,
         },
     }
 

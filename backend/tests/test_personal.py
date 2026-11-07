@@ -31,6 +31,14 @@ from tests.test_mobile import _forget_patient
 PHONE = "+15125559001"
 
 
+@pytest.fixture(autouse=True)
+def _paywall_on(monkeypatch):
+    """These tests exercise the trial and the App Store machinery, which is
+    dormant by default (no paid product yet). Switch it on for the module;
+    the one test about the default turns it off again."""
+    monkeypatch.setattr(settings, "personal_paywall", True)
+
+
 def _forget(db, patient_id: str) -> None:
     from app.models.personal import Consent, PersonalCredential
 
@@ -320,6 +328,26 @@ def test_day_and_ai_results_land_in_the_lake(client, db):
         assert any((lake / "ai" / "personal_deep").iterdir())
         assert any((lake / "coach").iterdir())
         assert any((lake / "events").iterdir())
+    finally:
+        _forget(db, pid)
+
+
+def test_paywall_off_means_every_subscriber_is_entitled(client, db, monkeypatch):
+    """The default: no paid product, so a lapsed trial changes nothing and
+    the apps are told there is no paywall to draw."""
+    monkeypatch.setattr(settings, "personal_paywall", False)
+    headers, data = _join(client, goal="everyday")
+    pid = data["me"]["patient"]["id"]
+    try:
+        assert data["me"]["features"]["paywall"] is False
+        assert data["me"]["subscription"]["state"] == "free"
+        assert data["me"]["subscription"]["entitled"] is True
+        row = db.scalar(select(Entitlement).where(Entitlement.patient_id == pid))
+        row.expires_at = datetime.now() - timedelta(days=1)
+        db.commit()
+        assert client.get("/api/mobile/personal/dashboard", headers=headers).status_code == 200
+        state = client.get("/api/mobile/personal/subscription", headers=headers).json()
+        assert state["state"] == "free" and state["trial_used"] is True
     finally:
         _forget(db, pid)
 

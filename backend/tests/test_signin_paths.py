@@ -26,6 +26,12 @@ from tests.test_personal import _consent, _forget, _join
 ATHLETE_PWD = "owls-2026-test"
 
 
+@pytest.fixture(autouse=True)
+def _paywall_on(monkeypatch):
+    # The receipt paths below are dormant by default (no paid product yet).
+    monkeypatch.setattr(settings, "personal_paywall", True)
+
+
 def _forget_athlete(db, patient_id: str) -> None:
     from app.sports.seed import _reset
 
