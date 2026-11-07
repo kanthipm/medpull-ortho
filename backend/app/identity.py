@@ -19,7 +19,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import Session
 
 from app.models.adherence import AdherenceRecord, AdherenceTask
@@ -483,8 +483,44 @@ def delete_patient(db: Session, patient: Patient) -> dict[str, Any]:
             delete(model).where(model.patient_id == patient.id)
         ).rowcount
     counts["insights"] = db.execute(delete(Insight).where(Insight.patient_id == patient.id)).rowcount
+    counts.update(_sweep_rows_naming(db, patient.id))
+    # A paired space or chart keeps pointing at a row that no longer exists
+    # otherwise, and the profile switcher would offer a door to nowhere.
+    counts["unlinked"] = db.execute(
+        update(Patient)
+        .where(Patient.linked_patient_id == patient.id)
+        .values(linked_patient_id=None)
+    ).rowcount
     pid = patient.id
     db.delete(patient)
     db.commit()
     logger.info("Deleted patient %s: %s", pid, counts)
     return {"deleted": pid, "rows": counts}
+
+
+def _sweep_rows_naming(db: Session, patient_id: str) -> dict[str, int]:
+    """Rows in every table that carries a ``patient_id`` column, found from
+    the schema rather than a list: the model tuples above predate the
+    personal and sports facets (consents, entitlements, credentials, the
+    sports profile, sessions, wellness, tests, injuries, rehab measures,
+    monitoring windows), and a facet added later is covered the day it
+    lands. SQLite is the only dialect this app runs on; elsewhere the lists
+    stand alone. ``patients`` itself is deleted by the caller."""
+    if db.get_bind().dialect.name != "sqlite":
+        return {}
+    counts: dict[str, int] = {}
+    tables = db.execute(
+        text("select name from sqlite_master where type = 'table'")
+    ).scalars().all()
+    for table in tables:
+        if table == "patients" or table.startswith("sqlite_"):
+            continue
+        columns = {row[1] for row in db.execute(text(f'pragma table_info("{table}")'))}
+        if "patient_id" not in columns:
+            continue
+        gone = db.execute(
+            text(f'delete from "{table}" where patient_id = :pid'), {"pid": patient_id}
+        ).rowcount
+        if gone:
+            counts[table] = counts.get(table, 0) + gone
+    return counts

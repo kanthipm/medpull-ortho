@@ -26,3 +26,6 @@ android/.kotlin/
 android/*.iml
 android/.idea/
 .gstack/
+
+# Claude Code agent worktrees
+.claude/worktrees/
