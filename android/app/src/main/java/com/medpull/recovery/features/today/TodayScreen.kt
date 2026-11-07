@@ -1,5 +1,6 @@
 package com.medpull.recovery.features.today
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +13,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import com.medpull.recovery.core.Dates
 import com.medpull.recovery.core.Me
 import com.medpull.recovery.core.RecoveryTask
 import com.medpull.recovery.core.Tab
@@ -49,10 +54,10 @@ import com.medpull.recovery.ui.Panel
 import com.medpull.recovery.ui.PlainButton
 import com.medpull.recovery.ui.PrimaryButton
 import com.medpull.recovery.ui.Routes
-import com.medpull.recovery.ui.SectionTitle
 import com.medpull.recovery.ui.StatusPill
 import com.medpull.recovery.ui.Tone
 import com.medpull.recovery.ui.appModel
+import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.launch
 
@@ -79,6 +84,7 @@ fun TodayScreen(nav: NavHostController) {
                 Column(Modifier.weight(1f)) {
                     Text("MEDPULL", style = MaterialTheme.typography.labelSmall, color = c.muted)
                     Text(greeting(state.me), style = MaterialTheme.typography.displaySmall, color = c.ink)
+                    state.me?.let { Text(subtitle(it), style = MaterialTheme.typography.bodyLarge, color = c.body) }
                 }
                 state.me?.let { me ->
                     Box(Modifier.padding(start = 8.dp)) {
@@ -90,7 +96,7 @@ fun TodayScreen(nav: NavHostController) {
             Gap(8.dp)
             state.me?.let { RecoveryHero(it) { app.selectTab(Tab.PROGRESS) } }
             Gap()
-            PlanCard(state.tasks.open, nav) { task -> scope.launch { try { app.complete(task, emptyMap()) } catch (e: Exception) { app.note(e) } } }
+            PlanCard(state.tasks.open, doneToday(state.tasks.recent), nav) { task -> scope.launch { try { app.complete(task, emptyMap()) } catch (e: Exception) { app.note(e) } } }
             Gap()
             val due = MeasureStatus.due(state.portfolio)
             Panel(onClick = { app.selectTab(Tab.MEASURE) }) {
@@ -98,7 +104,7 @@ fun TodayScreen(nav: NavHostController) {
                     leading = { Icon(Icons.Default.DirectionsWalk, null, tint = c.teal) })
             }
             Gap()
-            CareRow(state.messages.lastOrNull(), state.me?.unreadMessages ?: 0, state.me) { app.selectTab(Tab.CARE) }
+            CareRow(state.messages.lastOrNull { it.sender != "patient" }, state.me?.unreadMessages ?: 0, state.me) { app.selectTab(Tab.CARE) }
             Gap()
             val wear = state.me?.wearables
             if (wear != null && !wear.deviceHealth.connected && wear.devices.isEmpty() && state.me?.features?.deviceHealth == true) {
@@ -109,12 +115,23 @@ fun TodayScreen(nav: NavHostController) {
                 Gap()
             }
             if (state.me?.isPersonal == false) { PassiveWalksNudge(); Gap() }
-            PlainButton("Task history") { nav.navigate(Routes.HISTORY) }
             Guardrail()
             Gap(24.dp)
         }
     }
 }
+
+/** "Day 12 · Knee replacement" for a recovery, "St Mary's · 4 days in" for a general programme. */
+private fun subtitle(me: Me): String {
+    val p = me.patient
+    if (p.isRecovery) return listOfNotNull(p.postopDay?.let { "Day $it" }, p.procedureDisplay.takeIf { it.isNotBlank() }).joinToString(" · ")
+    val since = if (p.daysEnrolled == 0) "joined today" else "${p.daysEnrolled} days in"
+    return listOfNotNull(p.hospital?.name, since).joinToString(" · ")
+}
+
+/** Tasks finished today, from the recent list. */
+private fun doneToday(recent: List<RecoveryTask>): List<RecoveryTask> =
+    recent.filter { t -> Dates.parse(t.completedAt)?.toLocalDate() == LocalDate.now() }
 
 private fun greeting(me: Me?): String {
     val hour = LocalTime.now().hour
@@ -137,21 +154,53 @@ fun RecoveryHero(me: Me, onClick: () -> Unit) {
         onClick = onClick)
 }
 
+/** Today's plan: the check-in as the one primary action, every other open
+ *  task as a row, what is already done folded away underneath. */
 @Composable
-private fun PlanCard(open: List<RecoveryTask>, nav: NavHostController, markDone: (RecoveryTask) -> Unit) {
+private fun PlanCard(open: List<RecoveryTask>, done: List<RecoveryTask>, nav: NavHostController, markDone: (RecoveryTask) -> Unit) {
+    val c = MP.colors
     val checkin = open.firstOrNull { it.isCheckin }
     val others = open.filter { !it.isCheckin }
+    var showDone by remember { mutableStateOf(false) }
     Panel {
-        SectionTitle("Today's plan")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Today's plan", style = MaterialTheme.typography.titleMedium, color = c.ink)
+            if (open.isNotEmpty() || done.isNotEmpty()) {
+                Spacer(Modifier.width(8.dp))
+                Text("${done.size} of ${open.size + done.size} done", style = MaterialTheme.typography.labelMedium, color = c.muted)
+            }
+            Spacer(Modifier.weight(1f))
+            PlainButton("All tasks") { nav.navigate(Routes.HISTORY) }
+        }
         Gap(8.dp)
-        if (open.isEmpty()) Text("You're all caught up.", color = MP.colors.muted)
+        if (open.isEmpty()) {
+            Text(if (done.isEmpty()) "Nothing waiting" else "All done for today", style = MaterialTheme.typography.bodyLarge, color = c.ink)
+            Text(if (done.isEmpty()) "New tasks from your care team show up here." else "Your care team will see what you did with their next review.",
+                style = MaterialTheme.typography.bodyMedium, color = c.muted)
+        }
         if (checkin != null) {
-            PrimaryButton(if (checkin.title.isNotBlank()) checkin.title else "Daily check-in") { nav.navigate(Routes.checkin(checkin.id)) }
+            PrimaryButton("Start today's check-in") { nav.navigate(Routes.checkin(checkin.id)) }
+            Gap(4.dp)
+            Text(if (checkin.inSmsConversation) "You started this by text. Finishing it here is fine." else "About two minutes. Every question can be skipped.",
+                style = MaterialTheme.typography.labelMedium, color = c.muted)
             Gap(8.dp)
         }
         others.forEachIndexed { i, t ->
             TaskRow(t, onOpen = { nav.navigate(Routes.task(t.id)) }, onDone = if (t.questions.isEmpty()) ({ markDone(t) }) else null)
             if (i < others.lastIndex) Hairline()
+        }
+        if (done.isNotEmpty()) {
+            Hairline()
+            Row(Modifier.fillMaxWidth().clickable { showDone = !showDone }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CheckCircle, null, tint = c.riskLow)
+                Spacer(Modifier.width(8.dp))
+                Text("Done today", style = MaterialTheme.typography.bodyLarge, color = c.ink)
+                Spacer(Modifier.width(6.dp))
+                Text("${done.size}", style = MaterialTheme.typography.bodyLarge, color = c.muted)
+                Spacer(Modifier.weight(1f))
+                Icon(if (showDone) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (showDone) "Collapse" else "Expand", tint = c.muted)
+            }
+            if (showDone) done.forEach { t -> Hairline(); TaskRow(t, onOpen = { nav.navigate(Routes.task(t.id)) }) }
         }
     }
 }
@@ -165,7 +214,10 @@ private fun CareRow(last: com.medpull.recovery.core.ChatMessage?, unread: Int, m
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("Care team", style = MaterialTheme.typography.titleMedium, color = c.ink)
-                Text(last?.text?.takeIf { it.isNotBlank() } ?: "Write to your care team any time.",
+                val team = me?.patient?.careTeam.orEmpty()
+                Text(last?.text?.takeIf { it.isNotBlank() }
+                    ?: team.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name }
+                    ?: "Write to your care team, or tell MedPull how you feel.",
                     style = MaterialTheme.typography.bodyMedium, color = c.muted, maxLines = 2)
             }
             if (unread > 0) StatusPill("$unread new", Tone.BRAND)
