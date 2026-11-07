@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.auth import ConsoleScope, console_scope
+from app.api.scope import scoped_clinic_patients
 from app.database import get_db
 from app.llm.prose import humanize_codes
 from app.models.checkin import Checkin
@@ -40,14 +42,17 @@ def ensure_fresh_assessment(db: Session, patient_id: str):
 
 
 @router.get("/worklist")
-def worklist(db: Session = Depends(get_db)) -> dict:
+def worklist(
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.llm.insights import get_daily_briefing, get_patient_insight
     from app.plan.next_steps import next_step_summary
 
-    from app.personal.scope import clinic_patients
-
-    # Clinic charts only: a personal subscriber is never on a worklist.
-    patients = clinic_patients(db)
+    # Clinic charts only, and only the ones this console may see: every
+    # hospital's for staff, its own hospital's for a hospital credential. A
+    # personal subscriber or an athlete is never on a worklist.
+    patients = scoped_clinic_patients(db, scope)
     # The next-step planner names the library tasks a step would assign, so
     # the library is read once here rather than once per row.
     ensure_ready(db)
@@ -173,17 +178,25 @@ def worklist(db: Session = Depends(get_db)) -> dict:
     for row in rows:
         row.pop("risk_score")
 
+    # The briefing is about the roster this console sees: the whole clinic
+    # roster for staff, one hospital's for a hospital credential (its own
+    # cache key, derived from the ids on it). A sports credential has no
+    # clinic roster and gets no briefing.
+    roster = None if scope.kind == "all" else patients
     try:
-        briefing_text = ""
-        if not briefing_is_cached(db):
-            pending += 1
-        briefing = get_daily_briefing(db, allow_llm=False)
-        briefing_text = humanize_codes(briefing.content.get("briefing", ""))
-        briefing_view = {
-            "text": briefing_text,
-            "generated_at": briefing.generated_at.isoformat(),
-            "provider": briefing.llm_provider,
-        }
+        if not scope.clinic:
+            briefing_view = {"text": "", "generated_at": datetime.now().isoformat(),
+                             "provider": "fallback"}
+        else:
+            if not briefing_is_cached(db, patients=roster):
+                pending += 1
+            briefing = get_daily_briefing(db, allow_llm=False, patients=roster)
+            briefing_text = humanize_codes(briefing.content.get("briefing", ""))
+            briefing_view = {
+                "text": briefing_text,
+                "generated_at": briefing.generated_at.isoformat(),
+                "provider": briefing.llm_provider,
+            }
     except Exception:  # noqa: BLE001 — the roster matters, the paragraph does not
         logger.exception("worklist: briefing failed")
         briefing_view = {"text": "", "generated_at": datetime.now().isoformat(),

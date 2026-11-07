@@ -22,6 +22,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.auth import ConsoleScope, console_scope
+from app.api.scope import require_patient, scoped_clinic_patients
 from app.database import get_db
 from app.llm.insights import (
     briefing_is_cached,
@@ -57,20 +59,30 @@ class WarmBody(BaseModel):
     budget: int = Field(default=LLM_BUDGET, ge=1, le=LLM_BUDGET)
 
 
-def _todo(db: Session, body: WarmBody) -> list[tuple[InsightKind, str | None]]:
+def _briefing_roster(db: Session, scope: ConsoleScope) -> list | None:
+    """Who the briefing this console reads is about: everyone (None, the
+    default roster) for staff, one hospital's patients for its credential."""
+    return None if scope.kind == "all" else scoped_clinic_patients(db, scope)
+
+
+def _todo(
+    db: Session, body: WarmBody, scope: ConsoleScope
+) -> list[tuple[InsightKind, str | None]]:
     """Every narrative on the asked-for screens that the model has not
-    written yet, most valuable first."""
+    written yet, most valuable first. Only screens this console can see:
+    a warm call cannot be used to spend model calls on another clinic's
+    patients, or to learn their ids."""
     from app.engine.pipeline import latest_assessment
-    from app.personal.scope import clinic_patients
 
     todo: list[tuple[InsightKind, str | None]] = []
     if body.patient_id:
+        require_patient(db, scope, body.patient_id)
         for kind in PATIENT_KINDS:
             if not insight_is_cached(db, kind, body.patient_id):
                 todo.append((kind, body.patient_id))
     if body.worklist:
         ranked = []
-        for patient in clinic_patients(db):
+        for patient in scoped_clinic_patients(db, scope):
             assessment = latest_assessment(db, patient.id)
             if assessment is None:
                 continue
@@ -79,15 +91,19 @@ def _todo(db: Session, body: WarmBody) -> list[tuple[InsightKind, str | None]]:
                 ranked.append((tier, patient.id))
         ranked.sort()
         todo.extend((InsightKind.WORKLIST_REASON, pid) for _, pid in ranked)
-        if not briefing_is_cached(db):
+        if scope.clinic and not briefing_is_cached(db, patients=_briefing_roster(db, scope)):
             todo.append((InsightKind.DAILY_BRIEFING, None))
     return todo
 
 
 @router.post("/warm")
-def warm(body: WarmBody, db: Session = Depends(get_db)) -> dict:
+def warm(
+    body: WarmBody,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     started = time.monotonic()
-    todo = _todo(db, body)
+    todo = _todo(db, body, scope)
     generated: list[dict] = []
     spent = 0
     for kind, patient_id in todo:
@@ -95,7 +111,7 @@ def warm(body: WarmBody, db: Session = Depends(get_db)) -> dict:
             break
         try:
             if kind == InsightKind.DAILY_BRIEFING:
-                row = get_daily_briefing(db)
+                row = get_daily_briefing(db, patients=_briefing_roster(db, scope))
             else:
                 row = get_patient_insight(db, kind, patient_id)
         except Exception:  # noqa: BLE001 — one narrative, not the pass
@@ -112,7 +128,7 @@ def warm(body: WarmBody, db: Session = Depends(get_db)) -> dict:
             # model's last narratives meanwhile (insights.py) and the next
             # warm, after the cooldown, picks the pass up again.
             break
-    remaining = len(_todo(db, body))
+    remaining = len(_todo(db, body, scope))
     return {
         "generated": generated,
         "spent": spent,

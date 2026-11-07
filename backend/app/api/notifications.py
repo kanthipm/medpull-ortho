@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.auth import ConsoleScope, console_scope
+from app.api.scope import patient_visible, require_staff, scope_patients
 from app.config import settings
 from app.database import get_db
 from app.models.enums import NotificationChannel, NotificationStatus
@@ -12,15 +14,25 @@ from app.models.notification import Notification, NotificationPreference
 from app.models.patient import CareTeamMember, Patient
 
 router = APIRouter(tags=["notifications"])
+# The settings screen is MedPull's, not a clinic's: preferences are stored
+# per care-team member and there is no per-org care team yet.
+STAFF = [Depends(require_staff)]
 
 
 @router.get("/notifications")
-def list_notifications(status: str = "all", db: Session = Depends(get_db)) -> dict:
-    query = (
+def list_notifications(
+    status: str = "all",
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    # Only alerts about patients this console can open: the join to Patient
+    # is what the scope's clauses apply to.
+    query = scope_patients(
+        scope,
         select(Notification, Patient.name)
         .join(Patient, Patient.id == Notification.patient_id)
         .where(Notification.channel == NotificationChannel.IN_APP)
-        .order_by(Notification.created_at.desc(), Notification.id.desc())
+        .order_by(Notification.created_at.desc(), Notification.id.desc()),
     )
     if status == "unread":
         query = query.where(Notification.status == NotificationStatus.UNREAD)
@@ -44,9 +56,14 @@ def list_notifications(status: str = "all", db: Session = Depends(get_db)) -> di
 
 
 @router.post("/notifications/{notification_id}/read")
-def mark_read(notification_id: int, db: Session = Depends(get_db)) -> dict:
+def mark_read(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     notification = db.get(Notification, notification_id)
-    if notification is None:
+    patient = db.get(Patient, notification.patient_id) if notification is not None else None
+    if notification is None or not patient_visible(scope, patient):
         raise HTTPException(status_code=404, detail="Unknown notification")
     notification.status = NotificationStatus.READ
     notification.read_at = datetime.now()
@@ -55,13 +72,22 @@ def mark_read(notification_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/notifications/read-all")
-def mark_all_read(db: Session = Depends(get_db)) -> dict:
+def mark_all_read(
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """Clears the bell, so it clears exactly what the bell lists: an out-of-band
-    row marked read here would retire an alert nobody was ever shown."""
+    row marked read here would retire an alert nobody was ever shown, and
+    another console's alerts are not this one's to retire."""
     unread = db.scalars(
-        select(Notification).where(
-            Notification.channel == NotificationChannel.IN_APP,
-            Notification.status == NotificationStatus.UNREAD,
+        scope_patients(
+            scope,
+            select(Notification)
+            .join(Patient, Patient.id == Notification.patient_id)
+            .where(
+                Notification.channel == NotificationChannel.IN_APP,
+                Notification.status == NotificationStatus.UNREAD,
+            ),
         )
     ).all()
     for n in unread:
@@ -125,12 +151,12 @@ def _preferences_response(db: Session, recipients: list[str]) -> list[dict]:
     return out
 
 
-@router.get("/notification-preferences")
+@router.get("/notification-preferences", dependencies=STAFF)
 def get_preferences(recipient_id: str | None = None, db: Session = Depends(get_db)) -> list[dict]:
     return _preferences_response(db, _recipients(db, recipient_id))
 
 
-@router.put("/notification-preferences")
+@router.put("/notification-preferences", dependencies=STAFF)
 def update_preferences(
     updates: list[PreferenceUpdate],
     recipient_id: str | None = None,

@@ -148,7 +148,7 @@ mid-change without shipping that change.
 | `ALLOW_MOCK_WEBHOOK` | `false` | Opens the unsigned demo webhook; demo stack only |
 | `GROQ_API_KEY` | — | Skips the prompt; also read from the env file |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | Overrides the model |
-| `CONSOLE_ACCESS_TOKEN` | — | Locks the console behind this bearer token (stored in SSM). Unset, the console stays open; `generate` mints one and prints it once |
+| `CONSOLE_ACCESS_TOKEN` | — | The staff token: locks the console behind this bearer token (stored in SSM) and sees every hospital and team. Unset, the console stays open; `generate` mints one and prints it once. Per-org tokens are not deploy settings — they are minted into the database with `admin_db.py --mint-token` (see *Security posture*) |
 | `JUNCTION_API_KEY` | — | Stored in SSM on first deploy; also read from `.env`. Optional — without it the wearable connector stays idle |
 | `JUNCTION_WEBHOOK_SECRET` | — | The Svix `whsec_…` secret for the registered endpoint; stored in SSM like the key |
 | `JUNCTION_ENVIRONMENT` | `sandbox` | `sandbox` or `production` — must match the key |
@@ -538,12 +538,46 @@ provider would replace.
 ## Security posture
 
 The demo stack's console is open; the real app's is locked. Set
-`CONSOLE_ACCESS_TOKEN` at deploy time and every console route needs that
+`CONSOLE_ACCESS_TOKEN` at deploy time and every console route needs a
 bearer token, which the SPA asks for on `/login`; the patient app, the
 token-link pages and the webhooks keep their own credentials. Without it,
 anyone with the CloudFront URL can call every console API route, the write
 paths among them, which is why `deploy.sh` warns when a stack with
-`DEMO_MODE=false` has no token. What the stack adds either way:
+`DEMO_MODE=false` has no token.
+
+Every console route, the team boards included, is bound to the scope of the
+credential that opened it (`backend/app/api/auth.py`, `backend/app/api/scope.py`):
+
+- **The staff token** is `CONSOLE_ACCESS_TOKEN`, as before: scope `all`,
+  every hospital and every team board. An open console (token unset) is
+  scope `all` too.
+- **An org token** is minted into the deployed database and narrows the
+  console to one organisation whether or not the console is otherwise open —
+  on the public demo stack, a clinic that signs in with its token sees only
+  its own roster. `hospital:<id>` sees that hospital's charts and nothing
+  else (another hospital's patient is a 404, the team boards too; the
+  integrations, notification-settings and library-edit pages are a 403);
+  `sports_org:<id>` sees every board in one program; `team:<id>` one board
+  and no clinic chart. Only the token's SHA-256 is stored.
+
+Mint one against the deployed database, under the same S3 write lock the
+API uses:
+
+```bash
+cd backend && uv run python scripts/admin_db.py --bucket <data bucket> --mint-token hospital:hirt "HIRT console"
+cd backend && uv run python scripts/admin_db.py --bucket <data bucket> --report            # lists credentials
+cd backend && uv run python scripts/admin_db.py --bucket <data bucket> --revoke-token <id>   # effective on the next request
+```
+
+The token (`mp_…`) is printed exactly once, in the report. Hand it over as a
+sign-in link, `https://<console host>/login#token=<token>`: the fragment
+never reaches CloudFront, the function or a log, the login page consumes it,
+clears it from the address bar and checks it through `GET /api/console/session`
+before keeping it in that browser. Rehearse on a downloaded copy with
+`--local copy.db` first; `--dry-run` mints into a throwaway copy and uploads
+nothing (the token it prints will not work).
+
+What the stack adds either way:
 
 - The S3 bucket is private. CloudFront reaches the SPA through an Origin Access
   Control; the `db/` prefix is not reachable through the distribution at all.

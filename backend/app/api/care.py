@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.auth import ConsoleScope, console_scope
+from app.api.scope import require_patient
 from app.api.worklist import ensure_fresh_assessment
 from app.database import get_db
 from app.engine.care.catalog import families_payload
@@ -28,16 +30,17 @@ router = APIRouter(prefix="/patients", tags=["care"])
 RAW_ROW_CAP = 400
 
 
-def _get_patient(db: Session, patient_id: str) -> Patient:
-    patient = db.get(Patient, patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail=f"Unknown patient: {patient_id}")
-    return patient
+def _get_patient(db: Session, scope: ConsoleScope, patient_id: str) -> Patient:
+    return require_patient(db, scope, patient_id)
 
 
 @router.get("/{patient_id}/care-metrics")
-def care_metrics(patient_id: str, db: Session = Depends(get_db)) -> dict:
-    patient = _get_patient(db, patient_id)
+def care_metrics(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    patient = _get_patient(db, scope, patient_id)
     assessment = ensure_fresh_assessment(db, patient_id)
     care = (assessment.analytics or {}).get("care_metrics") or {}
     pathway = pathway_by_key(care.get("pathway")) if care.get("pathway") else pathway_for(patient)
@@ -58,11 +61,12 @@ def raw_data(
     patient_id: str,
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
     """Every non-deleted observation in the window, grouped by metric type,
     newest first, capped per type. The window is on ``local_date`` — the
     product's one day definition — not on ``start_time``."""
-    _get_patient(db, patient_id)
+    _get_patient(db, scope, patient_id)
     since = date.today() - timedelta(days=days)
     rows = db.scalars(
         select(Observation)

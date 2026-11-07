@@ -14,6 +14,7 @@ from datetime import date, timedelta
 from sqlalchemy import delete, select
 
 from app.config import settings
+from app.console_credentials import mint
 from app.models.adherence import AdherenceRecord, AdherenceTask
 from app.models.checkin import Checkin
 from app.models.mobile import Message, PatientSession
@@ -72,14 +73,10 @@ def test_surgery_patient_finds_their_chart_and_everything_lands_on_it(client, db
     """A clinician creates the chart with a phone; the patient gets the
     invite, opens the app, finds the record, and from then on the console
     and the app are one thread and one task list."""
-    from app.models.hospital import Hospital
-
     sb = Sendblue(monkeypatch)
-    hospital = db.get(Hospital, "hosp_demo")
-    hospital.access_token = "tok-e2e"
-    db.commit()
+    _, tok = mint(db, "hospital", "hosp_demo", "e2e console")
 
-    created = client.post("/api/patients/", headers=_auth("tok-e2e"), json={
+    created = client.post("/api/patients/", headers=_auth(tok), json={
         "hospital_id": "hosp_demo", "name": "Rosa Delgado", "phone": "512-555-0410",
         "date_of_birth": "1970-05-06", "sex": "F", "procedure_type": "TKA",
         "surgery_date": date.today().isoformat()})
@@ -362,13 +359,9 @@ def test_linking_an_app_signup_into_the_chart_makes_them_one_record(client, db, 
 
 
 def test_console_patient_create_validates_the_phone(client, db, monkeypatch):
-    from app.models.hospital import Hospital
-
     Sendblue(monkeypatch)
-    hospital = db.get(Hospital, "hosp_demo")
-    hospital.access_token = "tok-e2e"
-    db.commit()
-    h = _auth("tok-e2e")
+    _, tok = mint(db, "hospital", "hosp_demo", "e2e console")
+    h = _auth(tok)
     assert client.post("/api/patients/", headers=h, json={
         "hospital_id": "hosp_demo", "name": "Bad Phone", "phone": "call me"}).status_code == 422
     assert client.post("/api/patients/", headers=h, json={
@@ -680,15 +673,11 @@ def test_enroll_cannot_take_over_a_record_that_already_has_a_number(client, db, 
     and any phone, and answered a session on that chart plus moved the number
     onto it. A record whose number is somebody else's now needs a code, and
     the code goes to the number ON FILE, not to the caller's phone."""
-    from app.models.hospital import Hospital
-
     db.expire_all()
-    hospital = db.get(Hospital, "hosp_demo")
-    hospital.access_token = "tok-e2e"
-    db.commit()
+    _, tok = mint(db, "hospital", "hosp_demo", "e2e console")
 
     # unconfigured Sendblue: nothing can carry a code, so the claim is refused
-    created = client.post("/api/patients/", headers=_auth("tok-e2e"), json={
+    created = client.post("/api/patients/", headers=_auth(tok), json={
         "hospital_id": "hosp_demo", "name": "Owned Record", "phone": "+15125550510"}).json()
     pid = created["patient"]["id"]
     attack = client.post("/api/mobile/enroll", json={
@@ -734,12 +723,9 @@ def test_unverified_enrollment_never_takes_a_number_off_another_chart(client, db
         "hospital_id": "hosp_demo", "name": "Phone Owner", "phone": "+15125550520",
         "had_surgery": False}).json()["me"]["patient"]["id"]
     # an empty chart exists; someone tries to claim it with the owner's number
-    from app.models.hospital import Hospital
-
     db.expire_all()
-    db.get(Hospital, "hosp_demo").access_token = "tok-e2e"
-    db.commit()
-    empty = client.post("/api/patients/", headers=_auth("tok-e2e"), json={
+    _, tok = mint(db, "hospital", "hosp_demo", "e2e console")
+    empty = client.post("/api/patients/", headers=_auth(tok), json={
         "hospital_id": "hosp_demo", "name": "Empty Chart"}).json()["patient"]["id"]
     resp = client.post("/api/mobile/enroll", json={
         "patient_id": empty, "hospital_id": "hosp_demo", "phone": "+15125550520"})

@@ -457,27 +457,37 @@ def _briefing_key(assessments: list[tuple[Patient, RiskAssessment]], provider: s
     ).hexdigest()
 
 
-def briefing_is_cached(db: Session) -> bool:
-    """Whether the next get_daily_briefing answers from the cache."""
+def _briefing_roster(db: Session, patients: list[Patient] | None) -> list[Patient]:
+    """Who a briefing is about: the whole clinic roster by default, or the
+    patients a scoped console may see (app/api/scope.py). Ordered by id so
+    the cache key is stable whatever order the caller held them in."""
     from app.personal.scope import clinic_patients
 
+    if patients is None:
+        return clinic_patients(db, order_by=Patient.id)
+    return sorted(patients, key=lambda p: p.id)
+
+
+def briefing_is_cached(db: Session, *, patients: list[Patient] | None = None) -> bool:
+    """Whether the next get_daily_briefing answers from the cache."""
     provider = provider_name()
     if provider == "fallback":
         return True
-    patients = clinic_patients(db, order_by=Patient.id)
-    assessments = [(patient, _latest_assessment(db, patient.id)) for patient in patients]
+    assessments = [(patient, _latest_assessment(db, patient.id))
+                   for patient in _briefing_roster(db, patients)]
     return _cached(db, None, InsightKind.DAILY_BRIEFING, _briefing_key(assessments, provider),
                    provider) is not None
 
 
-def get_daily_briefing(db: Session, *, allow_llm: bool = True) -> Insight:
+def get_daily_briefing(
+    db: Session, *, allow_llm: bool = True, patients: list[Patient] | None = None
+) -> Insight:
     """The roster briefing. ``allow_llm=False`` is the page read: a cold
     cache is answered with the deterministic briefing, keyed as such, and the
-    model key is left for a warm call (api/narratives) to fill."""
-    from app.personal.scope import clinic_patients
-
-    patients = clinic_patients(db, order_by=Patient.id)
-    assessments = [(patient, _latest_assessment(db, patient.id)) for patient in patients]
+    model key is left for a warm call (api/narratives) to fill. ``patients``
+    narrows it to one console's roster; the key and the scope follow."""
+    assessments = [(patient, _latest_assessment(db, patient.id))
+                   for patient in _briefing_roster(db, patients)]
 
     provider = provider_name()
     cache_hash = _briefing_key(assessments, provider)

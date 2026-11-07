@@ -6,10 +6,19 @@ write lock, on a fresh hydrate, with an unconditional persist at the end.
     uv run python scripts/admin_db.py --bucket <s3 bucket> --link steve steve-test-8de9 \\
         --prune-assessments --purge-phone-verifications
     uv run python scripts/admin_db.py --local /path/to/copy.db --link steve steve-test-8de9
+    uv run python scripts/admin_db.py --bucket <s3 bucket> --mint-token hospital:hirt "HIRT console"
+    uv run python scripts/admin_db.py --bucket <s3 bucket> --revoke-token 3
 
 ``--dry-run`` hydrates and applies the operations locally, prints the
 report and uploads nothing. ``--local`` works on a SQLite file in place
 (no S3 at all) — the way to rehearse on a downloaded copy first.
+
+``--mint-token KIND:ORG_ID LABEL`` creates an org-scoped console credential
+(``hospital:<id>``, ``sports_org:<id>``, ``team:<id>``, or ``all`` for a staff
+one) and prints the token exactly once, in the report; the database keeps
+only its hash. Hand it over as ``https://<console>/login#token=<token>``.
+``--report`` lists every credential with its id, and ``--revoke-token ID``
+retires one. The staff token stays ``CONSOLE_ACCESS_TOKEN``.
 
 Every provider is switched off in this process (no Groq, Junction,
 Sendblue or Ollama call can happen), so the only side effect is the file.
@@ -58,7 +67,14 @@ def main() -> int:
                     help="remove one thread line and any files on it, bytes included")
     ap.add_argument("--delete-patient", action="append", default=[], metavar="ID",
                     help="delete a patient and every row that points at them (no merge)")
-    ap.add_argument("--report", action="store_true", help="print the roster and row counts")
+    ap.add_argument("--mint-token", nargs=2, metavar=("KIND:ORG_ID", "LABEL"), action="append",
+                    default=[],
+                    help="mint an org-scoped console credential (hospital:<id>, sports_org:<id>, "
+                         "team:<id>, or all); the token is printed once, only its hash is kept")
+    ap.add_argument("--revoke-token", action="append", default=[], type=int, metavar="ID",
+                    help="retire a console credential by id (--report lists them)")
+    ap.add_argument("--report", action="store_true",
+                    help="print the roster, row counts and console credentials")
     args = ap.parse_args()
 
     # Environment before any app import: app.database binds the engine at import.
@@ -254,11 +270,36 @@ def main() -> int:
         if args.purge_phone_verifications:
             report["purged_phone_verifications"] = db.execute(delete(PhoneVerification)).rowcount
             db.commit()
+        if args.mint_token or args.revoke_token:
+            # Console credentials (app/console_credentials.py). The mint is the
+            # one time the token exists in the clear: it goes into this report
+            # and nowhere else, and the row keeps its hash.
+            from app.console_credentials import CredentialError, credential_view, mint, revoke
+
+            for spec, label in args.mint_token:
+                kind, _, org_id = spec.partition(":")
+                try:
+                    row, token = mint(db, kind, org_id or None, label)
+                except CredentialError as e:
+                    raise SystemExit(f"mint refused: {e}")
+                entry = {**credential_view(row, db), "token": token}
+                if args.dry_run:
+                    entry["note"] = "dry run — this token was not stored and will not work"
+                report.setdefault("minted_tokens", []).append(entry)
+            for credential_id in args.revoke_token:
+                try:
+                    row = revoke(db, credential_id)
+                except CredentialError as e:
+                    raise SystemExit(str(e))
+                report.setdefault("revoked_tokens", []).append(credential_view(row, db))
         if args.report or True:
             from sqlalchemy import func
 
+            from app.console_credentials import credential_view, list_credentials
             from app.models.mobile import PatientSession
             from app.models.observation import Observation
+
+            report["credentials"] = [credential_view(c, db) for c in list_credentials(db)]
 
             rows = []
             for p in db.scalars(select(Patient).order_by(Patient.created_at)).all():

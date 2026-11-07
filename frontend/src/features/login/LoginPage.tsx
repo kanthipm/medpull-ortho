@@ -1,35 +1,99 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { KeyRound } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, clearConsoleToken, fetchJson, setConsoleToken } from '../../api/client'
-import type { Health } from '../../api/types'
+import { CONSOLE_SESSION_KEY } from '../../api/queries'
+import type { ConsoleSession, Health } from '../../api/types'
 
-/** `/login` — the console's one door. The server says on /api/health whether
- *  it wants a token at all; an open deployment is sent straight through. A
- *  token is checked against a cheap console route before it is kept, so a
- *  typo is caught here and not on the worklist. */
+/** `/login` — the console's one door, with two ways through it.
+ *
+ *  A token typed into the form, or a token carried by a sign-in link in the
+ *  URL *fragment* (`/login#token=…`). A fragment, never a query string: the
+ *  browser keeps it to itself, so it reaches no server, no access log and no
+ *  referrer. It is read once, erased from the address bar before anything
+ *  else happens, and then checked the way a typed token is — through
+ *  `GET /api/console/session`, which answers with the token's scope or a 401
+ *  — before it is kept for this browser.
+ *
+ *  An open deployment (no `console_auth` on /api/health) is sent straight
+ *  through only when no fragment token arrived: an org's token narrows even
+ *  an open console, so a link must be honoured there too. */
+
+/** The token in the URL fragment, if a sign-in link brought one, consumed:
+ *  the address bar is rewritten without it so a copied URL, a bookmark or the
+ *  history never carries the credential. */
+function takeFragmentToken(): string | null {
+  if (typeof window === 'undefined') return null
+  const hash = window.location.hash
+  if (hash.length < 2) return null
+  const token = new URLSearchParams(hash.slice(1)).get('token')?.trim() || null
+  if (token) {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  }
+  return token
+}
+
+/** Keep the token for this browser and ask the server what it is good for.
+ *  A refused token is forgotten again before the error reaches the caller. */
+async function verify(token: string): Promise<ConsoleSession> {
+  setConsoleToken(token)
+  try {
+    return await fetchJson<ConsoleSession>('/api/console/session')
+  } catch (err) {
+    clearConsoleToken()
+    throw err
+  }
+}
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [params] = useSearchParams()
   const next = safeNext(params.get('next'))
   const [token, setToken] = useState('')
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Read once: StrictMode runs the effect twice in development, and the
+  // second run must find the same token, not an already-cleared fragment.
+  const fragment = useRef<string | null | undefined>(undefined)
 
   useEffect(() => {
+    if (fragment.current === undefined) fragment.current = takeFragmentToken()
+    const linked = fragment.current
     let cancelled = false
-    fetchJson<Health>('/api/health')
-      .then((h) => {
-        if (!cancelled && !h.console_auth) navigate(next, { replace: true })
-      })
-      .catch(() => {
-        // Unreachable server: stay here and let the form say so on submit.
-      })
+    if (linked) {
+      setChecking(true)
+      verify(linked)
+        .then((session) => {
+          if (cancelled) return
+          queryClient.setQueryData(CONSOLE_SESSION_KEY, session)
+          navigate(next, { replace: true })
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          setError(
+            err instanceof ApiError && err.status === 401
+              ? 'That sign-in link is not valid any more. Enter the access token instead.'
+              : "Can't reach MedPull right now. Check your connection and try again.",
+          )
+        })
+        .finally(() => {
+          if (!cancelled) setChecking(false)
+        })
+    } else {
+      fetchJson<Health>('/api/health')
+        .then((h) => {
+          if (!cancelled && !h.console_auth) navigate(next, { replace: true })
+        })
+        .catch(() => {
+          // Unreachable server: stay here and let the form say so on submit.
+        })
+    }
     return () => {
       cancelled = true
     }
-  }, [navigate, next])
+  }, [navigate, next, queryClient])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -37,12 +101,11 @@ export default function LoginPage() {
     if (!value) return
     setChecking(true)
     setError(null)
-    setConsoleToken(value)
     try {
-      await fetchJson('/api/notifications?status=unread')
+      const session = await verify(value)
+      queryClient.setQueryData(CONSOLE_SESSION_KEY, session)
       navigate(next, { replace: true })
     } catch (err) {
-      clearConsoleToken()
       if (err instanceof ApiError && err.status === 401) {
         setError('That access token is not right.')
       } else {

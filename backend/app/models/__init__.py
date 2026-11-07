@@ -4,6 +4,7 @@ from app.models.adherence import AdherenceRecord, AdherenceTask
 from app.models.attachment import Attachment
 from app.models.checkin import Checkin, CheckinMessage
 from app.models.connection import WearableConnection
+from app.models.credential import ConsoleCredential
 from app.models.hospital import Hospital
 from app.models.insight import EstablishedBaseline, Insight, RiskAssessment
 from app.models.library import CareAction, MessageTemplate, TaskTemplate, TaskVerification
@@ -41,6 +42,7 @@ __all__ = [
     "TaskVerification",
     "Checkin",
     "CheckinMessage",
+    "ConsoleCredential",
     "EstablishedBaseline",
     "Hospital",
     "Message",

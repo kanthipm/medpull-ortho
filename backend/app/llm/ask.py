@@ -97,10 +97,18 @@ def _render_block(p: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _roster_context(db: Session) -> list[dict[str, Any]]:
+def _roster_context(
+    db: Session, patients: list[Patient] | None = None
+) -> list[dict[str, Any]]:
+    """The roster the question is answered over: every clinic chart, or the
+    ones a scoped console may see (ordered by id either way, so the cache
+    digest below is stable)."""
     from app.personal.scope import clinic_patients
 
-    patients = clinic_patients(db, order_by=Patient.id)
+    if patients is None:
+        patients = clinic_patients(db, order_by=Patient.id)
+    else:
+        patients = sorted(patients, key=lambda p: p.id)
     roster: list[dict[str, Any]] = []
     for patient in patients:
         assessment = db.scalar(
@@ -304,8 +312,10 @@ def _validate_ask(raw: dict[str, Any], valid_ids: set[str]) -> dict[str, Any] | 
     return {"answer": answer, "patient_ids": ids}
 
 
-def ask(db: Session, question: str) -> dict[str, Any]:
-    roster = _roster_context(db)
+def ask(
+    db: Session, question: str, patients: list[Patient] | None = None
+) -> dict[str, Any]:
+    roster = _roster_context(db, patients)
     valid_ids = {p["id"] for p in roster}
 
     provider = provider_name()
