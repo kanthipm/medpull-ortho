@@ -10,7 +10,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.medpull.recovery.R
 import com.medpull.recovery.core.ConsentDocument
 import com.medpull.recovery.ui.Field
 import com.medpull.recovery.ui.Gap
@@ -33,14 +35,14 @@ fun ConsentForm(doc: ConsentDocument, scopes: Map<String, Boolean>, onScope: (St
             Checkbox(checked = scopes[sc.key] == true, onCheckedChange = { onScope(sc.key, it) })
             Column {
                 Text(sc.label, style = MaterialTheme.typography.bodyLarge, color = c.ink)
-                Text(if (sc.required) "Needed to use MedPull" else "Your choice. Change it later in Profile.",
+                Text(if (sc.required) stringResource(R.string.consent_required) else stringResource(R.string.consent_optional),
                     style = MaterialTheme.typography.bodyMedium, color = c.muted)
                 if (sc.detail.isNotBlank()) Text(sc.detail, style = MaterialTheme.typography.bodyMedium, color = c.body)
             }
         }
     }
     Gap()
-    Field(signature, onSignature, "Type your name to sign")
+    Field(signature, onSignature, stringResource(R.string.consent_sign_field))
 }
 
 /** Every required scope ticked and a name typed. */

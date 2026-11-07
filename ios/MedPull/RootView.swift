@@ -88,7 +88,8 @@ struct MainTabs: View {
         // The paywall covers the personal screens when access has lapsed; the
         // hospital record (if there is one) is a switch away inside it.
         .fullScreenCover(isPresented: Binding(
-            get: { app.isPersonal && app.paywall != nil && !(app.me?.needsConsent ?? false) },
+            get: { app.isPersonal && app.paywall != nil && (app.me?.features.hasPaywall ?? true)
+                   && !(app.me?.needsConsent ?? false) },
             set: { if !$0 { app.paywall = nil } }
         )) {
             PaywallView(mode: .lapsed)

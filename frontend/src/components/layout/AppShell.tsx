@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react'
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { clearConsoleToken, getConsoleToken } from '../../api/client'
-import { useConsoleSession } from '../../api/queries'
+import { useConsoleSession, useHealth } from '../../api/queries'
 import type { ConsoleScopeKind } from '../../api/types'
 import { useReveal, useSpotlight } from '../../lib/useReveal'
 import { useScrollEdge } from '../../lib/useScrollEdge'
@@ -31,6 +31,12 @@ const NAV = [
     to: '/integrations',
   },
   {
+    key: 'exercises',
+    label: 'Exercises',
+    to: '/exercise-plans',
+    match: (pathname: string) => pathname.startsWith('/exercise-'),
+  },
+  {
     key: 'settings',
     label: 'Settings',
     to: '/settings/notifications',
@@ -43,7 +49,7 @@ const NAV = [
  *  pages, a team token sees no clinic chart). Staff see everything. */
 const NAV_FOR: Record<ConsoleScopeKind, string[]> = {
   all: NAV.map((item) => item.key),
-  hospital: ['worklist'],
+  hospital: ['worklist', 'exercises'],
   sports_org: ['teams'],
   team: ['teams'],
 }
@@ -147,9 +153,15 @@ export default function AppShell() {
   const { data: session } = useConsoleSession()
   const scope = session?.scope
   const signedIn = getConsoleToken() != null
-  const items = scope ? NAV.filter((item) => NAV_FOR[scope.kind].includes(item.key)) : signedIn ? [] : NAV
+  // What the credential may use; then the exercise pages ride on the
+  // server's HEP flag, so until health has answered (or where it is off)
+  // the bar keeps its other items. The scope alone decides what is out of
+  // bounds: a HEP page while health is still loading is not.
+  const allowed = scope ? NAV.filter((item) => NAV_FOR[scope.kind].includes(item.key)) : signedIn ? [] : NAV
+  const hep = useHealth().data?.hep === true
+  const items = hep ? allowed : allowed.filter((item) => item.key !== 'exercises')
   const home = homeFor(scope?.kind)
-  const inScope = !scope || items.some((item) => navMatches(item, pathname))
+  const inScope = !scope || allowed.some((item) => navMatches(item, pathname))
   const active = useActiveRoute(items)
   const { trackRef, style } = useSlidingIndicator(active, items.length)
   const pageClass = PAGE_CLASS[pageWidthFor(pathname)]

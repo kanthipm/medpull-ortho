@@ -488,7 +488,7 @@ private struct ModeStep: View {
                 }
                 modeCard(icon: "sparkles", family: .teal,
                          title: "On my own",
-                         detail: "MedPull Personal: readiness, training load, sleep debt and a coach that knows your numbers. 14 days free, then a subscription.") {
+                         detail: "MedPull Personal: readiness, training load, sleep debt and a coach that knows your numbers.") {
                     model.path = .personal
                     model.candidates = []
                     model.selected = nil

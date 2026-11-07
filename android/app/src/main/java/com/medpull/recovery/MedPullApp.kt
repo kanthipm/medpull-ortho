@@ -17,7 +17,7 @@ class MedPullApp : Application() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_MOTION, getString(R.string.motion_channel), NotificationManager.IMPORTANCE_MIN).apply {
-                description = "Shows while a walk is being recorded. Silent; safe to swipe away."
+                description = getString(R.string.motion_channel_description)
                 setShowBadge(false)
             }
         )

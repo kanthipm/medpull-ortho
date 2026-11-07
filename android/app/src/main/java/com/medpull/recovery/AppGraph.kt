@@ -5,6 +5,7 @@ import com.medpull.recovery.core.ApiClient
 import com.medpull.recovery.core.AppConfig
 import com.medpull.recovery.core.AppModel
 import com.medpull.recovery.core.SessionStore
+import com.medpull.recovery.core.Strings
 import com.medpull.recovery.health.HealthConnector
 import com.medpull.recovery.ui.Appearance
 
@@ -12,8 +13,9 @@ import com.medpull.recovery.ui.Appearance
 class AppGraph(context: Context) {
     val config = AppConfig(context)
     val session = SessionStore(context)
-    val api = ApiClient(config, session)
+    val strings = Strings { id, args -> context.getString(id, *args) }
+    val api = ApiClient(config, session, strings)
     val health = HealthConnector(context, session)
-    val app = AppModel(api, session, config, health)
+    val app = AppModel(api, session, config, health, strings)
     val appearance = Appearance(context)
 }

@@ -53,6 +53,14 @@ export function clearConsoleToken() {
   }
 }
 
+/** The bearer header for a console call, or nothing while the console is
+ *  open. For the few calls that cannot go through fetchJson: a file's bytes
+ *  in either direction. */
+export function consoleAuthHeaders(): Record<string, string> {
+  const token = getConsoleToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 /** Routes a patient reaches from a texted link; they carry their own token. */
 function isPatientPath(path: string): boolean {
   return path.startsWith('/api/checkin/') || path.startsWith('/api/tasks/')
@@ -76,13 +84,12 @@ export async function fetchJson<T>(path: string, init?: FetchOptions): Promise<T
   // the caller's own signal — TanStack cancels on unmount — still wins
   const relay = () => controller.abort()
   caller?.addEventListener('abort', relay, { once: true })
-  const token = isPatientPath(path) ? null : getConsoleToken()
   try {
     const res = await fetch(path, {
       ...rest,
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(isPatientPath(path) ? {} : consoleAuthHeaders()),
         ...headers,
       },
       signal: controller.signal,

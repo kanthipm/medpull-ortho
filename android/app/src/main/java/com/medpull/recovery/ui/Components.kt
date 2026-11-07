@@ -55,8 +55,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageShader
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -64,6 +64,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -468,7 +469,7 @@ fun Lockup(badge: String? = null) {
             contentAlignment = Alignment.Center,
         ) { androidx.compose.foundation.Image(painterResource(R.drawable.medpull_mark), null, modifier = Modifier.size(21.dp)) }
         Spacer(Modifier.width(9.dp))
-        Text("MedPull", style = TextStyle(fontFamily = Outfit, fontSize = 19.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.W500, letterSpacing = (-0.5).sp), color = c.ink)
+        Text(stringResource(R.string.app_name), style = TextStyle(fontFamily = Outfit, fontSize = 19.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.W500, letterSpacing = (-0.5).sp), color = c.ink)
         if (badge != null) {
             Spacer(Modifier.width(6.dp))
             Text(badge, style = MPType.labelMedium, color = c.brandInk, modifier = Modifier.clip(CapsuleShape).background(c.brandTint).padding(horizontal = 8.dp, vertical = 3.dp))
@@ -617,7 +618,7 @@ fun Spinner(modifier: Modifier = Modifier) = Box(modifier.fillMaxWidth().padding
 
 @Composable
 fun Guardrail(modifier: Modifier = Modifier) = Text(
-    "Monitoring signals for your care team — not a diagnosis.",
+    stringResource(R.string.guardrail),
     style = MPType.label, color = MP.colors.muted, modifier = modifier.padding(top = 2.dp),
 )
 
@@ -628,7 +629,7 @@ fun Gap(h: Dp = 12.dp) = Spacer(Modifier.height(h))
 @Composable
 fun BackBar(nav: NavHostController, title: String) {
     Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MP.colors.ink) }
+        IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = MP.colors.ink) }
         Text(title, style = MPType.ledeMedium, color = MP.colors.ink)
     }
 }

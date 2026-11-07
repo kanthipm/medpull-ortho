@@ -16,6 +16,7 @@ import com.google.android.gms.location.ActivityTransition
 import com.google.android.gms.location.ActivityTransitionRequest
 import com.google.android.gms.location.ActivityTransitionResult
 import com.google.android.gms.location.DetectedActivity
+import com.medpull.recovery.R
 import com.medpull.recovery.core.Reminders
 
 /**
@@ -106,7 +107,7 @@ object PassiveCapture {
             }
             if (started && isActive(context) && cooledDown(context) && CaptureSession.state.value != CaptureState.RUNNING) {
                 noteCapture(context)
-                MotionCaptureService.start(context, "Recording your walk", WINDOW_S, outdoors = false, freeLiving = true)
+                MotionCaptureService.start(context, context.getString(R.string.passive_recording), WINDOW_S, outdoors = false, freeLiving = true)
             } else if (stopped && CaptureSession.state.value == CaptureState.RUNNING && CaptureSession.freeLiving) {
                 MotionCaptureService.stop(context)
             }

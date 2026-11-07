@@ -1,25 +1,5 @@
 package com.medpull.recovery.features.care
 
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.graphics.Color
-import com.medpull.recovery.ui.PrimaryButton
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.style.TextAlign
-import com.medpull.recovery.features.today.DOT
-import com.medpull.recovery.ui.BubbleBrush
-import com.medpull.recovery.ui.CapsuleShape
-import com.medpull.recovery.ui.MPType
-import com.medpull.recovery.ui.glassSurface
-import com.medpull.recovery.ui.grain
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -27,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,10 +28,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
@@ -60,6 +45,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -80,7 +66,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -93,29 +87,37 @@ import androidx.media3.ui.PlayerView
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
 import com.medpull.recovery.MedPullApp
+import com.medpull.recovery.R
 import com.medpull.recovery.core.ChatAttachment
 import com.medpull.recovery.core.ChatMessage
 import com.medpull.recovery.core.Dates
 import com.medpull.recovery.core.Tab
 import com.medpull.recovery.core.uploadAttachment
 import com.medpull.recovery.core.withdrawAttachment
+import com.medpull.recovery.features.today.DOT
+import com.medpull.recovery.ui.BubbleBrush
+import com.medpull.recovery.ui.CapsuleShape
 import com.medpull.recovery.ui.Chip
 import com.medpull.recovery.ui.ErrorBanner
 import com.medpull.recovery.ui.Gap
 import com.medpull.recovery.ui.Initials
 import com.medpull.recovery.ui.MP
+import com.medpull.recovery.ui.MPType
 import com.medpull.recovery.ui.Panel
 import com.medpull.recovery.ui.PlainButton
+import com.medpull.recovery.ui.PrimaryButton
 import com.medpull.recovery.ui.StatusPill
 import com.medpull.recovery.ui.Tone
 import com.medpull.recovery.ui.appModel
+import com.medpull.recovery.ui.glassSurface
+import com.medpull.recovery.ui.grain
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-private val QUICK_LOG = listOf("My pain is a ", "I did my exercises", "I walked today", "A note for my nurse: ")
+private val QUICK_LOG = listOf(R.string.quick_pain, R.string.quick_exercises, R.string.quick_walked, R.string.quick_nurse)
 
 /**
  * One thread with the care team: typed text goes to the thread; the mic and
@@ -163,10 +165,10 @@ fun CareScreen(nav: NavHostController) {
     }
 
     suspend fun attach(uri: Uri) {
-        if (pending.size >= 4) { error = "Up to four files at a time."; return }
+        if (pending.size >= 4) { error = context.getString(R.string.care_max_files); return }
         uploading = true
         try {
-            val p = AttachmentPrep.fromUri(context, uri) ?: throw IllegalStateException("That file type isn't supported.")
+            val p = AttachmentPrep.fromUri(context, uri) ?: throw IllegalStateException(context.getString(R.string.care_unsupported_file))
             pending.add(graph.api.uploadAttachment(p.bytes, p.contentType, p.filename))
         } catch (e: Exception) { error = e.message }
         uploading = false
@@ -186,7 +188,7 @@ fun CareScreen(nav: NavHostController) {
     }
     val askCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) speech.startListening() else error = "Microphone access is needed to talk."
+        if (granted) speech.startListening() else error = context.getString(R.string.care_mic_needed)
     }
 
     fun captureFile(ext: String): Uri {
@@ -232,7 +234,7 @@ fun CareScreen(nav: NavHostController) {
             if (thinking) item { TurnBubble(false, "…") }
         }
         if (listening) {
-            Text(if (transcript.isBlank()) "Listening…" else transcript, color = c.muted, style = MaterialTheme.typography.bodyMedium,
+            Text(if (transcript.isBlank()) stringResource(R.string.care_listening) else transcript, color = c.muted, style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
         }
         if (pending.isNotEmpty()) {
@@ -241,7 +243,7 @@ fun CareScreen(nav: NavHostController) {
                     Row(Modifier.clip(RoundedCornerShape(999.dp)).background(c.soft).padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(a.filename ?: a.kind, style = MaterialTheme.typography.labelMedium, color = c.ink)
                         IconButton(onClick = { scope.launch { try { graph.api.withdrawAttachment(a.id) } catch (_: Exception) {}; pending.remove(a) } }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Close, "Remove", modifier = Modifier.size(16.dp), tint = c.muted)
+                            Icon(Icons.Default.Close, stringResource(R.string.remove), modifier = Modifier.size(16.dp), tint = c.muted)
                         }
                     }
                 }
@@ -250,8 +252,8 @@ fun CareScreen(nav: NavHostController) {
         }
         if (draft.isBlank() && pending.isEmpty() && !listening) {
             LazyRow(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { Text("Quick log", style = MPType.labelMedium, color = c.muted, modifier = Modifier.padding(top = 9.dp)) }
-                items(QUICK_LOG) { q -> QuickChip(q.trim() + if (q.endsWith(" ") || q.endsWith(": ")) "…" else "") { draft = q; toAssistant = true; composerFocus.requestFocus() } }
+                item { Text(stringResource(R.string.care_quick_log), style = MPType.labelMedium, color = c.muted, modifier = Modifier.padding(top = 9.dp)) }
+                items(QUICK_LOG) { id -> val q = stringResource(id); QuickChip(q.trim() + if (q.endsWith(" ") || q.endsWith(": ")) "…" else "") { draft = q; toAssistant = true; composerFocus.requestFocus() } }
             }
             Gap(6.dp)
         }
@@ -259,9 +261,9 @@ fun CareScreen(nav: NavHostController) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.AutoAwesome, null, tint = c.brandInk, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("To MedPull, which logs it for you", style = MaterialTheme.typography.labelMedium, color = c.brandInk)
+                Text(stringResource(R.string.care_to_medpull), style = MaterialTheme.typography.labelMedium, color = c.brandInk)
                 Spacer(Modifier.weight(1f))
-                PlainButton("Clear", color = c.muted) { draft = ""; toAssistant = false }
+                PlainButton(stringResource(R.string.clear), color = c.muted) { draft = ""; toAssistant = false }
             }
         }
         if (recordingNote) RecordingBar(
@@ -274,36 +276,36 @@ fun CareScreen(nav: NavHostController) {
             Box {
                 ComposerRound(Icons.Default.Add, enabled = !uploading && pending.size < 4 && !listening) { menuOpen = true }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(text = { Text("Take a photo") }, leadingIcon = { Icon(Icons.Default.PhotoCamera, null) }, onClick = {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.care_take_photo)) }, leadingIcon = { Icon(Icons.Default.PhotoCamera, null) }, onClick = {
                         menuOpen = false
                         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) askCamera.launch(Manifest.permission.CAMERA)
                         else takePhoto.launch(captureFile("jpg"))
                     })
-                    DropdownMenuItem(text = { Text("Record a video") }, leadingIcon = { Icon(Icons.Default.Videocam, null) }, onClick = {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.care_record_video)) }, leadingIcon = { Icon(Icons.Default.Videocam, null) }, onClick = {
                         menuOpen = false
                         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) askCamera.launch(Manifest.permission.CAMERA)
                         else takeVideo.launch(captureFile("mp4"))
                     })
-                    DropdownMenuItem(text = { Text("Photo library") }, leadingIcon = { Icon(Icons.Default.PhotoLibrary, null) }, onClick = {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.care_photo_library)) }, leadingIcon = { Icon(Icons.Default.PhotoLibrary, null) }, onClick = {
                         menuOpen = false; pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                     })
-                    DropdownMenuItem(text = { Text(if (recordingNote) "Stop recording" else "Record a voice note") }, leadingIcon = { Icon(if (recordingNote) Icons.Default.Stop else Icons.Default.Mic, null) }, onClick = {
+                    DropdownMenuItem(text = { Text(if (recordingNote) stringResource(R.string.care_stop_recording) else stringResource(R.string.care_record_voice_note)) }, leadingIcon = { Icon(if (recordingNote) Icons.Default.Stop else Icons.Default.Mic, null) }, onClick = {
                         menuOpen = false
                         if (recordingNote) {
                             recordingNote = false
                             recorder.stop()?.let { p -> scope.launch { uploading = true; try { pending.add(graph.api.uploadAttachment(p.bytes, p.contentType, p.filename)) } catch (e: Exception) { error = e.message }; uploading = false } }
                         } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            try { recorder.start(); recordingNote = true } catch (e: Exception) { error = "Couldn't start recording." }
+                            try { recorder.start(); recordingNote = true } catch (e: Exception) { error = context.getString(R.string.care_record_failed) }
                         } else askMic.launch(Manifest.permission.RECORD_AUDIO)
                     })
-                    DropdownMenuItem(text = { Text("Choose a file") }, leadingIcon = { Icon(Icons.Default.AttachFile, null) }, onClick = {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.care_choose_file)) }, leadingIcon = { Icon(Icons.Default.AttachFile, null) }, onClick = {
                         menuOpen = false; pickFiles.launch(AttachmentPrep.acceptedMimes)
                     })
                 }
             }
             ComposerField(
                 text = draft, onChange = { draft = it; if (it.isEmpty()) toAssistant = false },
-                placeholder = if (listening) "Listening…" else if (recordingNote) "Recording a voice note…" else if (toAssistant) "Ask MedPull" else "Write to your care team",
+                placeholder = if (listening) stringResource(R.string.care_listening) else if (recordingNote) stringResource(R.string.care_recording_voice_note) else if (toAssistant) stringResource(R.string.care_ask_medpull) else stringResource(R.string.care_write_to_team),
                 canSend = !sending && !uploading && !listening && (draft.isNotBlank() || pending.isNotEmpty()), busy = sending,
                 modifier = Modifier.weight(1f), focusRequester = composerFocus,
             ) { scope.launch { send(draft, "app", speak = false) } }
@@ -325,9 +327,9 @@ fun CareScreen(nav: NavHostController) {
 private fun IntroCard() {
     val c = MP.colors
     Panel {
-        Text("How this works", style = MPType.copyLargeMedium, color = c.ink)
+        Text(stringResource(R.string.care_how_this_works), style = MPType.copyLargeMedium, color = c.ink)
         Gap(8.dp)
-        Text("Anything you type goes to your care team, and the plus button sends them a photo, a short video, a voice note or a file. Tap the mic, or one of the quick logs, to tell MedPull how you feel: it logs it for you, answers straight away, and passes anything serious to the team.",
+        Text(stringResource(R.string.care_intro),
             style = MPType.copy, color = c.body)
     }
 }
@@ -339,15 +341,15 @@ private fun RecordingBar(onCancel: () -> Unit, onStop: () -> Unit) {
     var seconds by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) { while (isActive) { delay(1000); seconds += 1; if (seconds >= 180) { onStop(); break } } }
     Row(Modifier.fillMaxWidth().background(c.panel).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onCancel) { Icon(Icons.Default.Close, "Cancel the voice note", tint = c.ink) }
+        IconButton(onClick = onCancel) { Icon(Icons.Default.Close, stringResource(R.string.care_cancel_voice_note), tint = c.ink) }
         Row(Modifier.weight(1f).clip(RoundedCornerShape(22.dp)).background(c.soft).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(c.riskHigh))
             Spacer(Modifier.width(10.dp))
             Text(String.format(Locale.getDefault(), "%d:%02d", seconds / 60, seconds % 60), style = MaterialTheme.typography.bodyLarge, color = c.ink)
             Spacer(Modifier.width(10.dp))
-            Text("Recording", style = MaterialTheme.typography.labelMedium, color = c.muted)
+            Text(stringResource(R.string.care_recording), style = MaterialTheme.typography.labelMedium, color = c.muted)
         }
-        IconButton(onClick = onStop) { Icon(Icons.Default.Stop, "Stop and attach the voice note", tint = c.riskHigh) }
+        IconButton(onClick = onStop) { Icon(Icons.Default.Stop, stringResource(R.string.care_stop_attach_voice_note), tint = c.riskHigh) }
     }
 }
 
@@ -371,7 +373,7 @@ private fun TurnBubble(mine: Boolean, text: String) {
     Column(Modifier.fillMaxWidth().padding(start = if (mine) 48.dp else 0.dp, end = if (mine) 0.dp else 48.dp),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         BubbleText(text, mine)
-        Text(if (mine) "You" else "MedPull", style = MPType.label, color = c.muted)
+        Text(if (mine) stringResource(R.string.care_you) else stringResource(R.string.app_name), style = MPType.label, color = c.muted)
     }
 }
 
@@ -380,26 +382,26 @@ private fun Bubble(m: ChatMessage, cache: MediaCache, onOpenTask: (Int) -> Unit)
     val c = MP.colors
     val mine = m.sender == "patient"
     val who = when {
-        mine -> "You" + if (m.channel == "sms") "${DOT}by text" else if (m.channel == "voice") "${DOT}by voice" else ""
-        m.sender == "copilot" -> if (m.channel == "sms") "MedPull${DOT}text" else "MedPull"
-        m.fromClinician -> m.authorName?.takeIf { it.isNotBlank() } ?: "Care team"
-        else -> "Care team"
+        mine -> stringResource(R.string.care_you) + if (m.channel == "sms") DOT + stringResource(R.string.care_by_text) else if (m.channel == "voice") DOT + stringResource(R.string.care_by_voice) else ""
+        m.sender == "copilot" -> if (m.channel == "sms") stringResource(R.string.app_name) + DOT + stringResource(R.string.care_text_channel) else stringResource(R.string.app_name)
+        m.fromClinician -> m.authorName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.care_team)
+        else -> stringResource(R.string.care_team)
     }
     Column(Modifier.fillMaxWidth().padding(start = if (mine) 48.dp else 0.dp, end = if (mine) 0.dp else 48.dp),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         if (m.text.isNotBlank()) BubbleText(m.text, mine, strong = m.sender == "care_team" || m.fromClinician)
         if (m.files.isNotEmpty()) AttachmentStrip(m.files, cache)
         m.action?.takeIf { it.kind == "open_task" && it.taskId != null }?.let { a ->
-            PrimaryButton(a.label.ifBlank { "Open" }, modifier = Modifier.widthIn(max = 260.dp)) { onOpenTask(a.taskId!!) }
+            PrimaryButton(a.label.ifBlank { stringResource(R.string.open) }, modifier = Modifier.widthIn(max = 260.dp)) { onOpenTask(a.taskId!!) }
         }
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
             itemVerticalAlignment = Alignment.CenterVertically) {
             Text(who, style = MPType.label, color = c.muted)
-            if (m.fromClinician) Text("Care team approved", style = MPType.labelMedium, color = c.brandInk,
+            if (m.fromClinician) Text(stringResource(R.string.care_team_approved), style = MPType.labelMedium, color = c.brandInk,
                 modifier = Modifier.clip(CapsuleShape).background(c.brandTint).padding(horizontal = 6.dp, vertical = 2.dp))
             Text("·", style = MPType.label, color = c.muted)
             Text(Dates.relative(m.createdAt) ?: "", style = MPType.label, color = c.muted)
-            if (m.deliveryStatus == "failed") Text("·  not delivered by text", style = MPType.label, color = c.riskMed)
+            if (m.deliveryStatus == "failed") Text(stringResource(R.string.care_not_delivered), style = MPType.label, color = c.riskMed)
         }
     }
 }
@@ -409,17 +411,21 @@ private fun AttachmentStrip(files: List<ChatAttachment>, cache: MediaCache) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         files.forEach { a ->
             when {
-                a.isWithdrawn -> Text("${if (a.isImage) "Photo" else "File"} taken back", style = MaterialTheme.typography.labelMedium, color = MP.colors.muted)
+                a.isWithdrawn -> Text(stringResource(R.string.care_taken_back, stringResource(if (a.isImage) R.string.file_photo else R.string.file_file)), style = MaterialTheme.typography.labelMedium, color = MP.colors.muted)
                 a.isImage -> ImageTile(a, cache)
                 a.isVideo || a.isAudio -> MediaTile(a, cache)
-                else -> Text("${a.displayName()} · ${a.sizeLabel()}", style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
+                else -> Text(stringResource(R.string.care_file_line, a.displayName(), a.sizeLabel()), style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
             }
         }
     }
 }
 
-fun ChatAttachment.displayName() = filename ?: if (isImage) "Photo" else if (isVideo) "Video" else if (isAudio) "Voice note" else "File"
-fun ChatAttachment.sizeLabel(): String = if (byteSize >= 1_000_000) String.format(Locale.getDefault(), "%.1f MB", byteSize / 1e6) else "${byteSize / 1000} KB"
+@Composable
+fun ChatAttachment.displayName(): String = filename
+    ?: stringResource(if (isImage) R.string.file_photo else if (isVideo) R.string.file_video else if (isAudio) R.string.file_voice_note else R.string.file_file)
+@Composable
+fun ChatAttachment.sizeLabel(): String =
+    if (byteSize >= 1_000_000) stringResource(R.string.size_mb, byteSize / 1e6) else stringResource(R.string.size_kb, byteSize / 1000)
 
 @Composable
 private fun ImageTile(a: ChatAttachment, cache: MediaCache) {
@@ -438,9 +444,9 @@ private fun MediaTile(a: ChatAttachment, cache: MediaCache) {
     LaunchedEffect(a.id) { if (file == null) file = cache.fetch(a) }
     val c = MP.colors
     Row(Modifier.clip(RoundedCornerShape(12.dp)).background(c.soft).clickable(enabled = file != null) { playing = !playing }.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (playing) Icons.Default.Stop else Icons.Default.PlayArrow, if (playing) "Stop" else "Play", tint = c.brandInk)
+        Icon(if (playing) Icons.Default.Stop else Icons.Default.PlayArrow, if (playing) stringResource(R.string.stop) else stringResource(R.string.play), tint = c.brandInk)
         Spacer(Modifier.width(8.dp))
-        Text("${a.displayName()} · ${a.sizeLabel()}", style = MaterialTheme.typography.bodyMedium, color = c.ink)
+        Text(stringResource(R.string.care_file_line, a.displayName(), a.sizeLabel()), style = MaterialTheme.typography.bodyMedium, color = c.ink)
     }
     val f = file
     if (playing && f != null) Player(f, a.isVideo) { playing = false }
@@ -476,7 +482,7 @@ private fun CareHeader(team: List<com.medpull.recovery.core.CareTeamMember>) {
                 }
             }
         }
-        Text("Your care team", style = MPType.copyMedium, color = c.ink)
+        Text(stringResource(R.string.profile_your_care_team), style = MPType.copyMedium, color = c.ink)
         Text(team.joinToString(", ") { it.name }, style = MPType.label, color = c.muted, textAlign = TextAlign.Center)
     }
 }
@@ -519,7 +525,7 @@ private fun ComposerField(text: String, onChange: (String) -> Unit, placeholder:
         Spacer(Modifier.width(4.dp))
         Box(Modifier.size(36.dp).clip(CircleShape).background(if (canSend) c.action else c.soft).clickable(enabled = canSend && !busy, onClick = onSend), contentAlignment = Alignment.Center) {
             if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = c.onAction)
-            else Icon(Icons.Default.ArrowUpward, "Send", tint = if (canSend) c.onAction else c.muted, modifier = Modifier.size(18.dp))
+            else Icon(Icons.Default.ArrowUpward, stringResource(R.string.send), tint = if (canSend) c.onAction else c.muted, modifier = Modifier.size(18.dp))
         }
     }
 }

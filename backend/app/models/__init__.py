@@ -5,6 +5,15 @@ from app.models.attachment import Attachment
 from app.models.checkin import Checkin, CheckinMessage
 from app.models.connection import WearableConnection
 from app.models.credential import ConsoleCredential
+from app.hep.models import (
+    AuditEvent,
+    Exercise,
+    ExerciseCompletion,
+    ExerciseMedia,
+    ExercisePlan,
+    PatientInvitation,
+    PlanExercise,
+)
 from app.models.hospital import Hospital
 from app.models.insight import EstablishedBaseline, Insight, RiskAssessment
 from app.models.library import CareAction, MessageTemplate, TaskTemplate, TaskVerification
@@ -45,6 +54,13 @@ __all__ = [
     "ConsoleCredential",
     "EstablishedBaseline",
     "Hospital",
+    "AuditEvent",
+    "Exercise",
+    "ExerciseCompletion",
+    "ExerciseMedia",
+    "ExercisePlan",
+    "PatientInvitation",
+    "PlanExercise",
     "Message",
     "PatientSession",
     "PhoneVerification",

@@ -20,6 +20,7 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import com.medpull.recovery.R
 import com.medpull.recovery.core.ApiClient
 import com.medpull.recovery.core.ChatAttachment
 import com.medpull.recovery.core.attachmentBytes
@@ -170,7 +171,7 @@ class VoiceNoteRecorder(private val context: Context) {
         if (f == null || ms < 500) { f?.delete(); return null }
         val bytes = f.readBytes(); f.delete()
         val stamp = SimpleDateFormat("MMM d, h.mm a", Locale.getDefault()).format(Date())
-        return Prepared(bytes, "audio/mp4", "Voice note $stamp.m4a")
+        return Prepared(bytes, "audio/mp4", context.getString(R.string.voice_note_filename, stamp))
     }
 
     fun cancel() { recorder?.let { try { it.stop() } catch (_: Exception) {}; it.release() }; recorder = null; file?.delete(); file = null }

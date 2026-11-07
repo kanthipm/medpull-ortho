@@ -111,7 +111,7 @@ struct AddSpaceSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Your own space").title(MPSize.displayS)
-                    Text("Readiness, training load, sleep debt and a coach, on the same watch data your care team follows. Fourteen days free, then a subscription. Your clinicians never see this space.")
+                    Text("Readiness, training load, sleep debt and a coach, on the same watch data your care team follows. Your clinicians never see this space.")
                         .mpFont(.copyLarge).foregroundStyle(MP.body).lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("What do you want from it?").mpFont(.labelMedium).foregroundStyle(MP.muted)
@@ -385,13 +385,15 @@ struct PersonalCard: View {
 
     private var profile: PersonalProfile? { app.dashboard?.profile }
     private var state: SubscriptionState? { app.dashboard?.subscription ?? app.me?.subscription }
+    /// No paid product yet: the server says so and the plan rows stay hidden.
+    private var paywall: Bool { app.me?.features.hasPaywall ?? true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Card(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     CardHeader("MedPull Personal")
-                    if let state {
+                    if let state, paywall {
                         row("Plan", state.headline, icon: "creditcard.fill", family: .blue)
                         InsetDivider()
                     }
@@ -423,11 +425,13 @@ struct PersonalCard: View {
                         }
                         InsetDivider()
                     }
-                    Button { managing = true } label: {
-                        rowLabel("Manage subscription", nil, icon: "arrow.up.forward.app", family: .violet, chevron: true)
+                    if paywall {
+                        Button { managing = true } label: {
+                            rowLabel("Manage subscription", nil, icon: "arrow.up.forward.app", family: .violet, chevron: true)
+                        }
+                        .buttonStyle(.mpRow)
+                        InsetDivider()
                     }
-                    .buttonStyle(.mpRow)
-                    InsetDivider()
                     Button { export() } label: {
                         HStack(spacing: 14) {
                             IconTile("square.and.arrow.up", family: .indigo)

@@ -36,9 +36,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import com.medpull.recovery.R
 import com.medpull.recovery.core.AnswerValue
 import com.medpull.recovery.ui.ErrorBanner
 import com.medpull.recovery.ui.Gap
@@ -65,7 +67,7 @@ fun CheckinScreen(nav: NavHostController, id: Int?) {
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var done by remember { mutableStateOf(false) }
-    if (task == null) { Column(Modifier.padding(16.dp)) { Text("This check-in is no longer here.", color = c.muted) }; return }
+    if (task == null) { Column(Modifier.padding(16.dp)) { Text(stringResource(R.string.checkin_gone), color = c.muted) }; return }
     val qs = task.questions
     val reviewing = step >= qs.size
     // Felt as well as seen: a tick per step, a confirm when sent, a buzz on failure.
@@ -76,20 +78,20 @@ fun CheckinScreen(nav: NavHostController, id: Int?) {
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { if (step > 0 && !done) step -= 1 else nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = c.ink) }
-            Text(task.title.ifBlank { "Check-in" }, style = MaterialTheme.typography.titleLarge, color = c.ink)
+            IconButton(onClick = { if (step > 0 && !done) step -= 1 else nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = c.ink) }
+            Text(task.title.ifBlank { stringResource(R.string.checkin_title) }, style = MaterialTheme.typography.titleLarge, color = c.ink)
         }
         if (done) {
             Panel(tint = c.brandTint) {
-                Text("Sent to your care team", style = MaterialTheme.typography.titleLarge, color = c.brandInk)
-                Text("Thank you. They will be in touch if anything needs a look.", color = c.body)
+                Text(stringResource(R.string.sent_to_care_team), style = MaterialTheme.typography.titleLarge, color = c.brandInk)
+                Text(stringResource(R.string.checkin_sent_body), color = c.body)
             }
             return@Column
         }
         error?.let { ErrorBanner(it, onDismiss = { error = null }); Gap() }
         if (!reviewing) {
             val q = qs[step]
-            Text("Question ${step + 1} of ${qs.size}", style = MaterialTheme.typography.labelMedium, color = c.muted)
+            Text(stringResource(R.string.checkin_question_n, step + 1, qs.size), style = MaterialTheme.typography.labelMedium, color = c.muted)
             Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 qs.indices.forEach { i ->
                     Box(Modifier.size(8.dp).clip(CircleShape).background(
@@ -101,14 +103,14 @@ fun CheckinScreen(nav: NavHostController, id: Int?) {
             Gap(20.dp)
             QuestionView(q, answers[q.id]) { v -> if (v == null) answers.remove(q.id) else answers[q.id] = v }
             Gap(28.dp)
-            PrimaryButton(if (step == qs.lastIndex) "Review" else "Next") { step += 1 }
+            PrimaryButton(if (step == qs.lastIndex) stringResource(R.string.review) else stringResource(R.string.next)) { step += 1 }
             Gap(8.dp)
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                if (step > 0) PlainButton("Back") { step -= 1 } else Spacer(Modifier)
-                PlainButton(if (answers.containsKey(q.id)) "Clear" else "Skip this one", color = c.muted) { answers.remove(q.id); step += 1 }
+                if (step > 0) PlainButton(stringResource(R.string.back)) { step -= 1 } else Spacer(Modifier)
+                PlainButton(if (answers.containsKey(q.id)) stringResource(R.string.clear) else stringResource(R.string.checkin_skip_one), color = c.muted) { answers.remove(q.id); step += 1 }
             }
         } else {
-            Text("Review", style = MaterialTheme.typography.displaySmall, color = c.ink)
+            Text(stringResource(R.string.review), style = MaterialTheme.typography.displaySmall, color = c.ink)
             Gap(12.dp)
             Panel {
                 qs.forEachIndexed { i, q ->
@@ -123,7 +125,7 @@ fun CheckinScreen(nav: NavHostController, id: Int?) {
             }
             Gap(20.dp)
             val nothing = answers.isEmpty()
-            PrimaryButton(if (nothing) "Send nothing for now" else "Send to my care team", loading = sending) {
+            PrimaryButton(if (nothing) stringResource(R.string.checkin_send_nothing) else stringResource(R.string.checkin_send), loading = sending) {
                 scope.launch {
                     sending = true
                     try {
@@ -134,14 +136,15 @@ fun CheckinScreen(nav: NavHostController, id: Int?) {
                 }
             }
             Gap(8.dp)
-            SecondaryButton("Back to questions") { step = 0 }
+            SecondaryButton(stringResource(R.string.checkin_back_to_questions)) { step = 0 }
         }
         Gap(24.dp)
     }
 }
 
+@Composable
 private fun spoken(id: String, v: AnswerValue?): String = when (v) {
-    null -> "Skipped"
+    null -> stringResource(R.string.skipped)
     is AnswerValue.Num -> painWords(id, v.value)
     is AnswerValue.Text -> choiceLabel(v.value)
 }

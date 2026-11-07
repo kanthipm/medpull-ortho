@@ -3,9 +3,10 @@ package com.medpull.recovery.health
 import android.content.Context
 import android.util.Log
 import androidx.activity.result.contract.ActivityResultContract
+import com.medpull.recovery.R
 import com.medpull.recovery.core.AppModel
-import com.medpull.recovery.core.junctionSession
 import com.medpull.recovery.core.SessionStore
+import com.medpull.recovery.core.junctionSession
 import io.tryvital.client.AuthenticateRequest
 import io.tryvital.client.VitalClient
 import io.tryvital.vitalhealthconnect.VitalHealthConnectManager
@@ -84,8 +85,8 @@ class HealthConnector(private val context: Context, private val session: Session
         val avail = availability()
         if (avail != ProviderAvailability.Installed) {
             _state.value = when (avail) {
-                ProviderAvailability.NotInstalled -> HealthConnectState.Failed("Install the Health Connect app from Google Play, then try again.")
-                ProviderAvailability.OnboardingIncomplete -> HealthConnectState.Failed("Open Health Connect once to finish setting it up, then try again.")
+                ProviderAvailability.NotInstalled -> HealthConnectState.Failed(context.getString(R.string.hc_install))
+                ProviderAvailability.OnboardingIncomplete -> HealthConnectState.Failed(context.getString(R.string.hc_open_once))
                 else -> HealthConnectState.Unavailable
             }
             return false
@@ -98,7 +99,7 @@ class HealthConnector(private val context: Context, private val session: Session
             // (or a chart whose Junction account was replaced) never pushes into
             // the old account.
             val patientId = app.current.me?.patient?.id ?: session.patientId
-                ?: throw IllegalStateException("Sign in first.")
+                ?: throw IllegalStateException(context.getString(R.string.hc_sign_in_first))
             val junction = app.api.junctionSession()
             VitalClient.identifyExternalUser(context, "medpull:$patientId:${junction.userId}") {
                 AuthenticateRequest.SignInToken(junction.signInToken)
@@ -107,7 +108,7 @@ class HealthConnector(private val context: Context, private val session: Session
             true
         } catch (e: Exception) {
             Log.w("HealthConnector", "sign-in failed", e)
-            _state.value = HealthConnectState.Failed(e.message ?: "Couldn't connect to the wearable service.")
+            _state.value = HealthConnectState.Failed(e.message ?: context.getString(R.string.hc_connect_failed))
             false
         }
     }
@@ -116,13 +117,13 @@ class HealthConnector(private val context: Context, private val session: Session
     fun onPermissions(outcome: PermissionOutcome) {
         when (outcome) {
             is PermissionOutcome.Success, is PermissionOutcome.NotPrompted -> {
-                _state.value = HealthConnectState.Connected("Connected. Syncing…")
+                _state.value = HealthConnectState.Connected(context.getString(R.string.hc_connected_syncing_now))
                 observeStatus()
                 scope.launch { syncNow() }
             }
-            is PermissionOutcome.Cancelled -> _state.value = HealthConnectState.Failed("Permissions were not granted.")
+            is PermissionOutcome.Cancelled -> _state.value = HealthConnectState.Failed(context.getString(R.string.hc_permissions_denied))
             is PermissionOutcome.HealthConnectUnavailable -> _state.value = HealthConnectState.Unavailable
-            else -> _state.value = HealthConnectState.Failed("Health Connect refused the request. Try again.")
+            else -> _state.value = HealthConnectState.Failed(context.getString(R.string.hc_refused))
         }
     }
 
@@ -141,10 +142,10 @@ class HealthConnector(private val context: Context, private val session: Session
         statusJob = scope.launch {
             manager.status.collect { s ->
                 val line = when (s) {
-                    is SyncStatus.ResourceSyncing -> "Syncing…"
-                    is SyncStatus.ResourceSyncingComplete, is SyncStatus.SyncingCompleted -> "Synced just now."
-                    is SyncStatus.ResourceNothingToSync -> "Up to date."
-                    is SyncStatus.ResourceSyncFailed -> "A sync failed; it will retry."
+                    is SyncStatus.ResourceSyncing -> context.getString(R.string.hc_syncing)
+                    is SyncStatus.ResourceSyncingComplete, is SyncStatus.SyncingCompleted -> context.getString(R.string.hc_synced_just_now)
+                    is SyncStatus.ResourceNothingToSync -> context.getString(R.string.hc_up_to_date)
+                    is SyncStatus.ResourceSyncFailed -> context.getString(R.string.hc_sync_failed)
                     else -> null
                 }
                 if (_state.value is HealthConnectState.Connected) _state.value = HealthConnectState.Connected(line)

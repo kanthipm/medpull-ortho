@@ -1,11 +1,12 @@
 package com.medpull.recovery.ui
 
 import android.content.Context
+import com.medpull.recovery.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /** Light, dark or the phone's setting. Light is the default, as on the iPhone. */
-enum class AppearanceMode(val label: String) { LIGHT("Light"), DARK("Dark"), SYSTEM("System") }
+enum class AppearanceMode(val labelRes: Int) { LIGHT(R.string.appearance_light), DARK(R.string.appearance_dark), SYSTEM(R.string.appearance_system) }
 
 class Appearance(context: Context) {
     private val prefs = context.getSharedPreferences("medpull.config", Context.MODE_PRIVATE)

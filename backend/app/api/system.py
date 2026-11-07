@@ -26,6 +26,8 @@ def health() -> dict:
         # The public demo or the real app; the console keys its demo-only
         # surfaces on this rather than on a hostname.
         "demo": settings.demo_mode,
+        # The console shows the Exercise Plans nav only while this is on.
+        "hep": settings.hep_enabled,
         "llm_provider": provider_name(),
         "model": model_name(),
         # Keys present is not the same as able to send: the sending number has

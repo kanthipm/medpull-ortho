@@ -35,16 +35,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.medpull.recovery.MedPullApp
+import com.medpull.recovery.R
 import com.medpull.recovery.core.AppConfig
 import com.medpull.recovery.core.AppModel
 import com.medpull.recovery.core.Dates
 import com.medpull.recovery.core.Reminders
 import com.medpull.recovery.core.wearableLink
 import com.medpull.recovery.health.HealthConnectState
+import com.medpull.recovery.ui.AppearanceMode
 import com.medpull.recovery.ui.BackBar
 import com.medpull.recovery.ui.ErrorBanner
 import com.medpull.recovery.ui.Field
@@ -63,7 +66,6 @@ import com.medpull.recovery.ui.SecondaryButton
 import com.medpull.recovery.ui.SectionTitle
 import com.medpull.recovery.ui.StatusPill
 import com.medpull.recovery.ui.Tone
-import com.medpull.recovery.ui.AppearanceMode
 import com.medpull.recovery.ui.appModel
 import com.medpull.recovery.ui.toneFor
 import kotlinx.coroutines.launch
@@ -79,7 +81,7 @@ fun ProfileScreen(nav: NavHostController) {
     var serverUrl by remember { mutableStateOf(app.config.baseUrl) }
     var signingOut by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        BackBar(nav, "Profile")
+        BackBar(nav, stringResource(R.string.profile_title))
         if (me != null) {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -92,24 +94,24 @@ fun ProfileScreen(nav: NavHostController) {
                     }
                 }
                 Gap(8.dp)
-                me.patient.surgeryDate?.let { ListRow("Surgery", Dates.day(it)?.let { d -> Dates.monthDay(d) } ?: it) }
-                me.patient.phoneMasked?.let { ListRow("Mobile", it) }
-                ListRow("Enrolled", "${me.patient.daysEnrolled} days")
+                me.patient.surgeryDate?.let { ListRow(stringResource(R.string.profile_surgery), Dates.day(it)?.let { d -> Dates.monthDay(d) } ?: it) }
+                me.patient.phoneMasked?.let { ListRow(stringResource(R.string.profile_mobile), it) }
+                ListRow(stringResource(R.string.profile_enrolled), stringResource(R.string.n_days, me.patient.daysEnrolled))
             }
             Gap()
             if (me.patient.careTeam.isNotEmpty()) {
                 Panel {
-                    SectionTitle("Your care team")
+                    SectionTitle(stringResource(R.string.profile_your_care_team))
                     me.patient.careTeam.forEach { ListRow(it.name, it.role, leading = { Initials(it.name, size = 32.dp, tone = Tone.MISSING) }) }
                 }
                 Gap()
             }
             me.profiles?.takeIf { it.size > 1 }?.let { spaces ->
                 Panel {
-                    SectionTitle("Spaces")
+                    SectionTitle(stringResource(R.string.profile_spaces))
                     spaces.forEach { sp ->
                         ListRow(sp.label.ifBlank { sp.kind }, sp.detail, trailing = {
-                            if (sp.current) StatusPill("Current", Tone.BRAND) else PlainButton("Switch") {
+                            if (sp.current) StatusPill(stringResource(R.string.profile_current), Tone.BRAND) else PlainButton(stringResource(R.string.profile_switch)) {
                                 scope.launch { try { app.switchSpace(sp.patientId) } catch (e: Exception) { app.note(e) } }
                             }
                         })
@@ -119,11 +121,11 @@ fun ProfileScreen(nav: NavHostController) {
             }
         }
         Panel {
-            SectionTitle("Connections")
-            ListRow("Health Connect and wearables", if (me?.wearables?.deviceHealth?.connected == true) "Connected" else "Not connected",
+            SectionTitle(stringResource(R.string.connections_title))
+            ListRow(stringResource(R.string.profile_hc_wearables), if (me?.wearables?.deviceHealth?.connected == true) stringResource(R.string.connected) else stringResource(R.string.not_connected),
                 onClick = { nav.navigate(Routes.CONNECTIONS) })
             Hairline()
-            ListRow("App permissions", "Motion, location, notifications", onClick = {
+            ListRow(stringResource(R.string.profile_app_permissions), stringResource(R.string.profile_app_permissions_body), onClick = {
                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
             })
         }
@@ -131,19 +133,19 @@ fun ProfileScreen(nav: NavHostController) {
         AppearanceCard()
         Gap()
         Panel {
-            SectionTitle("Developer")
-            Text("Where the app talks to. The emulator reaches a laptop at 10.0.2.2.", color = c.muted, style = MaterialTheme.typography.bodyMedium)
+            SectionTitle(stringResource(R.string.profile_developer))
+            Text(stringResource(R.string.profile_developer_body), color = c.muted, style = MaterialTheme.typography.bodyMedium)
             Gap(8.dp)
-            Field(serverUrl, { serverUrl = it }, "Server URL")
+            Field(serverUrl, { serverUrl = it }, stringResource(R.string.profile_server_url))
             Gap(8.dp)
             Row {
-                PlainButton("Save") { app.config.baseUrl = serverUrl; scope.launch { app.refreshAll() } }
-                PlainButton("Default", color = c.muted) { serverUrl = app.config.defaultBaseUrl; app.config.baseUrl = ""; scope.launch { app.refreshAll() } }
+                PlainButton(stringResource(R.string.save)) { app.config.baseUrl = serverUrl; scope.launch { app.refreshAll() } }
+                PlainButton(stringResource(R.string.profile_default), color = c.muted) { serverUrl = app.config.defaultBaseUrl; app.config.baseUrl = ""; scope.launch { app.refreshAll() } }
             }
-            Text("Version ${app.config.appVersion} · ${AppConfig.deviceName}", color = c.faint, style = MaterialTheme.typography.labelSmall)
+            Text(stringResource(R.string.profile_version, app.config.appVersion, AppConfig.deviceName), color = c.faint, style = MaterialTheme.typography.labelSmall)
         }
         Gap()
-        SecondaryButton("Sign out", loading = signingOut) { scope.launch { signingOut = true; app.signOut() } }
+        SecondaryButton(stringResource(R.string.profile_sign_out), loading = signingOut) { scope.launch { signingOut = true; app.signOut() } }
         Guardrail()
         Gap(24.dp)
     }
@@ -157,11 +159,11 @@ private fun AppearanceCard() {
     val mode by appearance.mode.collectAsStateWithLifecycle()
     val modes = AppearanceMode.entries
     Panel {
-        SectionTitle("Appearance")
+        SectionTitle(stringResource(R.string.profile_appearance))
         Gap(8.dp)
-        FlowChips(modes.map { it.label }, modes.indexOf(mode)) { appearance.set(modes[it]) }
+        FlowChips(modes.map { stringResource(it.labelRes) }, modes.indexOf(mode)) { appearance.set(modes[it]) }
         Gap(6.dp)
-        Text("Light is the default. System follows your phone's dark theme setting.", color = MP.colors.muted, style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.profile_appearance_body), color = MP.colors.muted, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -172,7 +174,7 @@ fun ConnectionsScreen(nav: NavHostController) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { app.refreshWearables(force = false, surface = false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        BackBar(nav, "Connections")
+        BackBar(nav, stringResource(R.string.connections_title))
         state.lastError?.let { ErrorBanner(it, onDismiss = { app.clearError() }); Gap() }
         HealthConnectCard(app)
         Gap()
@@ -182,7 +184,7 @@ fun ConnectionsScreen(nav: NavHostController) {
         Gap()
         ReminderCard()
         Gap()
-        PlainButton("Refresh") { scope.launch { app.refreshWearables(force = true) } }
+        PlainButton(stringResource(R.string.refresh)) { scope.launch { app.refreshWearables(force = true) } }
         Gap(24.dp)
     }
 }
@@ -196,8 +198,8 @@ fun ReminderCard() {
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Daily reminder", style = MaterialTheme.typography.titleLarge, color = c.ink)
-                Text(hour?.let { "Every day at ${if (it > 12) it - 12 else it} ${if (it >= 12) "pm" else "am"}" } ?: "Off", color = c.body, style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.reminder_title), style = MaterialTheme.typography.titleLarge, color = c.ink)
+                Text(hour?.let { stringResource(R.string.reminder_every_day_at, hourLabel(it)) } ?: stringResource(R.string.reminder_off), color = c.body, style = MaterialTheme.typography.bodyMedium)
             }
             Switch(checked = hour != null, onCheckedChange = { on ->
                 if (on) {
@@ -208,7 +210,7 @@ fun ReminderCard() {
         }
         if (hour != null) {
             Gap(8.dp)
-            FlowChips(listOf("7 am", "8 am", "9 am", "10 am", "6 pm"), listOf(7, 8, 9, 10, 18).indexOf(hour)) { i ->
+            FlowChips(listOf(7, 8, 9, 10, 18).map { hourLabel(it) }, listOf(7, 8, 9, 10, 18).indexOf(hour)) { i ->
                 val h = listOf(7, 8, 9, 10, 18)[i]; Reminders.set(context, h); hour = h
             }
         }
@@ -237,24 +239,24 @@ fun HealthConnectCard(app: AppModel) {
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Health Connect", style = MaterialTheme.typography.titleLarge, color = c.ink)
+                Text(stringResource(R.string.hc_title), style = MaterialTheme.typography.titleLarge, color = c.ink)
                 Text(when (val s = hc) {
-                    is HealthConnectState.Connected -> s.syncLine ?: "Connected. Syncing in the background."
+                    is HealthConnectState.Connected -> s.syncLine ?: stringResource(R.string.hc_connected_syncing)
                     is HealthConnectState.Failed -> s.message
-                    HealthConnectState.Unavailable -> "Health Connect is not available on this phone."
-                    HealthConnectState.Connecting -> "Connecting…"
-                    else -> if (serverSays) "Connected." else "Steps, sleep, heart rate and workouts from your phone and watch."
+                    HealthConnectState.Unavailable -> stringResource(R.string.hc_unavailable)
+                    HealthConnectState.Connecting -> stringResource(R.string.hc_connecting)
+                    else -> if (serverSays) stringResource(R.string.hc_connected) else stringResource(R.string.hc_intro)
                 }, color = c.body, style = MaterialTheme.typography.bodyMedium)
             }
-            if (connected) StatusPill("Connected", Tone.LOW)
+            if (connected) StatusPill(stringResource(R.string.connected), Tone.LOW)
         }
         Gap(10.dp)
-        if (!ready) ErrorBanner("The server isn't connected to its wearable service yet, so Health Connect can't be linked.")
-        else if (!connected) PrimaryButton("Connect Health Connect", loading = hc == HealthConnectState.Connecting) {
+        if (!ready) ErrorBanner(stringResource(R.string.hc_server_not_ready))
+        else if (!connected) PrimaryButton(stringResource(R.string.today_connect_hc), loading = hc == HealthConnectState.Connecting) {
             scope.launch { if (health.signIn(app)) askPermissions.launch(Unit) }
         } else Row {
-            PlainButton("Sync now") { scope.launch { health.syncNow(); app.refreshWearables(force = true, surface = false) } }
-            PlainButton("Disconnect", color = c.muted) { scope.launch { health.disconnect(); app.refreshMe(false) } }
+            PlainButton(stringResource(R.string.hc_sync_now)) { scope.launch { health.syncNow(); app.refreshWearables(force = true, surface = false) } }
+            PlainButton(stringResource(R.string.hc_disconnect), color = c.muted) { scope.launch { health.disconnect(); app.refreshMe(false) } }
         }
     }
 }
@@ -269,14 +271,14 @@ fun WearableLinkCard(app: AppModel) {
     var linking by remember { mutableStateOf(false) }
     val devices = state.me?.wearables?.devices.orEmpty()
     Panel {
-        SectionTitle("Wearables")
-        if (devices.isEmpty()) Text("Nothing linked yet.", color = c.muted, style = MaterialTheme.typography.bodyMedium)
+        SectionTitle(stringResource(R.string.wearables_title))
+        if (devices.isEmpty()) Text(stringResource(R.string.wearables_none), color = c.muted, style = MaterialTheme.typography.bodyMedium)
         devices.forEach { d ->
-            ListRow(d.model.ifBlank { d.provider }, d.lastSyncAt?.let { "Last sync ${Dates.relative(it)}" } ?: d.provider,
+            ListRow(d.model.ifBlank { d.provider }, d.lastSyncAt?.let { Dates.relative(it) }?.let { stringResource(R.string.wearable_last_sync, it) } ?: d.provider,
                 trailing = { StatusPill(d.status.ifBlank { "linked" }, toneFor(d.status)) })
         }
         Gap(8.dp)
-        SecondaryButton(if (devices.isEmpty()) "Add a wearable" else "Add another", loading = linking,
+        SecondaryButton(if (devices.isEmpty()) stringResource(R.string.wearables_add) else stringResource(R.string.wearables_add_another), loading = linking,
             enabled = state.me?.features?.deviceHealth == true) {
             scope.launch {
                 linking = true
@@ -289,3 +291,8 @@ fun WearableLinkCard(app: AppModel) {
         }
     }
 }
+
+/** "7 am", "6 pm". */
+@Composable
+private fun hourLabel(h: Int): String =
+    stringResource(R.string.hour_label, if (h > 12) h - 12 else h, stringResource(if (h >= 12) R.string.pm else R.string.am))

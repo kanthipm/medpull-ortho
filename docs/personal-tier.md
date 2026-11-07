@@ -86,6 +86,15 @@ revokes sessions, deletes the rows and sweeps the prefix, lake included.
 
 ## Subscription
 
+**Switched off for now.** There is no paid product yet, so `PERSONAL_PAYWALL`
+defaults to `false`: `subscription.status` answers `state: "free"`,
+`entitled: true` for every personal account, no readout route ever answers
+402, and `GET /mobile/me` carries `features.paywall: false` so the apps skip
+the plan step in onboarding and hide the Plan and Manage subscription rows.
+Everything below still runs when the setting is `true` (the tests switch it
+on), so the paywall comes back with one deploy once the App Store and Play
+products exist.
+
 Every personal account starts on a trial (`PERSONAL_TRIAL_DAYS`, 14). The app
 sells two auto-renewing products through StoreKit 2
 (`com.medpull.recovery.personal.monthly` / `.annual`, `ios/MedPull.storekit`

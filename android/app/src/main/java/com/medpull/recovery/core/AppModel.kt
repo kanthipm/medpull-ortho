@@ -2,6 +2,7 @@ package com.medpull.recovery.core
 
 import android.net.Uri
 import android.util.Log
+import com.medpull.recovery.R
 import com.medpull.recovery.health.HealthConnector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -44,7 +45,7 @@ data class AppState(
  */
 class AppModel(
     val api: ApiClient, private val session: SessionStore, val config: AppConfig,
-    private val health: HealthConnector,
+    private val health: HealthConnector, private val strings: Strings,
 ) {
     private val _state = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = _state
@@ -102,7 +103,7 @@ class AppModel(
             Outcome.FAILED
         } catch (e: Exception) {
             Log.w("AppModel", "refresh failed", e)
-            if (surface) _state.update { it.copy(lastError = e.message ?: "Something went wrong.") }
+            if (surface) _state.update { it.copy(lastError = e.message ?: strings.get(R.string.error_generic)) }
             Outcome.FAILED
         }
     }
@@ -122,7 +123,7 @@ class AppModel(
         }
         if (Outcome.OK in outcomes) clearError()
         else if (Outcome.FAILED in outcomes) {
-            _state.update { it.copy(lastError = "Can't reach MedPull right now. Check your connection.") }
+            _state.update { it.copy(lastError = strings.get(R.string.api_unreachable)) }
         }
     }
 
@@ -170,7 +171,7 @@ class AppModel(
             if (refreshMe(false) == Outcome.OK) { refreshAll(); return }
         }
         val r = api.switchProfile(SwitchBody(patientId, AppConfig.deviceName, config.appVersion))
-        val token = r.sessionToken ?: throw ApiException(0, "The server didn't return a session.")
+        val token = r.sessionToken ?: throw ApiException(0, strings.get(R.string.error_no_session))
         session.set(token, patientId)
         r.me?.let { me -> _state.update { it.copy(me = me) } }
         refreshAll()
@@ -188,7 +189,7 @@ class AppModel(
     fun note(e: Throwable) {
         if (e is CancellationException) return
         if (e is ApiException && e.isUnauthorized) { scope.launch { signOut() }; return }
-        _state.update { it.copy(lastError = e.message ?: "Something went wrong.") }
+        _state.update { it.copy(lastError = e.message ?: strings.get(R.string.error_generic)) }
     }
 
     // --- links ------------------------------------------------------------------------

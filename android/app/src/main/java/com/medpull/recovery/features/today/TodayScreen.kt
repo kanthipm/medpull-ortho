@@ -42,10 +42,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import com.medpull.recovery.R
 import com.medpull.recovery.core.CareTeamMember
 import com.medpull.recovery.core.Dates
 import com.medpull.recovery.core.Me
@@ -73,15 +75,15 @@ import com.medpull.recovery.ui.MPType
 import com.medpull.recovery.ui.Panel
 import com.medpull.recovery.ui.PrimaryButton
 import com.medpull.recovery.ui.RecoveryCurveArt
-import com.medpull.recovery.ui.RowDivider
 import com.medpull.recovery.ui.Routes
+import com.medpull.recovery.ui.RowDivider
 import com.medpull.recovery.ui.StateLabel
 import com.medpull.recovery.ui.StatusPill
 import com.medpull.recovery.ui.Tone
 import com.medpull.recovery.ui.appModel
 import com.medpull.recovery.ui.toneFor
-import kotlinx.coroutines.launch
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 
 /** "Day 8 · Total Knee Replacement": the dot held off each word by thin spaces, as on the iPhone. */
 const val DOT = "  ·  "
@@ -130,7 +132,7 @@ fun TodayScreen(nav: NavHostController) {
                 val wear = state.me?.wearables
                 if (wear != null && !wear.deviceHealth.connected && wear.devices.isEmpty() && state.me?.features?.deviceHealth == true) {
                     Panel(padding = 0.dp, onClick = { app.showConnections(true) }) {
-                        ListRow("Connect Health Connect", "Steps, sleep and heart data fill in on their own.",
+                        ListRow(stringResource(R.string.today_connect_hc), stringResource(R.string.today_connect_hc_body),
                             icon = Icons.Default.Favorite, family = Category.VIOLET, chevron = true, inset = true)
                     }
                 }
@@ -148,13 +150,14 @@ fun TodayScreen(nav: NavHostController) {
 private fun Greeting(me: Me?) {
     val c = MP.colors
     val hour = java.time.LocalTime.now().hour
-    val part = when { hour < 12 -> "Good morning"; hour < 17 -> "Good afternoon"; else -> "Good evening" }
-    val name = me?.patient?.firstName?.takeIf { it.isNotBlank() } ?: "there"
+    val part = when { hour < 12 -> stringResource(R.string.greeting_morning); hour < 17 -> stringResource(R.string.greeting_afternoon); else -> stringResource(R.string.greeting_evening) }
+    val name = me?.patient?.firstName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.greeting_there)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("$part,\n$name.", style = MPType.displayM, color = c.ink)
+        Text(stringResource(R.string.greeting, part, name), style = MPType.displayM, color = c.ink)
         if (me != null) {
-            val line = if (me.patient.isRecovery) "Day ${me.patient.postopDay ?: 0}$DOT${me.patient.procedureDisplay}"
-                else "${me.patient.hospital?.name ?: "Your hospital"}$DOT${if (me.patient.daysEnrolled == 0) "joined today" else "${me.patient.daysEnrolled} days in"}"
+            val line = if (me.patient.isRecovery) stringResource(R.string.day_n, me.patient.postopDay ?: 0) + DOT + me.patient.procedureDisplay
+                else (me.patient.hospital?.name ?: stringResource(R.string.your_hospital)) + DOT +
+                    (if (me.patient.daysEnrolled == 0) stringResource(R.string.joined_today) else stringResource(R.string.days_in, me.patient.daysEnrolled))
             Text(line, style = MPType.copyLarge, color = c.body)
         }
     }
@@ -173,21 +176,21 @@ fun RecoveryHero(me: Me, onClick: () -> Unit) {
     val day = me.patient.postopDay
     val value = when {
         pct != null -> (if (pct >= 0) "+" else "−") + "%.0f%%".format(kotlin.math.abs(pct))
-        day != null && recovery -> "Day $day"
+        day != null && recovery -> stringResource(R.string.day_n, day)
         else -> "${rec.daysWithData ?: 0}"
     }
-    val unit = if (pct != null) (if (recovery) "vs expected" else "vs your baseline") else if (recovery && day != null) "of recovery" else "days of data"
+    val unit = if (pct != null) (if (recovery) stringResource(R.string.hero_vs_expected) else stringResource(R.string.hero_vs_baseline)) else if (recovery && day != null) stringResource(R.string.hero_of_recovery) else stringResource(R.string.hero_days_of_data)
     val side: Pair<String, String>? = when {
-        pct != null && recovery && day != null -> "Day $day" to "of recovery"
-        pct != null && rec.daysWithData != null -> "${rec.daysWithData}" to "days of data"
+        pct != null && recovery && day != null -> stringResource(R.string.day_n, day) to stringResource(R.string.hero_of_recovery)
+        pct != null && rec.daysWithData != null -> "${rec.daysWithData}" to stringResource(R.string.hero_days_of_data)
         else -> null
     }
-    GradientTile(kicker = if (recovery) "Your recovery" else "Your signals", value = value, unit = unit, side = side, onClick = onClick,
+    GradientTile(kicker = if (recovery) stringResource(R.string.hero_your_recovery) else stringResource(R.string.hero_your_signals), value = value, unit = unit, side = side, onClick = onClick,
         art = { RecoveryCurveArt(pct, Modifier.padding(top = 4.dp)) }) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            StatusPill(rec.label.ifBlank { "Waiting for data" }, toneFor(rec.level))
+            StatusPill(rec.label.ifBlank { stringResource(R.string.hero_waiting) }, toneFor(rec.level))
             Spacer(Modifier.weight(1f))
-            Text("Progress", style = MPType.labelMedium, color = c.brandInk)
+            Text(stringResource(R.string.tab_progress), style = MPType.labelMedium, color = c.brandInk)
             Icon(Icons.Default.ChevronRight, null, tint = c.brandInk, modifier = Modifier.size(14.dp))
         }
         if (rec.blurb.isNotBlank()) { Gap(8.dp); Text(rec.blurb, style = MPType.copyLarge, color = c.ink) }
@@ -204,16 +207,16 @@ private fun PlanCard(open: List<RecoveryTask>, recent: List<RecoveryTask>, nav: 
     val done = recent.filter { Dates.parse(it.completedAt)?.toLocalDate() == LocalDate.now() }
     var showDone by remember { mutableStateOf(false) }
     Panel(padding = 0.dp) {
-        CardTitleRow("Today’s plan", note = if (open.isEmpty() && done.isEmpty()) null else "${done.size} of ${open.size + done.size} done",
-            actionTitle = "All tasks", onAction = onHistory)
+        CardTitleRow(stringResource(R.string.today_plan), note = if (open.isEmpty() && done.isEmpty()) null else stringResource(R.string.today_plan_note, done.size, open.size + done.size),
+            actionTitle = stringResource(R.string.today_all_tasks), onAction = onHistory)
         if (open.isEmpty()) {
-            EmptyRow(Icons.Default.Check, if (done.isEmpty()) "Nothing waiting" else "All done for today",
-                if (done.isEmpty()) "New tasks from your care team show up here." else "Your care team will see what you did with their next review.")
+            EmptyRow(Icons.Default.Check, if (done.isEmpty()) stringResource(R.string.today_nothing_waiting) else stringResource(R.string.today_all_done),
+                if (done.isEmpty()) stringResource(R.string.today_nothing_waiting_body) else stringResource(R.string.today_all_done_body))
         } else {
             if (checkin != null) {
                 Column(Modifier.padding(horizontal = 16.dp).padding(top = 6.dp, bottom = if (others.isEmpty()) 16.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PrimaryButton("Start today’s check-in", icon = Icons.Default.QuestionAnswer) { nav.navigate(Routes.checkin(checkin.id)) }
-                    Text(if (checkin.inSmsConversation) "You started this by text. Finishing it here is fine." else "About two minutes. Every question can be skipped.",
+                    PrimaryButton(stringResource(R.string.today_start_checkin), icon = Icons.Default.QuestionAnswer) { nav.navigate(Routes.checkin(checkin.id)) }
+                    Text(if (checkin.inSmsConversation) stringResource(R.string.today_checkin_by_text) else stringResource(R.string.today_checkin_hint),
                         style = MPType.label, color = c.muted, modifier = Modifier.padding(horizontal = 4.dp))
                 }
             }
@@ -230,7 +233,7 @@ private fun PlanCard(open: List<RecoveryTask>, recent: List<RecoveryTask>, nav: 
             Row(Modifier.fillMaxWidth().clickable { showDone = !showDone }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.CheckCircle, null, tint = c.riskLow, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Done today", style = MPType.copyMedium, color = c.ink)
+                Text(stringResource(R.string.today_done_today), style = MPType.copyMedium, color = c.ink)
                 Spacer(Modifier.width(6.dp))
                 Text("${done.size}", style = MPType.copyMedium, color = c.muted)
                 Spacer(Modifier.weight(1f))
@@ -254,9 +257,9 @@ fun PlanRow(task: RecoveryTask, onOpen: () -> Unit) {
     val c = MP.colors
     val isDone = task.status == "done"
     val status: Pair<String, Color>? = when {
-        isDone && task.completedVia != null -> "done by ${task.completedVia}" to c.muted
-        task.inSmsConversation -> "in progress by text" to c.riskMed
-        task.dueAt != null -> "due ${Dates.relative(task.dueAt) ?: ""}" to c.muted
+        isDone && task.completedVia != null -> stringResource(R.string.task_done_by_lower, task.completedVia) to c.muted
+        task.inSmsConversation -> stringResource(R.string.task_in_progress_by_text_lower) to c.riskMed
+        task.dueAt != null -> stringResource(R.string.task_due_lower, Dates.relative(task.dueAt) ?: "") to c.muted
         task.scheduleLabel != null -> task.scheduleLabel to c.muted
         else -> null
     }
@@ -281,30 +284,30 @@ fun PlanRow(task: RecoveryTask, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun MeasureRow(due: List<String>, onClick: () -> Unit) {
+private fun MeasureRow(due: List<MeasureStatus.Test>, onClick: () -> Unit) {
     val subtitle = when {
-        due.size == MeasureStatus.tests.size -> "Three short tests with your phone. Start with a guided walk."
-        due.isNotEmpty() -> { val names = due.map { it.lowercase() }
-            val list = if (names.size == 1) names[0] else names.dropLast(1).joinToString(", ") + " and " + names.last()
-            list.replaceFirstChar { it.uppercase() } + if (due.size == 1) " is due." else " are due." }
-        else -> "All caught up."
+        due.size == MeasureStatus.tests.size -> stringResource(R.string.today_measure_all_tests)
+        due.isNotEmpty() -> { val names = due.map { stringResource(it.nameRes).lowercase() }
+            val list = if (names.size == 1) names[0] else stringResource(R.string.list_and, names.dropLast(1).joinToString(", "), names.last())
+            stringResource(if (due.size == 1) R.string.today_measure_due_one else R.string.today_measure_due_many, list.replaceFirstChar { it.uppercase() }) }
+        else -> stringResource(R.string.today_measure_caught_up)
     }
     Panel(padding = 0.dp, onClick = onClick) {
-        ListRow("Measure", subtitle, icon = Icons.Default.DirectionsWalk, family = Category.TEAL, chevron = true, inset = true,
-            trailing = if (due.isNotEmpty()) ({ StateLabel("Due", Tone.MED) }) else null)
+        ListRow(stringResource(R.string.tab_measure), subtitle, icon = Icons.Default.DirectionsWalk, family = Category.TEAL, chevron = true, inset = true,
+            trailing = if (due.isNotEmpty()) ({ StateLabel(stringResource(R.string.due), Tone.MED) }) else null)
     }
 }
 
 @Composable
 private fun CareRow(last: String?, unread: Int, team: List<CareTeamMember>, onClick: () -> Unit) {
     val c = MP.colors
-    val subtitle = last?.takeIf { it.isNotBlank() } ?: team.joinToString(", ") { it.name }.ifBlank { "Write to your care team, or tell MedPull how you feel." }
+    val subtitle = last?.takeIf { it.isNotBlank() } ?: team.joinToString(", ") { it.name }.ifBlank { stringResource(R.string.today_care_placeholder) }
     Panel(padding = 0.dp, onClick = onClick) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             TeamAvatars(team)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Care team", style = MPType.copyLargeMedium, color = c.ink)
+                Text(stringResource(R.string.care_team), style = MPType.copyLargeMedium, color = c.ink)
                 Text(subtitle, style = MPType.label, color = c.muted, maxLines = 2)
             }
             Spacer(Modifier.width(8.dp))

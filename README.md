@@ -22,8 +22,9 @@ it describes was built and then removed from this codebase (commit
 
 ## MedPull Personal
 
-The same iPhone app also sells a subscription tier to people who are not a
-hospital's patient: readiness, HRV, resting heart rate, sleep need and debt,
+The same app also has a personal tier for people who are not a hospital's
+patient (built as a subscription, switched off until there is a paid
+product: `PERSONAL_PAYWALL=false`): readiness, HRV, resting heart rate, sleep need and debt,
 training load (acute:chronic, fitness/fatigue/form, monotony), cardio
 fitness, body signals and a coach that knows the numbers, all computed
 against the person's own baselines from the same wearable stream. Design,

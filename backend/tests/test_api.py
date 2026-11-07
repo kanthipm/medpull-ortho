@@ -52,6 +52,28 @@ def test_console_token_guards_console_routes_only(client, monkeypatch):
     assert client.post("/api/webhooks/wearables/nope", json={}).status_code == 404
 
 
+def test_a_locked_console_creates_charts_with_the_console_credential(client, db, monkeypatch):
+    """POST /api/patients/ answers to the console's credential like every
+    other console route: behind a locked console the staff token adds to any
+    roster and a hospital credential to its own (tests/test_console_scope.py).
+    The per-hospital ``Hospital.access_token`` column is no longer a
+    credential, so it opens nothing."""
+    from app.models.hospital import Hospital
+    from tests.test_mobile import _forget_patient
+
+    monkeypatch.setattr(settings, "console_access_token", "open-sesame")
+    db.get(Hospital, "hosp_demo").access_token = "tok-clinic"
+    db.commit()
+    body = {"hospital_id": "hosp_demo", "name": "Clinic Created", "procedure_type": "NONE"}
+    assert client.post("/api/patients/", json=body).status_code == 401
+    assert client.post("/api/patients/", json=body,
+                       headers={"Authorization": "Bearer tok-clinic"}).status_code == 401
+    made = client.post("/api/patients/", json=body,
+                       headers={"Authorization": "Bearer open-sesame"})
+    assert made.status_code == 200, made.text
+    _forget_patient(db, made.json()["patient"]["id"])
+
+
 def test_worklist_shape_and_ordering(client):
     body = client.get("/api/worklist").json()
     from app.seed.patients import full_roster

@@ -106,6 +106,14 @@ def status(db: Session, patient: Patient, now: datetime | None = None) -> dict[s
         select(Entitlement).where(Entitlement.patient_id == patient.id)
         .order_by(Entitlement.id)
     ).all()
+    if not settings.personal_paywall:
+        # No paid product yet: everyone is in. The rows are still kept, so
+        # a trial that ran out here is honoured the day the paywall goes on.
+        return {
+            "state": "free", "source": None, "product_id": None, "expires_at": None,
+            "days_left": None, "verified": True, "auto_renew": False, "entitled": True,
+            "trial_used": any(r.source == "trial" for r in rows), "products": [],
+        }
     best: Entitlement | None = None
     best_until: datetime | None = None
     for row in rows:

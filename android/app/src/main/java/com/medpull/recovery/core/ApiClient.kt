@@ -1,5 +1,8 @@
 package com.medpull.recovery.core
 
+import com.medpull.recovery.R
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -17,8 +20,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 /** What the server said when it refused; status 0 means nothing answered. */
 class ApiException(val status: Int, val detail: String) : IOException(detail) {
@@ -32,7 +33,7 @@ class ApiException(val status: Int, val detail: String) : IOException(detail) {
  * after 1.5 s on a transport failure, 429 or a 5xx, nothing else retried.
  */
 @OptIn(ExperimentalSerializationApi::class)
-class ApiClient(private val config: AppConfig, private val session: SessionStore) {
+class ApiClient(private val config: AppConfig, private val session: SessionStore, val strings: Strings) {
     val json: Json = Json {
         namingStrategy = JsonNamingStrategy.SnakeCase
         ignoreUnknownKeys = true
@@ -89,12 +90,12 @@ class ApiClient(private val config: AppConfig, private val session: SessionStore
                 delay(1500)
                 continue
             }
-            if (status == 0) throw ApiException(0, "Can't reach MedPull right now. Check your connection.")
+            if (status == 0) throw ApiException(0, strings.get(R.string.api_unreachable))
             if (status !in 200..299) throw ApiException(status, detailOf(text, status))
             return@withContext try {
                 json.decodeFromString(deserializer, text)
             } catch (e: Exception) {
-                throw ApiException(status, "Unexpected answer from the server (${e.message})")
+                throw ApiException(status, strings.get(R.string.api_unexpected_answer, e.message ?: ""))
             }
         }
         @Suppress("UNREACHABLE_CODE")
@@ -125,7 +126,7 @@ class ApiClient(private val config: AppConfig, private val session: SessionStore
             multipart.addFormDataPart("file", "upload", bytes.toRequestBody(contentType.toMediaType()))
             val req = Request.Builder().url(url).post(multipart.build()).build()
             http.newCall(req).execute().use { res ->
-                if (!res.isSuccessful) throw ApiException(res.code, "The upload was refused by storage.")
+                if (!res.isSuccessful) throw ApiException(res.code, strings.get(R.string.api_upload_refused))
             }
         }
 
@@ -135,7 +136,7 @@ class ApiClient(private val config: AppConfig, private val session: SessionStore
             if (authenticated) session.token?.let { b.header("Authorization", "Bearer $it") }
         }.build()
         http.newCall(req).execute().use { res ->
-            if (!res.isSuccessful) throw ApiException(res.code, "Could not fetch the file.")
+            if (!res.isSuccessful) throw ApiException(res.code, strings.get(R.string.api_fetch_failed))
             res.body?.bytes() ?: ByteArray(0)
         }
     }
@@ -156,9 +157,9 @@ class ApiClient(private val config: AppConfig, private val session: SessionStore
 
     private fun detailOf(text: String, status: Int): String = try {
         val obj = json.parseToJsonElement(text) as? JsonObject
-        obj?.get("detail")?.jsonPrimitive?.content ?: "The server answered $status."
+        obj?.get("detail")?.jsonPrimitive?.content ?: strings.get(R.string.api_server_answered, status)
     } catch (_: Exception) {
-        "The server answered $status."
+        strings.get(R.string.api_server_answered, status)
     }
 
     companion object {

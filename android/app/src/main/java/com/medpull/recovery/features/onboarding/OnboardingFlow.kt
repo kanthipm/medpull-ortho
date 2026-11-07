@@ -6,10 +6,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -64,6 +65,7 @@ import com.google.android.gms.auth.api.phone.SmsRetriever
 import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Status
 import com.medpull.recovery.MedPullApp
+import com.medpull.recovery.R
 import com.medpull.recovery.core.AppModel
 import com.medpull.recovery.features.consent.ConsentForm
 import com.medpull.recovery.features.profile.HealthConnectCard
@@ -94,7 +96,7 @@ fun OnboardingFlow() {
     val context = LocalContext.current
     val graph = (context.applicationContext as MedPullApp).graph
     val app = appModel()
-    val model = remember { OnboardingModel(graph.api, app, graph.config) }
+    val model = remember { OnboardingModel(graph.api, app, graph.config, graph.strings) }
     val nav = rememberNavController()
     NavHost(nav, startDestination = Step.WELCOME.name, modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
         composable(Step.WELCOME.name) { Welcome(nav) }
@@ -118,14 +120,16 @@ fun OnboardingFlow() {
 // created (PathStep / IdentityStep), and never for a patient finding a record.
 private val shownSteps = listOf(Step.HOSPITAL, Step.PATH, Step.IDENTITY, Step.VERIFY, Step.HEALTH, Step.WALKS, Step.WEARABLE)
 private fun slot(step: Step) = shownSteps.indexOf(if (step == Step.JOIN) Step.IDENTITY else step)
-private fun eyebrow(step: Step): String = slot(step).let { if (it < 0) "Almost done" else "Step ${it + 1} of ${shownSteps.size}" }
+@Composable
+private fun eyebrow(step: Step): String = slot(step).let { if (it < 0) stringResource(R.string.onboarding_almost_done) else stringResource(R.string.onboarding_step_n_of_m, it + 1, shownSteps.size) }
 
 /** One dot per step, filled up to and including the current one; the eyebrow says the same thing in words. */
 @Composable
 private fun StepDots(step: Step) {
     val c = MP.colors
     val reached = slot(step)
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.semantics { contentDescription = eyebrow(step) }) {
+    val words = eyebrow(step)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.semantics { contentDescription = words }) {
         shownSteps.indices.forEach { i ->
             Box(Modifier.size(8.dp).clip(CircleShape).background(if (i <= reached) c.brand else c.line))
         }
@@ -139,13 +143,13 @@ private fun StepFrame(nav: NavHostController?, kicker: String?, title: String, b
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 20.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(48.dp)) {
             if (back && nav != null && nav.previousBackStackEntry != null) {
-                IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = c.ink) }
+                IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = c.ink) }
             }
             Spacer(Modifier.weight(1f))
             if (step != null) StepDots(step)
             Spacer(Modifier.weight(1f))
         }
-        val line = kicker ?: step?.let(::eyebrow)
+        val line = kicker ?: step?.let { eyebrow(it) }
         if (line != null) Text(line.uppercase(), style = MaterialTheme.typography.labelSmall, color = c.muted)
         Gap(6.dp)
         Text(title, style = MaterialTheme.typography.displaySmall, color = c.ink)
@@ -158,9 +162,9 @@ private fun StepFrame(nav: NavHostController?, kicker: String?, title: String, b
 
 @Composable
 private fun Welcome(nav: NavHostController) {
-    StepFrame(null, "MedPull", "Recovery, followed between visits.", back = false,
-        blurb = "Your care team sees how you are doing from your phone and watch, and reaches out before you have to ask.") {
-        PrimaryButton("Get started") { nav.navigate(Step.MODE.name) }
+    StepFrame(null, stringResource(R.string.app_name), stringResource(R.string.onboarding_welcome_title), back = false,
+        blurb = stringResource(R.string.onboarding_welcome_blurb)) {
+        PrimaryButton(stringResource(R.string.onboarding_get_started)) { nav.navigate(Step.MODE.name) }
         Gap(24.dp)
         Guardrail()
     }
@@ -168,27 +172,27 @@ private fun Welcome(nav: NavHostController) {
 
 @Composable
 private fun ModeStep(nav: NavHostController) {
-    StepFrame(nav, "First", "Who set you up?") {
+    StepFrame(nav, stringResource(R.string.onboarding_first), stringResource(R.string.onboarding_who_set_up)) {
         // No consent yet: a returning patient finding their record has signed
         // already, and the server says so (the gate in Root covers an account
         // that still needs to). The form comes before a NEW record is created.
         Panel(onClick = { nav.navigate(Step.HOSPITAL.name) }) {
-            Text("With my care team", style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
-            Text("A hospital or clinic is following your recovery.", style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
+            Text(stringResource(R.string.onboarding_with_team), style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
+            Text(stringResource(R.string.onboarding_with_team_body), style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
         }
         Gap()
         Panel(onClick = { nav.navigate(Step.PERSONAL_SOON.name) }) {
-            Text("On my own", style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
-            Text("MedPull Personal: readiness, training and sleep for yourself.", style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
+            Text(stringResource(R.string.onboarding_on_my_own), style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
+            Text(stringResource(R.string.onboarding_on_my_own_body), style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
         }
     }
 }
 
 @Composable
 private fun PersonalSoon(nav: NavHostController) {
-    StepFrame(nav, "MedPull Personal", "Not on Android yet",
-        blurb = "The personal tier is on iPhone today and comes to Android after the care-team app. If a clinic is following your recovery, continue with them.") {
-        PrimaryButton("Continue with my care team") { nav.navigate(Step.HOSPITAL.name) }
+    StepFrame(nav, stringResource(R.string.onboarding_personal), stringResource(R.string.personal_not_on_android),
+        blurb = stringResource(R.string.onboarding_personal_blurb)) {
+        PrimaryButton(stringResource(R.string.onboarding_continue_with_team)) { nav.navigate(Step.HOSPITAL.name) }
     }
 }
 
@@ -198,15 +202,15 @@ private fun ConsentStep(nav: NavHostController, model: OnboardingModel) {
     val scope = rememberCoroutineScope()
     val c = MP.colors
     LaunchedEffect(Unit) { model.loadConsent() }
-    StepFrame(nav, "Before your record is created", "Please read and agree",
-        blurb = "MedPull is a beta. Please read what we collect, where it goes and what you can do about it, then tick what you agree to and sign with your name.") {
+    StepFrame(nav, stringResource(R.string.onboarding_consent_eyebrow), stringResource(R.string.onboarding_consent_title),
+        blurb = stringResource(R.string.onboarding_consent_blurb)) {
         s.error?.let { ErrorBanner(it); Gap() }
         val doc = s.consent
-        if (doc == null) { Text("Loading…", color = c.muted) ; return@StepFrame }
+        if (doc == null) { Text(stringResource(R.string.loading), color = c.muted) ; return@StepFrame }
         ConsentForm(doc, s.consentScopes, onScope = { k, v -> model.state.update { it.copy(consentScopes = it.consentScopes + (k to v)) } },
             signature = s.signature, onSignature = { v -> model.state.update { it.copy(signature = v) } })
         Gap(16.dp)
-        PrimaryButton("Agree and continue", enabled = s.canAgree) {
+        PrimaryButton(stringResource(R.string.onboarding_agree_continue), enabled = s.canAgree) {
             // The consent precedes the call that creates a record; it is
             // carried into join as `accepted`.
             scope.launch { model.agree(); nav.navigate(Step.JOIN.name) }
@@ -218,9 +222,9 @@ private fun ConsentStep(nav: NavHostController, model: OnboardingModel) {
 private fun HospitalStep(nav: NavHostController, model: OnboardingModel) {
     val s by model.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { if (s.hospitals.isEmpty()) model.loadHospitals() }
-    StepFrame(nav, null, "Where are you being treated?", step = Step.HOSPITAL) {
+    StepFrame(nav, null, stringResource(R.string.onboarding_where_treated), step = Step.HOSPITAL) {
         s.error?.let { if (s.hospitals.isEmpty()) { ErrorBanner(it); Gap() } }
-        Field(s.hospitalQuery, { model.state.value = s.copy(hospitalQuery = it) }, "Search hospitals")
+        Field(s.hospitalQuery, { model.state.value = s.copy(hospitalQuery = it) }, stringResource(R.string.onboarding_search_hospitals))
         Gap()
         model.filteredHospitals().forEach { h ->
             Panel(padding = 14.dp, onClick = {
@@ -239,10 +243,10 @@ private fun HospitalStep(nav: NavHostController, model: OnboardingModel) {
 @Composable
 private fun PathStep(nav: NavHostController, model: OnboardingModel) {
     val s by model.state.collectAsStateWithLifecycle()
-    StepFrame(nav, null, s.hospital?.name ?: "Your hospital", step = Step.PATH) {
+    StepFrame(nav, null, s.hospital?.name ?: stringResource(R.string.your_hospital), step = Step.PATH) {
         Panel(onClick = { model.state.value = s.copy(path = Path.FIND_RECORD); nav.navigate(Step.IDENTITY.name) }) {
-            Text("My care team set me up", style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
-            Text("Find the record they made for you.", style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
+            Text(stringResource(R.string.onboarding_team_set_me_up), style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
+            Text(stringResource(R.string.onboarding_team_set_me_up_body), style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
         }
         Gap()
         Panel(onClick = {
@@ -250,8 +254,8 @@ private fun PathStep(nav: NavHostController, model: OnboardingModel) {
             // Starting a record creates an account, so the consent comes first — once.
             nav.navigate((if (s.accepted == null) Step.CONSENT else Step.JOIN).name)
         }) {
-            Text("I'm new here", style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
-            Text("Join as a new patient at this hospital.", style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
+            Text(stringResource(R.string.onboarding_new_here), style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
+            Text(stringResource(R.string.onboarding_new_here_body), style = MaterialTheme.typography.bodyMedium, color = MP.colors.body)
         }
     }
 }
@@ -262,13 +266,13 @@ private fun IdentityStep(nav: NavHostController, model: OnboardingModel) {
     val scope = rememberCoroutineScope()
     val c = MP.colors
     LaunchedEffect(s.name, s.phone) { delay(350); model.search() }
-    StepFrame(nav, null, "Find your record", step = Step.IDENTITY, blurb = "Your name and mobile number, as your care team has them.") {
+    StepFrame(nav, null, stringResource(R.string.onboarding_find_record), step = Step.IDENTITY, blurb = stringResource(R.string.onboarding_find_record_blurb)) {
         s.error?.let { ErrorBanner(it, onDismiss = { model.state.value = s.copy(error = null) }); Gap() }
-        Field(s.name, { model.state.value = s.copy(name = it) }, "Full name")
+        Field(s.name, { model.state.value = s.copy(name = it) }, stringResource(R.string.onboarding_full_name))
         Gap(8.dp)
-        Field(s.phone, { model.state.value = s.copy(phone = it) }, "Mobile number", keyboard = KeyboardType.Phone)
+        Field(s.phone, { model.state.value = s.copy(phone = it) }, stringResource(R.string.onboarding_mobile), keyboard = KeyboardType.Phone)
         Gap()
-        if (s.searching) Text("Searching…", color = c.muted, style = MaterialTheme.typography.bodyMedium)
+        if (s.searching) Text(stringResource(R.string.onboarding_searching), color = c.muted, style = MaterialTheme.typography.bodyMedium)
         s.candidates.forEach { cand ->
             val sel = s.selected?.patientId == cand.patientId
             Panel(padding = 14.dp, tint = if (sel) c.brandTint else null, onClick = { model.state.value = s.copy(selected = cand) }) {
@@ -278,20 +282,20 @@ private fun IdentityStep(nav: NavHostController, model: OnboardingModel) {
                         Text(listOfNotNull(cand.procedureDisplay.takeIf { it.isNotBlank() }, cand.surgeryMonth).joinToString(" · "),
                             style = MaterialTheme.typography.bodyMedium, color = c.muted)
                     }
-                    if (cand.phoneMatch) Text("Number matches", style = MaterialTheme.typography.labelMedium, color = c.brandInk)
+                    if (cand.phoneMatch) Text(stringResource(R.string.onboarding_number_matches), style = MaterialTheme.typography.labelMedium, color = c.brandInk)
                 }
             }
             Gap(8.dp)
         }
         if (s.name.trim().length >= 2 && !s.searching && s.candidates.isEmpty()) {
-            Text("Not on the list?", color = c.muted, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.onboarding_not_on_list), color = c.muted, style = MaterialTheme.typography.bodyMedium)
         }
-        PlainButton("Join as a new patient instead") {
+        PlainButton(stringResource(R.string.onboarding_join_instead)) {
             model.state.value = s.copy(path = Path.JOIN_GENERAL)
             nav.navigate((if (s.accepted == null) Step.CONSENT else Step.JOIN).name)
         }
         Gap()
-        PrimaryButton("This is me", enabled = s.canEnroll, loading = s.working) {
+        PrimaryButton(stringResource(R.string.onboarding_this_is_me), enabled = s.canEnroll, loading = s.working) {
             scope.launch { model.enroll()?.let { nav.navigate(it.name) } }
         }
     }
@@ -306,37 +310,37 @@ private fun JoinStep(nav: NavHostController, model: OnboardingModel) {
     var pickDob by remember { mutableStateOf(false) }
     var pickSurgery by remember { mutableStateOf(false) }
     LaunchedEffect(s.hadSurgery) { if (s.hadSurgery) model.loadProcedures() }
-    StepFrame(nav, null, "Join as a new patient", step = Step.JOIN) {
+    StepFrame(nav, null, stringResource(R.string.onboarding_join_title), step = Step.JOIN) {
         s.error?.let { ErrorBanner(it, onDismiss = { model.state.value = s.copy(error = null) }); Gap() }
-        Field(s.name, { model.state.value = s.copy(name = it) }, "Full name")
+        Field(s.name, { model.state.value = s.copy(name = it) }, stringResource(R.string.onboarding_full_name))
         Gap(8.dp)
-        Field(s.phone, { model.state.value = s.copy(phone = it) }, "Mobile number", keyboard = KeyboardType.Phone)
+        Field(s.phone, { model.state.value = s.copy(phone = it) }, stringResource(R.string.onboarding_mobile), keyboard = KeyboardType.Phone)
         Gap()
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Date of birth", Modifier.weight(1f), color = c.ink)
-            TextButton(onClick = { pickDob = true }) { Text(s.dateOfBirth?.toString() ?: "Add (optional)") }
+            Text(stringResource(R.string.onboarding_dob), Modifier.weight(1f), color = c.ink)
+            TextButton(onClick = { pickDob = true }) { Text(s.dateOfBirth?.toString() ?: stringResource(R.string.onboarding_add_optional)) }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("I'm recovering from an operation", Modifier.weight(1f), color = c.ink)
+            Text(stringResource(R.string.onboarding_recovering), Modifier.weight(1f), color = c.ink)
             Switch(checked = s.hadSurgery, onCheckedChange = { v ->
                 model.state.value = s.copy(hadSurgery = v, path = if (v) Path.JOIN_AFTER_SURGERY else Path.JOIN_GENERAL)
             })
         }
         if (s.hadSurgery) {
             Gap(8.dp)
-            Text("Which operation?", style = MaterialTheme.typography.labelMedium, color = c.muted)
+            Text(stringResource(R.string.onboarding_which_operation), style = MaterialTheme.typography.labelMedium, color = c.muted)
             Gap(6.dp)
             FlowChips(s.procedures.map { it.label }, s.procedures.indexOf(s.procedure)) { i ->
                 model.state.value = s.copy(procedure = s.procedures[i])
             }
             Gap(8.dp)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Date of surgery", Modifier.weight(1f), color = c.ink)
+                Text(stringResource(R.string.onboarding_surgery_date), Modifier.weight(1f), color = c.ink)
                 TextButton(onClick = { pickSurgery = true }) { Text(s.surgeryDate.toString()) }
             }
         }
         Gap(16.dp)
-        PrimaryButton("Join", enabled = s.canJoin, loading = s.working) {
+        PrimaryButton(stringResource(R.string.onboarding_join), enabled = s.canJoin, loading = s.working) {
             scope.launch { model.join()?.let { nav.navigate(it.name) } }
         }
     }
@@ -381,16 +385,16 @@ private fun VerifyStep(nav: NavHostController, model: OnboardingModel) {
         try { SmsRetriever.getClient(context).startSmsUserConsent(null) } catch (_: Exception) {}
         onDispose { try { context.unregisterReceiver(receiver) } catch (_: Exception) {} }
     }
-    StepFrame(nav, null, "Enter the code we texted", step = Step.VERIFY,
-        blurb = "Sent to ${s.phoneMasked ?: "your number"}. It expires in ten minutes.") {
+    StepFrame(nav, null, stringResource(R.string.onboarding_enter_code), step = Step.VERIFY,
+        blurb = stringResource(R.string.onboarding_code_sent, s.phoneMasked ?: stringResource(R.string.your_number))) {
         s.error?.let { ErrorBanner(it, onDismiss = { model.state.value = s.copy(error = null) }); Gap() }
-        Field(s.code, { model.state.value = s.copy(code = it.filter { ch -> ch.isDigit() }.take(8)) }, "6-digit code",
+        Field(s.code, { model.state.value = s.copy(code = it.filter { ch -> ch.isDigit() }.take(8)) }, stringResource(R.string.onboarding_code_field),
             keyboard = KeyboardType.NumberPassword)
         Gap(16.dp)
-        PrimaryButton("Confirm", enabled = s.code.length >= 4, loading = s.working) {
+        PrimaryButton(stringResource(R.string.onboarding_confirm), enabled = s.code.length >= 4, loading = s.working) {
             scope.launch { model.verify()?.let { nav.navigate(it.name) } }
         }
-        PlainButton("Send a new code") { scope.launch { model.resend() } }
+        PlainButton(stringResource(R.string.onboarding_send_new_code)) { scope.launch { model.resend() } }
     }
 }
 
@@ -407,27 +411,27 @@ private fun TextFirstStep(nav: NavHostController, model: OnboardingModel) {
         // Poll while waiting, so the field appears without another tap.
         while (true) { delay(3_000); model.pollForCode() }
     }
-    StepFrame(nav, "Step 4 of 5", "Text us first",
-        blurb = "Before we can text ${s.phoneMasked ?: "your number"}, send us one message from it. Tap below — the text is already written — then come back here.") {
+    StepFrame(nav, stringResource(R.string.onboarding_step_n_of_m, 4, 5), stringResource(R.string.onboarding_text_us_first),
+        blurb = stringResource(R.string.onboarding_text_first_blurb, s.phoneMasked ?: stringResource(R.string.your_number))) {
         Panel {
-            Text("Text “${s.textBody ?: "Hi MedPull"}” to", style = MaterialTheme.typography.labelMedium, color = c.muted)
+            Text(stringResource(R.string.onboarding_text_body_to, s.textBody ?: stringResource(R.string.onboarding_default_text)), style = MaterialTheme.typography.labelMedium, color = c.muted)
             Gap(4.dp)
             Text(formatPhone(s.textTo), style = MaterialTheme.typography.titleLarge, color = c.ink)
             Gap(6.dp)
-            Text("We'll text your code the moment it arrives.", style = MaterialTheme.typography.bodyMedium, color = c.body)
+            Text(stringResource(R.string.onboarding_well_text_code), style = MaterialTheme.typography.bodyMedium, color = c.body)
         }
         s.error?.let { Gap(); ErrorBanner(it, onDismiss = { model.state.value = s.copy(error = null) }) }
         Gap(16.dp)
-        PrimaryButton("Open Messages") {
+        PrimaryButton(stringResource(R.string.onboarding_open_messages)) {
             val uri = model.textFirstUri() ?: return@PrimaryButton
             try {
                 context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse(uri)))
             } catch (_: ActivityNotFoundException) {
-                model.state.value = s.copy(error = "No messaging app found — text ${formatPhone(s.textTo)} from your phone, then come back.")
+                model.state.value = s.copy(error = context.getString(R.string.onboarding_no_messaging_app, formatPhone(s.textTo)))
             }
         }
         Gap(8.dp)
-        SecondaryButton("I've sent it — send my code", loading = s.working) {
+        SecondaryButton(stringResource(R.string.onboarding_sent_it), loading = s.working) {
             scope.launch { model.continueAfterText()?.let { if (it != Step.VERIFY) nav.navigate(it.name) } }
         }
     }
@@ -443,13 +447,13 @@ private fun formatPhone(e164: String?): String {
 
 @Composable
 private fun HealthStep(nav: NavHostController, app: AppModel) {
-    StepFrame(nav, null, "Connect Health Connect", back = false, step = Step.HEALTH,
-        blurb = "Steps, sleep, heart rate and workouts from your phone and watch, so your care team can follow your recovery between visits.") {
+    StepFrame(nav, null, stringResource(R.string.today_connect_hc), back = false, step = Step.HEALTH,
+        blurb = stringResource(R.string.onboarding_hc_blurb)) {
         HealthConnectCard(app)
         Gap()
-        SecondaryButton("Skip for now") { nav.navigate(Step.WALKS.name) }
+        SecondaryButton(stringResource(R.string.onboarding_skip_for_now)) { nav.navigate(Step.WALKS.name) }
         Gap(8.dp)
-        PrimaryButton("Continue") { nav.navigate(Step.WALKS.name) }
+        PrimaryButton(stringResource(R.string.continue_label)) { nav.navigate(Step.WALKS.name) }
     }
 }
 
@@ -461,36 +465,36 @@ private fun WalksStep(nav: NavHostController) {
     var on by remember { mutableStateOf(PassiveCapture.isActive(context)) }
     var declined by remember { mutableStateOf(false) }
     val enable = rememberPassiveWalkEnabler { ok -> on = ok; if (!ok) declined = true }
-    StepFrame(nav, null, "Let MedPull notice your walks", back = false, step = Step.WALKS,
-        blurb = "Your walking speed, step length and symmetry tell your care team how you are healing. With your phone in a pocket, MedPull can measure them from everyday walks without you doing anything.") {
+    StepFrame(nav, null, stringResource(R.string.onboarding_walks_title), back = false, step = Step.WALKS,
+        blurb = stringResource(R.string.onboarding_walks_blurb)) {
         Panel {
-            Text("How it works", style = MaterialTheme.typography.titleMedium, color = c.ink)
+            Text(stringResource(R.string.walk_how_it_works), style = MaterialTheme.typography.titleMedium, color = c.ink)
             Gap(6.dp)
-            Text("• When your phone notices you walking, it records two minutes of motion, at most once every half hour.", color = c.body, style = MaterialTheme.typography.bodyMedium)
-            Text("• A silent line shows in your notifications while it records. You can swipe it away.", color = c.body, style = MaterialTheme.typography.bodyMedium)
-            Text("• Nothing is recorded when you are still, and you can turn it off any time from Connections.", color = c.body, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.onboarding_walks_1), color = c.body, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.onboarding_walks_2), color = c.body, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.onboarding_walks_3), color = c.body, style = MaterialTheme.typography.bodyMedium)
         }
         Gap()
         if (on) {
-            Text("On. Your walks will be measured automatically.", color = c.brandInk, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.onboarding_walks_on), color = c.brandInk, style = MaterialTheme.typography.bodyMedium)
             Gap(8.dp)
-            PrimaryButton("Continue") { nav.navigate(Step.WEARABLE.name) }
+            PrimaryButton(stringResource(R.string.continue_label)) { nav.navigate(Step.WEARABLE.name) }
         } else {
-            if (declined) { Text("You can turn this on later from Today or Connections.", color = c.muted, style = MaterialTheme.typography.bodyMedium); Gap(8.dp) }
-            SecondaryButton("Not now") { nav.navigate(Step.WEARABLE.name) }
+            if (declined) { Text(stringResource(R.string.onboarding_walks_later), color = c.muted, style = MaterialTheme.typography.bodyMedium); Gap(8.dp) }
+            SecondaryButton(stringResource(R.string.onboarding_not_now)) { nav.navigate(Step.WEARABLE.name) }
             Gap(8.dp)
-            PrimaryButton("Turn on") { enable() }
+            PrimaryButton(stringResource(R.string.onboarding_turn_on)) { enable() }
         }
     }
 }
 
 @Composable
 private fun WearableStep(nav: NavHostController, app: AppModel) {
-    StepFrame(nav, null, "Add a wearable", back = false, step = Step.WEARABLE,
-        blurb = "Oura, Fitbit, Garmin, Whoop, Withings or Polar: sign in once and MedPull reads it from then on.") {
+    StepFrame(nav, null, stringResource(R.string.wearables_add), back = false, step = Step.WEARABLE,
+        blurb = stringResource(R.string.onboarding_wearable_blurb)) {
         WearableLinkCard(app)
         Gap()
-        PrimaryButton("Done") { nav.navigate(Step.DONE.name) }
+        PrimaryButton(stringResource(R.string.done)) { nav.navigate(Step.DONE.name) }
     }
 }
 
@@ -498,9 +502,9 @@ private fun WearableStep(nav: NavHostController, app: AppModel) {
 private fun DoneStep(app: AppModel) {
     val state by app.state.collectAsStateWithLifecycle()
     val name = state.me?.patient?.firstName?.takeIf { it.isNotBlank() }
-    StepFrame(null, "You're set", if (name != null) "Welcome, $name." else "Welcome.", back = false,
-        blurb = "Your care team can now see how you are doing. Open the app each day for your plan, and tap Measure every few days for a short walk test.") {
-        PrimaryButton("Open MedPull") { app.enterHome() }
+    StepFrame(null, stringResource(R.string.onboarding_youre_set), if (name != null) stringResource(R.string.onboarding_welcome_name, name) else stringResource(R.string.onboarding_welcome_dot), back = false,
+        blurb = stringResource(R.string.onboarding_done_blurb)) {
+        PrimaryButton(stringResource(R.string.onboarding_open_medpull)) { app.enterHome() }
     }
 }
 
@@ -513,6 +517,6 @@ fun DateDialog(initial: LocalDate, onDismiss: () -> Unit, onPick: (LocalDate) ->
     DatePickerDialog(onDismissRequest = onDismiss, confirmButton = {
         TextButton(onClick = {
             st.selectedDateMillis?.let { onPick(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) } ?: onDismiss()
-        }) { Text("OK") }
-    }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }) { DatePicker(state = st) }
+        }) { Text(stringResource(R.string.ok)) }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }) { DatePicker(state = st) }
 }

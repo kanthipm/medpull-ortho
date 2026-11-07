@@ -3,9 +3,9 @@ package com.medpull.recovery.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubble
@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -33,6 +34,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.medpull.recovery.MedPullApp
+import com.medpull.recovery.R
 import com.medpull.recovery.core.AppModel
 import com.medpull.recovery.core.Phase
 import com.medpull.recovery.core.Tab
@@ -122,10 +124,10 @@ fun MainTabs() {
                 androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(0.75.dp).background(c.hairline))
                 NavigationBar(containerColor = c.panel, tonalElevation = 0.dp) {
                 val items = listOf(
-                    Triple(Routes.TODAY, "Today", Icons.Default.Home),
-                    Triple(Routes.PROGRESS, "Progress", Icons.Default.ShowChart),
-                    Triple(Routes.MEASURE, "Measure", Icons.Default.DirectionsWalk),
-                    Triple(Routes.CARE, "Care", Icons.Default.ChatBubble),
+                    Triple(Routes.TODAY, stringResource(R.string.tab_today), Icons.Default.Home),
+                    Triple(Routes.PROGRESS, stringResource(R.string.tab_progress), Icons.Default.ShowChart),
+                    Triple(Routes.MEASURE, stringResource(R.string.tab_measure), Icons.Default.DirectionsWalk),
+                    Triple(Routes.CARE, stringResource(R.string.tab_care), Icons.Default.ChatBubble),
                 )
                 items.forEach { (r, label, icon) ->
                     val badge = when (r) {

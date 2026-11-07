@@ -1,6 +1,7 @@
 package com.medpull.recovery.features.onboarding
 
 import android.net.Uri
+import com.medpull.recovery.R
 import com.medpull.recovery.core.ApiClient
 import com.medpull.recovery.core.ApiException
 import com.medpull.recovery.core.AppConfig
@@ -14,6 +15,7 @@ import com.medpull.recovery.core.Hospital
 import com.medpull.recovery.core.JoinBody
 import com.medpull.recovery.core.Procedure
 import com.medpull.recovery.core.SearchBody
+import com.medpull.recovery.core.Strings
 import com.medpull.recovery.core.VerifyBody
 import com.medpull.recovery.core.consentDocument
 import com.medpull.recovery.core.enroll
@@ -57,14 +59,14 @@ data class OnboardingState(
 fun phoneDigits(s: String) = s.filter { it.isDigit() }
 
 /** The onboarding flow's state and calls, mirroring ios OnboardingModel.swift. */
-class OnboardingModel(private val api: ApiClient, private val app: AppModel, private val config: AppConfig) {
+class OnboardingModel(private val api: ApiClient, private val app: AppModel, private val config: AppConfig, private val strings: Strings) {
     val state = MutableStateFlow(OnboardingState())
     val s get() = state.value
 
     private suspend fun <T> guarded(block: suspend () -> T): T? {
         state.update { it.copy(working = true, error = null) }
         return try { block() } catch (e: ApiException) { state.update { it.copy(error = e.detail) }; null }
-        catch (e: Exception) { state.update { it.copy(error = e.message ?: "Something went wrong.") }; null }
+        catch (e: Exception) { state.update { it.copy(error = e.message ?: strings.get(R.string.error_generic)) }; null }
         finally { state.update { it.copy(working = false) } }
     }
 
@@ -118,7 +120,7 @@ class OnboardingModel(private val api: ApiClient, private val app: AppModel, pri
             handle(r)
         } catch (e: ApiException) {
             if (e.status == 409) {
-                state.update { it.copy(path = Path.FIND_RECORD, error = "This number is already on a record. Find it below.") }
+                state.update { it.copy(path = Path.FIND_RECORD, error = strings.get(R.string.onboarding_number_on_record)) }
                 Step.IDENTITY
             } else { state.update { it.copy(error = e.detail) }; null }
         } catch (e: Exception) { state.update { it.copy(error = e.message) }; null }
@@ -137,7 +139,7 @@ class OnboardingModel(private val api: ApiClient, private val app: AppModel, pri
     /** The sms: URI that opens Messages with the first text already written (Android takes ?body=). */
     fun textFirstUri(): String? {
         val to = s.textTo ?: return null
-        return "sms:$to?body=${Uri.encode(s.textBody ?: "Hi MedPull")}"
+        return "sms:$to?body=${Uri.encode(s.textBody ?: strings.get(R.string.onboarding_default_text))}"
     }
 
     /** "I've sent it — send my code": the webhook may already have sent it when the text
@@ -149,7 +151,7 @@ class OnboardingModel(private val api: ApiClient, private val app: AppModel, pri
             Step.VERIFY
         } else {
             val step = handle(api.resendVerification(id))
-            if (s.textFirst) state.update { it.copy(error = "We haven't got your text yet — give it a moment, or send it again.") }
+            if (s.textFirst) state.update { it.copy(error = strings.get(R.string.onboarding_text_not_yet)) }
             step
         }
     }
@@ -175,11 +177,11 @@ class OnboardingModel(private val api: ApiClient, private val app: AppModel, pri
             Step.VERIFY
         }
         "enrolled" -> {
-            val token = r.sessionToken ?: throw ApiException(0, "The server didn't return a session.")
-            val me = r.me ?: throw ApiException(0, "The server didn't return a profile.")
+            val token = r.sessionToken ?: throw ApiException(0, strings.get(R.string.error_no_session))
+            val me = r.me ?: throw ApiException(0, strings.get(R.string.error_no_profile))
             app.adoptSession(token, me)
             Step.HEALTH
         }
-        else -> throw ApiException(0, "Unexpected status ${r.status}")
+        else -> throw ApiException(0, strings.get(R.string.onboarding_unexpected_status, r.status))
     }
 }

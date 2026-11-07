@@ -233,6 +233,42 @@ def test_the_console_honours_a_hospital_token_without_requiring_one(client, db, 
                       headers=_auth(tok)).status_code == 404
 
 
+def test_a_locked_console_reaches_its_files_with_the_console_token(client, db, joined, monkeypatch):
+    """CONSOLE_ACCESS_TOKEN set: the bearer on a console call is the console
+    token, which the router has already checked. Read as a hospital token it
+    matched no hospital, so every attachment route answered 401 the moment
+    the console was locked and the SPA signed the clinician out."""
+    from app.config import settings
+
+    pid, headers = joined
+    monkeypatch.setattr(settings, "console_access_token", "open-sesame")
+    console = _auth("open-sesame")
+    # "tok-attach" is no credential at all: neither the console token nor a
+    # minted org token (app/api/auth.py), so the door stays shut to it.
+    ticket = {"content_type": "application/pdf", "byte_size": len(PDF)}
+
+    # the console's door, not the hospital's: no token and the wrong kind are refused
+    assert client.get(f"/api/patients/{pid}/attachments/upload-ticket",
+                      params=ticket).status_code == 401
+    assert client.get(f"/api/patients/{pid}/attachments/upload-ticket",
+                      params=ticket, headers=_auth("tok-attach")).status_code == 401
+
+    # the console token opens every console attachment route
+    assert client.get(f"/api/patients/{pid}/attachments/upload-ticket",
+                      params=ticket, headers=console).status_code == 200
+    sent = client.post(f"/api/patients/{pid}/attachments/direct?filename=exercises.pdf",
+                       headers={**console, "Content-Type": "application/pdf"}, content=PDF)
+    assert sent.status_code == 200, sent.text
+    a = sent.json()["attachment"]
+    assert client.get(f"/api/patients/{pid}/attachments/{a['id']}",
+                      headers=console).status_code == 200
+    raw = client.get(f"/api/patients/{pid}/attachments/{a['id']}/raw", headers=console)
+    assert raw.status_code == 200 and raw.content == PDF
+
+    # the patient's own path never asks for it
+    assert _upload(client, headers).status_code == 200
+
+
 def test_the_console_can_send_the_bytes_when_there_is_no_object_store(client, db, joined):
     pid, _headers = joined
     r = client.post(f"/api/patients/{pid}/attachments/direct?filename=exercises.pdf",
