@@ -69,10 +69,20 @@ PERSONAL_BUCKET="$(aws_ cloudformation describe-stacks --stack-name "$STACK_NAME
   --query "Stacks[0].Outputs[?OutputKey=='PersonalDataBucketName'].OutputValue" \
   --output text 2>/dev/null || true)"
 [ "$PERSONAL_BUCKET" = "None" ] && PERSONAL_BUCKET=""
+# The facet keys are retained with the buckets they encrypt (a deleted key is
+# deleted data), and their aliases go with the stack — so resolve the key ids
+# now, while the aliases still exist.
+KEY_IDS=()
+for facet in clinic personal; do
+  id="$(aws_ kms describe-key --key-id "alias/$STACK_NAME-$facet" \
+    --query 'KeyMetadata.KeyId' --output text 2>/dev/null || true)"
+  [ -n "$id" ] && [ "$id" != "None" ] && KEY_IDS+=("$id")
+done
 
 log "About to delete stack '$STACK_NAME' in $REGION"
 [ -n "$DATA_BUCKET" ] && info "data bucket: $DATA_BUCKET $($DELETE_DATA && echo '(WILL BE DELETED)' || echo '(retained)')"
 [ -n "$PERSONAL_BUCKET" ] && info "personal bucket: $PERSONAL_BUCKET $($DELETE_DATA && echo '(WILL BE DELETED)' || echo '(retained)')"
+[ ${#KEY_IDS[@]} -gt 0 ] && info "KMS keys: ${KEY_IDS[*]} $($DELETE_DATA && echo '(deletion scheduled, 7 days)' || echo "(retained, \$1/month each)")"
 info "artifact bucket: $ARTIFACT_BUCKET (will be emptied and deleted)"
 info "SSM parameters: $($DELETE_SECRETS && echo 'WILL BE DELETED' || echo 'retained')"
 printf '    Type the stack name to confirm: '
@@ -126,8 +136,21 @@ for bucket in "$DATA_BUCKET" "$PERSONAL_BUCKET"; do
 done
 $DELETE_SECRETS || KEPT+=("the SSM parameters")
 
+# The ${arr[@]+...} form: an empty array is "unbound" to bash 3.2's set -u.
+for id in ${KEY_IDS[@]+"${KEY_IDS[@]}"}; do
+  if $DELETE_DATA; then
+    # Nothing encrypted under it is left; the shortest window KMS allows,
+    # and cancellable until then (aws kms cancel-key-deletion).
+    aws_ kms schedule-key-deletion --key-id "$id" --pending-window-in-days 7 >/dev/null 2>&1 || true
+    info "scheduled key $id for deletion in 7 days"
+  else
+    info "kept key $id — the retained buckets are unreadable without it; \$1/month"
+    KEPT+=("key $id")
+  fi
+done
+
 if [ ${#KEPT[@]} -eq 0 ]; then
   log "Done — nothing left billing"
 else
-  log "Done — still there: ${KEPT[*]} (standard parameters are free; a near-empty bucket costs cents)"
+  log "Done — still there: ${KEPT[*]} (standard parameters are free; a near-empty bucket costs cents; a key is \$1/month)"
 fi

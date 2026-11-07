@@ -68,6 +68,11 @@ def client():
         _client = boto3.client(
             "s3",
             config=Config(
+                # Presigned URLs and POST policies for an SSE-KMS object (the
+                # buckets' default since the facet keys) are refused unless
+                # signed with SigV4; in us-east-1 botocore still presigns
+                # with SigV2 by default. API calls were SigV4 either way.
+                signature_version="s3v4",
                 retries={"max_attempts": 3, "mode": "standard"},
                 connect_timeout=3,
                 read_timeout=10,

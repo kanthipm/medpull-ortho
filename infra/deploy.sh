@@ -120,6 +120,17 @@ PERSONAL_DAILY_CRON="${PERSONAL_DAILY_CRON:-$(dotenv_value PERSONAL_DAILY_CRON)}
 PERSONAL_DAILY_CRON="${PERSONAL_DAILY_CRON:-cron(0 12 * * ? *)}"
 SPORTS_DAILY_CRON="${SPORTS_DAILY_CRON:-$(dotenv_value SPORTS_DAILY_CRON)}"
 SPORTS_DAILY_CRON="${SPORTS_DAILY_CRON:-cron(0 11 * * ? *)}"
+# CloudTrail (README, "Account setup"). An existing log bucket the stack's
+# trail writes under <stack>/; empty means no trail. The second stack can
+# keep its trail to S3 data events, since a second copy of the management
+# events is the one part that costs.
+TRAIL_BUCKET="${TRAIL_BUCKET-$(dotenv_value TRAIL_BUCKET)}"
+TRAIL_MANAGEMENT_EVENTS="${TRAIL_MANAGEMENT_EVENTS:-$(dotenv_value TRAIL_MANAGEMENT_EVENTS)}"
+TRAIL_MANAGEMENT_EVENTS="${TRAIL_MANAGEMENT_EVENTS:-true}"
+case "$TRAIL_MANAGEMENT_EVENTS" in true|false) ;; *) echo "TRAIL_MANAGEMENT_EVENTS must be true or false" >&2; exit 1 ;; esac
+# The tags every resource ends up with (README, "Compartments"): the stack
+# level ones here, the per-facet one in the template.
+DEPLOYMENT_TAG="$([ "$DEMO_MODE" = true ] && echo demo || echo real)"
 
 log()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
@@ -205,6 +216,10 @@ else
   aws_ s3api put-bucket-lifecycle-configuration --bucket "$ARTIFACT_BUCKET" \
     --lifecycle-configuration '{"Rules":[{"ID":"expire-old-artifacts","Status":"Enabled","Prefix":"lambda/","Expiration":{"Days":90}}]}'
 fi
+# Outside the stack, so it tags itself. Code, not data: it keeps SSE-S3 and
+# the shared facet.
+aws_ s3api put-bucket-tagging --bucket "$ARTIFACT_BUCKET" --tagging \
+  "TagSet=[{Key=medpull:facet,Value=shared},{Key=medpull:deployment,Value=$DEPLOYMENT_TAG},{Key=medpull:stack,Value=$STACK_NAME}]"
 
 # --------------------------------------------------------------------------
 log "Secrets"
@@ -364,14 +379,24 @@ PARAMS=(
   "AppleEnvironment=$APPLE_ENVIRONMENT"
   "PersonalDailyCron=$PERSONAL_DAILY_CRON"
   "SportsDailyCron=$SPORTS_DAILY_CRON"
+  # Empty removes the trail, like the domain.
+  "TrailBucketName=$TRAIL_BUCKET"
+  "TrailManagementEvents=$TRAIL_MANAGEMENT_EVENTS"
 )
 [ -n "$BUDGET_EMAIL" ] && PARAMS+=("BudgetAlertEmail=$BUDGET_EMAIL")
 
+# Stack-level tags reach every resource that can carry one; the per-facet
+# tag is set in the template. With --s3-bucket the CLI uploads the template
+# (content-addressed, so an unchanged one is not uploaded twice) and deploys
+# it from there, which lifts the 51,200-byte limit on an inline template
+# body — this one is close to it.
 aws_ cloudformation deploy \
   --stack-name "$STACK_NAME" \
   --template-file "$HERE/cloudformation.yaml" \
+  --s3-bucket "$ARTIFACT_BUCKET" --s3-prefix cloudformation \
   --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset \
+  --tags "medpull:stack=$STACK_NAME" "medpull:deployment=$DEPLOYMENT_TAG" \
   --parameter-overrides "${PARAMS[@]}"
 
 outputs() {
@@ -387,6 +412,8 @@ SEED_FN="$(outputs SeedFunctionName)"
 info "site   $SITE_URL"
 info "bucket $DATA_BUCKET"
 info "personal bucket $PERSONAL_BUCKET (subscribers' files; separate from the clinic bucket)"
+info "keys   alias/$STACK_NAME-clinic, alias/$STACK_NAME-personal (new objects; ./infra/reencrypt.sh for the old ones)"
+[ -n "$TRAIL_BUCKET" ] && info "trail  $STACK_NAME-trail -> s3://$TRAIL_BUCKET/$STACK_NAME/"
 
 # --------------------------------------------------------------------------
 if ! $BACKEND_ONLY; then
