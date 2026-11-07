@@ -39,6 +39,10 @@ class ApiClient(private val config: AppConfig, private val session: SessionStore
         explicitNulls = false
         coerceInputValues = true
         isLenient = true
+        // Defaults go on the wire too: `platform: "android"` on a motion
+        // window and `via: "app"` on an answer are defaults here but not on
+        // the server, which would read an Android frame as an iPhone's.
+        encodeDefaults = true
     }
 
     private val http = OkHttpClient.Builder()
