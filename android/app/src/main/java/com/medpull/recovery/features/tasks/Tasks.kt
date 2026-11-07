@@ -208,5 +208,6 @@ fun choiceLabel(o: String) = when (o) {
 }
 
 fun painWords(id: String, v: Int): String = if (id != "pain") "$v" else "$v out of 10 — " + when {
-    v == 0 -> "None"; v <= 3 -> "Mild"; v <= 6 -> "Moderate"; v <= 8 -> "Severe"; else -> "Worst imaginable"
+    // The same words the iPhone and the console transcript use for the score.
+    v == 0 -> "No pain"; v <= 3 -> "Mild"; v <= 6 -> "Moderate"; v <= 8 -> "Bad"; else -> "Severe"
 }

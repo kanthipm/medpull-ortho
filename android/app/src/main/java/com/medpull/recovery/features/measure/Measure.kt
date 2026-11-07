@@ -139,7 +139,7 @@ fun MeasureScreen(nav: NavHostController) {
                         Column(Modifier.weight(1f)) {
                             Text(t.name, style = MaterialTheme.typography.titleLarge, color = c.ink)
                             Text(when (t.name) {
-                                "Guided walk" -> "One minute with the phone in a front pocket."
+                                "Guided walk" -> "Three minutes with the phone in a front pocket."
                                 "Six-minute walk" -> "Six minutes at your own pace, for distance and endurance."
                                 else -> "Two short holds with the phone on the limb."
                             }, color = c.body, style = MaterialTheme.typography.bodyMedium)
@@ -179,7 +179,8 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
     val scope = rememberCoroutineScope()
     val c = MP.colors
     val title = if (sixMinute) "Six-minute walk" else "Guided walk"
-    val durationS = if (sixMinute) 360 else 60
+    // The same lengths as the iPhone, so the two phones score comparable windows.
+    val durationS = if (sixMinute) 360 else 180
     var phase by remember { mutableStateOf(WalkPhase.SETUP) }
     var pocket by remember { mutableStateOf(0) }
     var outdoors by remember { mutableStateOf(false) }
@@ -241,7 +242,7 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
                 Panel {
                     Text("How it works", style = MaterialTheme.typography.titleMedium, color = c.ink)
                     Text(if (sixMinute) "Walk for six minutes at your own pace, on flat ground, with the phone in a front trouser pocket, top end up. Stop early if you need to; the test is scaled."
-                    else "Walk for one minute at your usual pace with the phone in a front trouser pocket, top end up. The server works out your speed, step length, evenness and steadiness.",
+                    else "Walk for three minutes at your usual pace with the phone in a front trouser pocket, top end up. The server works out your speed, step length, evenness and steadiness.",
                         color = c.body, style = MaterialTheme.typography.bodyMedium)
                 }
                 Gap()
