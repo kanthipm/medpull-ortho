@@ -1,5 +1,42 @@
 package com.medpull.recovery.features.progress
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Air
+import androidx.compose.material.icons.filled.AltRoute
+import androidx.compose.material.icons.filled.Architecture
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Chair
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Healing
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.MonitorHeart
+import androidx.compose.material.icons.filled.Scale
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Stairs
+import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.filled.WbTwilight
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.medpull.recovery.features.today.DOT
+import com.medpull.recovery.ui.CardTitleRow
+import com.medpull.recovery.ui.Category
+import com.medpull.recovery.ui.Chevron
+import com.medpull.recovery.ui.Glyph
+import com.medpull.recovery.ui.InsetDivider
+import com.medpull.recovery.ui.MPType
+import com.medpull.recovery.ui.RowDivider
+import com.medpull.recovery.ui.RowFigure
+import com.medpull.recovery.ui.SecondaryButton
+import com.medpull.recovery.ui.SectionHeading
+import com.medpull.recovery.ui.StateLabel
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -89,6 +126,58 @@ fun fmt(v: Double?, unit: String = ""): String {
     return if (unit.isBlank()) s else "$s $unit"
 }
 
+fun signalIcon(key: String): ImageVector = when (key) {
+    "steps", "walking_speed" -> Icons.AutoMirrored.Filled.DirectionsWalk
+    "step_length" -> Icons.Default.Straighten
+    "cadence" -> Icons.Default.Speed
+    "walking_asymmetry_pct", "double_support_pct", "walking_steadiness" -> Icons.Default.Accessibility
+    "stair_speed_up", "stair_speed_down" -> Icons.Default.Stairs
+    "six_min_walk" -> Icons.Default.Timer
+    "rom_flexion", "rom_extension", "rom_abduction" -> Icons.Default.Architecture
+    "exercise_session" -> Icons.AutoMirrored.Filled.DirectionsRun
+    "active_energy", "calories" -> Icons.Default.LocalFireDepartment
+    "sleep_duration" -> Icons.Default.Bedtime
+    "resting_hr", "bp_systolic", "bp_diastolic", "hr_recovery_1min" -> Icons.Default.Favorite
+    "hrv_rmssd", "hrv_sdnn" -> Icons.Default.MonitorHeart
+    "stress_index", "respiratory_rate", "spo2", "vo2_max" -> Icons.Default.Air
+    "blood_glucose" -> Icons.Default.WaterDrop
+    "body_weight" -> Icons.Default.Scale
+    "pain_nrs" -> Icons.Default.Healing
+    "skin_temp", "skin_temp_delta" -> Icons.Default.Thermostat
+    else -> Icons.AutoMirrored.Filled.ShowChart
+}
+
+fun signalFamily(key: String): Category = when (Signals.groups.firstOrNull { key in it.second }?.first) {
+    "Movement" -> Category.TEAL; "Activity" -> Category.BLUE; "Rest" -> Category.INDIGO; else -> Category.VIOLET
+}
+
+fun metricIcon(id: String): ImageVector = when (id) {
+    "M1" -> Icons.AutoMirrored.Filled.DirectionsWalk; "M2" -> Icons.Default.Healing; "M3" -> Icons.Default.Accessibility
+    "M4", "M7" -> Icons.Default.Speed; "M5" -> Icons.Default.Timer; "M6", "C6" -> Icons.Default.Chair; "M8" -> Icons.Default.Stairs
+    "M9" -> Icons.Default.Bedtime; "M10" -> Icons.Default.MonitorHeart; "M11" -> Icons.Default.WbTwilight; "M12" -> Icons.Default.Favorite
+    "M13" -> Icons.Default.Thermostat; "M14" -> Icons.Default.Checklist; "M17" -> Icons.AutoMirrored.Filled.TrendingUp
+    "M18" -> Icons.Default.AltRoute; "C1" -> Icons.Default.Scale; "C2", "C5" -> Icons.Default.Air; "C3" -> Icons.Default.WaterDrop
+    "C4" -> Icons.Default.Favorite; else -> Icons.AutoMirrored.Filled.ShowChart
+}
+
+fun metricFamily(id: String): Category = when (id) {
+    "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "C6" -> Category.TEAL
+    "M9", "M10", "M11", "M17", "M18" -> Category.INDIGO
+    "M12", "M13", "C1", "C2", "C3", "C4", "C5" -> Category.VIOLET
+    else -> Category.BLUE
+}
+
+/** The care team's four states, in a row's width. */
+private fun stateLine(s: PatientSignal?, m: PortfolioMetric): Pair<String, Tone?> {
+    if (s != null) {
+        if (s.state == "waiting") return (s.headline.ifBlank { s.stateLabel.ifBlank { "Waiting on new data" } }) to null
+        return when (s.state) { "good" -> "Steady"; "watch" -> "Worth watching"; "reviewing" -> "Team reviewing"; else -> s.stateLabel } to toneFor(s.state)
+    }
+    val last = m.series.lastOrNull()?.date?.let { Dates.day(it) }
+    val ago = last?.let { java.time.temporal.ChronoUnit.DAYS.between(it, LocalDate.now()) }
+    return (when (ago) { null -> ""; 0L -> "Today"; 1L -> "Yesterday"; else -> "$ago days ago" }) to null
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProgressScreen(nav: NavHostController) {
@@ -107,89 +196,127 @@ fun ProgressScreen(nav: NavHostController) {
     var showAll by remember { mutableStateOf(false) }
 
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = { scope.launch { refreshing = true; app.refreshPortfolio(); app.refreshMetrics(); app.refreshMe(false); refreshing = false } }) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            Text("PROGRESS", style = MaterialTheme.typography.labelSmall, color = c.muted, modifier = Modifier.padding(top = 16.dp))
-            Text(state.me?.recovery?.label?.ifBlank { null } ?: "How you're doing", style = MaterialTheme.typography.displaySmall, color = c.ink)
-            state.me?.recovery?.blurb?.takeIf { it.isNotBlank() }?.let { Text(it, color = c.body, style = MaterialTheme.typography.bodyLarge) }
-            Gap(16.dp)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Progress", style = MPType.displayS, color = c.ink)
+                state.me?.let { me ->
+                    val days = me.recovery.daysWithData ?: 0
+                    val full = metrics?.overall?.daysUntilFullPicture?.takeIf { it > 0 }
+                    val parts = listOfNotNull(
+                        if (me.patient.isRecovery) me.patient.postopDay?.let { "Day $it" } else null,
+                        if (days > 0) "$days days of data" else "No data yet",
+                        full?.let { "full picture in $it ${if (it == 1) "day" else "days"}" },
+                    )
+                    Text(parts.joinToString(DOT), style = MPType.copyLarge, color = c.body, modifier = Modifier.padding(horizontal = 4.dp))
+                }
+            }
             if (metrics != null && metrics.metrics.isNotEmpty()) {
-                Panel {
-                    SectionTitle("What your care team sees", action = {
-                        if (metrics.metrics.size > 3) PlainButton(if (showAll) "Fewer" else "Show all") { showAll = !showAll }
-                    })
-                    metrics.overall.blurb?.takeIf { it.isNotBlank() }?.let { Gap(4.dp); Text(it, color = c.body, style = MaterialTheme.typography.bodyMedium); Gap(4.dp) }
-                    val shown = if (showAll) metrics.metrics else metrics.metrics.take(3)
+                val shown = if (showAll) metrics.metrics else metrics.metrics.take(3)
+                Panel(padding = 0.dp) {
+                    CardTitleRow("What your care team sees", note = metrics.overall.waiting.takeIf { it > 0 }?.let { "$it on the way" })
+                    metrics.overall.blurb?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MPType.copy, color = c.body, modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp))
+                    }
+                    InsetDivider()
                     shown.forEachIndexed { i, m ->
                         MetricRow(m) { nav.navigate(Routes.metric(m.id)) }
-                        if (i < shown.lastIndex) Hairline()
+                        if (i < shown.lastIndex) RowDivider()
                     }
-                    metrics.overall.daysUntilFullPicture?.let { d ->
-                        Gap(8.dp); Text("Your full picture shows in $d days.", color = c.muted, style = MaterialTheme.typography.bodyMedium)
-                    }
+                    if (metrics.metrics.size > 3) {
+                        InsetDivider()
+                        PlainButton(if (showAll) "Show fewer" else "Show all ${metrics.metrics.size}", bare = true,
+                            modifier = Modifier.padding(horizontal = 16.dp)) { showAll = !showAll }
+                    } else Gap(4.dp)
                 }
-                Gap()
             }
             if (state.portfolio.isEmpty() && signalsByKey.isEmpty()) {
                 Panel {
-                    Text("Nothing to chart yet", style = MaterialTheme.typography.titleMedium, color = c.ink)
-                    Text("Connect your phone's health data or run a walk test on the Measure tab.", color = c.body)
-                    Gap(8.dp)
-                    PrimaryButton("Go to Measure") { app.selectTab(Tab.MEASURE) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Glyph(Icons.AutoMirrored.Filled.ShowChart, Category.TEAL, 40.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("Nothing to chart yet", style = MPType.copyLargeMedium, color = c.ink)
+                            Text("Your signals arrive from Health Connect, a wearable, or a measurement with your phone.", style = MPType.copy, color = c.body)
+                        }
+                    }
+                    Gap(14.dp)
+                    SecondaryButton("Measure a walk with your phone", icon = Icons.AutoMirrored.Filled.DirectionsWalk) { app.selectTab(Tab.MEASURE) }
                 }
             }
             Signals.groups.forEach { (title, keys) ->
                 val rows = keys.mapNotNull { k -> byKey[k]?.let { k to it } }
                 val waiting = keys.mapNotNull { k -> signalsByKey[k]?.takeIf { byKey[k] == null && (it.availability == "active" || it.availability == "unavailable") } }
                 if (rows.isEmpty() && waiting.isEmpty()) return@forEach
-                Panel {
-                    SectionTitle(title)
-                    rows.forEachIndexed { i, (k, m) -> SignalRow(m, signalsByKey[k]) { nav.navigate(Routes.signal(k)) }; if (i < rows.lastIndex || waiting.isNotEmpty()) Hairline() }
-                    waiting.forEachIndexed { i, s -> WaitingRow(s); if (i < waiting.lastIndex) Hairline() }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionHeading(title, note = if (title == "Movement" && rows.any { it.first in Signals.measured }) "phone and watch" else null)
+                    Panel(padding = 0.dp) {
+                        rows.forEachIndexed { i, (k, m) -> SignalRow(m, signalsByKey[k]) { nav.navigate(Routes.signal(k)) }; if (i < rows.lastIndex || waiting.isNotEmpty()) RowDivider() }
+                        waiting.forEachIndexed { i, s -> WaitingRow(s); if (i < waiting.lastIndex) RowDivider() }
+                    }
                 }
-                Gap()
             }
             Guardrail()
-            Gap(24.dp)
+            Gap(10.dp)
         }
     }
 }
 
+/** One of the care team's metrics as a row: glyph, title, the state in words, a chevron. */
 @Composable
 private fun MetricRow(m: PatientMetric, onClick: () -> Unit) {
     val c = MP.colors
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(m.title, style = MaterialTheme.typography.bodyLarge, color = c.ink)
-            Text(m.headline, style = MaterialTheme.typography.bodyMedium, color = c.muted, maxLines = 2)
+    val tone = toneFor(m.state)
+    val words = if (m.isWaiting) (m.daysLeftText?.let { d ->
+        if (d.startsWith("waiting")) "Waiting on new data" else if (d.startsWith("early read")) "Early read" + d.removePrefix("early read") else "Shows in $d"
+    } ?: m.stateLabel.ifBlank { "Not showing yet" }) else m.stateLabel.ifBlank { m.state }
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+        Glyph(metricIcon(m.id), metricFamily(m.id))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(m.title, style = MPType.copyLargeMedium, color = c.ink)
+            StateLabel(words, tone)
         }
         Spacer(Modifier.width(8.dp))
-        StatusPill(m.stateLabel.ifBlank { m.state }, toneFor(m.state))
+        Chevron()
     }
 }
 
+/** One signal as a row: glyph, name, state in words, a two-week sparkline, the latest reading. */
 @Composable
 private fun SignalRow(m: PortfolioMetric, s: PatientSignal?, onClick: () -> Unit) {
     val c = MP.colors
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(s?.title?.ifBlank { null } ?: m.label.ifBlank { m.key }, style = MaterialTheme.typography.bodyLarge, color = c.ink)
-            Text(fmt(m.latest ?: m.series.lastOrNull()?.value, m.unit) + (if (m.key in Signals.measured) " · measured by MedPull" else ""),
-                style = MaterialTheme.typography.bodyMedium, color = c.muted)
-        }
+    val (line, tone) = stateLine(s, m)
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 11.dp).heightIn(min = 34.dp), verticalAlignment = Alignment.CenterVertically) {
+        Glyph(signalIcon(m.key), signalFamily(m.key))
         Spacer(Modifier.width(12.dp))
-        SeriesChart(dailySlots(m.series), bars = m.key in Signals.dailyTotals, modifier = Modifier.width(96.dp), height = 36.dp, showAverage = false)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(s?.title?.ifBlank { null } ?: m.label.ifBlank { m.key }, style = MPType.copyLargeMedium, color = c.ink)
+            if (tone != null) StateLabel(line, tone) else if (line.isNotBlank()) Text(line, style = MPType.label, color = c.muted)
+        }
+        Spacer(Modifier.width(8.dp))
+        if (m.series.size > 1) {
+            SeriesChart(dailySlots(m.series), bars = m.key in Signals.dailyTotals, modifier = Modifier.width(60.dp), height = 24.dp, showAverage = false, color = c.ink.copy(alpha = .55f))
+            Spacer(Modifier.width(10.dp))
+        }
+        val v = m.latest ?: m.series.lastOrNull()?.value
+        RowFigure(fmt(v), m.unit.takeIf { it.isNotBlank() && it != "%" && it != "score" })
+        Spacer(Modifier.width(6.dp))
+        Chevron()
     }
 }
 
 @Composable
 private fun WaitingRow(s: PatientSignal) {
     val c = MP.colors
-    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(s.title.ifBlank { s.key }, style = MaterialTheme.typography.bodyLarge, color = c.ink)
-            Text(s.headline, style = MaterialTheme.typography.bodyMedium, color = c.muted, maxLines = 2)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+        Glyph(signalIcon(s.key), signalFamily(s.key))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(s.title.ifBlank { s.key }, style = MPType.copyLargeMedium, color = c.ink)
+            Text(s.headline.ifBlank { s.stateLabel }, style = MPType.label, color = c.muted, maxLines = 2)
         }
-        StatusPill(s.stateLabel.ifBlank { "Waiting" }, Tone.MISSING)
+        Spacer(Modifier.width(8.dp))
+        StateLabel(s.stateLabel.ifBlank { "Waiting" }, Tone.MISSING)
     }
 }
 

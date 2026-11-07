@@ -1,5 +1,22 @@
 package com.medpull.recovery.features.care
 
+import androidx.compose.ui.graphics.Color
+import com.medpull.recovery.ui.PrimaryButton
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import com.medpull.recovery.features.today.DOT
+import com.medpull.recovery.ui.BubbleBrush
+import com.medpull.recovery.ui.CapsuleShape
+import com.medpull.recovery.ui.MPType
+import com.medpull.recovery.ui.glassSurface
+import com.medpull.recovery.ui.grain
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -194,15 +211,7 @@ fun CareScreen(nav: NavHostController) {
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("CARE TEAM", style = MaterialTheme.typography.labelSmall, color = c.muted)
-                Text(state.me?.patient?.hospital?.name?.ifBlank { null } ?: "Your care team", style = MaterialTheme.typography.titleLarge, color = c.ink)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
-                state.me?.patient?.careTeam?.take(3)?.forEach { Initials(it.name, size = 30.dp, tone = Tone.MISSING) }
-            }
-        }
+        CareHeader(state.me?.patient?.careTeam.orEmpty())
         (error ?: speechError ?: state.lastError)?.let {
             ErrorBanner(it, Modifier.padding(horizontal = 16.dp), onDismiss = { error = null; app.clearError() }); Gap(8.dp)
         }
@@ -235,7 +244,8 @@ fun CareScreen(nav: NavHostController) {
         }
         if (draft.isBlank() && pending.isEmpty() && !listening) {
             LazyRow(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(QUICK_LOG) { q -> Chip(q.trim().trimEnd(':'), selected = false) { draft = q; toAssistant = true } }
+                item { Text("Quick log", style = MPType.labelMedium, color = c.muted, modifier = Modifier.padding(top = 9.dp)) }
+                items(QUICK_LOG) { q -> QuickChip(q.trim() + if (q.endsWith(" ") || q.endsWith(": ")) "…" else "") { draft = q; toAssistant = true } }
             }
             Gap(6.dp)
         }
@@ -254,9 +264,9 @@ fun CareScreen(nav: NavHostController) {
                 recordingNote = false
                 recorder.stop()?.let { p -> scope.launch { uploading = true; try { pending.add(graph.api.uploadAttachment(p.bytes, p.contentType, p.filename)) } catch (e: Exception) { error = e.message }; uploading = false } }
             },
-        ) else Row(Modifier.fillMaxWidth().background(c.panel).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        ) else Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box {
-                IconButton(onClick = { menuOpen = true }, enabled = !uploading) { Icon(Icons.Default.Add, "Attach", tint = c.ink) }
+                ComposerRound(Icons.Default.Add, enabled = !uploading && pending.size < 4 && !listening) { menuOpen = true }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("Take a photo") }, leadingIcon = { Icon(Icons.Default.PhotoCamera, null) }, onClick = {
                         menuOpen = false
@@ -285,25 +295,20 @@ fun CareScreen(nav: NavHostController) {
                     })
                 }
             }
-            OutlinedTextField(
-                value = draft, onValueChange = { draft = it; if (it.isEmpty()) toAssistant = false },
-                modifier = Modifier.weight(1f), maxLines = 4,
-                placeholder = { Text(if (recordingNote) "Recording a voice note…" else if (toAssistant) "Ask MedPull" else "Write to your care team") },
-                shape = RoundedCornerShape(22.dp),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.line, focusedTextColor = c.ink, unfocusedTextColor = c.ink),
-            )
+            ComposerField(
+                text = draft, onChange = { draft = it; if (it.isEmpty()) toAssistant = false },
+                placeholder = if (listening) "Listening…" else if (recordingNote) "Recording a voice note…" else if (toAssistant) "Ask MedPull" else "Write to your care team",
+                canSend = !sending && !uploading && !listening && (draft.isNotBlank() || pending.isNotEmpty()), busy = sending,
+                modifier = Modifier.weight(1f),
+            ) { scope.launch { send(draft, "app", speak = false) } }
             if (draft.isBlank() && pending.isEmpty()) {
-                IconButton(onClick = {
+                ComposerRound(if (listening) Icons.Default.MicOff else Icons.Default.Mic, active = listening, onClick = {
                     if (listening) {
                         val heard = speech.stopListening()
                         if (heard.isNotBlank()) scope.launch { send(heard, "voice", speak = true) }
                     } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) speech.startListening()
                     else askMic.launch(Manifest.permission.RECORD_AUDIO)
-                }) { Icon(if (listening) Icons.Default.MicOff else Icons.Default.Mic, "Talk", tint = if (listening) c.riskHigh else c.ink) }
-            } else {
-                IconButton(onClick = { scope.launch { send(draft, "app", speak = false) } }, enabled = !sending && !uploading) {
-                    Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = c.brandInk)
-                }
+                })
             }
         }
     }
@@ -314,10 +319,10 @@ fun CareScreen(nav: NavHostController) {
 private fun IntroCard() {
     val c = MP.colors
     Panel {
-        Text("How this works", style = MaterialTheme.typography.titleMedium, color = c.ink)
-        Gap(6.dp)
+        Text("How this works", style = MPType.copyLargeMedium, color = c.ink)
+        Gap(8.dp)
         Text("Anything you type goes to your care team, and the plus button sends them a photo, a short video, a voice note or a file. Tap the mic, or one of the quick logs, to tell MedPull how you feel: it logs it for you, answers straight away, and passes anything serious to the team.",
-            style = MaterialTheme.typography.bodyMedium, color = c.body)
+            style = MPType.copy, color = c.body)
     }
 }
 
@@ -340,14 +345,27 @@ private fun RecordingBar(onCancel: () -> Unit, onStop: () -> Unit) {
     }
 }
 
+/** The patient's words on the sage bubble, everyone else's on the warm grey one; a tail on the bottom corner. */
+private fun bubbleShape(mine: Boolean) = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp,
+    bottomStart = if (mine) 26.dp else 6.dp, bottomEnd = if (mine) 6.dp else 26.dp)
+
+@Composable
+private fun BubbleText(text: String, mine: Boolean, strong: Boolean = false) {
+    val c = MP.colors
+    val shape = bubbleShape(mine)
+    Box(Modifier.clip(shape).then(if (mine) Modifier.grain().background(BubbleBrush) else Modifier.background(c.panel.copy(alpha = .7f)).background(if (strong) c.fillStrong else c.fill))
+        .padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Text(text, style = MPType.copyLarge, color = if (mine) Color.White else c.ink)
+    }
+}
+
 @Composable
 private fun TurnBubble(mine: Boolean, text: String) {
     val c = MP.colors
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-        Column(Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(18.dp)).background(if (mine) c.brandTint else c.soft).padding(12.dp)) {
-            Text(if (mine) "You" else "MedPull", style = MaterialTheme.typography.labelSmall, color = c.muted)
-            Text(text, color = c.ink)
-        }
+    Column(Modifier.fillMaxWidth().padding(start = if (mine) 48.dp else 0.dp, end = if (mine) 0.dp else 48.dp),
+        horizontalAlignment = if (mine) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        BubbleText(text, mine)
+        Text(if (mine) "You" else "MedPull", style = MPType.label, color = c.muted)
     }
 }
 
@@ -356,24 +374,26 @@ private fun Bubble(m: ChatMessage, cache: MediaCache, onOpenTask: (Int) -> Unit)
     val c = MP.colors
     val mine = m.sender == "patient"
     val who = when {
-        mine -> "You" + if (m.channel == "sms") " · by text" else if (m.channel == "voice") " · spoken" else ""
-        m.sender == "copilot" -> "MedPull"
-        else -> m.authorName?.takeIf { it.isNotBlank() } ?: "Care team"
+        mine -> "You" + if (m.channel == "sms") "${DOT}by text" else if (m.channel == "voice") "${DOT}by voice" else ""
+        m.sender == "copilot" -> if (m.channel == "sms") "MedPull${DOT}text" else "MedPull"
+        m.fromClinician -> m.authorName?.takeIf { it.isNotBlank() } ?: "Care team"
+        else -> "Care team"
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-        Column(Modifier.widthIn(max = 320.dp).clip(RoundedCornerShape(18.dp)).background(if (mine) c.brandTint else c.panel).padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(who, style = MaterialTheme.typography.labelSmall, color = c.muted)
-                Spacer(Modifier.width(6.dp))
-                Dates.relative(m.createdAt)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = c.faint) }
-            }
-            if (m.fromClinician) { Gap(4.dp); StatusPill("Care team approved", Tone.BRAND) }
-            if (m.text.isNotBlank()) { Gap(4.dp); Text(m.text, color = c.ink) }
-            if (m.files.isNotEmpty()) { Gap(8.dp); AttachmentStrip(m.files, cache) }
-            if (m.deliveryStatus == "failed") Text("not delivered by text", style = MaterialTheme.typography.labelSmall, color = c.riskHigh)
-            m.action?.takeIf { it.kind == "open_task" && it.taskId != null }?.let { a ->
-                Gap(6.dp); PlainButton(a.label.ifBlank { "Open" }) { onOpenTask(a.taskId!!) }
-            }
+    Column(Modifier.fillMaxWidth().padding(start = if (mine) 48.dp else 0.dp, end = if (mine) 0.dp else 48.dp),
+        horizontalAlignment = if (mine) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        if (m.text.isNotBlank()) BubbleText(m.text, mine, strong = m.sender == "care_team" || m.fromClinician)
+        if (m.files.isNotEmpty()) AttachmentStrip(m.files, cache)
+        m.action?.takeIf { it.kind == "open_task" && it.taskId != null }?.let { a ->
+            PrimaryButton(a.label.ifBlank { "Open" }, modifier = Modifier.widthIn(max = 260.dp)) { onOpenTask(a.taskId!!) }
+        }
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
+            itemVerticalAlignment = Alignment.CenterVertically) {
+            Text(who, style = MPType.label, color = c.muted)
+            if (m.fromClinician) Text("Care team approved", style = MPType.labelMedium, color = c.brandInk,
+                modifier = Modifier.clip(CapsuleShape).background(c.brandTint).padding(horizontal = 6.dp, vertical = 2.dp))
+            Text("·", style = MPType.label, color = c.muted)
+            Text(Dates.relative(m.createdAt) ?: "", style = MPType.label, color = c.muted)
+            if (m.deliveryStatus == "failed") Text("·  not delivered by text", style = MPType.label, color = c.riskMed)
         }
     }
 }
@@ -437,3 +457,59 @@ private fun Player(file: File, video: Boolean, onEnded: () -> Unit) {
         modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)))
 }
 
+/** The care team as overlapping soft discs over the thread, as on the iPhone. */
+@Composable
+private fun CareHeader(team: List<com.medpull.recovery.core.CareTeamMember>) {
+    val c = MP.colors
+    if (team.isEmpty()) return
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy((-10).dp)) {
+            team.take(3).forEach { m ->
+                Box(Modifier.size(44.dp).clip(CircleShape).background(c.canvas), contentAlignment = Alignment.Center) {
+                    Initials(m.name, size = 40.dp, tone = Tone.MISSING, soft = true)
+                }
+            }
+        }
+        Text("Your care team", style = MPType.copyMedium, color = c.ink)
+        Text(team.joinToString(", ") { it.name }, style = MPType.label, color = c.muted, textAlign = TextAlign.Center)
+    }
+}
+
+/** A quick log: a small white glass capsule that fills the field. */
+@Composable
+private fun QuickChip(label: String, onClick: () -> Unit) {
+    val c = MP.colors
+    Text(label, style = MPType.copyMedium, color = c.ink,
+        modifier = Modifier.padding(vertical = 5.dp).glassSurface(CapsuleShape, solid = true).clip(CapsuleShape).clickable(onClick = onClick)
+            .defaultMinSize(minHeight = 34.dp).padding(horizontal = 14.dp, vertical = 8.dp))
+}
+
+/** The 44pt round button beside the field: a panel disc with a lineStrong edge and a sage glyph; `active` is the risk fill. */
+@Composable
+private fun ComposerRound(icon: ImageVector, enabled: Boolean = true, active: Boolean = false, onClick: () -> Unit) {
+    val c = MP.colors
+    Box(Modifier.size(44.dp).clip(CircleShape).background(if (!enabled) c.soft else if (active) c.riskHigh else c.panel)
+        .border(1.dp, if (active || !enabled) Color.Transparent else c.lineStrong, CircleShape).clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center) {
+        Icon(icon, null, tint = if (!enabled) c.muted else if (active) c.panel else c.brandInk, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** The composer: a capsule field with the send button inside it. */
+@Composable
+private fun ComposerField(text: String, onChange: (String) -> Unit, placeholder: String, canSend: Boolean, busy: Boolean,
+                          modifier: Modifier = Modifier, onSend: () -> Unit) {
+    val c = MP.colors
+    Row(modifier.defaultMinSize(minHeight = 44.dp).background(c.panel, RoundedCornerShape(22.dp)).border(1.dp, c.lineStrong.copy(alpha = .75f), RoundedCornerShape(22.dp))
+        .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.Bottom) {
+        Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
+            if (text.isEmpty()) Text(placeholder, style = MPType.copyLarge, color = c.muted)
+            BasicTextField(text, onChange, textStyle = MPType.copyLarge.copy(color = c.ink), maxLines = 5, cursorBrush = SolidColor(c.brand))
+        }
+        Spacer(Modifier.width(4.dp))
+        Box(Modifier.size(36.dp).clip(CircleShape).background(if (canSend) c.action else c.soft).clickable(enabled = canSend && !busy, onClick = onSend), contentAlignment = Alignment.Center) {
+            if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = c.onAction)
+            else Icon(Icons.Default.ArrowUpward, "Send", tint = if (canSend) c.onAction else c.muted, modifier = Modifier.size(18.dp))
+        }
+    }
+}

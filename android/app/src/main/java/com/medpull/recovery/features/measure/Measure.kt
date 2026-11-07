@@ -1,5 +1,19 @@
 package com.medpull.recovery.features.measure
 
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.filled.Architecture
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.medpull.recovery.features.progress.signalIcon
+import com.medpull.recovery.ui.Category
+import com.medpull.recovery.ui.Glyph
+import com.medpull.recovery.ui.MPType
+import com.medpull.recovery.ui.RowDivider
+import com.medpull.recovery.ui.RowFigure
+import com.medpull.recovery.ui.SectionHeading
+import com.medpull.recovery.ui.StateLabel
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -114,6 +128,23 @@ object Stature {
         .edit().putFloat("stature_cm", cm.toFloat()).apply()
 }
 
+private fun testIcon(name: String): ImageVector = when (name) {
+    "Guided walk" -> Icons.AutoMirrored.Filled.DirectionsWalk; "Six-minute walk" -> Icons.Default.Timer; else -> Icons.Default.Architecture
+}
+
+private fun testSubtitle(name: String) = when (name) {
+    "Guided walk" -> "3 minutes, phone in your front pocket"
+    "Six-minute walk" -> "How far you can walk in six minutes"
+    else -> "Phone on the limb, two short holds"
+}
+
+/** "Due", "Due tomorrow", "Due in 3 days": when the next one falls. */
+private fun dueLabel(test: MeasureStatus.Test, last: LocalDate?): String {
+    if (last == null) return "Due"
+    val days = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), last.plusDays(test.everyDays))
+    return when { days <= 0 -> "Due"; days == 1L -> "Due tomorrow"; else -> "Due in $days days" }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MeasureScreen(nav: NavHostController) {
@@ -122,50 +153,54 @@ fun MeasureScreen(nav: NavHostController) {
     val scope = rememberCoroutineScope()
     val c = MP.colors
     var refreshing by remember { mutableStateOf(false) }
+    fun open(name: String) = when (name) {
+        "Guided walk" -> nav.navigate(Routes.walk(false)); "Six-minute walk" -> nav.navigate(Routes.walk(true)); else -> nav.navigate(Routes.ROM)
+    }
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = { scope.launch { refreshing = true; app.refreshPortfolio(); refreshing = false } }) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            Text("MEASURE", style = MaterialTheme.typography.labelSmall, color = c.muted, modifier = Modifier.padding(top = 16.dp))
-            Text("Short tests, your phone as the sensor", style = MaterialTheme.typography.displaySmall, color = c.ink)
-            Text("Every number is worked out by MedPull from what the phone records, so it is the same on any phone.", color = c.body, style = MaterialTheme.typography.bodyLarge)
-            Gap(16.dp)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Measure", style = MPType.displayS, color = c.ink)
+                Text("Your phone reads how you walk, how far you can go, and how far a joint bends. Same method every time, so a change is yours and not the device’s.",
+                    style = MPType.copyLarge, color = c.body, modifier = Modifier.padding(horizontal = 4.dp))
+            }
             MeasureStatus.tests.forEach { t ->
                 val due = MeasureStatus.isDue(t, state.portfolio)
                 val last = MeasureStatus.lastDone(t, state.portfolio)
-                Panel(onClick = {
-                    when (t.name) {
-                        "Guided walk" -> nav.navigate(Routes.walk(false)); "Six-minute walk" -> nav.navigate(Routes.walk(true)); else -> nav.navigate(Routes.ROM)
-                    }
-                }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(t.name, style = MaterialTheme.typography.titleLarge, color = c.ink)
-                            Text(when (t.name) {
-                                "Guided walk" -> "Three minutes with the phone in a front pocket."
-                                "Six-minute walk" -> "Six minutes at your own pace, for distance and endurance."
-                                else -> "Two short holds with the phone on the limb."
-                            }, color = c.body, style = MaterialTheme.typography.bodyMedium)
-                            Text(if (last == null) "Not done yet" else "Last ${Dates.monthDay(last)} · every ${t.everyDays} days",
-                                color = c.muted, style = MaterialTheme.typography.labelMedium)
+                Panel {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Glyph(testIcon(t.name), Category.TEAL, 40.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(t.name, style = MPType.ledeMedium, color = c.ink, modifier = Modifier.weight(1f))
+                                StateLabel(dueLabel(t, last), if (due) Tone.MED else Tone.LOW)
+                            }
+                            Text(testSubtitle(t.name), style = MPType.copy, color = c.body)
+                            Text(if (last == null) "Nothing recorded yet." else "Last: ${Dates.monthDay(last)}", style = MPType.figuresLabel, color = c.muted)
                         }
-                        Spacer(Modifier.width(8.dp))
-                        StatusPill(if (due) "Due" else "Done", if (due) Tone.MED else Tone.LOW)
                     }
+                    Gap(12.dp)
+                    if (due) PrimaryButton("Start", icon = Icons.Default.PlayArrow) { open(t.name) }
+                    else SecondaryButton("Do it again", icon = Icons.Default.Refresh) { open(t.name) }
                 }
-                Gap()
             }
             val measured = state.portfolio.filter { it.key in Signals.measured }
             if (measured.isNotEmpty()) {
-                Panel {
-                    SectionTitle("Your readings")
-                    measured.forEachIndexed { i, m ->
-                        ListRow(m.label.ifBlank { m.key }, fmt(m.latest ?: m.series.lastOrNull()?.value, m.unit), onClick = { nav.navigate(Routes.signal(m.key)) })
-                        if (i < measured.lastIndex) Hairline()
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionHeading("Your readings", note = "last two weeks")
+                    Panel(padding = 0.dp) {
+                        measured.forEachIndexed { i, m ->
+                            ListRow(m.label.ifBlank { m.key }, icon = signalIcon(m.key), family = Category.TEAL, inset = true,
+                                trailing = { RowFigure(fmt(m.latest ?: m.series.lastOrNull()?.value), m.unit.takeIf { it.isNotBlank() }) },
+                                onClick = { nav.navigate(Routes.signal(m.key)) })
+                            if (i < measured.lastIndex) RowDivider()
+                        }
                     }
                 }
-                Gap()
             }
-            Guardrail()
-            Gap(24.dp)
+            Text("Results go to your care team’s console beside your wearable data. Nothing here is a diagnosis.",
+                style = MPType.label, color = c.muted, modifier = Modifier.padding(horizontal = 4.dp))
+            Gap(10.dp)
         }
     }
 }
