@@ -63,6 +63,7 @@ import com.medpull.recovery.ui.SecondaryButton
 import com.medpull.recovery.ui.SectionTitle
 import com.medpull.recovery.ui.StatusPill
 import com.medpull.recovery.ui.Tone
+import com.medpull.recovery.ui.AppearanceMode
 import com.medpull.recovery.ui.appModel
 import com.medpull.recovery.ui.toneFor
 import kotlinx.coroutines.launch
@@ -127,6 +128,8 @@ fun ProfileScreen(nav: NavHostController) {
             })
         }
         Gap()
+        AppearanceCard()
+        Gap()
         Panel {
             SectionTitle("Developer")
             Text("Where the app talks to. The emulator reaches a laptop at 10.0.2.2.", color = c.muted, style = MaterialTheme.typography.bodyMedium)
@@ -143,6 +146,22 @@ fun ProfileScreen(nav: NavHostController) {
         SecondaryButton("Sign out", loading = signingOut) { scope.launch { signingOut = true; app.signOut() } }
         Guardrail()
         Gap(24.dp)
+    }
+}
+
+/** Light, dark or system. Light is the default, as on the iPhone. */
+@Composable
+private fun AppearanceCard() {
+    val context = LocalContext.current
+    val appearance = (context.applicationContext as MedPullApp).graph.appearance
+    val mode by appearance.mode.collectAsStateWithLifecycle()
+    val modes = AppearanceMode.entries
+    Panel {
+        SectionTitle("Appearance")
+        Gap(8.dp)
+        FlowChips(modes.map { it.label }, modes.indexOf(mode)) { appearance.set(modes[it]) }
+        Gap(6.dp)
+        Text("Light is the default. System follows your phone's dark theme setting.", color = MP.colors.muted, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
