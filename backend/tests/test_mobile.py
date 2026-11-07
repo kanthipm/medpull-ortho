@@ -721,7 +721,7 @@ def test_join_welcomes_on_the_stub_path_without_sending(client, db):
 
 
 def test_creating_a_patient_texts_an_invite_with_the_app_link(client, db, monkeypatch):
-    from app.models.hospital import Hospital
+    from app.console_credentials import mint
     from app.notifications import sendblue
 
     sent: list[tuple[str, str]] = []
@@ -732,11 +732,9 @@ def test_creating_a_patient_texts_an_invite_with_the_app_link(client, db, monkey
         sendblue, "_post_message",
         lambda phone, content: sent.append((phone, content)) or _FakeResponse(),
     )
-    hospital = db.get(Hospital, "hosp_demo")
-    hospital.access_token = "tok-test"
-    db.commit()
+    _, tok = mint(db, "hospital", "hosp_demo", "mobile test")
 
-    resp = client.post("/api/patients/", headers={"Authorization": "Bearer tok-test"}, json={
+    resp = client.post("/api/patients/", headers={"Authorization": f"Bearer {tok}"}, json={
         "hospital_id": "hosp_demo", "name": "Invite Test", "phone": "(512) 555-0388",
         "procedure_type": "NONE"})
     assert resp.status_code == 200, resp.text
@@ -754,7 +752,7 @@ def test_creating_a_patient_texts_an_invite_with_the_app_link(client, db, monkey
     assert len(rows) == 1 and rows[0].channel == "sms" and rows[0].delivery_status == "sent"
 
     # no phone: created, nothing sent, and the response says why
-    resp = client.post("/api/patients/", headers={"Authorization": "Bearer tok-test"}, json={
+    resp = client.post("/api/patients/", headers={"Authorization": f"Bearer {tok}"}, json={
         "hospital_id": "hosp_demo", "name": "No Phone", "procedure_type": "NONE"})
     assert resp.status_code == 200, resp.text
     assert resp.json()["invite"]["sent"] is False

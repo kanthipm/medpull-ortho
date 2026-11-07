@@ -7,14 +7,14 @@ when the patient's account belongs to the other environment, and 502 when
 Junction itself could not be reached — three different problems that a
 provider staring at a "Connect" button should be able to tell apart.
 
-Posture, stated plainly: like every other route in this console these are
-unauthenticated (README, "Not in v1"). The link, back-fill and disconnect
-routes are write paths, and whoever can reach the console can issue a Junction
-Link for any patient. Putting authentication in front of the console is the
-v1 gap that closes this; nothing here pretends to close it with a token the
-public bundle could not keep secret. What this module does refuse is anything
-that would hand out control of the aggregator itself — there is no route to
-Junction's Svix portal link, by design.
+Posture: the provider list and the aggregator's health are MedPull staff's
+(a 403 for an org credential, app/api/scope.py); the per-patient routes —
+link, inspect, back-fill, disconnect — follow the chart, so a hospital
+credential drives them for its own patients and 404s on anyone else's. On
+an open console (the public demo) every scope is staff. What this module
+refuses in every case is anything that would hand out control of the
+aggregator itself — there is no route to Junction's Svix portal link, by
+design.
 """
 
 import time
@@ -42,6 +42,8 @@ from app.connectors.registry import (
     junction_connector,
     provider_status,
 )
+from app.api.auth import ConsoleScope, console_scope
+from app.api.scope import require_patient, require_staff
 from app.database import get_db
 from app.models.connection import WearableConnection
 from app.models.enums import ConnectionStatus, SourceProvider
@@ -49,6 +51,7 @@ from app.models.observation import WebhookEvent
 from app.models.patient import Device, Patient
 
 router = APIRouter(tags=["integrations"])
+STAFF = [Depends(require_staff)]
 
 WEBHOOK_PATH = "/api/webhooks/wearables/junction"
 
@@ -128,7 +131,7 @@ def _aggregator_status(db: Session) -> dict[str, Any]:
     }
 
 
-@router.get("/integrations")
+@router.get("/integrations", dependencies=STAFF)
 def list_integrations(db: Session = Depends(get_db)) -> dict:
     device_counts = dict(
         db.execute(
@@ -154,7 +157,7 @@ def list_integrations(db: Session = Depends(get_db)) -> dict:
     return {"providers": providers, "aggregator": _aggregator_status(db)}
 
 
-@router.get("/integrations/junction/status")
+@router.get("/integrations/junction/status", dependencies=STAFF)
 def junction_status(limit: int = 10, db: Session = Depends(get_db)) -> dict:
     limit = max(1, min(limit, 50))
     events = db.scalars(
@@ -177,7 +180,7 @@ def junction_status(limit: int = 10, db: Session = Depends(get_db)) -> dict:
     return {**_aggregator_status(db), "recent_events": recent}
 
 
-@router.post("/integrations/{provider}/connect")
+@router.post("/integrations/{provider}/connect", dependencies=STAFF)
 def connect(provider: str, db: Session = Depends(get_db)) -> dict:
     try:
         key = SourceProvider(provider)
@@ -226,11 +229,8 @@ def _require_configured() -> None:
         )
 
 
-def _patient_or_404(db: Session, patient_id: str) -> Patient:
-    patient = db.get(Patient, patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail=f"Unknown patient: {patient_id}")
-    return patient
+def _patient_or_404(db: Session, scope: ConsoleScope, patient_id: str) -> Patient:
+    return require_patient(db, scope, patient_id)
 
 
 def _raise_for(e: Exception) -> None:
@@ -262,20 +262,28 @@ def _wearables_view(
 
 
 @router.get("/patients/{patient_id}/wearables")
-def patient_wearables(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def patient_wearables(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """The patient's aggregator account and device rows, as stored. Read-only
     on purpose: on AWS a GET runs outside the write lock with a conditional
     persist, so anything that mutates goes through the POST below."""
-    return _wearables_view(db, _patient_or_404(db, patient_id))
+    return _wearables_view(db, _patient_or_404(db, scope, patient_id))
 
 
 @router.post("/patients/{patient_id}/wearables/junction/refresh")
-def refresh_junction_snapshot(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def refresh_junction_snapshot(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """Ask Junction what it currently reports as connected for the patient
     and update the snapshot and Device rows. A mutating route, so on AWS it
     holds the write lock and persists unconditionally. Answers the same view
     as the GET, with ``refresh_error`` set when Junction could not be asked."""
-    patient = _patient_or_404(db, patient_id)
+    patient = _patient_or_404(db, scope, patient_id)
     connector = junction_connector()
     conn = connector.connection_for(db, patient_id)
     refresh_error: str | None = None
@@ -289,12 +297,18 @@ def refresh_junction_snapshot(patient_id: str, db: Session = Depends(get_db)) ->
 
 
 @router.post("/patients/{patient_id}/wearables/junction/link")
-def create_junction_link(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def create_junction_link(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """Mint a Junction Link for the patient. The URL is one-time and
     short-lived; the clinic hands it to the patient, who signs in to their
     device's cloud account on Junction's hosted page."""
+    # The chart first: whether this console may see the patient is answered
+    # before whether this deployment has an aggregator to link them to.
+    _patient_or_404(db, scope, patient_id)
     _require_configured()
-    _patient_or_404(db, patient_id)
     try:
         session = junction_connector().create_link(db, patient_id)
     except (JunctionError, ValueError) as e:
@@ -317,10 +331,11 @@ class BackfillBody(BaseModel):
 
 @router.post("/patients/{patient_id}/wearables/junction/backfill")
 def junction_backfill(
-    patient_id: str, body: BackfillBody | None = None, db: Session = Depends(get_db)
+    patient_id: str, body: BackfillBody | None = None, db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
+    patient = _patient_or_404(db, scope, patient_id)
     _require_configured()
-    patient = _patient_or_404(db, patient_id)
     body = body or BackfillBody()
     connector = junction_connector()
     # One wall-clock budget for the whole request: the optional re-sync call
@@ -369,10 +384,14 @@ def junction_backfill(
 
 
 @router.delete("/patients/{patient_id}/wearables/junction")
-def disconnect_junction(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def disconnect_junction(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """Deregister the patient at Junction and retire the mapping. Ingested
     observations stay — they are the patient's history."""
-    _patient_or_404(db, patient_id)
+    _patient_or_404(db, scope, patient_id)
     try:
         result = junction_connector().disconnect(db, patient_id)
     except ValueError as e:

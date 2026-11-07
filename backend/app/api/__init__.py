@@ -4,6 +4,7 @@ from app.api import (
     apple_notifications,
     ask,
     attachments,
+    auth,
     care,
     checkin,
     explain,
@@ -30,12 +31,15 @@ api_router = APIRouter(prefix="/api")
 # the process down: swallowing the ImportError leaves every one of its routes to
 # the SPA catch-all, which answers 200 text/html with no log line anywhere.
 #
-# Console routers sit behind the console token (a no-op while it is unset).
-# Everything a patient, a phone or a provider's webhook reaches has its own
-# credential and is wired without it.
+# Console routers sit behind the console's door (app/api/auth.py): the staff
+# token or a minted org credential, waived only while the console is open.
+# Every route behind it reads the resolved ConsoleScope and narrows itself to
+# it (app/api/scope.py). Everything a patient, a phone or a provider's
+# webhook reaches has its own credential and is wired without it.
 CONSOLE = [Depends(require_console)]
 
 api_router.include_router(system.router)
+api_router.include_router(auth.router, dependencies=CONSOLE)
 api_router.include_router(worklist.router, dependencies=CONSOLE)
 api_router.include_router(patients.router, dependencies=CONSOLE)
 api_router.include_router(overview.router, dependencies=CONSOLE)
@@ -58,4 +62,4 @@ api_router.include_router(attachments.router)
 api_router.include_router(attachments.console_router, dependencies=CONSOLE)
 api_router.include_router(personal.router)
 api_router.include_router(sports.router)
-api_router.include_router(sports.team_router)
+api_router.include_router(sports.team_router, dependencies=CONSOLE)

@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.auth import ConsoleScope, console_scope
+from app.api.scope import require_patient
 from app.config import settings
 from app.database import get_db
 from app.identity import app_status
@@ -63,11 +65,10 @@ class InviteRequest(BaseModel):
 
 @console_router.post("/patients/{patient_id}/checkin-invite")
 def send_invite(
-    patient_id: str, body: InviteRequest, request: Request, db: Session = Depends(get_db)
+    patient_id: str, body: InviteRequest, request: Request, db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
-    patient = db.get(Patient, patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="Unknown patient")
+    require_patient(db, scope, patient_id)
 
     token = secrets.token_urlsafe(32)
     db.add(CheckinInvite(
@@ -162,7 +163,10 @@ def _open_checkin(db: Session, patient_id: str) -> AdherenceTask | None:
 
 
 @console_router.post("/patients/{patient_id}/actions/daily-checkin")
-def send_daily_checkin(patient_id: str, request: Request, db: Session = Depends(get_db)) -> dict:
+def send_daily_checkin(
+    patient_id: str, request: Request, db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """Put today's check-in in the patient's app and text them that it's there.
 
     The text is best effort and never fails the request: the check-in itself
@@ -172,9 +176,7 @@ def send_daily_checkin(patient_id: str, request: Request, db: Session = Depends(
     Sendblue will refuse, and the feature still has to work in front of
     an audience.
     """
-    patient = db.get(Patient, patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="Unknown patient")
+    patient = require_patient(db, scope, patient_id)
 
     task = _open_checkin(db, patient_id)
     reused = task is not None

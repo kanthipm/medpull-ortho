@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api import care, integrations, patients, plan
+from app.api.auth import ConsoleScope, console_scope
 from app.database import get_db
 from app.plan import ensure_ready
 
@@ -23,19 +24,24 @@ router = APIRouter(prefix="/patients", tags=["patients"])
 
 
 @router.get("/{patient_id}/overview")
-def patient_overview(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def patient_overview(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     # The plan routes' own dependency: the task and message libraries must
     # exist before the plan and the next steps read them.
     ensure_ready(db)
-    # The record first: an unknown id is a 404 before any other work is done.
-    detail = patients.patient_detail(patient_id, db)
+    # The record first: an id this console cannot see is a 404 before any
+    # other work is done. Every part below applies the same scope.
+    detail = patients.patient_detail(patient_id, db, scope)
     return {
         "detail": detail,
-        "care_metrics": care.care_metrics(patient_id, db),
-        "next_steps": plan.next_steps(patient_id, db),
-        "plan": plan.get_plan(patient_id, db),
-        "checkins": patients.patient_checkins(patient_id, db),
-        "timeline": patients.patient_timeline(patient_id, db),
-        "messages": patients.list_messages(patient_id, db),
-        "wearables": integrations.patient_wearables(patient_id, db),
+        "care_metrics": care.care_metrics(patient_id, db, scope),
+        "next_steps": plan.next_steps(patient_id, db, scope),
+        "plan": plan.get_plan(patient_id, db, scope),
+        "checkins": patients.patient_checkins(patient_id, db, scope),
+        "timeline": patients.patient_timeline(patient_id, db, scope),
+        "messages": patients.list_messages(patient_id, db, scope),
+        "wearables": integrations.patient_wearables(patient_id, db, scope),
     }

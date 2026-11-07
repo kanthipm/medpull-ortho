@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.auth import ConsoleScope, console_scope
+from app.api.scope import require_patient, require_staff
 from app.api.worklist import ensure_fresh_assessment
 from app.config import settings
 from app.database import get_db
@@ -31,6 +33,9 @@ from app.plan.service import PlanError, PlanItem
 from app.plan.verify_kinds import PHASES, SCHEDULES, TASK_KINDS, VerifyKind, kinds_payload
 
 router = APIRouter(tags=["plan"])
+# The task and message library is shared by every clinic: any console may
+# read it to assign from, only MedPull staff change what is in it.
+STAFF = [Depends(require_staff)]
 
 
 def _library_ready(db: Session = Depends(get_db)) -> Session:
@@ -38,11 +43,8 @@ def _library_ready(db: Session = Depends(get_db)) -> Session:
     return db
 
 
-def _get_patient(db: Session, patient_id: str) -> Patient:
-    patient = db.get(Patient, patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail=f"Unknown patient: {patient_id}")
-    return patient
+def _get_patient(db: Session, scope: ConsoleScope, patient_id: str) -> Patient:
+    return require_patient(db, scope, patient_id)
 
 
 def _base_url(request: Request) -> str:
@@ -115,7 +117,7 @@ def list_task_templates(
     return {"templates": templates, "kinds": kinds_payload(), "pathways": pathways_payload()}
 
 
-@router.post("/task-templates")
+@router.post("/task-templates", dependencies=STAFF)
 def create_task_template(body: TemplateCreate, db: Session = Depends(_library_ready)) -> dict:
     from app.plan.verify_kinds import as_kind, default_task_kind, params_for
 
@@ -141,7 +143,7 @@ def create_task_template(body: TemplateCreate, db: Session = Depends(_library_re
     return template_payload(template)
 
 
-@router.patch("/task-templates/{template_id}")
+@router.patch("/task-templates/{template_id}", dependencies=STAFF)
 def patch_task_template(
     template_id: int, body: TemplatePatch, db: Session = Depends(_library_ready)
 ) -> dict:
@@ -183,20 +185,28 @@ class DraftBody(BaseModel):
 
 
 @router.post("/task-builder/draft")
-def task_builder_draft(body: DraftBody, db: Session = Depends(_library_ready)) -> dict:
+def task_builder_draft(
+    body: DraftBody,
+    db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.plan.builder import draft_tasks
 
-    patient = _get_patient(db, body.patient_id) if body.patient_id else None
+    patient = _get_patient(db, scope, body.patient_id) if body.patient_id else None
     if body.pathway is not None and body.pathway not in PATHWAYS:
         raise HTTPException(status_code=400, detail=f"Unknown pathway: {body.pathway}")
     return draft_tasks(db, body.text, patient, body.pathway)
 
 
 @router.post("/patients/{patient_id}/plan/suggest")
-def suggest_plan(patient_id: str, db: Session = Depends(_library_ready)) -> dict:
+def suggest_plan(
+    patient_id: str,
+    db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.plan.builder import suggest_tasks
 
-    return suggest_tasks(db, _get_patient(db, patient_id))
+    return suggest_tasks(db, _get_patient(db, scope, patient_id))
 
 
 # --- the plan -----------------------------------------------------------------------------
@@ -241,10 +251,14 @@ class RecordBody(BaseModel):
 
 
 @router.get("/patients/{patient_id}/plan")
-def get_plan(patient_id: str, db: Session = Depends(_library_ready)) -> dict:
+def get_plan(
+    patient_id: str,
+    db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.plan.service import patient_plan
 
-    _get_patient(db, patient_id)
+    _get_patient(db, scope, patient_id)
     # A fresh assessment runs verification, so the records below are current.
     ensure_fresh_assessment(db, patient_id)
     return patient_plan(db, patient_id)
@@ -252,11 +266,12 @@ def get_plan(patient_id: str, db: Session = Depends(_library_ready)) -> dict:
 
 @router.post("/patients/{patient_id}/plan")
 def assign(
-    patient_id: str, body: AssignBody, request: Request, db: Session = Depends(_library_ready)
+    patient_id: str, body: AssignBody, request: Request, db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
     from app.plan.service import assign_plan
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     try:
         return assign_plan(
             db, patient, [i.to_item() for i in body.items], notify=body.notify,
@@ -267,11 +282,15 @@ def assign(
 
 
 @router.post("/patients/{patient_id}/plan/{task_id}/end")
-def end_plan_task(patient_id: str, task_id: int, db: Session = Depends(_library_ready)) -> dict:
+def end_plan_task(
+    patient_id: str, task_id: int,
+    db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.models.adherence import AdherenceTask
     from app.plan.service import end_task, patient_plan
 
-    _get_patient(db, patient_id)
+    _get_patient(db, scope, patient_id)
     task = db.get(AdherenceTask, task_id)
     if task is None or task.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="Unknown task")
@@ -281,12 +300,13 @@ def end_plan_task(patient_id: str, task_id: int, db: Session = Depends(_library_
 
 @router.post("/patients/{patient_id}/plan/{task_id}/record")
 def record_plan_status(
-    patient_id: str, task_id: int, body: RecordBody, db: Session = Depends(_library_ready)
+    patient_id: str, task_id: int, body: RecordBody, db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
     from app.models.adherence import AdherenceTask
     from app.plan.service import record_provider_status
 
-    _get_patient(db, patient_id)
+    _get_patient(db, scope, patient_id)
     task = db.get(AdherenceTask, task_id)
     if task is None or task.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="Unknown task")
@@ -338,7 +358,7 @@ def list_message_templates(
     }
 
 
-@router.post("/message-templates")
+@router.post("/message-templates", dependencies=STAFF)
 def create_message_template(
     body: MessageTemplateCreate, db: Session = Depends(_library_ready)
 ) -> dict:
@@ -353,7 +373,7 @@ def create_message_template(
     return message_payload(template)
 
 
-@router.patch("/message-templates/{template_id}")
+@router.patch("/message-templates/{template_id}", dependencies=STAFF)
 def patch_message_template(
     template_id: int, body: MessageTemplatePatch, db: Session = Depends(_library_ready)
 ) -> dict:
@@ -379,9 +399,10 @@ def patch_message_template(
 
 @router.post("/patients/{patient_id}/messages/draft")
 def draft_message(
-    patient_id: str, body: DraftMessageBody, db: Session = Depends(_library_ready)
+    patient_id: str, body: DraftMessageBody, db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     ensure_fresh_assessment(db, patient_id)
     try:
         return draft_patient_message(
@@ -403,10 +424,14 @@ class CompleteBody(BaseModel):
 
 
 @router.get("/patients/{patient_id}/next-steps")
-def next_steps(patient_id: str, db: Session = Depends(_library_ready)) -> dict:
+def next_steps(
+    patient_id: str,
+    db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.plan.next_steps import plan_next_steps
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     assessment = ensure_fresh_assessment(db, patient_id)
     now = datetime.now()
     return {"steps": plan_next_steps(db, patient, assessment, now=now),
@@ -417,10 +442,11 @@ def next_steps(patient_id: str, db: Session = Depends(_library_ready)) -> dict:
 def execute_next_step(
     patient_id: str, key: str, body: ExecuteBody | None = None, request: Request = None,
     db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
     from app.plan.next_steps import execute_step
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     try:
         return execute_step(
             db, patient, key, override=(body.payload_override if body else None),
@@ -437,17 +463,22 @@ def execute_next_step(
 def complete_next_step(
     patient_id: str, key: str, body: CompleteBody | None = None,
     db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
     from app.plan.next_steps import complete_step
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     return complete_step(db, patient, key, body.result if body else None,
                          executed_by=patient.assigned_provider_id or "provider")
 
 
 @router.post("/patients/{patient_id}/next-steps/{key}/dismiss")
-def dismiss_next_step(patient_id: str, key: str, db: Session = Depends(_library_ready)) -> dict:
+def dismiss_next_step(
+    patient_id: str, key: str,
+    db: Session = Depends(_library_ready),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.plan.next_steps import dismiss_step
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     return dismiss_step(db, patient, key, executed_by=patient.assigned_provider_id or "provider")

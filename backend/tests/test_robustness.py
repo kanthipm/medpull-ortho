@@ -322,13 +322,12 @@ def test_the_guard_covers_a_patient_the_seed_cannot_rebuild(db, monkeypatch):
 
 
 def test_a_future_surgery_date_is_refused(client, db):
-    from app.models.hospital import Hospital
+    from app.console_credentials import mint
 
     db.expire_all()
-    db.get(Hospital, "hosp_demo").access_token = "tok-dates"
-    db.commit()
+    _, tok = mint(db, "hospital", "hosp_demo", "dates test")
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
-    resp = client.post("/api/patients/", headers={"Authorization": "Bearer tok-dates"}, json={
+    resp = client.post("/api/patients/", headers={"Authorization": f"Bearer {tok}"}, json={
         "hospital_id": "hosp_demo", "name": "Future Op", "procedure_type": "TKA",
         "surgery_date": tomorrow})
     assert resp.status_code == 422 and "future" in resp.json()["detail"]
@@ -341,12 +340,11 @@ def test_a_future_surgery_date_is_refused(client, db):
 
 @pytest.mark.parametrize("phone", ["", "   ", "abc", "12", "+1", "555-010"])
 def test_unusable_phone_numbers_are_refused_at_every_door(client, db, phone):
-    from app.models.hospital import Hospital
+    from app.console_credentials import mint
 
     db.expire_all()
-    db.get(Hospital, "hosp_demo").access_token = "tok-dates"
-    db.commit()
-    created = client.post("/api/patients/", headers={"Authorization": "Bearer tok-dates"}, json={
+    _, tok = mint(db, "hospital", "hosp_demo", "dates test")
+    created = client.post("/api/patients/", headers={"Authorization": f"Bearer {tok}"}, json={
         "hospital_id": "hosp_demo", "name": "Phone Probe", "phone": phone})
     if phone.strip():
         assert created.status_code == 422, created.text

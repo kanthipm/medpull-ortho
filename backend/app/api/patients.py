@@ -1,11 +1,13 @@
 import logging
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.auth import ConsoleScope, console_scope
+from app.api.scope import require_patient, scope_patients
 from app.api.worklist import ensure_fresh_assessment
 from app.config import settings
 from app.database import get_db
@@ -24,20 +26,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/patients", tags=["patients"])
 
 
-def _get_patient(db: Session, patient_id: str) -> Patient:
-    patient = db.get(Patient, patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail=f"Unknown patient: {patient_id}")
-    return patient
+def _get_patient(db: Session, scope: ConsoleScope, patient_id: str) -> Patient:
+    """The chart, if this console may see it; 404 otherwise (app/api/scope.py)."""
+    return require_patient(db, scope, patient_id)
 
 
 @router.get("/{patient_id}")
-def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def patient_detail(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.llm.insights import get_patient_insight
 
     from app.llm.insights import insight_is_cached
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     assessment = ensure_fresh_assessment(db, patient_id)
     analytics = assessment.analytics
 
@@ -122,8 +126,12 @@ def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/{patient_id}/metrics")
-def patient_metrics(patient_id: str, db: Session = Depends(get_db)) -> dict:
-    _get_patient(db, patient_id)
+def patient_metrics(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    _get_patient(db, scope, patient_id)
     assessment = ensure_fresh_assessment(db, patient_id)
     analytics = assessment.analytics
     return {
@@ -136,8 +144,12 @@ def patient_metrics(patient_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/{patient_id}/timeline")
-def patient_timeline(patient_id: str, db: Session = Depends(get_db)) -> dict:
-    patient = _get_patient(db, patient_id)
+def patient_timeline(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    patient = _get_patient(db, scope, patient_id)
     assessment = ensure_fresh_assessment(db, patient_id)
     analytics = assessment.analytics
 
@@ -191,10 +203,14 @@ def patient_timeline(patient_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/{patient_id}/checkins")
-def patient_checkins(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def patient_checkins(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.engine.checkin_digest import digest
 
-    _get_patient(db, patient_id)
+    _get_patient(db, scope, patient_id)
     # One query for every check-in's messages instead of one per check-in;
     # the relationship's own order (seq) still applies.
     checkins = db.scalars(
@@ -219,9 +235,10 @@ def patient_checkins(patient_id: str, db: Session = Depends(get_db)) -> dict:
 
 @router.get("/{patient_id}/observations")
 def patient_observations(
-    patient_id: str, metric_type: str, days: int = 30, db: Session = Depends(get_db)
+    patient_id: str, metric_type: str, days: int = 30, db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
-    _get_patient(db, patient_id)
+    _get_patient(db, scope, patient_id)
     try:
         metric = MetricType(metric_type)
     except ValueError:
@@ -254,7 +271,11 @@ def patient_observations(
 
 
 @router.post("/{patient_id}/recompute")
-def recompute(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def recompute(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """Full refresh: rerun the deterministic engine AND bust the narrative
     caches, so the next reads trigger fresh LLM generations — this patient's
     insights plus the roster briefing (which embeds this patient's reason).
@@ -271,7 +292,7 @@ def recompute(patient_id: str, db: Session = Depends(get_db)) -> dict:
     from app.engine.pipeline import run_patient
     from app.models.insight import Insight
 
-    _get_patient(db, patient_id)
+    _get_patient(db, scope, patient_id)
     db.execute(
         delete(Insight).where(
             or_(
@@ -368,7 +389,8 @@ def _message_view(m, db: Session | None = None,
 
 @router.post("/{patient_id}/actions/assign-task")
 def assign_task(
-    patient_id: str, body: AssignTaskBody, request: Request, db: Session = Depends(get_db)
+    patient_id: str, body: AssignTaskBody, request: Request, db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
     """Create a task in the patient's plan and, by default, text them about
     it. Completion is tracked: the patient finishes it in the app, by
@@ -376,7 +398,7 @@ def assign_task(
     completion writes the adherence record the engine scores."""
     from app.tasks.service import create_task
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     base = settings.checkin_base_url or str(request.base_url).rstrip("/")
     try:
         task, sms = create_task(
@@ -401,21 +423,29 @@ def assign_task(
 
 
 @router.get("/{patient_id}/tasks")
-def list_tasks(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def list_tasks(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.tasks.service import recent_tasks
 
-    _get_patient(db, patient_id)
+    _get_patient(db, scope, patient_id)
     return {"tasks": [_task_view(t) for t in recent_tasks(db, patient_id, limit=50)]}
 
 
 @router.post("/{patient_id}/actions/message")
-def message_patient(patient_id: str, body: MessageBody, db: Session = Depends(get_db)) -> dict:
+def message_patient(
+    patient_id: str, body: MessageBody,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """Write to the patient's thread (the app shows it) and text it through
     Sendblue when the patient has a number on file and the keys are set."""
     from app.models.mobile import Message
     from app.notifications import sendblue
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     text = body.text.strip()
     if not text and not body.attachment_ids:
         raise HTTPException(status_code=422, detail="Write something, or attach a file")
@@ -517,10 +547,14 @@ def message_outcome(delivery: sendblue.CheckinSendResult | None,
 
 
 @router.get("/{patient_id}/messages")
-def list_messages(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def list_messages(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.models.mobile import Message
 
-    _get_patient(db, patient_id)
+    _get_patient(db, scope, patient_id)
     from app.api.attachments import attachments_for
 
     rows = db.scalars(
@@ -532,10 +566,14 @@ def list_messages(patient_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/{patient_id}/messages/read")
-def mark_messages_read(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def mark_messages_read(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.models.mobile import Message
 
-    _get_patient(db, patient_id)
+    _get_patient(db, scope, patient_id)
     rows = db.scalars(
         select(Message).where(
             Message.patient_id == patient_id,
@@ -551,12 +589,16 @@ def mark_messages_read(patient_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/{patient_id}/actions/draft-message")
-def draft_message(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def draft_message(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """AI-drafted patient message — for the clinician to edit before queueing."""
     from app.engine.pipeline import latest_assessment
     from app.llm.draft import draft_message as draft
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     assessment = latest_assessment(db, patient_id)
     if assessment is None:
         raise HTTPException(status_code=409, detail="No analysis available yet for this patient")
@@ -564,10 +606,14 @@ def draft_message(patient_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/{patient_id}/actions/escalate")
-def escalate(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def escalate(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     from app.engine.pipeline import latest_assessment
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     assessment = latest_assessment(db, patient_id)
     top_reason = (
         assessment.reasons[0]["text"]
@@ -594,13 +640,17 @@ class ContactBody(BaseModel):
 
 
 @router.patch("/{patient_id}/contact")
-def update_contact(patient_id: str, body: ContactBody, db: Session = Depends(get_db)) -> dict:
+def update_contact(
+    patient_id: str, body: ContactBody,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """Set (or clear) the number the console texts. Refuses a number that is
     on another chart unless ``force`` moves it, so one number maps to one
     patient and inbound texts cannot land on the wrong chart."""
     from app.identity import IdentityError, app_status, set_phone
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
     try:
         result = set_phone(db, patient, body.phone, force=body.force)
     except IdentityError as e:
@@ -609,14 +659,24 @@ def update_contact(patient_id: str, body: ContactBody, db: Session = Depends(get
 
 
 @router.get("/{patient_id}/app-link/candidates")
-def app_link_candidates(patient_id: str, db: Session = Depends(get_db)) -> dict:
+def app_link_candidates(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """Records this chart could be linked to: other patients who signed in
     on the app or have a phone — the person's own sign-up, usually."""
     from app.identity import app_status, link_candidates
 
-    patient = _get_patient(db, patient_id)
+    patient = _get_patient(db, scope, patient_id)
+    candidates = link_candidates(db, patient)
+    if not scope.staff:
+        # Only records this console may see are offered: a sign-up on another
+        # hospital's roster is not this clinic's to fold in.
+        visible = set(db.scalars(scope_patients(scope, select(Patient.id))).all())
+        candidates = [c for c in candidates if c["patient_id"] in visible]
     return {"app": app_status(db, patient), "phone": patient.phone or None,
-            "candidates": link_candidates(db, patient)}
+            "candidates": candidates}
 
 
 class LinkBody(BaseModel):
@@ -624,16 +684,19 @@ class LinkBody(BaseModel):
 
 
 @router.post("/{patient_id}/app-link")
-def link_app(patient_id: str, body: LinkBody, db: Session = Depends(get_db)) -> dict:
+def link_app(
+    patient_id: str, body: LinkBody,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
     """Fold another record (the one the app enrolled against) into this
     chart. The app session, thread, tasks and data move here and the other
     record is deleted, so the phone acts as this chart from the next request."""
     from app.identity import IdentityError, app_status, link_app_account
 
-    patient = _get_patient(db, patient_id)
-    source = db.get(Patient, body.from_patient_id)
-    if source is None:
-        raise HTTPException(status_code=404, detail=f"Unknown patient: {body.from_patient_id}")
+    patient = _get_patient(db, scope, patient_id)
+    # Both records must be in scope: the chart, and the sign-up folded in.
+    source = _get_patient(db, scope, body.from_patient_id)
     try:
         result = link_app_account(db, patient, source)
     except IdentityError as e:
@@ -651,34 +714,30 @@ class CreatePatientBody(BaseModel):
     surgery_date: str | None = None  # YYYY-MM-DD
 
 
-def require_hospital_auth(
-    authorization: str | None = Header(default=None), 
-    db: Session = Depends(get_db)
-) -> Hospital:
-    """Require valid hospital access token for dashboard operations."""
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Hospital access token required")
-    token = authorization.split(" ", 1)[1].strip()
-    
-    hospital = db.scalar(select(Hospital).where(Hospital.access_token == token))
-    if hospital is None:
-        raise HTTPException(status_code=401, detail="Invalid hospital access token")
-    if not hospital.active:
-        raise HTTPException(status_code=403, detail="Hospital account inactive")
-    return hospital
-
-
 @router.post("/")
 def create_patient(
-    body: CreatePatientBody, 
-    hospital: Hospital = Depends(require_hospital_auth),
-    db: Session = Depends(get_db)
+    body: CreatePatientBody,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
-    """Create a new patient record for the authenticated hospital."""
-    # Ensure the request matches the authenticated hospital
-    if body.hospital_id != hospital.id:
+    """Create a new patient record on a hospital's roster.
+
+    The console's credential says whose: a hospital credential adds to its
+    own roster only, the staff scope (the global token, or an open console)
+    to any hospital's, and a sports credential has no roster to add to. The
+    per-hospital ``Hospital.access_token`` this route used to check is no
+    longer read; the column stays for the rows that carry one.
+    """
+    if scope.kind == "hospital" and body.hospital_id != scope.org_id:
         raise HTTPException(status_code=403, detail="Cannot create patients for other hospitals")
-    
+    if not scope.clinic:
+        raise HTTPException(status_code=403, detail="This console has no clinic roster to add to")
+    hospital = db.get(Hospital, body.hospital_id)
+    if hospital is None:
+        raise HTTPException(status_code=422, detail=f"Unknown hospital: {body.hospital_id}")
+    if not hospital.active:
+        raise HTTPException(status_code=403, detail="Hospital account inactive")
+
     # Validate procedure type if provided
     from app.api.mobile import PROCEDURE_DISPLAY
     if body.procedure_type and body.procedure_type not in PROCEDURE_DISPLAY:

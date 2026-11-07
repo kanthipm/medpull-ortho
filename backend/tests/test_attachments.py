@@ -12,8 +12,8 @@ from datetime import date
 import pytest
 from sqlalchemy import delete, select
 
+from app.console_credentials import mint
 from app.models.attachment import Attachment
-from app.models.hospital import Hospital
 from app.models.mobile import Message, PatientSession
 from app.models.patient import Patient
 from app.storage import blobs
@@ -204,13 +204,13 @@ def test_withdrawing_a_file_deletes_the_bytes_and_keeps_the_line(client, db, joi
 
 
 def test_the_console_honours_a_hospital_token_without_requiring_one(client, db, joined):
-    """The console has no sign-in: every other route here answers on origin
-    verification alone. A token sent is still checked and still scopes the
-    lookup, so a multi-tenant console keeps the guarantee."""
+    """On an open console (the demo) a request with no token sees every
+    chart, like every other console route. A hospital credential sent anyway
+    is still checked and still scopes the lookup to its own hospital, and a
+    wrong token is refused rather than ignored."""
     pid, _headers = joined
     db.expire_all()
-    db.get(Hospital, "hosp_demo").access_token = "tok-attach"
-    db.commit()
+    _, tok = mint(db, "hospital", "hosp_demo", "attachments test")
 
     # no token: works, like the message route the file hangs off
     bare = client.get(f"/api/patients/{pid}/attachments/upload-ticket",
@@ -224,13 +224,13 @@ def test_the_console_honours_a_hospital_token_without_requiring_one(client, db, 
 
     ok = client.get(f"/api/patients/{pid}/attachments/upload-ticket",
                     params={"content_type": "application/pdf", "byte_size": 200},
-                    headers=_auth("tok-attach"))
+                    headers=_auth(tok))
     assert ok.status_code == 200 and ok.json()["direct"] is True
 
     # a patient at another hospital is not this token's business
     assert client.get("/api/patients/linda/attachments/upload-ticket",
                       params={"content_type": "image/jpeg", "byte_size": 100},
-                      headers=_auth("tok-attach")).status_code == 404
+                      headers=_auth(tok)).status_code == 404
 
 
 def test_the_console_can_send_the_bytes_when_there_is_no_object_store(client, db, joined):
@@ -262,15 +262,14 @@ def test_a_clinician_sends_a_file_and_the_text_never_carries_it(client, db, join
     pid, headers = joined
     sb = Sendblue(monkeypatch)
     db.expire_all()
-    db.get(Hospital, "hosp_demo").access_token = "tok-attach"
-    db.commit()
+    _, tok = mint(db, "hospital", "hosp_demo", "attachments test")
 
     # the clinician's file is uploaded against the patient's chart
     key = client.get(f"/api/patients/{pid}/attachments/upload-ticket",
                      params={"content_type": "application/pdf", "byte_size": len(PDF)},
-                     headers=_auth("tok-attach")).json()["storage_key"]
+                     headers=_auth(tok)).json()["storage_key"]
     blobs.put(key, PDF, "application/pdf")
-    confirmed = client.post(f"/api/patients/{pid}/attachments", headers=_auth("tok-attach"),
+    confirmed = client.post(f"/api/patients/{pid}/attachments", headers=_auth(tok),
                             json={"storage_key": key, "content_type": "application/pdf",
                                   "byte_size": len(PDF), "filename": "home exercises.pdf"})
     assert confirmed.status_code == 200, confirmed.text
@@ -297,22 +296,21 @@ def test_a_clinician_sends_a_file_and_the_text_never_carries_it(client, db, join
 def test_a_confirm_is_refused_when_the_object_never_arrived(client, db, joined):
     pid, _headers = joined
     db.expire_all()
-    db.get(Hospital, "hosp_demo").access_token = "tok-attach"
-    db.commit()
+    _, tok = mint(db, "hospital", "hosp_demo", "attachments test")
     key = client.get(f"/api/patients/{pid}/attachments/upload-ticket",
                      params={"content_type": "image/png", "byte_size": len(PNG)},
-                     headers=_auth("tok-attach")).json()["storage_key"]
+                     headers=_auth(tok)).json()["storage_key"]
     # nothing was uploaded against it
-    resp = client.post(f"/api/patients/{pid}/attachments", headers=_auth("tok-attach"),
+    resp = client.post(f"/api/patients/{pid}/attachments", headers=_auth(tok),
                        json={"storage_key": key, "content_type": "image/png"})
     assert resp.status_code == 409 and "not arrived" in resp.json()["detail"]
 
     # and a second confirm of a real one is refused rather than duplicated
     blobs.put(key, PNG, "image/png")
-    first = client.post(f"/api/patients/{pid}/attachments", headers=_auth("tok-attach"),
+    first = client.post(f"/api/patients/{pid}/attachments", headers=_auth(tok),
                         json={"storage_key": key, "content_type": "image/png"})
     assert first.status_code == 200
-    again = client.post(f"/api/patients/{pid}/attachments", headers=_auth("tok-attach"),
+    again = client.post(f"/api/patients/{pid}/attachments", headers=_auth(tok),
                         json={"storage_key": key, "content_type": "image/png"})
     assert again.status_code == 409 and "already confirmed" in again.json()["detail"]
 

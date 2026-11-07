@@ -2,10 +2,11 @@
 
 Two routers. ``router`` is the athlete's app under ``/api/mobile/sports``:
 joining, the home board, performance, recovery, rehab, logging, devices.
-``team_router`` is the staff dashboard under ``/api/sports`` and follows
-the console's posture (no authentication in this build, like every console
-route): the roster board, an athlete's detail, a message to an athlete,
-the calendar.
+``team_router`` is the staff dashboard under ``/api/sports`` and sits behind
+the console's door like every console route (app/api/auth.py): a team
+credential sees its own board, a sports-org credential every board in its
+program, the staff token every board, and a hospital credential none (404).
+The roster board, an athlete's detail, a message to an athlete, the calendar.
 """
 
 from __future__ import annotations
@@ -22,7 +23,9 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.api import mobile
+from app.api.auth import ConsoleScope, console_scope
 from app.api.mobile import current_patient
+from app.api.scope import require_team
 from app.database import get_db
 from app.models.mobile import Message
 from app.models.patient import Device, Patient
@@ -921,11 +924,9 @@ def disconnect_device(key: str, patient: Patient = Depends(athlete), db: Session
 # =====================================================================================================
 
 
-def _team_or_404(db: Session, team_id: str) -> SportsTeam:
-    team = db.get(SportsTeam, team_id)
-    if team is None:
-        raise HTTPException(status_code=404, detail="Unknown team")
-    return team
+def _team_or_404(db: Session, scope: ConsoleScope, team_id: str) -> SportsTeam:
+    """The board a request is about, if this console may see it (app/api/scope.py)."""
+    return require_team(db, scope, team_id)
 
 
 def _roster(db: Session, team: SportsTeam) -> list[tuple[Patient, SportsProfile]]:
@@ -1006,8 +1007,18 @@ def _athlete_row(db: Session, patient: Patient, profile: SportsProfile, h: dict[
 
 
 @team_router.get("/teams")
-def teams(db: Session = Depends(get_db)) -> dict:
+def teams(db: Session = Depends(get_db), scope: ConsoleScope = Depends(console_scope)) -> dict:
+    if not scope.sports:
+        # A clinic's console has no team boards; the id-less list says so
+        # the same way a board it cannot see would.
+        raise HTTPException(status_code=404, detail="No team boards on this console")
     orgs = identity.orgs_view(db)
+    if scope.kind == "sports_org":
+        orgs = [o for o in orgs if o["id"] == scope.org_id]
+    elif scope.kind == "team":
+        team = _team_or_404(db, scope, scope.org_id)
+        orgs = [o | {"teams": [t for t in o["teams"] if t["id"] == team.id]}
+                for o in orgs if o["id"] == team.org_id]
     counts = dict(db.execute(select(SportsProfile.team_id, func.count()).where(SportsProfile.team_id.is_not(None),
                                                                                  SportsProfile.coach_linked.is_(True))
                              .group_by(SportsProfile.team_id)).all())
@@ -1018,8 +1029,12 @@ def teams(db: Session = Depends(get_db)) -> dict:
 
 
 @team_router.get("/teams/{team_id}/dashboard")
-def team_dashboard(team_id: str, db: Session = Depends(get_db)) -> dict:
-    team = _team_or_404(db, team_id)
+def team_dashboard(
+    team_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    team = _team_or_404(db, scope, team_id)
     org = db.get(SportsOrg, team.org_id)
     today = date.today()
     rows = []
@@ -1107,8 +1122,12 @@ def _event_view(e: SportsEvent) -> dict[str, Any]:
 
 
 @team_router.get("/teams/{team_id}/athletes/{patient_id}")
-def team_athlete(team_id: str, patient_id: str, db: Session = Depends(get_db)) -> dict:
-    team = _team_or_404(db, team_id)
+def team_athlete(
+    team_id: str, patient_id: str,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    team = _team_or_404(db, scope, team_id)
     patient = db.get(Patient, patient_id)
     profile = identity.profile_of(db, patient) if patient else None
     if patient is None or profile is None or profile.team_id != team.id:
@@ -1140,8 +1159,12 @@ class StaffMessageBody(BaseModel):
 
 
 @team_router.post("/teams/{team_id}/athletes/{patient_id}/message")
-def staff_message(team_id: str, patient_id: str, body: StaffMessageBody, db: Session = Depends(get_db)) -> dict:
-    team = _team_or_404(db, team_id)
+def staff_message(
+    team_id: str, patient_id: str, body: StaffMessageBody,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    team = _team_or_404(db, scope, team_id)
     patient = db.get(Patient, patient_id)
     profile = identity.profile_of(db, patient) if patient else None
     if patient is None or profile is None or profile.team_id != team.id:
@@ -1163,8 +1186,12 @@ class StatusBody(BaseModel):
 
 
 @team_router.patch("/teams/{team_id}/athletes/{patient_id}/status")
-def staff_status(team_id: str, patient_id: str, body: StatusBody, db: Session = Depends(get_db)) -> dict:
-    team = _team_or_404(db, team_id)
+def staff_status(
+    team_id: str, patient_id: str, body: StatusBody,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    team = _team_or_404(db, scope, team_id)
     patient = db.get(Patient, patient_id)
     profile = identity.profile_of(db, patient) if patient else None
     if patient is None or profile is None or profile.team_id != team.id:
@@ -1189,8 +1216,12 @@ class EventBody(BaseModel):
 
 
 @team_router.get("/teams/{team_id}/events")
-def team_events(team_id: str, days: int = 21, db: Session = Depends(get_db)) -> dict:
-    team = _team_or_404(db, team_id)
+def team_events(
+    team_id: str, days: int = 21,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    team = _team_or_404(db, scope, team_id)
     today = date.today()
     rows = db.scalars(select(SportsEvent).where(SportsEvent.team_id == team.id, SportsEvent.date >= today - timedelta(days=7),
                                                 SportsEvent.date <= today + timedelta(days=days))
@@ -1199,8 +1230,12 @@ def team_events(team_id: str, days: int = 21, db: Session = Depends(get_db)) -> 
 
 
 @team_router.post("/teams/{team_id}/events")
-def add_event(team_id: str, body: EventBody, db: Session = Depends(get_db)) -> dict:
-    team = _team_or_404(db, team_id)
+def add_event(
+    team_id: str, body: EventBody,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    team = _team_or_404(db, scope, team_id)
     e = SportsEvent(team_id=team.id, date=body.date, kind=body.kind[:24], title=body.title, start_time=body.start_time,
                     opponent=body.opponent, home=body.home, location=body.location, note=body.note)
     db.add(e)
@@ -1209,8 +1244,12 @@ def add_event(team_id: str, body: EventBody, db: Session = Depends(get_db)) -> d
 
 
 @team_router.delete("/teams/{team_id}/events/{event_id}")
-def delete_event(team_id: str, event_id: int, db: Session = Depends(get_db)) -> dict:
-    _team_or_404(db, team_id)
+def delete_event(
+    team_id: str, event_id: int,
+    db: Session = Depends(get_db),
+    scope: ConsoleScope = Depends(console_scope),
+) -> dict:
+    _team_or_404(db, scope, team_id)
     db.execute(delete(SportsEvent).where(SportsEvent.id == event_id, SportsEvent.team_id == team_id))
     db.commit()
     return {"ok": True}

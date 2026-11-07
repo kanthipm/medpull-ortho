@@ -4170,6 +4170,58 @@
         ]
       }
     },
+    "/api/console/session": {
+      "get": {
+        "description": "Who the console is signed in as. The SPA reads it after a token is\nentered (or arrives in a sign-in link) to decide which pages to show and\nwhose name to put beside the brand; a locked console answers 401 to a\nmissing or wrong token like every other console route.",
+        "operationId": "session_api_console_session_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Session Api Console Session Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session",
+        "tags": [
+          "console"
+        ]
+      }
+    },
     "/api/explain": {
       "get": {
         "operationId": "explain_all_api_explain_get",
@@ -9717,7 +9769,7 @@
     },
     "/api/notifications/read-all": {
       "post": {
-        "description": "Clears the bell, so it clears exactly what the bell lists: an out-of-band\nrow marked read here would retire an alert nobody was ever shown.",
+        "description": "Clears the bell, so it clears exactly what the bell lists: an out-of-band\nrow marked read here would retire an alert nobody was ever shown, and\nanother console's alerts are not this one's to retire.",
         "operationId": "mark_all_read_api_notifications_read_all_post",
         "parameters": [
           {
@@ -9829,7 +9881,7 @@
     },
     "/api/patients/": {
       "post": {
-        "description": "Create a new patient record for the authenticated hospital.",
+        "description": "Create a new patient record on a hospital's roster.\n\nThe console's credential says whose: a hospital credential adds to its\nown roster only, the staff scope (the global token, or an open console)\nto any hospital's, and a sports credential has no roster to add to. The\nper-hospital ``Hospital.access_token`` this route used to check is no\nlonger read; the column stays for the rows that carry one.",
         "operationId": "create_patient_api_patients__post",
         "parameters": [
           {
@@ -12735,6 +12787,24 @@
     "/api/sports/teams": {
       "get": {
         "operationId": "teams_api_sports_teams_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -12747,6 +12817,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Teams",
@@ -12775,6 +12855,22 @@
             "schema": {
               "title": "Patient Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -12828,6 +12924,22 @@
             "schema": {
               "title": "Patient Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -12892,6 +13004,22 @@
               "title": "Patient Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "requestBody": {
@@ -12945,6 +13073,22 @@
             "schema": {
               "title": "Team Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13000,6 +13144,22 @@
               "title": "Days",
               "type": "integer"
             }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -13041,6 +13201,22 @@
             "schema": {
               "title": "Team Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -13104,6 +13280,22 @@
             "schema": {
               "title": "Event Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],

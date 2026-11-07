@@ -21,10 +21,10 @@ against, so step 1 says so and step 2 becomes a plain upload to this API.
 
 Reading is a mint too: a short-lived link per request, after the row has been
 checked against the caller. Patients are identified by their app session and
-may only ever reach their own; the console is identified by its hospital
-token and may only reach that hospital's patients — which is stricter than
-the rest of the console, whose routes have no caller identity at all, and
-deliberately so, because the payload here is a photograph of a wound.
+may only ever reach their own; the console is identified by its credential
+(app/api/auth.py) and may only reach the charts in that credential's scope,
+a hospital token its own hospital's — the same rule as the rest of the
+console, and the payload here is a photograph of a wound.
 """
 
 from __future__ import annotations
@@ -38,8 +38,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.auth import ConsoleScope, console_scope
 from app.api.mobile import current_patient
-from app.api.patients import require_hospital_auth
+from app.api.scope import require_patient
 from app.database import get_db
 from app.models.attachment import Attachment
 from app.models.mobile import Message
@@ -50,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 # The patient app's half: authorised by the app session.
 router = APIRouter(prefix="/mobile/attachments", tags=["attachments"])
-# The console's half: authorised by the hospital token, and scoped to it.
+# The console's half: authorised by the console credential, and scoped to it.
 console_router = APIRouter(prefix="/patients/{patient_id}/attachments", tags=["attachments"])
 
 # A ticket is minted without a row, so an upload nobody confirms leaves an
@@ -436,32 +437,14 @@ def withdraw(
 
 def console_patient(
     patient_id: str,
-    authorization: str | None = Header(default=None),
+    scope: ConsoleScope = Depends(console_scope),
     db: Session = Depends(get_db),
 ) -> Patient:
-    """The chart a console request is about.
-
-    The console has no sign-in in this deployment: every other route on this
-    surface answers on CloudFront origin verification alone. Demanding a
-    hospital token here alone would make the feature unreachable without
-    making the thread these files hang on any more private — the message
-    text beside a wound photo is already served without one.
-
-    So a token is honoured rather than required. Sent, it is checked (a
-    wrong one is refused, not ignored) and it pins the lookup to that
-    hospital, which is the guarantee a multi-tenant console will need.
-    Absent, this behaves like the rest of the console.
-    """
-    if authorization is not None:
-        hospital = require_hospital_auth(authorization, db)
-        patient = db.get(Patient, patient_id)
-        if patient is None or patient.hospital_id != hospital.id:
-            raise HTTPException(status_code=404, detail=f"Unknown patient: {patient_id}")
-        return patient
-    patient = db.get(Patient, patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail=f"Unknown patient: {patient_id}")
-    return patient
+    """The chart a console request is about, as the console's credential
+    sees it: a hospital token reaches its own hospital's charts and 404s on
+    any other, the staff token (or an open console) every chart. The same
+    rule every console route follows (app/api/scope.py)."""
+    return require_patient(db, scope, patient_id)
 
 
 @console_router.get("/upload-ticket")
