@@ -45,7 +45,7 @@ Generated: clinic `ana dana helen kevin lucia marcus omar rosa tom` (hosp_demo),
 ## Steps, in order
 
 ### 0. Ship the merged code to the real stack  [AWS]
-`DEMO_MODE=true ./infra/deploy.sh` one last time in demo mode (the data is still mixed), which also creates the two KMS keys, switches both buckets to SSE-KMS for new objects and tags every resource. Check `make audit-compartments` afterwards. Existing objects stay SSE-S3 until `infra/reencrypt.sh` runs (optional, any time).
+`DEMO_MODE=true ./infra/deploy.sh` one last time in demo mode (the data is still mixed), which also creates the two KMS keys (`alias/recovery-copilot-clinic`, `-personal`), switches both buckets to SSE-KMS for new objects (the app now presigns with SigV4, which SSE-KMS requires) and tags every resource. Smoke-test one attachment upload from a phone afterwards and run `make audit-compartments AUDIT="--stack recovery-copilot"`. Existing objects stay SSE-S3 until `./infra/reencrypt.sh` runs (`--dry-run` first; optional, any time).
 
 ### 1. Create the demo stack  [AWS]
 - `cp .env.demo.example .env.demo`; set `STACK_NAME=medpull-demo`, `DEMO_MODE=true`, `SEED=none` (the database is copied in step 2, not seeded), `ALLOW_MOCK_WEBHOOK=true`, `SENDBLUE_VERIFIED_CONTACTS_ONLY=false`, the demo Groq key, the Sendblue API key and secret from `.env` (outbound only — no `SENDBLUE_WEBHOOK_SECRET`, no Junction keys), `SITE_DOMAIN=demo.medpull.org`, `SITE_CERTIFICATE_ARN=arn:aws:acm:us-east-1:556683673972:certificate/4a262c26-1fc5-4803-ab5e-088c5c835c03` (its primary name is demo.medpull.org; a certificate may serve two distributions).
@@ -67,7 +67,7 @@ A CNAME from `demo.medpull.org` to the distribution domain step 1 printed, in th
 - Nothing to change at Sendblue, Junction or App Store Connect: their webhooks already point at this stack.
 
 ### 5. Account hygiene  [AWS]
-`./infra/account.sh --dry-run`, then `./infra/account.sh --user <steve> --user <kanthi> [--trail-bucket medpull-cloudtrail-logs-1759818803]`: IAM group with AdministratorAccess and an MFA requirement, one-time passwords printed once, GuardDuty on, cost-allocation tags activated (may need a rerun a day after the first tagged deploy), the CloudTrail bucket policy. Then `TRAIL_BUCKET_NAME=medpull-cloudtrail-logs-1759818803` in `.env` and `./infra/deploy.sh --stack-only` for the trail. Stop using root after the users exist.
+`./infra/account.sh --dry-run`, then `./infra/account.sh --user <steve> --user <kanthi>`: IAM group `medpull-admins` with AdministratorAccess and an MFA requirement, one-time passwords printed once (each person then sets a password and registers MFA in the console), GuardDuty on, cost-allocation tags activated (reports "not on a bill yet" until a day after the first tagged deploy; rerun then). The account already has a trail (`medpull-audit-trail` → `medpull-cloudtrail-logs-1759818803`, management events only, and its bucket policy already allows CloudTrail), so put `TRAIL_BUCKET=medpull-cloudtrail-logs-1759818803` and `TRAIL_MANAGEMENT_EVENTS=false` in both env files and `./infra/deploy.sh --stack-only` on each stack: the per-stack trails then add only the S3 data events for the data buckets. Root has access keys: delete them in the console once the users work, and stop using root.
 
 ### 6. Later, not blocking
 - `app.medpull.org` as a second alias on the real stack (the template takes one `CustomDomainName` today; extend to a list) and the apps rebuilt against `https://app.medpull.org`; retire the redirect distribution in the other account.
@@ -76,5 +76,5 @@ A CNAME from `demo.medpull.org` to the distribution domain step 1 printed, in th
 
 ## Checks after each AWS step
 - `curl https://<host>/api/health` → `demo` true on the demo, false on the real stack; `console_auth` true on the real stack.
-- `make audit-compartments` against each stack: no real person on the demo, no persona on the real stack, every org with a credential.
+- `make audit-compartments AUDIT="--stack recovery-copilot"` and `AUDIT="--stack medpull-demo"`: no real person on the demo, no persona on the real stack, every org with a credential, both buckets on their keys.
 - A phone signed in as Steve still refreshes (real stack unchanged).
