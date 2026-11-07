@@ -12,7 +12,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import type { CSSProperties, ReactNode } from 'react'
-import { useIntegrations, useJunctionStatus } from '../../api/queries'
+import { useIntegrations, useIsDemo, useJunctionStatus } from '../../api/queries'
 import type {
   AggregatorStatus,
   IntegrationProvider,
@@ -190,7 +190,11 @@ function Code({ children }: { children: ReactNode }) {
   )
 }
 
-function AggregatorCard({ a, events }: { a: AggregatorStatus; events: JunctionEvent[] | undefined }) {
+function AggregatorCard({ a, events, demo }: {
+  a: AggregatorStatus
+  events: JunctionEvent[] | undefined
+  demo: boolean
+}) {
   const endpoint = `${window.location.origin}${a.webhook_path}`
   return (
     <section
@@ -224,15 +228,17 @@ function AggregatorCard({ a, events }: { a: AggregatorStatus; events: JunctionEv
           <>
             Each patient gets one Junction account, issued from their record. Every device they
             link on Junction’s page delivers through <Code>{a.webhook_path}</Code> into the same
-            observation store the demo source uses, so the worklist never learns which brand the
+            observation store every other source uses, so the worklist never learns which brand the
             data came from.
           </>
         ) : (
           <>
             The connector is built and idle. Set <Code>JUNCTION_API_KEY</Code> and{' '}
             <Code>JUNCTION_WEBHOOK_SECRET</Code> (in <Code>.env</Code>, or Parameter Store on
-            AWS), then register the endpoint below in Junction’s webhook dashboard. Until then
-            this workspace runs on the demo data source.
+            AWS), then register the endpoint below in Junction’s webhook dashboard.
+            {demo
+              ? ' Until then this workspace runs on the demo data source.'
+              : ' Until then no device can be linked to a chart.'}
           </>
         )}
       </p>
@@ -292,6 +298,7 @@ function AggregatorCard({ a, events }: { a: AggregatorStatus; events: JunctionEv
 
 export default function IntegrationsPage() {
   const { data, isLoading, isError } = useIntegrations()
+  const demo = useIsDemo()
   const configured = data?.aggregator.configured ?? false
   const status = useJunctionStatus(configured)
 
@@ -335,7 +342,7 @@ export default function IntegrationsPage() {
     <div className="pb-10">
       {header}
 
-      <AggregatorCard a={data.aggregator} events={status.data?.recent_events} />
+      <AggregatorCard a={data.aggregator} events={status.data?.recent_events} demo={demo} />
 
       {GROUPS.map((g, i) => {
         const rows = providers.filter((p) => GROUP_OF[p.status] === g.key)

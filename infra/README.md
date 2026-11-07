@@ -30,6 +30,7 @@ demo database, and prints a URL.
                          └── Groq over the public internet — no VPC, no NAT
                                             │
                        S3 (private) · db/recovery.db + web/ (built SPA)
+                                      + web/patient/ (patient web app, at /patient/)
                        CloudWatch Logs · 14-day retention
 ```
 
@@ -117,9 +118,10 @@ recommends against creating them at all.
 ### Options
 
 ```bash
-./infra/deploy.sh                  # build, deploy, seed on first run
-./infra/deploy.sh --reseed         # rebuild the demo database (dates shift to today)
-./infra/deploy.sh --backend-only   # skip the frontend build and upload
+./infra/deploy.sh                  # the real app, from .env: build, deploy, never seed
+./infra/deploy.sh --env .env.demo  # the public demo stack, from .env.demo: seeds on first run
+./infra/deploy.sh --reseed         # rebuild the demo database (dates shift to today; demo stack only)
+./infra/deploy.sh --backend-only   # skip the frontend builds and uploads (console and patient app)
 ./infra/deploy.sh --stack-only     # template and parameters only; ships no code
 ```
 
@@ -131,8 +133,12 @@ mid-change without shipping that change.
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
 | `AWS_REGION` | `us-east-1` | Deployment region |
-| `STACK_NAME` | `recovery-copilot` | CloudFormation stack name |
-| `GROQ_API_KEY` | — | Skips the prompt; also read from `recovery-copilot/.env` |
+| `ENV_FILE` | `.env` | Which env file the rest is read from (`--env FILE` does the same) |
+| `STACK_NAME` | `recovery-copilot` | CloudFormation stack name, and the SSM prefix its secrets live under; also read from the env file |
+| `DEMO_MODE` | `false` | `true` on the public demo only: welcome screen, roster caption, seed allowed |
+| `SEED` | follows `DEMO_MODE` | `demo` invokes the seed function when the database is missing (or `--reseed`); `none` never does |
+| `ALLOW_MOCK_WEBHOOK` | `false` | Opens the unsigned demo webhook; demo stack only |
+| `GROQ_API_KEY` | — | Skips the prompt; also read from the env file |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | Overrides the model |
 | `CONSOLE_ACCESS_TOKEN` | — | Locks the console behind this bearer token (stored in SSM). Unset, the console stays open; `generate` mints one and prints it once |
 | `JUNCTION_API_KEY` | — | Stored in SSM on first deploy; also read from `.env`. Optional — without it the wearable connector stays idle |
@@ -144,6 +150,43 @@ mid-change without shipping that change.
 | `SITE_CERTIFICATE_ARN` | — | ISSUED ACM certificate in us-east-1 covering `SITE_DOMAIN`; also read from `.env` |
 | `BUDGET_EMAIL` | — | Enables the monthly cost alarm |
 | `API_RESERVED_CONCURRENCY` | `5` | `-1` leaves concurrency unreserved |
+
+## Two deployments
+
+The real app and the public demo are two stacks from one repo, told apart by
+one setting the server owns, `DEMO_MODE`, and by which env file the deploy
+reads:
+
+| | Real app | Public demo |
+| --- | --- | --- |
+| Env file | `.env` | `.env.demo` (from `.env.demo.example`) |
+| `STACK_NAME` | `recovery-copilot` | `medpull-demo` |
+| Host | `app.medpull.org` | `demo.medpull.org` |
+| `DEMO_MODE` | `false` | `true` |
+| Console | locked (`CONSOLE_ACCESS_TOKEN`) | open |
+| Database | real charts only, never seeded | the fake roster, reseedable |
+| Integrations | Junction, Sendblue, care-team phones | none |
+| Mock webhook | closed | open (`ALLOW_MOCK_WEBHOOK=true`) |
+| Make targets | `deploy`, `deploy-backend`, `destroy` | `deploy-demo`, `deploy-demo-backend`, `reseed-demo`, `destroy-demo` |
+
+Every secret is stored under `/<STACK_NAME>/…` in Parameter Store, so the two
+stacks cannot share a console token, an origin secret or a webhook secret,
+and `destroy.sh --delete-secrets` on one leaves the other's alone. The
+free-tier allowances are per account, so the second stack adds cents, not
+dollars.
+
+What `DEMO_MODE` changes in the code: `/api/health` reports it as `demo`,
+the console shows the welcome screen and the "demo roster" caption only when
+it is true, and `app/seed/seed.py` refuses to run when it is false (an
+operator can still pass `force` to the seed function by hand). A real stack
+with no database serves an empty schema from its first request; charts
+arrive from the patient app and the clinic.
+
+Standing the demo up for the first time: request a certificate for
+`demo.medpull.org` (the *Custom domain* steps below, with the demo's own
+ARN in `.env.demo`), `make deploy-demo`, then fill the persona roster with
+`uv run python scripts/push_demo_fill.py --bucket <demo data bucket>` from
+`backend/`, and hand the CNAME the deploy prints to the zone owner.
 
 ## Custom domain
 
@@ -189,6 +232,10 @@ The sequence, with what runs where:
 Removing the domain is `SITE_DOMAIN=`/`SITE_CERTIFICATE_ARN=` and another
 `--stack-only` deploy; the `*.cloudfront.net` URL keeps working throughout.
 
+The demo stack goes through the same four steps for `demo.medpull.org`: its
+own certificate (or one certificate listing both names), its own validation
+and traffic CNAMEs, and the ARN in `.env.demo` rather than `.env`.
+
 ## The Groq hookup
 
 Unchanged from local: the provider chain is still **Groq → deterministic
@@ -203,14 +250,16 @@ environment where any console reader would see it.
 To rotate it:
 
 ```bash
-aws ssm put-parameter --name /recovery-copilot/groq-api-key \
+aws ssm put-parameter --name /<stack>/groq-api-key \
   --type SecureString --value "gsk_..." --overwrite
 ```
 
-New cold starts pick it up; force it immediately by redeploying the function.
+where `<stack>` is the stack name: `recovery-copilot` for the real app,
+`medpull-demo` for the demo. New cold starts pick it up; force it
+immediately by redeploying the function.
 
-The two Junction secrets follow the same path (`/recovery-copilot/junction-api-key`
-and `/recovery-copilot/junction-webhook-secret`, read into
+The two Junction secrets follow the same path (`/<stack>/junction-api-key`
+and `/<stack>/junction-webhook-secret`, read into
 `settings.junction_api_key` / `settings.junction_webhook_secret`). Register
 `https://<CloudFront domain>/api/webhooks/wearables/junction` as the endpoint in
 Junction's webhook dashboard, store the `whsec_…` secret it shows, and
@@ -255,10 +304,18 @@ The graduation path is to point `DATABASE_URL` at Postgres and delete
 ### Reseeding
 
 The roster is generated relative to the seed date, so a database seeded in July
-shows drifting post-op days by September. `./infra/deploy.sh --reseed` rebuilds
-it (and discards anything entered through the UI). It runs on a separate
-`-seed` function because warming every insight through Groq takes minutes,
-well past the API function's 45-second timeout.
+shows drifting post-op days by September. `make reseed-demo`
+(`./infra/deploy.sh --env .env.demo --reseed`) rebuilds it and discards
+anything entered through the UI. It runs on a separate `-seed` function
+because warming every insight through Groq takes minutes, well past the API
+function's 45-second timeout.
+
+The seed refuses two kinds of database: one whose stack is not in demo mode,
+and one where any patient has a phone number or an app session (someone
+real is behind the record). So `make reseed` against the real app does
+nothing but wait; when the deploy gives up it prints the function's last log
+lines, which carry the refusal. Passing `force` to the seed function by hand
+is the only way past either, and nothing in these scripts does.
 
 ## The personal tier
 
@@ -301,7 +358,7 @@ verb; `uvx --from awscli aws …` if the installed one lacks it).
 Manual run, when needed:
 
 ```bash
-aws lambda invoke --function-name recovery-copilot-api \
+aws lambda invoke --function-name <stack>-api \
   --payload '{"action":"personal_daily","text":false}' \
   --cli-binary-format raw-in-base64-out /dev/stdout
 ```
@@ -391,12 +448,13 @@ provider would replace.
 
 ## Security posture
 
-The console ships **open by default**, for the public demo. Set
+The demo stack's console is open; the real app's is locked. Set
 `CONSOLE_ACCESS_TOKEN` at deploy time and every console route needs that
 bearer token, which the SPA asks for on `/login`; the patient app, the
 token-link pages and the webhooks keep their own credentials. Without it,
 anyone with the CloudFront URL can call every console API route, the write
-paths among them. What the stack adds either way:
+paths among them, which is why `deploy.sh` warns when a stack with
+`DEMO_MODE=false` has no token. What the stack adds either way:
 
 - The S3 bucket is private. CloudFront reaches the SPA through an Origin Access
   Control; the `db/` prefix is not reachable through the distribution at all.
@@ -429,8 +487,8 @@ seeded roster is synthetic.
 | --- | --- |
 | `cloudformation.yaml` | The whole stack, one template |
 | `build-lambda.sh` | Builds the arm64 deployment zip from `uv.lock` |
-| `deploy.sh` | Build → deploy → upload SPA → seed → invalidate → smoke test |
-| `destroy.sh` | Tears it down; keeps the database and the SSM parameters unless `--delete-data` / `--delete-secrets` |
+| `deploy.sh` | Build → deploy → upload SPA → seed (demo only) → invalidate → smoke test; `--env FILE` picks the stack |
+| `destroy.sh` | Tears one stack down; keeps the database and the SSM parameters unless `--delete-data` / `--delete-secrets` |
 
 Application-side code lives in `backend/app/aws/` and
 `backend/app/lambda_handler.py`, covered by `backend/tests/test_aws_storage.py`
@@ -449,14 +507,15 @@ and `backend/tests/test_lambda_handler.py`.
   the function disagree about the origin secret. Redeploy — `deploy.sh` reads
   it from Parameter Store, so both sides end up consistent.
 
-**`/api/health` reports `db_ok: false`.** The database object is missing. Run
-`./infra/deploy.sh --reseed`.
+**`/api/health` reports `db_ok: false`.** The database object is missing. On
+the demo, `make reseed-demo`; on the real app the first write creates an
+empty schema, so make a request and look again.
 
 **`llm_provider` is `fallback` when a key is set.** Either the key is missing
 from Parameter Store, or Groq is inside its 3-minute cooldown. The cooldown is
 armed by a failed call and also by three consecutive completions that parse but
 fail the product's output validation. Check the function logs:
-`aws logs tail /aws/lambda/recovery-copilot-api --follow`.
+`aws logs tail /aws/lambda/<stack>-api --follow`.
 
 **Stack fails on `ReservedConcurrentExecutions`.** The account's concurrency
 limit is too low to reserve any (new accounts sometimes start at 10). `deploy.sh`

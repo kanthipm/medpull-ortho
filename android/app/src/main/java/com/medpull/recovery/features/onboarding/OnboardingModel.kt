@@ -24,11 +24,12 @@ import com.medpull.recovery.core.resendVerification
 import com.medpull.recovery.core.search
 import com.medpull.recovery.core.verificationStatus
 import com.medpull.recovery.core.verify
+import com.medpull.recovery.features.consent.agreed
+import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
-import java.time.LocalDate
 
-enum class Step { WELCOME, MODE, CONSENT, HOSPITAL, PATH, IDENTITY, JOIN, VERIFY, HEALTH, WEARABLE, DONE, PERSONAL_SOON }
+enum class Step { WELCOME, MODE, CONSENT, HOSPITAL, PATH, IDENTITY, JOIN, VERIFY, HEALTH, WALKS, WEARABLE, DONE, PERSONAL_SOON }
 enum class Path { FIND_RECORD, JOIN_GENERAL, JOIN_AFTER_SURGERY }
 
 data class OnboardingState(
@@ -50,12 +51,10 @@ data class OnboardingState(
     val canEnroll get() = selected != null && phoneDigits(phone).length >= 10 && hospital != null
     val canJoin get() = name.trim().length >= 2 && phoneDigits(phone).length >= 10 && hospital != null &&
         (!hadSurgery || procedure != null)
-    val canAgree get() = consent != null && consent.scopes.filter { it.required }.all { consentScopes[it.key] == true } &&
-        signature.trim().length >= 2
+    val canAgree get() = consent?.agreed(consentScopes, signature) == true
 }
 
 fun phoneDigits(s: String) = s.filter { it.isDigit() }
-fun e164(s: String): String { val d = phoneDigits(s); return if (d.length == 10) "+1$d" else if (s.startsWith("+")) "+$d" else "+$d" }
 
 /** The onboarding flow's state and calls, mirroring ios OnboardingModel.swift. */
 class OnboardingModel(private val api: ApiClient, private val app: AppModel, private val config: AppConfig) {
@@ -94,7 +93,7 @@ class OnboardingModel(private val api: ApiClient, private val app: AppModel, pri
         if (name.length < 2) { state.update { it.copy(candidates = emptyList(), selected = null) }; return }
         state.update { it.copy(searching = true) }
         try {
-            val phone = e164(s.phone).takeIf { phoneDigits(s.phone).length >= 10 }
+            val phone = s.phone.trim().takeIf { phoneDigits(it).length >= 10 }
             val found = api.search(SearchBody(hospital.id, name, phone))
             state.update { it.copy(candidates = found, selected = if (found.size == 1) found[0] else it.selected?.takeIf { sel -> found.any { f -> f.patientId == sel.patientId } }) }
         } catch (e: Exception) {
@@ -103,7 +102,7 @@ class OnboardingModel(private val api: ApiClient, private val app: AppModel, pri
     }
 
     suspend fun enroll(): Step? = guarded {
-        val r = api.enroll(EnrollBody(s.selected!!.patientId, s.hospital!!.id, e164(s.phone), s.accepted,
+        val r = api.enroll(EnrollBody(s.selected!!.patientId, s.hospital!!.id, s.phone.trim(), s.accepted,
             AppConfig.deviceName, config.appVersion))
         handle(r)
     }
@@ -112,7 +111,7 @@ class OnboardingModel(private val api: ApiClient, private val app: AppModel, pri
         state.update { it.copy(working = true, error = null) }
         return try {
             val r = api.join(JoinBody(
-                s.hospital!!.id, s.name.trim(), e164(s.phone), s.dateOfBirth?.toString(), s.hadSurgery,
+                s.hospital!!.id, s.name.trim(), s.phone.trim(), s.dateOfBirth?.toString(), s.hadSurgery,
                 if (s.hadSurgery) s.procedure?.id else null, if (s.hadSurgery) s.surgeryDate.toString() else null,
                 s.accepted, AppConfig.deviceName, config.appVersion,
             ))

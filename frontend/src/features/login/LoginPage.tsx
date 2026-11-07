@@ -2,15 +2,12 @@ import { KeyRound } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, clearConsoleToken, fetchJson, setConsoleToken } from '../../api/client'
+import type { Health } from '../../api/types'
 
 /** `/login` — the console's one door. The server says on /api/health whether
- *  it wants a token at all; an open deployment (the public demo) is sent
- *  straight through. A token is checked against a cheap console route
- *  before it is kept, so a typo is caught here and not on the worklist. */
-
-interface Health {
-  console_auth: boolean
-}
+ *  it wants a token at all; an open deployment is sent straight through. A
+ *  token is checked against a cheap console route before it is kept, so a
+ *  typo is caught here and not on the worklist. */
 
 export default function LoginPage() {
   const navigate = useNavigate()

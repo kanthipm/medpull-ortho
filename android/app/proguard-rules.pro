@@ -6,7 +6,3 @@
 -keep,includedescriptorclasses class com.medpull.recovery.**$$serializer { *; }
 -keepclassmembers class com.medpull.recovery.** { *** Companion; }
 -keepclasseswithmembers class com.medpull.recovery.** { kotlinx.serialization.KSerializer serializer(...); }
-# Retrofit
--keepattributes Signature, Exceptions
--dontwarn org.codehaus.mojo.animal_sniffer.*
--dontwarn javax.annotation.**

@@ -181,15 +181,27 @@ stale. `.github/workflows/ci.yml` runs all three on every push.
 ## Deploying
 
 ```bash
-make deploy      # or: ./infra/deploy.sh
+make deploy        # the real app: app.medpull.org, from .env
+make deploy-demo   # the public demo: demo.medpull.org, from .env.demo
 ```
 
-Puts the backend on AWS Lambda behind CloudFront, sized to sit inside the
-always-free tier — steady-state cost is a few cents a month. Runbook, cost
+Two stacks from one repo, each on AWS Lambda behind CloudFront and sized to
+sit inside the always-free tier — steady-state cost is a few cents a month
+for both. The real app holds real charts, its console is locked behind the
+access token, and it is never seeded: with `DEMO_MODE=false` the seed
+function refuses to run. The demo is seeded with the fake roster, shows the
+welcome screen and the "demo roster" caption, and is open; the console learns
+which one it is from `/api/health`, not from a hostname. Runbook, cost
 breakdown and the write-concurrency design: **[infra/README.md](infra/README.md)**.
 
 The application code is unchanged by this: `app/aws/` disables itself when
 `S3_BUCKET` is unset, so `make dev` behaves exactly as it always did.
+
+The patient web app (`patient-web/`, `make dev-patient-web` /
+`make build-patient-web`) ships with the same command: `deploy.sh` builds it
+and uploads it to `web/patient/`, so it is served at `/patient/` on the
+console's own host (https://demo.medpull.app/patient/ today), same origin, same
+`/api`. On a computer it draws itself inside a phone-sized frame.
 
 ### LLM setup
 
@@ -596,9 +608,9 @@ environment): the backend then serves `apple-app-site-association` at
 `/.well-known/` for local runs, and `deploy.sh` uploads the same JSON beside
 the SPA, where the CloudFront rewrite exempts it so Apple can fetch it. The
 Android equivalent, `/.well-known/assetlinks.json`, works the same way from
-`ANDROID_CERT_SHA256` once there is an Android app to open. Not built yet: push notifications (texts are the
-notification channel), Android, and a scheduled daily check-in (the console
-assigns tasks; nothing creates one on a timer).
+`ANDROID_CERT_SHA256` (the Android app is below). Not built yet: push
+notifications (texts are the notification channel) and a scheduled daily
+check-in (the console assigns tasks; nothing creates one on a timer).
 
 ## The Android app (`android/`)
 
@@ -619,10 +631,13 @@ the same `/api/mobile/*` routes. What differs is what the phone can produce:
   gyroscope, gravity, barometer, step counter and optional GPS in a
   foreground service and upload them with `platform: "android"`; the server
   converts the frame and computes every number.
-- **Passive walks** (`motion/PassiveCapture.kt`): opt-in from Connections,
-  the Activity Recognition API starts a two-minute recording when the person
-  starts walking, at most once every half hour, uploaded as a `free_living`
-  bout. This is the Android stand-in for Apple's passive daily gait.
+- **Passive walks** (`motion/PassiveCapture.kt`): on by default once the
+  person grants Physical Activity (asked as the last onboarding step, nudged
+  from Today until then, switched off from Connections). The Activity
+  Recognition API starts a two-minute recording when the person starts
+  walking, at most once every half hour, uploaded as a `free_living` bout
+  behind a silent, dismissible notification. Re-armed after reboot. This is
+  the Android stand-in for Apple's passive daily gait.
 - **Care**: the thread with photos, video, voice notes and files, with the
   same size budgets as the iPhone, and the copilot through the platform
   speech recogniser and synthesiser.
@@ -649,36 +664,37 @@ design system. It has no Apple Health step: HealthKit is the phone's, and the
 Connections sheet only reports what the iPhone app connected. The Personal
 tier and Sports are not part of it.
 
-`make dev-patient-web` serves it at http://localhost:5174/patient/ beside the
+`make dev-patient-web` serves it at http://localhost:5174/ beside the
 console (`make dev-frontend`); `./infra/deploy.sh` builds it and uploads
 `patient-web/dist` to `web/patient/` in the data bucket, and the CloudFront
 rewrite function routes `/patient/*` to its own `index.html`, so it lives at
-`https://app.medpull.org/patient/`. Details and the Swift → TypeScript file
+`/patient/` on the console's host (https://demo.medpull.app/patient/ today).
+Details and the Swift → TypeScript file
 map are in `patient-web/README.md`.
 
 ## Not in v1
 
-- **Auth.** Deliberately open for demos. Every console route is
-  unauthenticated, write paths included (escalations, task assignment, record
-  merges, and the Junction lifecycle: whoever can reach the console can issue
-  a Junction Link for any patient, trigger a back-fill, or disconnect an
-  account). The webhooks are the exception — Junction's is verified against
-  its Svix signature, Apple's against its certificate chain, and the unsigned
-  demo webhook is closed unless `ALLOW_MOCK_WEBHOOK=true` — but binding a
-  device to a patient is a console action, and the console has no login. That
-  is the gap to close before any real patient is linked. Running locally, `/docs`, `/redoc` and `/openapi.json` are open too;
+- **Auth.** One shared console token (`CONSOLE_ACCESS_TOKEN`), set on the
+  real deployment and absent on the public demo, which stays open on
+  purpose. Set, every console route needs it, write paths included
+  (escalations, task assignment, record merges, and the Junction lifecycle);
+  there are no per-user accounts, roles or an audit trail yet. The webhooks
+  carry their own credentials — Junction's is verified against its Svix
+  signature, Apple's against its certificate chain, and the unsigned demo
+  webhook is closed unless `ALLOW_MOCK_WEBHOOK=true`, which only the demo
+  stack sets. Running locally, `/docs`, `/redoc` and `/openapi.json` are open too;
   on AWS only `/api/*` is routed to the function, so those three are not
   reachable there. The demo server does contain the SPA catch-all to the built
   bundle and 404s unmatched `/api/*` paths rather than falling through to
   index.html, so it will not serve the database or read outside the bundle. That
   is containment, not authentication.
-- **Android Health Connect and Terra.** Apple Health arrives through
-  Junction's SDK inside the iOS app; Health Connect needs the same SDK inside
-  an Android app, which does not exist. Terra stays scaffolded. See the
+- **Terra.** Apple Health and Health Connect arrive through Junction's SDKs
+  inside the iPhone and Android apps; Terra stays scaffolded. See the
   wearable section above.
 - **Email delivery.** The email channel stub records intent only; SMS is
   real through Sendblue, and the preferences API refuses to enable a channel
   that would deliver nowhere.
-- **Push notifications and Android.** The patient app is iOS only and is
-  told about new tasks by text, not push (see "The patient app").
+- **Push notifications.** Both patient apps are told about new tasks by
+  text, not push (see "The patient app"). The MedPull Personal tier is
+  iPhone only; the Android app and the web app are the clinic product.
 - **FHIR export, multi-clinic tenancy.**

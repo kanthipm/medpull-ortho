@@ -32,6 +32,8 @@ class SpeechController(private val context: Context) {
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+    /** A reply asked for while the engine was still starting; spoken once it is. */
+    private var queued: String? = null
 
     val available: Boolean get() = SpeechRecognizer.isRecognitionAvailable(context)
 
@@ -79,19 +81,25 @@ class SpeechController(private val context: Context) {
     }
 
     fun speak(text: String) {
-        val engine = tts ?: TextToSpeech(context) { status ->
+        if (text.isBlank()) return
+        if (ttsReady) { say(text); return }
+        // Not ready yet (first use, or the engine is still starting): keep the
+        // latest reply and say it when the engine reports in.
+        queued = text
+        if (tts != null) return
+        tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
-            if (ttsReady) { pickVoice(); say(text) }
+            if (!ttsReady) { queued = null; _error.value = "Spoken replies aren't available on this phone."; return@TextToSpeech }
+            pickVoice()
+            queued?.let { say(it) }
+            queued = null
         }.also {
-            tts = it
             it.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) { _speaking.value = true }
                 override fun onDone(utteranceId: String?) { _speaking.value = false }
                 @Deprecated("Deprecated in Java") override fun onError(utteranceId: String?) { _speaking.value = false }
             })
-            return
         }
-        if (ttsReady) say(text) else engine.setOnUtteranceProgressListener(null)
     }
 
     private fun say(text: String) {
@@ -109,7 +117,7 @@ class SpeechController(private val context: Context) {
         if (best != null) engine.voice = best else engine.language = Locale.US
     }
 
-    fun stopSpeaking() { tts?.stop(); _speaking.value = false }
+    fun stopSpeaking() { queued = null; tts?.stop(); _speaking.value = false }
 
     fun release() {
         recognizer?.destroy(); recognizer = null

@@ -2,6 +2,9 @@ package com.medpull.recovery.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -102,11 +105,22 @@ fun MainTabs() {
         if (route != target) nav.navigateTab(target)
     }
     LaunchedEffect(state.showConnections) { if (state.showConnections) { nav.navigate(Routes.CONNECTIONS); app.showConnections(false) } }
+    // A task link can arrive while Profile, Connections or a detail screen is
+    // up, where Today (which opens it) is not composed: bring Today back first.
+    LaunchedEffect(state.pendingTaskId) {
+        val id = state.pendingTaskId ?: return@LaunchedEffect
+        val current = nav.currentDestination?.route
+        android.util.Log.d("MedPull", "pending task $id on $current")
+        // Today is usually underneath a pushed screen: pop back to it; otherwise switch tabs.
+        if (current != Routes.TODAY && !nav.popBackStack(Routes.TODAY, inclusive = false)) nav.navigateTab(Routes.TODAY)
+    }
 
-    Scaffold(
-        containerColor = c.canvas,
+    FogBackground { Scaffold(
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
         bottomBar = {
-            if (route in Routes.tabs) NavigationBar(containerColor = c.panel, tonalElevation = 0.dp) {
+            if (route in Routes.tabs) Column {
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(0.75.dp).background(c.hairline))
+                NavigationBar(containerColor = c.panel, tonalElevation = 0.dp) {
                 val items = listOf(
                     Triple(Routes.TODAY, "Today", Icons.Default.Home),
                     Triple(Routes.PROGRESS, "Progress", Icons.Default.ShowChart),
@@ -123,12 +137,13 @@ fun MainTabs() {
                         selected = route == r,
                         onClick = { app.selectTab(tabFor(r)); nav.navigateTab(r) },
                         icon = {
-                            BadgedBox(badge = { if (badge > 0) Badge { Text("$badge") } }) { Icon(icon, label) }
+                            BadgedBox(badge = { if (badge > 0) Badge(containerColor = c.riskHigh, contentColor = c.panel) { Text("$badge", style = MPType.labelMedium) } }) { Icon(icon, label) }
                         },
-                        label = { Text(label) },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = c.ink, selectedTextColor = c.ink,
-                            indicatorColor = c.soft, unselectedIconColor = c.muted, unselectedTextColor = c.muted),
+                        label = { Text(label, style = MPType.labelMedium) },
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = c.brandInk, selectedTextColor = c.brandInk,
+                            indicatorColor = androidx.compose.ui.graphics.Color.Transparent, unselectedIconColor = c.muted, unselectedTextColor = c.muted),
                     )
+                }
                 }
             }
         },
@@ -148,7 +163,7 @@ fun MainTabs() {
             composable(Routes.PROFILE) { ProfileScreen(nav) }
             composable(Routes.CONNECTIONS) { ConnectionsScreen(nav) }
         }
-    }
+    } }
 }
 
 private fun tabFor(route: String) = when (route) {

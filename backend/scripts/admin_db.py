@@ -39,6 +39,8 @@ def main() -> int:
     ap.add_argument("--link", nargs=2, metavar=("TARGET", "SOURCE"), action="append", default=[],
                     help="fold SOURCE (an app sign-up) into TARGET (the chart); repeatable")
     ap.add_argument("--set-phone", nargs=2, metavar=("PATIENT", "PHONE"), action="append", default=[])
+    ap.add_argument("--rename-hospital", nargs=2, metavar=("ID", "NAME"), action="append", default=[],
+                    help="give a hospital row its real name (the seed calls it MedPull Demo Hospital)")
     ap.add_argument("--prune-assessments", action="store_true",
                     help="keep only the newest risk_assessments row per patient")
     ap.add_argument("--purge-phone-verifications", action="store_true",
@@ -94,6 +96,16 @@ def main() -> int:
         from app.models.patient import Patient
 
         report: dict = {}
+        for hospital_id, name in args.rename_hospital:
+            from app.models.hospital import Hospital
+
+            hospital = db.get(Hospital, hospital_id)
+            if hospital is None:
+                raise SystemExit(f"unknown hospital {hospital_id}")
+            hospital.name = name
+            hospital.system = None
+            db.commit()
+            report.setdefault("renamed_hospitals", []).append({"id": hospital_id, "name": name})
         for patient_id, phone in args.set_phone:
             patient = db.get(Patient, patient_id)
             if patient is None:

@@ -94,6 +94,8 @@ def refuse_destructive_reseed(force: bool = False) -> dict[str, object] | None:
 
     ``--reset`` drops every table. On an empty deployment that is the point;
     on a live one it deletes real people, so it has to be asked for twice.
+    A deployment that is not the demo refuses even when empty: nothing
+    should ever put the fake roster on the real app by accident.
     """
     from app.database import SessionLocal
 
@@ -102,7 +104,15 @@ def refuse_destructive_reseed(force: bool = False) -> dict[str, object] | None:
     with SessionLocal() as db:
         live = unrebuildable_patient_ids(db)
     if not live:
-        return None
+        if settings.demo_mode:
+            return None
+        return {
+            "ok": False,
+            "error": "refusing to seed: this deployment is not in demo mode "
+            "(DEMO_MODE is off). The seed is for the demo stack; pass force=true "
+            "to seed this one anyway.",
+            "live_patients": [],
+        }
     shown = ", ".join(live[:8]) + ("…" if len(live) > 8 else "")
     return {
         "ok": False,

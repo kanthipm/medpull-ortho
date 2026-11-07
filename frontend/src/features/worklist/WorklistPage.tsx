@@ -16,7 +16,7 @@ import type { CSSProperties, MouseEvent, ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { NextStep, NextStepActionType, WorklistRowWithStep } from '../../api/plan'
 import { useCompleteNextStep, useExecuteNextStep } from '../../api/plan'
-import { useNarrativeWarming, usePrefetchPatient, useWorklist } from '../../api/queries'
+import { useIsDemo, useNarrativeWarming, usePrefetchPatient, useWorklist } from '../../api/queries'
 import type { WorklistResponse } from '../../api/types'
 import DotLine from '../patient/DotLine'
 import MessageComposerModal from '../patient/plan/MessageComposerModal'
@@ -45,19 +45,6 @@ const FILTERS: { key: Filter; label: string }[] = [
 ]
 
 const TIER_ORDER: Priority[] = ['high', 'medium', 'missing_data', 'low']
-
-/** Charts whose numbers come from a real person using the app. Everything
- *  else on this roster is generated for the demo, and the two are banded
- *  apart so nobody in the room reads a persona's vitals as clinical truth.
- *  Ids, not hospitals: the demo personas carry placeholder phones and sit on
- *  the same roster, so there is no field on the row that tells them apart. */
-const REAL_PATIENT_IDS = new Set(['steve'])
-
-/** The two bands, real first — the real chart is what the demo opens on. */
-const SOURCE_BANDS = [
-  { key: 'real', label: 'Real data', real: true },
-  { key: 'demo', label: 'Fake data', real: false },
-] as const
 
 /** How long the first-load rise runs before rows stop animating in. Rows
  *  that remount later (filter changes, ask results) appear without motion. */
@@ -97,6 +84,7 @@ function prefersReducedMotion(): boolean {
 
 export default function WorklistPage() {
   const { data, isLoading, isError } = useWorklist()
+  const demo = useIsDemo()
   const [filter, setFilter] = useState<Filter>('all')
   const askState = useAskState()
   const askResult = askState.result
@@ -179,20 +167,13 @@ export default function WorklistPage() {
   const visible = data.patients.filter((p) =>
     askIds ? askIds.has(p.id) : filter === 'all' || p.priority === filter,
   )
-  // Two bands, each still grouped by tier inside: the source of the numbers
-  // is the outer question, triage the inner one.
-  const bands = SOURCE_BANDS.map((band) => {
-    const patients = visible.filter((p) => REAL_PATIENT_IDS.has(p.id) === band.real)
-    return {
-      ...band,
-      count: patients.length,
-      groups: TIER_ORDER.map((tier) => ({
-        tier,
-        patients: patients.filter((p) => p.priority === tier),
-      })).filter((g) => g.patients.length > 0),
-    }
-  }).filter((band) => band.count > 0)
-  const shown = bands.reduce((n, band) => n + band.count, 0)
+  // Grouped by tier. On the demo stack one caption over the groups says the
+  // numbers are generated; the real app needs no such line.
+  const groups = TIER_ORDER.map((tier) => ({
+    tier,
+    patients: visible.filter((p) => p.priority === tier),
+  })).filter((g) => g.patients.length > 0)
+  const shown = visible.length
 
   // "Start with": the top patient of the most urgent non-calm tier.
   const startWith =
@@ -246,7 +227,7 @@ export default function WorklistPage() {
         )}
       </div>
 
-      {bands.length === 0 ? (
+      {groups.length === 0 ? (
         <div className="mt-4">
           <EmptyState
             icon={<Users />}
@@ -259,31 +240,29 @@ export default function WorklistPage() {
         </div>
       ) : (
         <div className="mt-4 space-y-8" aria-labelledby={patientsHeadingId} role="region">
-          {bands.map((band, bi) => (
-            <SourceBand key={band.key} label={band.label} count={band.count}>
-              {band.groups.map(({ tier, patients }, gi) => {
-                const first = bi === 0 && gi === 0
-                return (
-                  <TierGroup
-                    key={tier}
-                    tier={tier}
-                    count={patients.length}
-                    className={first ? settleCls : ''}
-                    style={first ? settleAt(180) : undefined}
-                  >
-                    {patients.map((p) => (
-                      <WorklistRow
-                        key={p.id}
-                        patient={p}
-                        rise={intro ? 260 + riseIndex++ * 40 : null}
-                        onMessage={(step) => setComposer({ patient: p, step })}
-                      />
-                    ))}
-                  </TierGroup>
-                )
-              })}
-            </SourceBand>
-          ))}
+          <DemoBand demo={demo} count={shown}>
+            {groups.map(({ tier, patients }, gi) => {
+              const first = gi === 0
+              return (
+                <TierGroup
+                  key={tier}
+                  tier={tier}
+                  count={patients.length}
+                  className={first ? settleCls : ''}
+                  style={first ? settleAt(180) : undefined}
+                >
+                  {patients.map((p) => (
+                    <WorklistRow
+                      key={p.id}
+                      patient={p}
+                      rise={intro ? 260 + riseIndex++ * 40 : null}
+                      onMessage={(step) => setComposer({ patient: p, step })}
+                    />
+                  ))}
+                </TierGroup>
+              )
+            })}
+          </DemoBand>
         </div>
       )}
 
@@ -582,30 +561,28 @@ function StartWith({ patient: p }: { patient: WorklistRowWithStep }) {
   )
 }
 
-/** One source band — "Real data" over Steve's own chart, "Fake data" over
- *  the generated roster. A quiet caption over the tier cards rather than
- *  another card: the tier groups keep the visual weight, and the band only
- *  answers "whose numbers am I looking at".
- *
- *  Nothing is disclosed to the patient by this label; it is a demo aid for
- *  the room, which is why it is plain words and not a risk-coloured badge. */
-function SourceBand({
-  label,
+/** On the demo stack, one quiet caption over the tier cards answering
+ *  "whose numbers am I looking at": nobody's. The real app renders the
+ *  groups bare. Plain words rather than a risk-coloured badge, because it is
+ *  an aid for the room and discloses nothing about any patient. */
+function DemoBand({
+  demo,
   count,
   children,
 }: {
-  label: string
+  demo: boolean
   count: number
   children: ReactNode
 }) {
   const id = useId()
+  if (!demo) return <div className="space-y-stack">{children}</div>
   return (
     <section aria-labelledby={id}>
       <h3
         id={id}
         className="flex items-baseline gap-2 px-1 pb-2 text-label font-medium uppercase tracking-label text-secondary"
       >
-        {label}
+        Demo roster · every chart is generated
         <span className="tabular-nums normal-case tracking-normal">
           <span className="sr-only">, </span>
           {count}

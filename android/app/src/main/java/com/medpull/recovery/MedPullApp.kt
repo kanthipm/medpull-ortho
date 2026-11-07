@@ -3,6 +3,7 @@ package com.medpull.recovery
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import com.medpull.recovery.motion.PassiveCapture
 
 class MedPullApp : Application() {
     lateinit var graph: AppGraph
@@ -12,9 +13,13 @@ class MedPullApp : Application() {
         super.onCreate()
         graph = AppGraph(this)
         graph.health.restore()
+        PassiveCapture.restore(this)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_MOTION, getString(R.string.motion_channel), NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_MOTION, getString(R.string.motion_channel), NotificationManager.IMPORTANCE_MIN).apply {
+                description = "Shows while a walk is being recorded. Silent; safe to swipe away."
+                setShowBadge(false)
+            }
         )
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_REMINDER, getString(R.string.reminder_channel), NotificationManager.IMPORTANCE_DEFAULT)

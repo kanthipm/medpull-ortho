@@ -267,6 +267,9 @@ def test_origin_verification_accepts_cloudfront(monkeypatch, tmp_path):
 
 def test_seed_action_runs_under_the_lock_and_uploads(monkeypatch, tmp_path):
     handler, fake = _import_handler(monkeypatch, tmp_path)
+    # The seed only runs on the demo stack (test_seed_guard.py has the rule);
+    # this test is about the lock and the upload around it.
+    monkeypatch.setattr(settings, "demo_mode", True)
 
     called = {}
 
@@ -284,6 +287,24 @@ def test_seed_action_runs_under_the_lock_and_uploads(monkeypatch, tmp_path):
     assert called["reset"] is True
     assert fake.objects[aws_settings.s3_db_key] == b"freshly-seeded"
     assert aws_settings.s3_lock_key not in fake.objects  # released
+
+
+def test_seed_action_is_refused_off_the_demo_stack(monkeypatch, tmp_path):
+    """DEMO_MODE off (the real app): the seed action answers with the refusal,
+    runs nothing, uploads nothing and leaves no lock behind."""
+    handler, fake = _import_handler(monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "demo_mode", False)
+
+    def never(reset=False):
+        raise AssertionError("the seed ran on a stack that is not the demo")
+
+    monkeypatch.setattr("app.seed.seed.run_seed", never)
+
+    result = handler.handler({"action": "seed"}, None)
+
+    assert result["ok"] is False and "not in demo mode" in result["error"]
+    assert aws_settings.s3_db_key not in fake.objects
+    assert aws_settings.s3_lock_key not in fake.objects
 
 
 def test_personal_daily_action_runs_under_the_lock_and_uploads(monkeypatch, tmp_path):

@@ -27,8 +27,8 @@ make dev-backend        # the API on :8000 (from the repo root)
 make dev-patient-web    # Vite on :5174, proxying /api to :8000
 ```
 
-Then open http://localhost:5174/patient/ — the app is built with the base
-path `/patient/`, the same path it has on the deployed stack. `npm install`
+Then open http://localhost:5174/ — the dev server answers at `/`; a production
+build uses the base path `/patient/`, its path on the deployed stack. `npm install`
 once inside `patient-web/`. The dev server runs on port 5174 so it can sit
 beside the provider console (`make dev-frontend`, :5173).
 
@@ -40,8 +40,8 @@ console runs too.
 - **AWS**: `./infra/deploy.sh` builds it and uploads `dist/` to
   `web/patient/` in the data bucket next to the console; the CloudFront
   rewrite function sends `/patient/*` client routes to `/patient/index.html`
-  (`infra/cloudformation.yaml`). So it lives at `https://app.medpull.org/patient/`
-  and talks to the same `/api/*` origin.
+  (`infra/cloudformation.yaml`). So it lives at `/patient/` on the console's
+  host (https://demo.medpull.app/patient/ today) and talks to the same `/api/*` origin.
 - **Single process** (`make run`): the backend serves `patient-web/dist`
   under `/patient` beside `frontend/dist`.
 - A saved server URL on the Profile screen (Developer) points the app at a

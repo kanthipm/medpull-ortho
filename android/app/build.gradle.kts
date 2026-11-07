@@ -20,11 +20,14 @@ android {
         // against `make dev`. The emulator reaches the host at 10.0.2.2.
         buildConfigField("String", "API_BASE_URL", "\"https://d1msmt8r5u7oxx.cloudfront.net\"")
         buildConfigField("String", "DEEP_LINK_SCHEME", "\"medpull\"")
+        // Plain http only in a debug build, for a laptop's `make dev`.
+        manifestPlaceholders["cleartext"] = "false"
     }
 
     buildTypes {
         debug {
             buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000\"")
+            manifestPlaceholders["cleartext"] = "true"
         }
         release {
             isMinifyEnabled = true
@@ -66,10 +69,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.play.services)
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.serialization)
     implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.health.connect)
@@ -82,7 +82,6 @@ dependencies {
     implementation(libs.media3.effect)
     implementation(libs.androidx.exifinterface)
     implementation(libs.coil.compose)
-    implementation(libs.coil.video)
     implementation(libs.androidx.work)
     implementation(libs.vital.client)
     implementation(libs.vital.health.connect)

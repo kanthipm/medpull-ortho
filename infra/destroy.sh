@@ -7,35 +7,53 @@
 # redeploy into a re-entry of the Groq key.
 #
 #   ./infra/destroy.sh                   # delete the stack, keep data + secrets
+#   ./infra/destroy.sh --env .env.demo   # the demo stack (same STACK_NAME rule as deploy.sh)
 #   ./infra/destroy.sh --delete-data     # also delete the database bucket
 #   ./infra/destroy.sh --delete-secrets  # also delete the SSM parameters
 #
 set -euo pipefail
 
-STACK_NAME="${STACK_NAME:-recovery-copilot}"
-REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
-GROQ_PARAM="${GROQ_PARAM:-/recovery-copilot/groq-api-key}"
-ORIGIN_SECRET_PARAM="${ORIGIN_SECRET_PARAM:-/recovery-copilot/origin-verify-secret}"
-# The rest of what deploy.sh writes; all optional, all removed with --delete-secrets.
-OTHER_PARAMS=(
-  /recovery-copilot/junction-api-key
-  /recovery-copilot/junction-webhook-secret
-  /recovery-copilot/sendblue-api-key
-  /recovery-copilot/sendblue-api-secret
-  /recovery-copilot/sendblue-webhook-secret
-  /recovery-copilot/console-access-token
-)
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
 
 DELETE_DATA=false
 DELETE_SECRETS=false
+ENV_FILE="${ENV_FILE:-$ROOT/.env}"
+want_env=false
 for arg in "$@"; do
+  if $want_env; then ENV_FILE="$arg"; want_env=false; continue; fi
   case "$arg" in
+    --env) want_env=true ;;
+    --env=*) ENV_FILE="${arg#--env=}" ;;
     --delete-data) DELETE_DATA=true ;;
     --delete-secrets) DELETE_SECRETS=true ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) echo "unknown flag: $arg" >&2; exit 1 ;;
   esac
 done
+$want_env && { echo "--env needs a file" >&2; exit 1; }
+case "$ENV_FILE" in /*) ;; *) ENV_FILE="$PWD/$ENV_FILE" ;; esac
+
+dotenv_value() {
+  [ -f "$ENV_FILE" ] || return 0
+  grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '\042\047 ' || true
+}
+
+STACK_NAME="${STACK_NAME:-$(dotenv_value STACK_NAME)}"
+STACK_NAME="${STACK_NAME:-recovery-copilot}"
+REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
+# The same per-stack SSM prefix deploy.sh writes under.
+GROQ_PARAM="${GROQ_PARAM:-/$STACK_NAME/groq-api-key}"
+ORIGIN_SECRET_PARAM="${ORIGIN_SECRET_PARAM:-/$STACK_NAME/origin-verify-secret}"
+# The rest of what deploy.sh writes; all optional, all removed with --delete-secrets.
+OTHER_PARAMS=(
+  "/$STACK_NAME/junction-api-key"
+  "/$STACK_NAME/junction-webhook-secret"
+  "/$STACK_NAME/sendblue-api-key"
+  "/$STACK_NAME/sendblue-api-secret"
+  "/$STACK_NAME/sendblue-webhook-secret"
+  "/$STACK_NAME/console-access-token"
+)
 
 log()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }

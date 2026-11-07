@@ -4,13 +4,11 @@ import { defineConfig } from 'vite'
 // The patient app, on its own port so it can run beside the provider
 // console (5173). `/api` is proxied to `make dev-backend`, the way the
 // console's dev server does it, so nothing is ever cross-origin.
-export default defineConfig({
+// Production builds live under /patient/ on the console's host
+// (infra/deploy.sh uploads dist/ to web/patient/); dev stays at /.
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/patient/' : '/',
   plugins: [react()],
-  // Served beside the provider console on the deployed stack, under
-  // /patient/ (CloudFront routes the prefix to patient-web/dist in the web
-  // bucket; infra/cloudformation.yaml and infra/deploy.sh). The dev server
-  // answers at http://localhost:5174/patient/ for the same reason.
-  base: '/patient/',
   build: {
     rolldownOptions: {
       output: {
@@ -32,7 +30,7 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/api': 'http://127.0.0.1:8000',
+      '/api': process.env.MEDPULL_API ?? 'http://127.0.0.1:8000',
     },
   },
-})
+}))

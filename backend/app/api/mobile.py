@@ -160,14 +160,14 @@ RECOVERY_LABEL = {
     RiskLevel.LOW: ("On track", "Your signals look steady. Nice work — keep doing what you're doing."),
     RiskLevel.MEDIUM: ("Worth a check-in", "A couple of signals shifted, which happens. Your care team is keeping an eye on it."),
     RiskLevel.HIGH: ("Care team reviewing", "Your care team has taken a look and will be in touch."),
-    RiskLevel.MISSING_DATA: ("Waiting for data", "Connect Apple Health or a wearable so we can follow your recovery."),
+    RiskLevel.MISSING_DATA: ("Waiting for data", "Connect your phone's health data or a wearable so we can follow your recovery."),
 }
 # The same four states, worded for a patient who did not have surgery.
 GENERAL_LABEL = {
     RiskLevel.LOW: ("Steady", "Your signals look like your usual self. Keep it up."),
     RiskLevel.MEDIUM: ("Worth a look", "A couple of signals moved a little, which happens. Your care team can see it."),
     RiskLevel.HIGH: ("Care team reviewing", "Your care team has taken a look and will be in touch."),
-    RiskLevel.MISSING_DATA: ("Waiting for data", "Connect Apple Health or a wearable and your portfolio fills in on its own."),
+    RiskLevel.MISSING_DATA: ("Waiting for data", "Connect your phone's health data or a wearable and your portfolio fills in on its own."),
 }
 # Signals are arriving but the engine cannot score yet (its coverage gate
 # wants the sleep/HRV/temperature set a phone alone rarely carries). That is

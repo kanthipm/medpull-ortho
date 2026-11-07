@@ -1,28 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
+import { useIsDemo } from '../api/queries'
 
-/** The public demo's front door on demo.medpull.app: a hazy glass screen over
- *  the worklist the first time a browser arrives, one line on what MedPull
- *  does, and a button that drops you on the product's own question — who
- *  needs a call today.
+/** The public demo's front door: a hazy glass screen over the worklist the
+ *  first time a browser arrives, one line on what MedPull does, and a button
+ *  that drops you on the product's own question — who needs a call today.
  *
  *  Shown once per browser (a localStorage flag, wrapped: a private window
- *  or blocked storage must not break the page or loop the screen). Gated to
- *  the public host so a developer's localhost and the clinic's own
- *  deployment never see it; `?welcome` forces it for a look. Escape, the
- *  button and the quiet link all dismiss it; focus lands on the button. */
+ *  or blocked storage must not break the page or loop the screen). Gated on
+ *  the server's own word (`demo` on /api/health), so a developer's localhost
+ *  and the real deployment never see it; `?welcome` forces it for a look.
+ *  Escape, the button and the quiet link all dismiss it; focus lands on the
+ *  button. */
 
 const STORAGE_KEY = 'medpull.demo-welcomed'
-const PUBLIC_HOST = 'demo.medpull.app'
 
-function wantsWelcome(): boolean {
+function forcedByUrl(): boolean {
   if (typeof window === 'undefined') return false
-  const forced = new URLSearchParams(window.location.search).has('welcome')
-  if (forced) return true
-  if (window.location.hostname !== PUBLIC_HOST) return false
+  return new URLSearchParams(window.location.search).has('welcome')
+}
+
+function alreadyWelcomed(): boolean {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) == null
+    return window.localStorage.getItem(STORAGE_KEY) != null
   } catch {
-    return true
+    return false
   }
 }
 
@@ -35,14 +36,16 @@ function remember() {
 }
 
 export default function DemoWelcome() {
-  const [open, setOpen] = useState(wantsWelcome)
+  const demo = useIsDemo()
+  const [dismissed, setDismissed] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const open = !dismissed && (forcedByUrl() || (demo && !alreadyWelcomed()))
 
   const close = () => {
     remember()
     setLeaving(true)
-    window.setTimeout(() => setOpen(false), 220)
+    window.setTimeout(() => setDismissed(true), 220)
   }
 
   useEffect(() => {

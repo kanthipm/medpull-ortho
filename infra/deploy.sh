@@ -2,13 +2,14 @@
 #
 # Deploy the Recovery Copilot to AWS. Idempotent — run it again to ship a change.
 #
-#   ./infra/deploy.sh                 # build, deploy, seed on first run
-#   ./infra/deploy.sh --reseed        # rebuild the demo database too
-#   ./infra/deploy.sh --backend-only  # skip the frontend and patient-app builds/uploads
+#   ./infra/deploy.sh                 # the real app: build, deploy, never seed
+#   ./infra/deploy.sh --env .env.demo # the public demo stack (seeds on first run)
+#   ./infra/deploy.sh --reseed        # rebuild the demo database (demo stack only)
+#   ./infra/deploy.sh --backend-only  # skip the frontend builds/uploads (console and patient app)
 #   ./infra/deploy.sh --stack-only    # template/parameters only: ships no code
 #
 # Custom domain: set SITE_DOMAIN and SITE_CERTIFICATE_ARN (environment or
-# .env) once the ACM certificate is ISSUED. See infra/README.md.
+# the env file) once the ACM certificate is ISSUED. See infra/README.md.
 #
 # Requires: aws CLI (authenticated), uv, node 20+, zip.
 # AWS CloudShell has all four, which is the easiest way to run this without
@@ -19,24 +20,64 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
-STACK_NAME="${STACK_NAME:-recovery-copilot}"
-REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
-GROQ_PARAM="${GROQ_PARAM:-/recovery-copilot/groq-api-key}"
-ORIGIN_SECRET_PARAM="${ORIGIN_SECRET_PARAM:-/recovery-copilot/origin-verify-secret}"
-# Junction (wearable aggregator). Both secrets are optional: absent, the
-# connector stays idle and the console says "Needs setup". The non-secret
-# settings come from the environment, else recovery-copilot/.env, else the
-# sandbox defaults.
-dotenv_value() {  # dotenv_value VAR -> its value in $ROOT/.env, or nothing; never fails
-  [ -f "$ROOT/.env" ] || return 0
+RESEED=false
+BACKEND_ONLY=false
+STACK_ONLY=false
+# Which env file: --env FILE, else $ENV_FILE, else the repo's .env (the real
+# app). .env.demo is the public demo stack; the two differ in STACK_NAME,
+# DEMO_MODE, the domain and which secrets are present.
+ENV_FILE="${ENV_FILE:-$ROOT/.env}"
+want_env=false
+for arg in "$@"; do
+  if $want_env; then ENV_FILE="$arg"; want_env=false; continue; fi
+  case "$arg" in
+    --env) want_env=true ;;
+    --env=*) ENV_FILE="${arg#--env=}" ;;
+    --reseed) RESEED=true ;;
+    --backend-only) BACKEND_ONLY=true ;;
+    --stack-only) STACK_ONLY=true; BACKEND_ONLY=true ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    *) echo "unknown flag: $arg" >&2; exit 1 ;;
+  esac
+done
+$want_env && { echo "--env needs a file" >&2; exit 1; }
+case "$ENV_FILE" in /*) ;; *) ENV_FILE="$PWD/$ENV_FILE" ;; esac
+
+dotenv_value() {  # dotenv_value VAR -> its value in $ENV_FILE, or nothing; never fails
+  [ -f "$ENV_FILE" ] || return 0
   # \042 = double quote, \047 = single quote — spelled in octal to keep the
   # nesting of quotes readable. `|| true` because an absent key is not an error.
-  grep -E "^$1=" "$ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '\042\047 ' || true
+  grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '\042\047 ' || true
 }
+
+STACK_NAME="${STACK_NAME:-$(dotenv_value STACK_NAME)}"
+STACK_NAME="${STACK_NAME:-recovery-copilot}"
+REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
+# Every secret lives under the stack's own SSM prefix, so a second stack can
+# never read the first one's console token or webhook secrets.
+GROQ_PARAM="${GROQ_PARAM:-/$STACK_NAME/groq-api-key}"
+ORIGIN_SECRET_PARAM="${ORIGIN_SECRET_PARAM:-/$STACK_NAME/origin-verify-secret}"
+# The public demo or the real app. The demo shows the welcome screen and the
+# roster caption, may open the unsigned mock webhook, and is the only stack
+# the seed function will rebuild.
+DEMO_MODE="${DEMO_MODE:-$(dotenv_value DEMO_MODE)}"
+DEMO_MODE="${DEMO_MODE:-false}"
+case "$DEMO_MODE" in true|false) ;; *) echo "DEMO_MODE must be true or false" >&2; exit 1 ;; esac
+ALLOW_MOCK_WEBHOOK="${ALLOW_MOCK_WEBHOOK:-$(dotenv_value ALLOW_MOCK_WEBHOOK)}"
+ALLOW_MOCK_WEBHOOK="${ALLOW_MOCK_WEBHOOK:-false}"
+# demo | none: whether this script ever invokes the seed function. Defaults
+# from DEMO_MODE, so the real app never seeds unless told to in so many words.
+SEED="${SEED:-$(dotenv_value SEED)}"
+if [ -z "$SEED" ]; then [ "$DEMO_MODE" = true ] && SEED=demo || SEED=none; fi
+case "$SEED" in demo|none) ;; *) echo "SEED must be demo or none" >&2; exit 1 ;; esac
+# Junction (wearable aggregator). Both secrets are optional: absent, the
+# connector stays idle and the console says "Needs setup". The non-secret
+# settings come from the environment, else the env file, else the sandbox
+# defaults.
 GROQ_MODEL="${GROQ_MODEL:-$(dotenv_value GROQ_MODEL)}"
 GROQ_MODEL="${GROQ_MODEL:-openai/gpt-oss-120b}"
-JUNCTION_PARAM="${JUNCTION_PARAM:-/recovery-copilot/junction-api-key}"
-JUNCTION_WEBHOOK_PARAM="${JUNCTION_WEBHOOK_PARAM:-/recovery-copilot/junction-webhook-secret}"
+JUNCTION_PARAM="${JUNCTION_PARAM:-/$STACK_NAME/junction-api-key}"
+JUNCTION_WEBHOOK_PARAM="${JUNCTION_WEBHOOK_PARAM:-/$STACK_NAME/junction-webhook-secret}"
 JUNCTION_ENVIRONMENT="${JUNCTION_ENVIRONMENT:-$(dotenv_value JUNCTION_ENVIRONMENT)}"
 JUNCTION_ENVIRONMENT="${JUNCTION_ENVIRONMENT:-sandbox}"
 JUNCTION_REGION="${JUNCTION_REGION:-$(dotenv_value JUNCTION_REGION)}"
@@ -44,13 +85,13 @@ JUNCTION_REGION="${JUNCTION_REGION:-us}"
 JUNCTION_LINK_REDIRECT_URL="${JUNCTION_LINK_REDIRECT_URL:-$(dotenv_value JUNCTION_LINK_REDIRECT_URL)}"
 # Sendblue SMS. Same shape as Junction: two SSM secrets (optional — absent,
 # the SMS channel stays on its logging stub) and two plain settings.
-SENDBLUE_KEY_PARAM="${SENDBLUE_KEY_PARAM:-/recovery-copilot/sendblue-api-key}"
-SENDBLUE_SECRET_PARAM="${SENDBLUE_SECRET_PARAM:-/recovery-copilot/sendblue-api-secret}"
+SENDBLUE_KEY_PARAM="${SENDBLUE_KEY_PARAM:-/$STACK_NAME/sendblue-api-key}"
+SENDBLUE_SECRET_PARAM="${SENDBLUE_SECRET_PARAM:-/$STACK_NAME/sendblue-api-secret}"
 # The inbound webhook's secret path segment (patient app). Optional: absent,
 # inbound texts answer 503 while outbound SMS keeps working.
-SENDBLUE_WEBHOOK_PARAM="${SENDBLUE_WEBHOOK_PARAM:-/recovery-copilot/sendblue-webhook-secret}"
+SENDBLUE_WEBHOOK_PARAM="${SENDBLUE_WEBHOOK_PARAM:-/$STACK_NAME/sendblue-webhook-secret}"
 # The console's shared access token (see "Console access" below).
-CONSOLE_TOKEN_PARAM="${CONSOLE_TOKEN_PARAM:-/recovery-copilot/console-access-token}"
+CONSOLE_TOKEN_PARAM="${CONSOLE_TOKEN_PARAM:-/$STACK_NAME/console-access-token}"
 SENDBLUE_FROM_NUMBER="${SENDBLUE_FROM_NUMBER:-$(dotenv_value SENDBLUE_FROM_NUMBER)}"
 CARE_TEAM_PHONES="${CARE_TEAM_PHONES:-$(dotenv_value CARE_TEAM_PHONES)}"
 # Apple team id of the patient app. Set, the API serves the app-site-
@@ -63,8 +104,8 @@ ANDROID_CERT_SHA256="${ANDROID_CERT_SHA256:-$(dotenv_value ANDROID_CERT_SHA256)}
 # The certificate must already be ISSUED (CloudFront rejects a pending one),
 # and the DNS record lives in whichever account hosts the zone — not here.
 # `-` rather than `:-`: an explicitly empty SITE_DOMAIN= on the command line
-# overrides .env, so a deploy without the domain is possible while .env keeps
-# the values staged for the cutover.
+# overrides the env file, so a deploy without the domain is possible while
+# the file keeps the values staged for the cutover.
 SITE_DOMAIN="${SITE_DOMAIN-$(dotenv_value SITE_DOMAIN)}"
 SITE_CERTIFICATE_ARN="${SITE_CERTIFICATE_ARN-$(dotenv_value SITE_CERTIFICATE_ARN)}"
 BUDGET_EMAIL="${BUDGET_EMAIL:-}"
@@ -79,19 +120,6 @@ PERSONAL_DAILY_CRON="${PERSONAL_DAILY_CRON:-$(dotenv_value PERSONAL_DAILY_CRON)}
 PERSONAL_DAILY_CRON="${PERSONAL_DAILY_CRON:-cron(0 12 * * ? *)}"
 SPORTS_DAILY_CRON="${SPORTS_DAILY_CRON:-$(dotenv_value SPORTS_DAILY_CRON)}"
 SPORTS_DAILY_CRON="${SPORTS_DAILY_CRON:-cron(0 11 * * ? *)}"
-
-RESEED=false
-BACKEND_ONLY=false
-STACK_ONLY=false
-for arg in "$@"; do
-  case "$arg" in
-    --reseed) RESEED=true ;;
-    --backend-only) BACKEND_ONLY=true ;;
-    --stack-only) STACK_ONLY=true; BACKEND_ONLY=true ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
-    *) echo "unknown flag: $arg" >&2; exit 1 ;;
-  esac
-done
 
 log()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
@@ -113,6 +141,7 @@ ACCOUNT_ID="$(aws_ sts get-caller-identity --query Account --output text 2>/dev/
 CALLER="$(aws_ sts get-caller-identity --query Arn --output text)"
 info "account $ACCOUNT_ID in $REGION"
 info "as      $CALLER"
+info "stack   $STACK_NAME ($([ "$DEMO_MODE" = true ] && echo 'the public demo' || echo 'the real app'); env file $ENV_FILE)"
 case "$CALLER" in
   *":root") info "note: you are the account root user. AWS recommends an IAM"
             info "      user or role with AdministratorAccess for day-to-day work." ;;
@@ -193,17 +222,13 @@ else
   info "reusing the stored origin-verify secret"
 fi
 
-# Groq key: an existing SSM value wins, then $GROQ_API_KEY, then the local .env,
+# Groq key: an existing SSM value wins, then $GROQ_API_KEY, then the env file,
 # then a prompt. Never echoed.
 if aws_ ssm get-parameter --name "$GROQ_PARAM" >/dev/null 2>&1; then
   info "Groq key already in SSM at $GROQ_PARAM (delete the parameter to change it)"
 else
   KEY="${GROQ_API_KEY:-}"
-  if [ -z "$KEY" ] && [ -f "$ROOT/.env" ]; then
-    # \042 = double quote, \047 = single quote — spelled in octal to keep the
-    # nesting of quotes in this line readable.
-    KEY="$(grep -E '^GROQ_API_KEY=' "$ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '\042\047 ')"
-  fi
+  [ -n "$KEY" ] || KEY="$(dotenv_value GROQ_API_KEY)"
   if [ -z "$KEY" ]; then
     printf '    Groq API key (console.groq.com, free tier; blank = deterministic fallback only): '
     read -rs KEY; echo
@@ -219,7 +244,7 @@ else
 fi
 
 # Junction secrets: an existing SSM value wins, then the environment, then the
-# local .env. Never prompted for — both are optional and a deploy without them
+# env file. Never prompted for — both are optional and a deploy without them
 # is a deploy with the connector idle, which is a valid state.
 store_optional_secret() {
   local param="$1" var="$2" label="$3" value
@@ -244,7 +269,8 @@ store_optional_secret "$SENDBLUE_SECRET_PARAM" SENDBLUE_API_SECRET "Sendblue API
 store_optional_secret "$SENDBLUE_WEBHOOK_PARAM" SENDBLUE_WEBHOOK_SECRET "Sendblue webhook secret"
 
 # Console access. Unlike the integrations above this is never generated on
-# its own: an absent parameter is the public demo, open by design. Set
+# its own: an absent parameter is an open console, which only the demo
+# stack should run with. Set
 # CONSOLE_ACCESS_TOKEN to lock the console with that value (a new value
 # replaces the stored one), or CONSOLE_ACCESS_TOKEN=generate to mint one and
 # print it once.
@@ -260,8 +286,11 @@ elif [ -n "$CONSOLE_ACCESS_TOKEN" ]; then
   info "stored the console access token in SSM ($CONSOLE_TOKEN_PARAM)"
 elif aws_ ssm get-parameter --name "$CONSOLE_TOKEN_PARAM" >/dev/null 2>&1; then
   info "console locked with the token already in SSM (delete the parameter to reopen it)"
+elif [ "$DEMO_MODE" = true ]; then
+  info "no console access token — the demo console stays open"
 else
-  info "no console access token — the console stays open (the public demo)"
+  info "WARNING: no console access token and DEMO_MODE=false — the real console is open."
+  info "         Set CONSOLE_ACCESS_TOKEN=generate in $ENV_FILE and redeploy."
 fi
 
 # --------------------------------------------------------------------------
@@ -320,6 +349,8 @@ PARAMS=(
   "SendblueApiSecretParameter=$SENDBLUE_SECRET_PARAM"
   "SendblueWebhookSecretParameter=$SENDBLUE_WEBHOOK_PARAM"
   "ConsoleAccessTokenParameter=$CONSOLE_TOKEN_PARAM"
+  "DemoMode=$DEMO_MODE"
+  "AllowMockWebhook=$ALLOW_MOCK_WEBHOOK"
   "PublicBaseUrl=$PUBLIC_BASE_URL"
   "SendblueFromNumber=$SENDBLUE_FROM_NUMBER"
   "CareTeamPhones=$CARE_TEAM_PHONES"
@@ -365,8 +396,8 @@ log "Building and uploading the frontend"
   DIST="$ROOT/frontend/dist"
   [ -f "$DIST/index.html" ] || die "frontend build produced no dist/index.html"
 
-  # The patient app lives under web/patient/ (see below), so the console's
-  # sync must not sweep it away with --delete.
+  # patient/ is the patient web app's prefix, uploaded below; --delete must
+  # not take it out.
   aws_ s3 sync "$DIST/" "s3://$DATA_BUCKET/web/" --delete --only-show-errors \
     --exclude "patient/*" --cache-control "public,max-age=3600"
   # Vite content-hashes everything under assets/, so those can be immutable.
@@ -374,20 +405,6 @@ log "Building and uploading the frontend"
     --metadata-directive REPLACE --cache-control "public,max-age=31536000,immutable"
   # index.html points at hashed bundles; a cached copy would pin a stale build.
   aws_ s3 cp "$DIST/index.html" "s3://$DATA_BUCKET/web/index.html" --only-show-errors \
-    --cache-control "no-cache" --content-type "text/html; charset=utf-8"
-
-  # The patient app (patient-web/, the clinic iPhone app for the browser),
-  # built with base /patient/ and served from web/patient/: the CloudFront
-  # rewrite function sends /patient/* client routes to its own index.html.
-  log "Building and uploading the patient app"
-  (cd "$ROOT/patient-web" && npm ci --no-audit --no-fund && npm run build)
-  PDIST="$ROOT/patient-web/dist"
-  [ -f "$PDIST/index.html" ] || die "patient-web build produced no dist/index.html"
-  aws_ s3 sync "$PDIST/" "s3://$DATA_BUCKET/web/patient/" --delete --only-show-errors \
-    --cache-control "public,max-age=3600"
-  aws_ s3 cp "$PDIST/assets/" "s3://$DATA_BUCKET/web/patient/assets/" --recursive --only-show-errors \
-    --metadata-directive REPLACE --cache-control "public,max-age=31536000,immutable"
-  aws_ s3 cp "$PDIST/index.html" "s3://$DATA_BUCKET/web/patient/index.html" --only-show-errors \
     --cache-control "no-cache" --content-type "text/html; charset=utf-8"
 
   # App links. Only /api/* reaches the function, so the association files
@@ -415,15 +432,38 @@ log "Building and uploading the frontend"
   else
     info "ANDROID_CERT_SHA256 not set — task links open the web page on Android, not the app"
   fi
+
+# --------------------------------------------------------------------------
+log "Building and uploading the patient web app"
+# --------------------------------------------------------------------------
+  # Served at $SITE_URL/patient/ (vite base, router basename); the CloudFront
+  # function sends its extensionless routes to web/patient/index.html.
+  (cd "$ROOT/patient-web" && npm ci --no-audit --no-fund && npm run build)
+  PDIST="$ROOT/patient-web/dist"
+  [ -f "$PDIST/index.html" ] || die "patient-web build produced no dist/index.html"
+
+  aws_ s3 sync "$PDIST/" "s3://$DATA_BUCKET/web/patient/" --delete --only-show-errors \
+    --cache-control "public,max-age=3600"
+  aws_ s3 cp "$PDIST/assets/" "s3://$DATA_BUCKET/web/patient/assets/" --recursive --only-show-errors \
+    --metadata-directive REPLACE --cache-control "public,max-age=31536000,immutable"
+  aws_ s3 cp "$PDIST/index.html" "s3://$DATA_BUCKET/web/patient/index.html" --only-show-errors \
+    --cache-control "no-cache" --content-type "text/html; charset=utf-8"
 fi
 
 # --------------------------------------------------------------------------
-log "Demo database"
+log "Database"
 # --------------------------------------------------------------------------
 DB_EXISTS=true
 aws_ s3api head-object --bucket "$DATA_BUCKET" --key db/recovery.db >/dev/null 2>&1 || DB_EXISTS=false
 
-if ! $DB_EXISTS || $RESEED; then
+if [ "$SEED" = none ]; then
+  # The real app. Its database is whatever is in the bucket: the first
+  # request creates an empty schema, and charts arrive from the app and the
+  # clinic. The seed function would refuse anyway (app/seed/seed.py), but
+  # not invoking it at all is the clearer statement.
+  $DB_EXISTS && info "database present; this stack is never seeded (SEED=none)" \
+    || info "no database yet — the first request creates an empty one (SEED=none)"
+elif ! $DB_EXISTS || $RESEED; then
   $DB_EXISTS && info "reseeding on request" || info "no database yet — seeding"
   info "this warms every insight through Groq and takes a few minutes"
   # Async invoke + polling, not a synchronous wait: holding one HTTP response
@@ -450,8 +490,13 @@ if ! $DB_EXISTS || $RESEED; then
     printf '.'
   done
   echo
-  $SEED_OK && info "seeded — the database object landed in S3" \
-    || die "seed did not finish in 15 minutes. Check: aws logs tail /aws/lambda/$SEED_FN"
+  if ! $SEED_OK; then
+    # A refusal (live patients, or a stack that is not the demo) shows up
+    # only in the function's log, so print its tail before giving up.
+    aws_ logs tail "/aws/lambda/$SEED_FN" --since 20m --format short 2>/dev/null | tail -20 | sed 's/^/    /'
+    die "seed did not finish in 15 minutes (see the log lines above, or: aws logs tail /aws/lambda/$SEED_FN)"
+  fi
+  info "seeded — the database object landed in S3"
 else
   info "database already present — pass --reseed to rebuild it"
 fi

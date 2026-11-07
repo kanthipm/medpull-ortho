@@ -111,7 +111,10 @@ class MotionRecorder(private val context: Context) : SensorEventListener {
         sm.unregisterListener(this)
         locationCallback?.let { fused?.removeLocationUpdates(it) }
         locationCallback = null; fused = null
-        closeMinute()
+        // The partial last minute, unless the ticker closed one within the
+        // last few seconds (a walk that ran to its limit ends on a boundary).
+        val elapsed = timestamps.lastOrNull() ?: 0.0
+        if (elapsed - minuteSteps.size * 60.0 > 5.0) closeMinute()
         publish()
     }
 

@@ -1,5 +1,19 @@
 package com.medpull.recovery.features.measure
 
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.filled.Architecture
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.medpull.recovery.features.progress.signalIcon
+import com.medpull.recovery.ui.Category
+import com.medpull.recovery.ui.Glyph
+import com.medpull.recovery.ui.MPType
+import com.medpull.recovery.ui.RowDivider
+import com.medpull.recovery.ui.RowFigure
+import com.medpull.recovery.ui.SectionHeading
+import com.medpull.recovery.ui.StateLabel
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -57,14 +71,17 @@ import com.medpull.recovery.core.SixMinuteWalkUpload
 import com.medpull.recovery.core.rangeOfMotion
 import com.medpull.recovery.core.sixMinuteWalk
 import com.medpull.recovery.core.uploadMotion
-import com.medpull.recovery.features.onboarding.Field
-import com.medpull.recovery.features.onboarding.FlowChips
 import com.medpull.recovery.features.progress.Signals
 import com.medpull.recovery.features.progress.fmt
+import com.medpull.recovery.motion.CaptureSession
 import com.medpull.recovery.motion.CaptureState
+import com.medpull.recovery.motion.LiveStats
 import com.medpull.recovery.motion.MotionCaptureService
+import com.medpull.recovery.ui.BackBar
 import com.medpull.recovery.ui.Chip
 import com.medpull.recovery.ui.ErrorBanner
+import com.medpull.recovery.ui.Field
+import com.medpull.recovery.ui.FlowChips
 import com.medpull.recovery.ui.Gap
 import com.medpull.recovery.ui.Guardrail
 import com.medpull.recovery.ui.Hairline
@@ -75,13 +92,16 @@ import com.medpull.recovery.ui.PrimaryButton
 import com.medpull.recovery.ui.Routes
 import com.medpull.recovery.ui.SecondaryButton
 import com.medpull.recovery.ui.SectionTitle
+import com.medpull.recovery.ui.Stat
 import com.medpull.recovery.ui.StatusPill
 import com.medpull.recovery.ui.Tone
 import com.medpull.recovery.ui.appModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.util.Locale
 import kotlin.math.atan2
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 /** When each test is due, from the portfolio's latest readings (as on iPhone). */
 object MeasureStatus {
@@ -108,6 +128,23 @@ object Stature {
         .edit().putFloat("stature_cm", cm.toFloat()).apply()
 }
 
+private fun testIcon(name: String): ImageVector = when (name) {
+    "Guided walk" -> Icons.AutoMirrored.Filled.DirectionsWalk; "Six-minute walk" -> Icons.Default.Timer; else -> Icons.Default.Architecture
+}
+
+private fun testSubtitle(name: String) = when (name) {
+    "Guided walk" -> "3 minutes, phone in your front pocket"
+    "Six-minute walk" -> "How far you can walk in six minutes"
+    else -> "Phone on the limb, two short holds"
+}
+
+/** "Due", "Due tomorrow", "Due in 3 days": when the next one falls. */
+private fun dueLabel(test: MeasureStatus.Test, last: LocalDate?): String {
+    if (last == null) return "Due"
+    val days = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), last.plusDays(test.everyDays))
+    return when { days <= 0 -> "Due"; days == 1L -> "Due tomorrow"; else -> "Due in $days days" }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MeasureScreen(nav: NavHostController) {
@@ -116,59 +153,55 @@ fun MeasureScreen(nav: NavHostController) {
     val scope = rememberCoroutineScope()
     val c = MP.colors
     var refreshing by remember { mutableStateOf(false) }
+    fun open(name: String) = when (name) {
+        "Guided walk" -> nav.navigate(Routes.walk(false)); "Six-minute walk" -> nav.navigate(Routes.walk(true)); else -> nav.navigate(Routes.ROM)
+    }
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = { scope.launch { refreshing = true; app.refreshPortfolio(); refreshing = false } }) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            Text("MEASURE", style = MaterialTheme.typography.labelSmall, color = c.muted, modifier = Modifier.padding(top = 16.dp))
-            Text("Short tests, your phone as the sensor", style = MaterialTheme.typography.displaySmall, color = c.ink)
-            Text("Every number is worked out by MedPull from what the phone records, so it is the same on any phone.", color = c.body, style = MaterialTheme.typography.bodyLarge)
-            Gap(16.dp)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Measure", style = MPType.displayS, color = c.ink)
+                Text("Your phone reads how you walk, how far you can go, and how far a joint bends. Same method every time, so a change is yours and not the device’s.",
+                    style = MPType.copyLarge, color = c.body, modifier = Modifier.padding(horizontal = 4.dp))
+            }
             MeasureStatus.tests.forEach { t ->
                 val due = MeasureStatus.isDue(t, state.portfolio)
                 val last = MeasureStatus.lastDone(t, state.portfolio)
-                Panel(onClick = {
-                    when (t.name) {
-                        "Guided walk" -> nav.navigate(Routes.walk(false)); "Six-minute walk" -> nav.navigate(Routes.walk(true)); else -> nav.navigate(Routes.ROM)
-                    }
-                }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(t.name, style = MaterialTheme.typography.titleLarge, color = c.ink)
-                            Text(when (t.name) {
-                                "Guided walk" -> "One minute with the phone in a front pocket."
-                                "Six-minute walk" -> "Six minutes at your own pace, for distance and endurance."
-                                else -> "Two short holds with the phone on the limb."
-                            }, color = c.body, style = MaterialTheme.typography.bodyMedium)
-                            Text(if (last == null) "Not done yet" else "Last ${Dates.monthDay(last)} · every ${t.everyDays} days",
-                                color = c.muted, style = MaterialTheme.typography.labelMedium)
+                Panel {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Glyph(testIcon(t.name), Category.TEAL, 40.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(t.name, style = MPType.ledeMedium, color = c.ink, modifier = Modifier.weight(1f))
+                                StateLabel(dueLabel(t, last), if (due) Tone.MED else Tone.LOW)
+                            }
+                            Text(testSubtitle(t.name), style = MPType.copy, color = c.body)
+                            Text(if (last == null) "Nothing recorded yet." else "Last: ${Dates.monthDay(last)}", style = MPType.figuresLabel, color = c.muted)
                         }
-                        Spacer(Modifier.width(8.dp))
-                        StatusPill(if (due) "Due" else "Done", if (due) Tone.MED else Tone.LOW)
                     }
+                    Gap(12.dp)
+                    if (due) PrimaryButton("Start", icon = Icons.Default.PlayArrow) { open(t.name) }
+                    else SecondaryButton("Do it again", icon = Icons.Default.Refresh) { open(t.name) }
                 }
-                Gap()
             }
             val measured = state.portfolio.filter { it.key in Signals.measured }
             if (measured.isNotEmpty()) {
-                Panel {
-                    SectionTitle("Your readings")
-                    measured.forEachIndexed { i, m ->
-                        ListRow(m.label.ifBlank { m.key }, fmt(m.latest ?: m.series.lastOrNull()?.value, m.unit), onClick = { nav.navigate(Routes.signal(m.key)) })
-                        if (i < measured.lastIndex) Hairline()
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionHeading("Your readings", note = "last two weeks")
+                    Panel(padding = 0.dp) {
+                        measured.forEachIndexed { i, m ->
+                            ListRow(m.label.ifBlank { m.key }, icon = signalIcon(m.key), family = Category.TEAL, inset = true,
+                                trailing = { RowFigure(fmt(m.latest ?: m.series.lastOrNull()?.value), m.unit.takeIf { it.isNotBlank() }) },
+                                onClick = { nav.navigate(Routes.signal(m.key)) })
+                            if (i < measured.lastIndex) RowDivider()
+                        }
                     }
                 }
-                Gap()
             }
-            Guardrail()
-            Gap(24.dp)
+            Text("Results go to your care team’s console beside your wearable data. Nothing here is a diagnosis.",
+                style = MPType.label, color = c.muted, modifier = Modifier.padding(horizontal = 4.dp))
+            Gap(10.dp)
         }
-    }
-}
-
-@Composable
-private fun Bar(nav: NavHostController, title: String) {
-    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MP.colors.ink) }
-        Text(title, style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
     }
 }
 
@@ -182,7 +215,8 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
     val scope = rememberCoroutineScope()
     val c = MP.colors
     val title = if (sixMinute) "Six-minute walk" else "Guided walk"
-    val durationS = if (sixMinute) 360 else 60
+    // The same lengths as the iPhone, so the two phones score comparable windows.
+    val durationS = if (sixMinute) 360 else 180
     var phase by remember { mutableStateOf(WalkPhase.SETUP) }
     var pocket by remember { mutableStateOf(0) }
     var outdoors by remember { mutableStateOf(false) }
@@ -190,9 +224,9 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
     var error by remember { mutableStateOf<String?>(null) }
     var walkResult by remember { mutableStateOf<MotionWindowSummary?>(null) }
     var sixResult by remember { mutableStateOf<SixMinuteWalkResponse?>(null) }
-    val capture by MotionCaptureService.state.collectAsStateWithLifecycle()
-    val recorder = MotionCaptureService.current
-    val live by (recorder?.live ?: kotlinx.coroutines.flow.MutableStateFlow(com.medpull.recovery.motion.LiveStats())).collectAsStateWithLifecycle()
+    val capture by CaptureSession.state.collectAsStateWithLifecycle()
+    val recorder = CaptureSession.recorder
+    val live by (recorder?.live ?: MutableStateFlow(LiveStats())).collectAsStateWithLifecycle()
 
     val askPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
@@ -206,15 +240,18 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
     }
 
     suspend fun upload() {
-        val rec = MotionCaptureService.current ?: return
+        val rec = CaptureSession.recorder ?: return
         phase = WalkPhase.UPLOADING
         val h = height.toDoubleOrNull()?.takeIf { it in 100.0..250.0 }?.also { Stature.set(context, it) }
         val side = if (pocket == 0) "left" else "right"
         try {
             if (sixMinute) {
+                // The server scales a walk stopped early, but only past a full
+                // minute: anything shorter is a false start, not a test.
+                if (live.elapsedS <= 60.0) throw IllegalStateException("Walk for at least a minute for the test to count. Try again.")
                 val window = rec.window("six_minute_walk", side)
                 val r = app.api.sixMinuteWalk(SixMinuteWalkUpload(
-                    startedAt = Dates.iso(rec.startedAt), durationS = live.elapsedS.coerceAtLeast(61.0), steps = rec.steps.takeIf { it > 0 },
+                    startedAt = Dates.iso(rec.startedAt), durationS = live.elapsedS, steps = rec.steps.takeIf { it > 0 },
                     pedometerDistanceM = null, gpsDistanceM = rec.gpsDistanceM, gpsAccuracyM = rec.gpsAccuracyM,
                     minuteSteps = rec.minuteStepCounts.takeIf { it.isNotEmpty() }, heightCm = h, deviceModel = AppConfig.deviceName, motion = window,
                 ))
@@ -227,21 +264,21 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
             phase = WalkPhase.RESULT
             app.refreshPortfolio(false)
         } catch (e: Exception) { error = e.message; phase = WalkPhase.SETUP }
-        MotionCaptureService.reset()
+        CaptureSession.reset()
     }
 
     LaunchedEffect(capture) { if (capture == CaptureState.DONE && phase == WalkPhase.RUNNING) upload() }
-    DisposableEffect(Unit) { onDispose { if (MotionCaptureService.state.value == CaptureState.RUNNING) MotionCaptureService.stop(context) } }
+    DisposableEffect(Unit) { onDispose { if (CaptureSession.state.value == CaptureState.RUNNING) MotionCaptureService.stop(context) } }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        Bar(nav, title)
+        BackBar(nav, title)
         error?.let { ErrorBanner(it, onDismiss = { error = null }); Gap() }
         when (phase) {
             WalkPhase.SETUP -> {
                 Panel {
                     Text("How it works", style = MaterialTheme.typography.titleMedium, color = c.ink)
                     Text(if (sixMinute) "Walk for six minutes at your own pace, on flat ground, with the phone in a front trouser pocket, top end up. Stop early if you need to; the test is scaled."
-                    else "Walk for one minute at your usual pace with the phone in a front trouser pocket, top end up. The server works out your speed, step length, evenness and steadiness.",
+                    else "Walk for three minutes at your usual pace with the phone in a front trouser pocket, top end up. The server works out your speed, step length, evenness and steadiness.",
                         color = c.body, style = MaterialTheme.typography.bodyMedium)
                 }
                 Gap()
@@ -270,8 +307,8 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
                 Panel(tint = c.brandTint) {
                     Text("Walking…", style = MaterialTheme.typography.labelMedium, color = c.brandInk)
                     val s = live.elapsedS.toInt()
-                    Text(String.format(java.util.Locale.getDefault(), "%d:%02d", s / 60, s % 60), style = MaterialTheme.typography.displayLarge, color = c.ink)
-                    Text("of ${durationS / 60}:${String.format(java.util.Locale.getDefault(), "%02d", durationS % 60)}", color = c.muted)
+                    Text(String.format(Locale.getDefault(), "%d:%02d", s / 60, s % 60), style = MaterialTheme.typography.displayLarge, color = c.ink)
+                    Text("of ${durationS / 60}:${String.format(Locale.getDefault(), "%02d", durationS % 60)}", color = c.muted)
                     Gap(8.dp)
                     Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         Stat("Steps", "${live.steps}")
@@ -320,11 +357,6 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
         }
         Gap(24.dp)
     }
-}
-
-@Composable
-private fun Stat(label: String, value: String) {
-    Column { Text(label, style = MaterialTheme.typography.labelSmall, color = MP.colors.muted); Text(value, style = MaterialTheme.typography.titleMedium, color = MP.colors.ink) }
 }
 
 private data class Protocol(val id: String, val label: String, val reference: String, val movement: String)
@@ -383,7 +415,7 @@ fun RangeOfMotionScreen(nav: NavHostController) {
 
     val p = PROTOCOLS[protocol]
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        Bar(nav, "Range of motion")
+        BackBar(nav, "Range of motion")
         error?.let { ErrorBanner(it, onDismiss = { error = null }); Gap() }
         if (result == null) {
             FlowChips(PROTOCOLS.map { it.label }, protocol) { protocol = it; reference = null; movement = null }

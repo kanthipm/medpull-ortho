@@ -3,11 +3,16 @@ package com.medpull.recovery.features.care
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
+import android.provider.OpenableColumns
+import androidx.annotation.OptIn as AndroidOptIn
 import androidx.exifinterface.media.ExifInterface
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -18,12 +23,15 @@ import androidx.media3.transformer.Transformer
 import com.medpull.recovery.core.ApiClient
 import com.medpull.recovery.core.ChatAttachment
 import com.medpull.recovery.core.attachmentBytes
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 
 /** A file ready to send: bytes, type and a name, within the server's budgets. */
 data class Prepared(val bytes: ByteArray, val contentType: String, val filename: String)
@@ -71,7 +79,7 @@ object AttachmentPrep {
             Bitmap.createScaledBitmap(raw, (raw.width * f).toInt(), (raw.height * f).toInt(), true)
         } else raw
         val upright = if (rotation != 0) {
-            val m = android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }
+            val m = Matrix().apply { postRotate(rotation.toFloat()) }
             Bitmap.createBitmap(scaled, 0, 0, scaled.width, scaled.height, m, true)
         } else scaled
         val out = ByteArrayOutputStream()
@@ -94,6 +102,9 @@ object AttachmentPrep {
         return Prepared(bytes, "video/mp4", name.substringBeforeLast('.').ifBlank { "video" } + ".mp4")
     }
 
+    // Transformer is still an opt-in API in media3; it is the one way to
+    // re-encode a clip without ffmpeg, so the opt-in is deliberate.
+    @AndroidOptIn(UnstableApi::class)
     private suspend fun transcode(context: Context, uri: Uri, out: File) = withContext(Dispatchers.Main) {
         val done = CompletableDeferred<Unit>()
         val transformer = Transformer.Builder(context)
@@ -114,7 +125,7 @@ object AttachmentPrep {
     }
 
     private fun displayName(context: Context, uri: Uri): String? =
-        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         } ?: uri.lastPathSegment
 
@@ -135,7 +146,7 @@ class VoiceNoteRecorder(private val context: Context) {
     fun start() {
         val f = File(context.cacheDir, "captures/note-${System.currentTimeMillis()}.m4a").apply { parentFile?.mkdirs() }
         @Suppress("DEPRECATION")
-        val r = if (android.os.Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
+        val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
         r.setAudioSource(MediaRecorder.AudioSource.MIC)
         r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
         r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -158,7 +169,7 @@ class VoiceNoteRecorder(private val context: Context) {
         val ms = System.currentTimeMillis() - startedAt
         if (f == null || ms < 500) { f?.delete(); return null }
         val bytes = f.readBytes(); f.delete()
-        val stamp = java.text.SimpleDateFormat("MMM d, h.mm a", java.util.Locale.getDefault()).format(java.util.Date())
+        val stamp = SimpleDateFormat("MMM d, h.mm a", Locale.getDefault()).format(Date())
         return Prepared(bytes, "audio/mp4", "Voice note $stamp.m4a")
     }
 

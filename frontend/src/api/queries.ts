@@ -27,6 +27,7 @@ import type {
   AppLinkCandidates,
   AppLinkResult,
   ContactResult,
+  Health,
 } from './types'
 
 /** The pages that carry live numbers refresh themselves every five minutes
@@ -510,4 +511,18 @@ export function useRecompute(id: string) {
     onSuccess: () =>
       Promise.all(recomputeKeys(id).map((queryKey) => qc.invalidateQueries({ queryKey }))),
   })
+}
+
+/** Which deployment this is. Fetched once; it cannot change under a page. */
+export function useHealth() {
+  return useQuery({
+    queryKey: ['health'],
+    queryFn: () => fetchJson<Health>('/api/health'),
+    staleTime: Infinity,
+  })
+}
+
+/** True on the public demo stack only, and false until the server has said. */
+export function useIsDemo(): boolean {
+  return useHealth().data?.demo === true
 }

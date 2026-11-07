@@ -1,8 +1,12 @@
 package com.medpull.recovery.features.profile
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,10 +42,13 @@ import com.medpull.recovery.MedPullApp
 import com.medpull.recovery.core.AppConfig
 import com.medpull.recovery.core.AppModel
 import com.medpull.recovery.core.Dates
+import com.medpull.recovery.core.Reminders
 import com.medpull.recovery.core.wearableLink
-import com.medpull.recovery.features.onboarding.Field
 import com.medpull.recovery.health.HealthConnectState
+import com.medpull.recovery.ui.BackBar
 import com.medpull.recovery.ui.ErrorBanner
+import com.medpull.recovery.ui.Field
+import com.medpull.recovery.ui.FlowChips
 import com.medpull.recovery.ui.Gap
 import com.medpull.recovery.ui.Guardrail
 import com.medpull.recovery.ui.Hairline
@@ -55,17 +63,10 @@ import com.medpull.recovery.ui.SecondaryButton
 import com.medpull.recovery.ui.SectionTitle
 import com.medpull.recovery.ui.StatusPill
 import com.medpull.recovery.ui.Tone
+import com.medpull.recovery.ui.AppearanceMode
 import com.medpull.recovery.ui.appModel
 import com.medpull.recovery.ui.toneFor
 import kotlinx.coroutines.launch
-
-@Composable
-private fun Bar(nav: NavHostController, title: String) {
-    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MP.colors.ink) }
-        Text(title, style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
-    }
-}
 
 @Composable
 fun ProfileScreen(nav: NavHostController) {
@@ -78,7 +79,7 @@ fun ProfileScreen(nav: NavHostController) {
     var serverUrl by remember { mutableStateOf(app.config.baseUrl) }
     var signingOut by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        Bar(nav, "Profile")
+        BackBar(nav, "Profile")
         if (me != null) {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -86,7 +87,7 @@ fun ProfileScreen(nav: NavHostController) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(me.patient.name, style = MaterialTheme.typography.titleLarge, color = c.ink)
-                        Text(listOfNotNull(me.patient.procedureDisplay.takeIf { it.isNotBlank() }, me.patient.hospital).joinToString(" · "),
+                        Text(listOfNotNull(me.patient.procedureDisplay.takeIf { it.isNotBlank() }, me.patient.hospital?.name).joinToString(" · "),
                             color = c.muted, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
@@ -127,6 +128,8 @@ fun ProfileScreen(nav: NavHostController) {
             })
         }
         Gap()
+        AppearanceCard()
+        Gap()
         Panel {
             SectionTitle("Developer")
             Text("Where the app talks to. The emulator reaches a laptop at 10.0.2.2.", color = c.muted, style = MaterialTheme.typography.bodyMedium)
@@ -146,6 +149,22 @@ fun ProfileScreen(nav: NavHostController) {
     }
 }
 
+/** Light, dark or system. Light is the default, as on the iPhone. */
+@Composable
+private fun AppearanceCard() {
+    val context = LocalContext.current
+    val appearance = (context.applicationContext as MedPullApp).graph.appearance
+    val mode by appearance.mode.collectAsStateWithLifecycle()
+    val modes = AppearanceMode.entries
+    Panel {
+        SectionTitle("Appearance")
+        Gap(8.dp)
+        FlowChips(modes.map { it.label }, modes.indexOf(mode)) { appearance.set(modes[it]) }
+        Gap(6.dp)
+        Text("Light is the default. System follows your phone's dark theme setting.", color = MP.colors.muted, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
 @Composable
 fun ConnectionsScreen(nav: NavHostController) {
     val app = appModel()
@@ -153,7 +172,7 @@ fun ConnectionsScreen(nav: NavHostController) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { app.refreshWearables(force = false, surface = false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        Bar(nav, "Connections")
+        BackBar(nav, "Connections")
         state.lastError?.let { ErrorBanner(it, onDismiss = { app.clearError() }); Gap() }
         HealthConnectCard(app)
         Gap()
@@ -168,58 +187,29 @@ fun ConnectionsScreen(nav: NavHostController) {
     }
 }
 
-/** Opt-in background walking bouts: the Android stand-in for Apple's passive gait. */
-@Composable
-fun PassiveWalksCard() {
-    val context = LocalContext.current
-    val c = MP.colors
-    var enabled by remember { mutableStateOf(com.medpull.recovery.motion.PassiveCapture.isEnabled(context)) }
-    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        if (grants[android.Manifest.permission.ACTIVITY_RECOGNITION] == true) {
-            com.medpull.recovery.motion.PassiveCapture.setEnabled(context, true); enabled = true
-        }
-    }
-    Panel {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Record walks automatically", style = MaterialTheme.typography.titleLarge, color = c.ink)
-                Text("When your phone notices you walking, it records two minutes in a pocket and sends them to MedPull, at most once every half hour. A small notification shows while it records.",
-                    color = c.body, style = MaterialTheme.typography.bodyMedium)
-            }
-            androidx.compose.material3.Switch(checked = enabled, onCheckedChange = { on ->
-                if (on && !com.medpull.recovery.motion.PassiveCapture.hasPermission(context)) {
-                    val wanted = mutableListOf(android.Manifest.permission.ACTIVITY_RECOGNITION)
-                    if (android.os.Build.VERSION.SDK_INT >= 33) wanted += android.Manifest.permission.POST_NOTIFICATIONS
-                    ask.launch(wanted.toTypedArray())
-                } else { com.medpull.recovery.motion.PassiveCapture.setEnabled(context, on); enabled = on }
-            })
-        }
-    }
-}
-
 @Composable
 fun ReminderCard() {
     val context = LocalContext.current
     val c = MP.colors
-    var hour by remember { mutableStateOf(com.medpull.recovery.core.Reminders.hour(context)) }
-    val askNotify = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+    var hour by remember { mutableStateOf(Reminders.hour(context)) }
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Daily reminder", style = MaterialTheme.typography.titleLarge, color = c.ink)
                 Text(hour?.let { "Every day at ${if (it > 12) it - 12 else it} ${if (it >= 12) "pm" else "am"}" } ?: "Off", color = c.body, style = MaterialTheme.typography.bodyMedium)
             }
-            androidx.compose.material3.Switch(checked = hour != null, onCheckedChange = { on ->
+            Switch(checked = hour != null, onCheckedChange = { on ->
                 if (on) {
-                    if (android.os.Build.VERSION.SDK_INT >= 33) askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                    com.medpull.recovery.core.Reminders.set(context, 8); hour = 8
-                } else { com.medpull.recovery.core.Reminders.set(context, null); hour = null }
+                    if (Build.VERSION.SDK_INT >= 33) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    Reminders.set(context, 8); hour = 8
+                } else { Reminders.set(context, null); hour = null }
             })
         }
         if (hour != null) {
             Gap(8.dp)
-            com.medpull.recovery.features.onboarding.FlowChips(listOf("7 am", "8 am", "9 am", "10 am", "6 pm"), listOf(7, 8, 9, 10, 18).indexOf(hour)) { i ->
-                val h = listOf(7, 8, 9, 10, 18)[i]; com.medpull.recovery.core.Reminders.set(context, h); hour = h
+            FlowChips(listOf("7 am", "8 am", "9 am", "10 am", "6 pm"), listOf(7, 8, 9, 10, 18).indexOf(hour)) { i ->
+                val h = listOf(7, 8, 9, 10, 18)[i]; Reminders.set(context, h); hour = h
             }
         }
     }
@@ -238,7 +228,7 @@ fun HealthConnectCard(app: AppModel) {
     val ready = state.me?.features?.deviceHealth ?: false
     val connected = hc is HealthConnectState.Connected || serverSays
     val contract = remember { health.permissionContract() }
-    val askPermissions = androidx.activity.compose.rememberLauncherForActivityResult(contract) { deferred ->
+    val askPermissions = rememberLauncherForActivityResult(contract) { deferred ->
         scope.launch {
             health.onPermissions(deferred.await())
             app.refreshWearables(force = true, surface = false); app.refreshMe(false)
