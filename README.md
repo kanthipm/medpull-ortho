@@ -118,11 +118,17 @@ stale. `.github/workflows/ci.yml` runs all three on every push.
 ## Deploying
 
 ```bash
-make deploy      # or: ./infra/deploy.sh
+make deploy        # the real app: app.medpull.org, from .env
+make deploy-demo   # the public demo: demo.medpull.org, from .env.demo
 ```
 
-Puts the backend on AWS Lambda behind CloudFront, sized to sit inside the
-always-free tier — steady-state cost is a few cents a month. Runbook, cost
+Two stacks from one repo, each on AWS Lambda behind CloudFront and sized to
+sit inside the always-free tier — steady-state cost is a few cents a month
+for both. The real app holds real charts, its console is locked behind the
+access token, and it is never seeded: with `DEMO_MODE=false` the seed
+function refuses to run. The demo is seeded with the fake roster, shows the
+welcome screen and the "demo roster" caption, and is open; the console learns
+which one it is from `/api/health`, not from a hostname. Runbook, cost
 breakdown and the write-concurrency design: **[infra/README.md](infra/README.md)**.
 
 The application code is unchanged by this: `app/aws/` disables itself when
@@ -566,15 +572,15 @@ the emulator); change it on the Profile screen or in `android/app/build.gradle.k
 
 ## Not in v1
 
-- **Auth.** Deliberately open for demos. Every console route is
-  unauthenticated, write paths included (escalations, task assignment, record
-  merges, and the Junction lifecycle: whoever can reach the console can issue
-  a Junction Link for any patient, trigger a back-fill, or disconnect an
-  account). The webhooks are the exception — Junction's is verified against
-  its Svix signature, Apple's against its certificate chain, and the unsigned
-  demo webhook is closed unless `ALLOW_MOCK_WEBHOOK=true` — but binding a
-  device to a patient is a console action, and the console has no login. That
-  is the gap to close before any real patient is linked. Running locally, `/docs`, `/redoc` and `/openapi.json` are open too;
+- **Auth.** One shared console token (`CONSOLE_ACCESS_TOKEN`), set on the
+  real deployment and absent on the public demo, which stays open on
+  purpose. Set, every console route needs it, write paths included
+  (escalations, task assignment, record merges, and the Junction lifecycle);
+  there are no per-user accounts, roles or an audit trail yet. The webhooks
+  carry their own credentials — Junction's is verified against its Svix
+  signature, Apple's against its certificate chain, and the unsigned demo
+  webhook is closed unless `ALLOW_MOCK_WEBHOOK=true`, which only the demo
+  stack sets. Running locally, `/docs`, `/redoc` and `/openapi.json` are open too;
   on AWS only `/api/*` is routed to the function, so those three are not
   reachable there. The demo server does contain the SPA catch-all to the built
   bundle and 404s unmatched `/api/*` paths rather than falling through to
