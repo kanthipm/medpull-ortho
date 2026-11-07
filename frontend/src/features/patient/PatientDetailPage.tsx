@@ -190,6 +190,9 @@ function progressStats(progress: ReportedProgress) {
   return items
 }
 
+/** What the seed and the app write for a general chart with no condition named. */
+const GENERIC_GENERAL = new Set(['', 'general care', 'general recovery', 'no surgery', 'none'])
+
 export default function PatientDetailPage() {
   const { id = '' } = useParams()
   const { data: p, isLoading, isError } = usePatient(id)
@@ -302,7 +305,15 @@ export default function PatientDetailPage() {
   // the app may carry no age or sex yet; "0 U" is not a fact, so the part is
   // left out until there is one.
   const pathwayName = care.data?.pathway?.name ?? null
-  const procedure = general ? 'No surgery on file' : p.procedure_display
+  // A general chart followed for a condition rather than an operation (a
+  // lifter's "Patellar tendinopathy · progressive loading") carries that
+  // pathway as its display, and it is the fact worth stating; only the
+  // generic labels fall back to the plain sentence.
+  const procedure = general
+    ? GENERIC_GENERAL.has((p.procedure_display ?? '').trim().toLowerCase())
+      ? 'No surgery on file'
+      : p.procedure_display
+    : p.procedure_display
   const restated =
     !general &&
     !!pathwayName &&
