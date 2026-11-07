@@ -102,6 +102,9 @@ fun MainTabs() {
         if (route != target) nav.navigateTab(target)
     }
     LaunchedEffect(state.showConnections) { if (state.showConnections) { nav.navigate(Routes.CONNECTIONS); app.showConnections(false) } }
+    // A task link can arrive while Profile, Connections or a detail screen is
+    // up, where Today (which opens it) is not composed: bring Today back first.
+    LaunchedEffect(state.pendingTaskId) { if (state.pendingTaskId != null && route != Routes.TODAY) nav.navigateTab(Routes.TODAY) }
 
     Scaffold(
         containerColor = c.canvas,
