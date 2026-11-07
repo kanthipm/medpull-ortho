@@ -99,6 +99,10 @@ PLAUSIBLE_RANGE: dict[str, tuple[float, float]] = {
     str(M.ROM_FLEXION): (0.0, 180.0),
     str(M.ROM_EXTENSION): (-30.0, 90.0),
     str(M.ROM_ABDUCTION): (0.0, 180.0),
+    # Reported training: RPE 10 for 600 minutes is the ceiling of what the
+    # check-in form accepts; program completion is a fraction of one day.
+    str(M.SESSION_LOAD): (0.0, 6_000.0),
+    str(M.PROGRAM_DONE): (0.0, 1.0),
 }
 
 # Observations are dated in patient-local wall time, so a patient east of the

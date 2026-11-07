@@ -259,9 +259,23 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
     gait_latest = float(gait_postop.iloc[-1]) if gait_postop is not None and len(gait_postop) else None
     gait_day = int(gait_postop.index[-1]) if gait_postop is not None and len(gait_postop) else None
 
+    # What the patient reported by check-in (training load, pain, program
+    # completion, whether they are still answering). The whole picture for a
+    # chart with no wearable, and the console's progress line for anyone
+    # whose check-in carries training. Guarded like the care metrics: a
+    # malformed transcript must never take the tier down.
+    from app.engine.reported import reported_signals
+    from app.engine.types import ReportedSignals
+
+    try:
+        reported = reported_signals(db, patient, today, postop_day, series)
+    except Exception:  # noqa: BLE001
+        logger.exception("reported signals failed for %s", patient_id)
+        reported = ReportedSignals()
+
     risk = score_risk(
         postop_day, deviations, trajectory, composite, confidence, adherence,
-        gait_latest, gait_day,
+        gait_latest, gait_day, reported=reported,
     )
     # The stress index is derived from the daily autonomic series the loader
     # just built (engine/mobility/stress) and charted like any other signal.
@@ -305,6 +319,7 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
         metrics=cards,
         baselines=list(baselines.values()),
         care_metrics=care_metrics,
+        reported=reported.to_dict(),
     )
 
     assessment = RiskAssessment(

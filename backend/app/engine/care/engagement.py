@@ -198,15 +198,29 @@ def m16(ctx: CareContext) -> CareMetric:
     if wear is not None:
         recent = wear[(wear.index > ctx.postop_day - window) & (wear.index <= ctx.postop_day)]
         wear_mean = float(recent.mean()) if len(recent) else None
-    if conf.level == ConfidenceLevel.HIGH:
+    # A chart with no wearable at all but a run of check-ins is being
+    # followed — by text. "Cannot see this patient" would be false about it,
+    # and the risk tier reads what was reported (engine/reported.py).
+    recent_checkins = sum(
+        1 for c in ctx.checkins
+        if 0 <= (ctx.today - c["occurred_at"].date()).days < 14
+    )
+    followed_by_text = not conf.panel and recent_checkins >= 3
+    if followed_by_text:
+        status, text = MetricStatus.OK, "Followed by check-in"
+    elif conf.level == ConfidenceLevel.HIGH:
         status, text = MetricStatus.OK, "Watching clearly"
     elif conf.level == ConfidenceLevel.MEDIUM:
         status, text = MetricStatus.WATCH, "Partial coverage"
     else:
         status, text = MetricStatus.FLAG, "Cannot see this patient"
     dark = [LABELS.get(m, m) for m in conf.dark_metrics]
-    finding = (f"{conf.days_with_data} of {window} recent days carried at least three key signals; "
-               f"panel coverage {conf.score * 100:.0f}%")
+    if followed_by_text:
+        finding = (f"No wearable on this chart; the picture is what the patient reports — "
+                   f"{recent_checkins} check-ins in the last 14 days")
+    else:
+        finding = (f"{conf.days_with_data} of {window} recent days carried at least three key "
+                   f"signals; panel coverage {conf.score * 100:.0f}%")
     if dark:
         finding += f"; silent all window: {', '.join(dark)}"
     if sync_hours is not None:
@@ -223,6 +237,14 @@ def m16(ctx: CareContext) -> CareMetric:
     chart = ChartSpec(kind="bars",
                       series=[{"x": c["label"], "y": round(c["coverage"] * 100)} for c in coverage],
                       x_label="Signal", y_label="% of days")
+    if followed_by_text:
+        return build(
+            "M16", ctx, status=status, status_text=text, finding=finding,
+            value=f"{recent_checkins}", value_num=float(recent_checkins), unit="check-ins",
+            value_label="check-ins in 14 days", delta_text="no device · reported only",
+            chart=chart, drivers=coverage, confidence=ConfidenceLevel.MEDIUM,
+            coverage_text=f"{recent_checkins} check-ins in 14 days, no wearable",
+        )
     return build(
         "M16", ctx, status=status, status_text=text, finding=finding,
         value=f"{conf.score * 100:.0f}%", value_num=conf.score * 100, unit="coverage",

@@ -80,6 +80,9 @@ UNITS: dict[MetricType, str] = {
     MetricType.ROM_FLEXION: "deg",
     MetricType.ROM_EXTENSION: "deg",
     MetricType.ROM_ABDUCTION: "deg",
+    # reported training (the lifter check-in, tasks/reported.py)
+    MetricType.SESSION_LOAD: "au",
+    MetricType.PROGRAM_DONE: "fraction",
 }
 
 

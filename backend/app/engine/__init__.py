@@ -25,4 +25,9 @@
 # carry none of that and must not survive.
 # 1.5.1: the headline is six fixed tiles per pathway plus an `attention`
 # list; stored bundles carry the old three and no attention list.
-ENGINE_VERSION = "1.5.1"
+# 1.6.0: a chart with check-ins and no wearable is scored from what the
+# patient reported (engine/reported.py: training load, pain, program
+# completion, going quiet) instead of sitting in Missing data; the bundle
+# carries those signals as `reported`, and reported training load is the
+# load source M1 prefers. Assessments stored by 1.5.x must not survive.
+ENGINE_VERSION = "1.6.0"

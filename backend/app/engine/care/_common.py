@@ -182,14 +182,22 @@ def grid(series: pd.Series, start: int, end: int) -> pd.Series:
     return series.reindex(range(start, end + 1)).astype(float)
 
 
+LOAD_SOURCES: tuple[tuple[M, str], ...] = (
+    # Reported training load first: a lifter who texts effort and minutes
+    # after each session (tasks/reported.py) is describing the load the
+    # program prescribes, which a step count on the same wrist would not.
+    (M.SESSION_LOAD, "training load"),
+    (M.STEPS, "steps"), (M.ACTIVE_ENERGY, "energy load"),
+    (M.EXERCISE_SESSION, "exercise minutes"),
+)
+
+
 def load_source(ctx: CareContext) -> tuple[pd.Series | None, str, str]:
-    """(series, metric key, label) for the activity load: steps, else active
-    energy, else exercise-session minutes — whichever this patient's sources
-    report. The label travels into every finding so a provider knows which."""
-    for metric, label in (
-        (M.STEPS, "steps"), (M.ACTIVE_ENERGY, "energy load"),
-        (M.EXERCISE_SESSION, "exercise minutes"),
-    ):
+    """(series, metric key, label) for the activity load: reported training
+    load, else steps, else active energy, else exercise-session minutes —
+    whichever this patient's sources report with three days or more. The
+    label travels into every finding so a provider knows which."""
+    for metric, label in LOAD_SOURCES:
         s = ctx.series.get(str(metric))
         if s is not None and len(s[s.index >= 0]) >= 3:
             return s.astype(float), str(metric), label
