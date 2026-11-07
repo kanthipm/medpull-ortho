@@ -212,9 +212,12 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
         val side = if (pocket == 0) "left" else "right"
         try {
             if (sixMinute) {
+                // The server scales a walk stopped early, but only past a full
+                // minute: anything shorter is a false start, not a test.
+                if (live.elapsedS <= 60.0) throw IllegalStateException("Walk for at least a minute for the test to count. Try again.")
                 val window = rec.window("six_minute_walk", side)
                 val r = app.api.sixMinuteWalk(SixMinuteWalkUpload(
-                    startedAt = Dates.iso(rec.startedAt), durationS = live.elapsedS.coerceAtLeast(61.0), steps = rec.steps.takeIf { it > 0 },
+                    startedAt = Dates.iso(rec.startedAt), durationS = live.elapsedS, steps = rec.steps.takeIf { it > 0 },
                     pedometerDistanceM = null, gpsDistanceM = rec.gpsDistanceM, gpsAccuracyM = rec.gpsAccuracyM,
                     minuteSteps = rec.minuteStepCounts.takeIf { it.isNotEmpty() }, heightCm = h, deviceModel = AppConfig.deviceName, motion = window,
                 ))
