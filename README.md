@@ -674,11 +674,36 @@ map are in `patient-web/README.md`.
 
 ## Not in v1
 
-- **Auth.** One shared console token (`CONSOLE_ACCESS_TOKEN`), set on the
-  real deployment and absent on the public demo, which stays open on
-  purpose. Set, every console route needs it, write paths included
-  (escalations, task assignment, record merges, and the Junction lifecycle);
-  there are no per-user accounts, roles or an audit trail yet. The webhooks
+- **Auth.** The console has one door (`backend/app/api/auth.py`) and every
+  console route, the team boards included, is narrowed to what the caller's
+  credential may see (`backend/app/api/scope.py`). Two kinds of credential:
+  - The **staff token** stays `CONSOLE_ACCESS_TOKEN`, set on the real
+    deployment and absent on the public demo, which stays open on purpose.
+    Set, every console route needs a token, write paths included
+    (escalations, task assignment, record merges, and the Junction
+    lifecycle). The staff token — and an open console — is scope `all`:
+    every hospital, every team board, the integrations and settings pages.
+  - An **org token** is minted per organisation and stored as a SHA-256 in
+    the `console_credentials` table, never in the clear. `hospital:<id>`
+    sees that hospital's charts and nothing else: another hospital's patient
+    is a 404 (never a 403, so ids do not leak), so are the team boards, and
+    the integrations, notification-settings and library-edit routes are a
+    403 that says they are MedPull's. `sports_org:<id>` sees every team
+    board in one program and `team:<id>` one board; neither sees a clinic
+    chart. An org token narrows the view **even on the open demo console**,
+    which is how a clinic on the demo stack signs in and sees only its own
+    roster. Mint one on the deployed stack with
+    `cd backend && uv run python scripts/admin_db.py --bucket <data bucket> --mint-token hospital:hirt "HIRT console"`
+    — the token is printed once and only its hash is kept; `--report` lists
+    credentials and `--revoke-token <id>` retires one, effective on the next
+    request. Hand it over as a sign-in link,
+    `https://<console host>/login#token=<token>`: a URL fragment reaches no
+    server and no log, the login page consumes it, clears it from the
+    address bar and checks it through `GET /api/console/session` before
+    keeping it, and the console then shows the org's name beside the brand
+    and only the pages that scope can use.
+  There are no per-user accounts, roles or an audit trail yet (a credential
+  records when it was last used, to the hour). The webhooks
   carry their own credentials — Junction's is verified against its Svix
   signature, Apple's against its certificate chain, and the unsigned demo
   webhook is closed unless `ALLOW_MOCK_WEBHOOK=true`, which only the demo
