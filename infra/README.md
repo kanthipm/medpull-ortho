@@ -30,6 +30,7 @@ demo database, and prints a URL.
                          └── Groq over the public internet — no VPC, no NAT
                                             │
                        S3 (private) · db/recovery.db + web/ (built SPA)
+                                      + web/patient/ (patient web app, at /patient/)
                        CloudWatch Logs · 14-day retention
 ```
 
@@ -119,7 +120,7 @@ recommends against creating them at all.
 ```bash
 ./infra/deploy.sh                  # build, deploy, seed on first run
 ./infra/deploy.sh --reseed         # rebuild the demo database (dates shift to today)
-./infra/deploy.sh --backend-only   # skip the frontend build and upload
+./infra/deploy.sh --backend-only   # skip the frontend builds and uploads (console and patient app)
 ./infra/deploy.sh --stack-only     # template and parameters only; ships no code
 ```
 

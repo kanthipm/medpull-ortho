@@ -128,6 +128,12 @@ breakdown and the write-concurrency design: **[infra/README.md](infra/README.md)
 The application code is unchanged by this: `app/aws/` disables itself when
 `S3_BUCKET` is unset, so `make dev` behaves exactly as it always did.
 
+The patient web app (`patient-web/`, `make dev-patient-web` /
+`make build-patient-web`) ships with the same command: `deploy.sh` builds it
+and uploads it to `web/patient/`, so it is served at
+`https://app.medpull.org/patient/` next to the console, same origin, same
+`/api`. On a computer it draws itself inside a phone-sized frame.
+
 ### LLM setup
 
 Provider priority (cloud-first): **Groq → deterministic fallback**, with
