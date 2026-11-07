@@ -109,6 +109,28 @@ MESSAGE_LIBRARY: list[MessageSpec] = [
                 "with a normal day for you? Let us know in the app, and tell us right away if it "
                 "feels harder than usual.",
                 ("chronic", "breathing")),
+    # The lifter nudges (the HIRT roster): a clinic whose patients train in a
+    # gym between visits. Drafts only — the clinician approves or edits in the
+    # composer before anything sends. {site} is the body part the program is
+    # for ("knee", "Achilles", "back"), read off the chart (site_word).
+    MessageSpec("msg_hold_load", "Hold the load",
+                "Hi {first} — Dr. {surgeon}'s team here. Your training load jumped this week — "
+                "hold at last week's numbers until your session with Dr. {surgeon}. Reply with "
+                "how the {site} feels today.",
+                ("training", "load"), "direct"),
+    MessageSpec("msg_quiet_checkin", "One-tap check-in",
+                "Hi {first} — Dr. {surgeon}'s team here. Haven't heard from you in a few days — "
+                "one tap: how's it going?",
+                ("training", "engagement")),
+    MessageSpec("msg_pain_ask", "Ask about the pain",
+                "Hi {first} — Dr. {surgeon}'s team here. You said the {site} is hurting more "
+                "this week. Where exactly, and what sets it off? Reply here so Dr. {surgeon} can "
+                "look before your next session.",
+                ("training", "pain")),
+    MessageSpec("msg_program_nudge", "Program nudge",
+                "Hi {first} — Dr. {surgeon}'s team here. The program's slipped the last few "
+                "days — what's getting in the way? Reply here and we'll fit it around your week.",
+                ("training", "adherence")),
 ]
 
 MESSAGE_BY_KEY: dict[str, MessageSpec] = {m.key: m for m in MESSAGE_LIBRARY}
@@ -146,15 +168,48 @@ def message_payload(t: MessageTemplate) -> dict[str, Any]:
     }
 
 
+def surname_for_dr(name: str) -> str:
+    """The name a text says "Dr. X" with: "Dr. Alvarez" and "Dr. Sean Harris"
+    both read "Dr. Harris"-style, by family name. A name without the title
+    is left whole."""
+    bare = name.replace("Dr. ", "").strip()
+    if name.strip().startswith("Dr.") and len(bare.split()) > 1:
+        return bare.split()[-1]
+    return bare
+
+
 def _names(patient: Patient) -> tuple[str, str]:
     first = (patient.name or "there").split()[0]
     surgeon = getattr(getattr(patient, "surgeon", None), "name", "") or "your surgeon"
-    return first, surgeon.replace("Dr. ", "")
+    return first, surname_for_dr(surgeon)
+
+
+# The body part a program is for, read off the pathway or procedure the chart
+# shows ("Patellar tendinopathy · progressive loading" -> "knee"). Checked in
+# order; the first match wins, and a chart that names none says "it".
+_SITE_WORDS: tuple[tuple[str, str], ...] = (
+    ("achilles", "Achilles"), ("patellar", "knee"), ("knee", "knee"), ("acl", "knee"),
+    ("meniscus", "knee"), ("hip", "hip"), ("ankle", "ankle"), ("lumbar", "back"),
+    ("low back", "back"), ("back", "back"), ("spine", "back"), ("shoulder", "shoulder"),
+    ("rotator", "shoulder"), ("elbow", "elbow"), ("wrist", "wrist"), ("hamstring", "hamstring"),
+)
+
+
+def site_word(patient: Patient) -> str:
+    text = " ".join(
+        str(getattr(patient, attr, None) or "")
+        for attr in ("care_pathway", "procedure_display")
+    ).lower()
+    for needle, word in _SITE_WORDS:
+        if needle in text:
+            return word
+    return "it"
 
 
 def fill_template(body: str, patient: Patient) -> str:
     first, surgeon = _names(patient)
-    return body.replace("{first}", first).replace("{surgeon}", surgeon)
+    return (body.replace("{first}", first).replace("{surgeon}", surgeon)
+            .replace("{site}", site_word(patient)))
 
 
 _PRONOUNS = [
@@ -270,5 +325,5 @@ def draft_patient_message(
 
 __all__ = [
     "MESSAGE_LIBRARY", "MESSAGE_BY_KEY", "TONES", "ensure_message_library", "message_payload",
-    "fill_template", "intent_fallback", "draft_patient_message",
+    "fill_template", "intent_fallback", "draft_patient_message", "site_word", "surname_for_dr",
 ]

@@ -104,6 +104,11 @@ class _Evidence:
         self.metrics = {m.get("id"): m for m in care.get("metrics", []) if isinstance(m, dict)}
         self.level = str(assessment.risk_level) if assessment is not None else "missing_data"
         self.postop_day = analytics.get("postop_day")
+        # A chart with no wearable, followed by check-ins (engine/reported.py):
+        # there is no device to nudge, so the coverage steps stay off it.
+        reported = analytics.get("reported") or {}
+        panel = (analytics.get("confidence") or {}).get("panel") or []
+        self.reported_only = bool(reported.get("followed")) and not panel
 
     def has(self, *codes: str) -> list[str]:
         return [c for c in codes if c in self.reasons]
@@ -263,12 +268,13 @@ def _rules(
         add(_message("msg_walk_encourage", "Encourage walking", detail, "this_week", stalled,
                      patient, "msg_walk_encourage", rank))
 
-    # 4. overreaching
+    # 4. overreaching. A lifter followed by text gets the hold-the-load note
+    # below instead: a step band and "shorter walks" are a walker's remedy.
     over = []
     if ev.status_text("M1") in ("Overreaching vs tolerance band", "Above tolerance band"):
         over.append("M1")
     over += ev.flagged("M2")
-    if over:
+    if over and not ev.reported_only:
         rank += 1
         detail = _detail(ev.finding("M1", "M2"))
         add(_assign("assign_cap_load", "Cap the load for a few days", detail, "this_week", over,
@@ -299,7 +305,7 @@ def _rules(
 
     # 7. coverage
     coverage = ev.has("LOW_COVERAGE") + ev.flagged("M16", watch=True)
-    if coverage:
+    if coverage and not ev.reported_only:
         rank += 1
         detail = _detail(ev.reason_text("LOW_COVERAGE"), ev.finding("M16"))
         add(_message("msg_device_nudge", "Nudge the device sync", detail, "this_week", coverage,
@@ -308,6 +314,36 @@ def _rules(
                     coverage, _keys(templates, pathway, phase, V.OVERNIGHT_WEAR), rank))
         add(_open("open_wearables", "Check the wearable connection", detail, "this_week",
                   coverage, "wearables", rank))
+
+    # 7b. what the patient reported (a chart followed by check-ins alone —
+    # the lifter roster). Every message is a draft the clinician approves or
+    # edits in the composer; nothing here sends on its own.
+    if ev.has("LOAD_SPIKE"):
+        rank += 1
+        detail = _detail(ev.reason_text("LOAD_SPIKE"), ev.finding("M1", "M2"))
+        add(_message("msg_hold_load", "Send a hold-the-load note", detail, "today",
+                     ["LOAD_SPIKE", "M1"], patient, "msg_hold_load", rank))
+        add(_open("open_m1_load", "Review the training load",
+                  _detail(ev.finding("M1"), "Open the load ratio to see the week against "
+                          "the prior weeks."), "today", ["LOAD_SPIKE", "M1"],
+                  "full_stats:M1", rank))
+    pain_codes = ev.has("NEW_PAIN", "PAIN_RISING")
+    if pain_codes:
+        rank += 1
+        detail = _detail(ev.reason_text("NEW_PAIN", "PAIN_RISING"), ev.finding("M2"))
+        add(_message("msg_pain_ask", "Ask about the pain", detail, "today",
+                     pain_codes + ["M2"], patient, "msg_pain_ask", rank))
+    if ev.has("PROGRAM_SLIPPING"):
+        rank += 1
+        detail = _detail(ev.reason_text("PROGRAM_SLIPPING"))
+        add(_message("msg_program_nudge", "Nudge the program", detail, "this_week",
+                     ["PROGRAM_SLIPPING"], patient, "msg_program_nudge", rank))
+    if ev.has("WENT_QUIET"):
+        rank += 1
+        detail = _detail(ev.reason_text("WENT_QUIET"))
+        add(_message("msg_quiet_checkin", "Send a one-tap check-in", detail,
+                     "today" if ev.level == str(RiskLevel.HIGH) else "this_week",
+                     ["WENT_QUIET"], patient, "msg_quiet_checkin", rank))
 
     # 8. check-in overdue
     days_since = (today - last_checkin_at.date()).days if last_checkin_at else None

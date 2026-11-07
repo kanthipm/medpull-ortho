@@ -40,18 +40,28 @@ _FALLBACK_BY_CODE: list[tuple[str, str]] = [
     ("SLEEP_DISRUPTED", "Hi {first} — Dr. {surgeon}'s team. Sounds like nights have been rough. Tell us more in today's check-in so we can help you rest better."),
     ("LOW_COVERAGE", "Hi {first} — Dr. {surgeon}'s team. Your watch hasn't synced in a few days. Could you charge it and wear it today? It helps us follow your recovery."),
     ("ADHERENCE_LOW", "Hi {first} — Dr. {surgeon}'s team. Those daily exercises make a real difference. Anything getting in the way? Let us know in today's check-in."),
+    # What the patient reported by check-in (engine/reported.py), in the
+    # words of a clinic whose patients train between visits.
+    ("LOAD_SPIKE", "Hi {first} — Dr. {surgeon}'s team here. Your training load jumped this week — hold at last week's numbers until your session with Dr. {surgeon}. Reply with how the {site} feels today."),
+    ("WENT_QUIET", "Hi {first} — Dr. {surgeon}'s team here. Haven't heard from you in a few days — one tap: how's it going?"),
+    ("NEW_PAIN", "Hi {first} — Dr. {surgeon}'s team here. You said the {site} is hurting more this week. Where exactly, and what sets it off? Reply here so Dr. {surgeon} can look before your next session."),
+    ("PAIN_RISING", "Hi {first} — Dr. {surgeon}'s team here. You said the {site} is hurting more this week. Where exactly, and what sets it off? Reply here so Dr. {surgeon} can look before your next session."),
+    ("PROGRAM_SLIPPING", "Hi {first} — Dr. {surgeon}'s team here. The program's slipped the last few days — what's getting in the way? Reply here and we'll fit it around your week."),
 ]
 
 _DEFAULT_DRAFT = "Hi {first} — Dr. {surgeon}'s team. You're doing well — keep up the daily check-ins and exercises, and tell us right away if anything changes."
 
 
 def _fallback_draft(patient: Any, reasons: list[dict[str, Any]]) -> str:
+    from app.plan.messages import site_word, surname_for_dr
+
     first = patient.name.split()[0]
-    surgeon = patient.surgeon.name.replace("Dr. ", "")
+    surgeon = surname_for_dr(patient.surgeon.name)
+    site = site_word(patient)
     codes = {r["code"] for r in reasons}
     for code, template in _FALLBACK_BY_CODE:
         if code in codes:
-            return template.format(first=first, surgeon=surgeon)
+            return template.format(first=first, surgeon=surgeon, site=site)
     return _DEFAULT_DRAFT.format(first=first, surgeon=surgeon)
 
 

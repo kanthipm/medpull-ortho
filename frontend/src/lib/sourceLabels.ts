@@ -26,6 +26,12 @@ const SOURCE_LABELS: Record<string, string> = {
   ADHERENCE_LOW: 'Low task adherence',
   ON_TRACK: 'On track',
   CHECKIN_OVERDUE: 'Check-in overdue',
+  // What the patient reported by check-in (engine/reported.py)
+  LOAD_SPIKE: 'Training load jumped',
+  PAIN_RISING: 'Pain rising',
+  NEW_PAIN: 'New pain since the visit',
+  PROGRAM_SLIPPING: 'Program slipping',
+  WENT_QUIET: 'Went quiet',
 
   // Care metrics M1–M18, C1–C4 (engine/care/catalog.py)
   M1: 'Acute:chronic load ratio',
