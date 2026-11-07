@@ -28,6 +28,9 @@ final class OnboardingModel {
     var route: [Step] = []
     var step: Step { route.last ?? .welcome }
     var path: Path = .joinGeneral
+    /// Whether the plan step exists on this server (`features.paywall`).
+    /// Known once the account answers; until then the dots assume it does.
+    var paywall = true
 
     var isPersonal: Bool { path == .personal }
     var isSports: Bool { path == .sports }
@@ -156,7 +159,10 @@ final class OnboardingModel {
 
     /// The dots in the bar, for the path the person is on.
     var stepsShown: [Step] {
-        if isPersonal { return [.consent, .personalAbout, .goals, .plan, .health, .wearable] }
+        if isPersonal {
+            return paywall ? [.consent, .personalAbout, .goals, .plan, .health, .wearable]
+                           : [.consent, .personalAbout, .goals, .health, .wearable]
+        }
         if isSports { return [.consent, .personalAbout, .sport, .org, .athlete, .health, .wearable] }
         // The clinic path asks for the consent where it is needed — before a
         // new record is created — and not at all for a returning patient
@@ -172,7 +178,7 @@ final class OnboardingModel {
     /// returning patient whose signature the server still wants) it leads
     /// on to the steps that follow the session.
     func stepAfterConsent(signedIn: Bool) -> Step {
-        if signedIn { return isPersonal ? .plan : .health }
+        if signedIn { return isPersonal && paywall ? .plan : .health }
         switch path {
         case .personal, .sports: return .personalAbout
         case .findRecord: return .identity
@@ -577,6 +583,7 @@ final class OnboardingModel {
                 throw APIError(status: 0, detail: "The server didn’t return a session.")
             }
             app.adoptSession(token: token, me: me)
+            paywall = me.features.hasPaywall
             // A returning account signs nothing it has already signed. The
             // form is shown only when the server says this account needs it
             // — never accepted, or the version moved — and is then recorded
@@ -584,7 +591,7 @@ final class OnboardingModel {
             if me.needsConsent {
                 go(.consent)
             } else {
-                go(isPersonal ? .plan : .health)
+                go(isPersonal && paywall ? .plan : .health)
             }
         default:
             throw APIError(status: 0, detail: "Unexpected status \(r.status)")

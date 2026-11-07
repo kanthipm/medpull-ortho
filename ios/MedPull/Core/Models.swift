@@ -442,8 +442,13 @@ struct Features: Codable {
     /// The whole app is a beta while this is true; onboarding and Profile say so.
     let beta: Bool?
     let consentVersion: String?
+    /// Whether the personal tier's trial and subscription decide access.
+    /// False while there is no paid product: no plan step, no Plan or
+    /// Manage subscription rows. Absent (an older server) means on.
+    let paywall: Bool?
 
     var isBeta: Bool { beta ?? true }
+    var hasPaywall: Bool { paywall ?? true }
 }
 
 /// The beta consent on file for this account, as `/me` reports it.
