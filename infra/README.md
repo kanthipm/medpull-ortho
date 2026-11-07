@@ -56,9 +56,17 @@ no ECR repository, and no always-on database — between them, those are where a
 | AWS Budgets | first 2 budgets free | 1, optional |
 | S3 storage | 5 GB (first 12 months) | ~20 MB — about **$0.0005/month** after that |
 | S3 requests | — | at most one `HEAD` per API request (a 5s freshness TTL coalesces bursts) → **~$0.04 per 100k requests** |
+| KMS | — | two customer-managed keys per stack at **$1/month each**; the buckets' bucket keys cache one data key per bucket, so KMS requests round to nothing |
+| CloudTrail | first copy of management events per region free | the stack's trail, when on: S3 data events at $0.10 per 100,000, i.e. cents; a *second* copy of management events is $2 per 100,000, which `TRAIL_MANAGEMENT_EVENTS=false` avoids |
+| GuardDuty | 30-day trial | account-wide, not per stack: a few dollars a month at this event volume |
 
-**Realistic steady state: under $0.10/month.** The only line that is not
-free-forever is S3, and at these volumes it rounds to nothing.
+**Realistic steady state: under $0.10/month for the compute, plus the $2 a
+month the two keys cost each stack** and, once the account is set up, a few
+dollars for GuardDuty. The keys are the one deliberate spend: encryption
+under a key the account owns is what "the clinic's files and the
+subscribers' files never share a key" means, and $1 a month is what that
+costs (see *Compartments*). Everything else is free-forever or rounds to
+nothing.
 
 > **On the free tier itself:** AWS changed it in July 2025. Accounts created
 > since then get sign-up credits plus a free *plan* period rather than the old
@@ -187,6 +195,87 @@ Standing the demo up for the first time: request a certificate for
 ARN in `.env.demo`), `make deploy-demo`, then fill the persona roster with
 `uv run python scripts/push_demo_fill.py --bucket <demo data bucket>` from
 `backend/`, and hand the CNAME the deploy prints to the zone owner.
+
+## Compartments
+
+One AWS account holds everything, so the walls — between the demo and the
+real app, and between the three facets of the real app — are built inside
+it. The database is deliberately not one of them: a person can be a
+patient, a subscriber and an athlete at once, and all three are rows in the
+one SQLite file (`db/recovery.db`), told apart by `patients.account_kind`
+and kept apart by the code (`app/personal/scope.py` is the gate every
+console enumeration goes through). What the account separates is objects,
+keys, tags, credentials and stacks:
+
+| | Clinic | Personal | Sports | Shared |
+| --- | --- | --- | --- | --- |
+| Who | hospitals and PT clinics; their patients | paying subscribers | athletic organisations → teams → athletes | the functions, logs, distribution, code |
+| Rows | `hospitals`; `patients` with `account_kind` clinic (or NULL) | `patients` (personal); `personal_*`, `entitlements` | `sports_orgs`, `sports_teams`, `sports_*`; `patients` (sports) | `consents` belong to the person, whichever facet they signed in |
+| Objects | `DataBucket`: `db/`, `attachments/` (and `web/`, the two SPAs) | `PersonalDataBucket`: `personal/<patient>/…` | none today | the artifact bucket: Lambda zips, templates |
+| Key | `alias/<stack>-clinic` | `alias/<stack>-personal` | none today | SSE-S3 — code, not data |
+| Tag `medpull:facet` | `clinic` | `personal` | `sports` (the daily rule) | `shared` |
+| Console credential `kind` | `hospital`, scoped to one `org_id` | none: subscribers sign in to the app, never the console | `sports_org`, `team` | `all` |
+
+**Stacks.** The real app (`recovery-copilot`, `DEMO_MODE=false`) and the
+public demo (`medpull-demo`, `DEMO_MODE=true`) are two stacks from this one
+template, each with its own buckets, its own two keys, its own SSM prefix
+and its own trail; see *Two deployments* above for what each holds. Every
+taggable resource carries `medpull:deployment` = `real` | `demo`, derived
+from the stack's `DemoMode` parameter — so a stack whose mode changes
+changes its tags — and `medpull:stack` = the stack name, which `deploy.sh`
+passes at the stack level. Cost Explorer can split the bill by any of the
+three once *Account setup* has activated them.
+
+**Keys.** Two customer-managed KMS keys per stack, rotated yearly:
+`DataBucket` encrypts under the clinic key, `PersonalDataBucket` under the
+personal key, both with bucket keys on so the KMS bill is the $1 a month
+each key costs and nothing per request. The function's role may use exactly
+those two keys, and only through S3 (`kms:ViaService`); the key policies
+name the account root and that role; CloudFront's OAC may decrypt the clinic
+key because the SPA lives in the same bucket. The keys are retained when a
+stack is deleted, like the buckets they encrypt (a deleted key is deleted
+data); their aliases go with the stack, so `destroy.sh` prints the key ids
+and, with `--delete-data`, schedules their deletion. EventBridge rules,
+CloudFront functions, Function URLs and Lambda permissions have no `Tags`
+property in CloudFormation; the two rules state their facet in their
+description and carry the stack-level tags.
+
+**Existing objects.** A bucket's default encryption applies to objects
+written from then on; what was uploaded before the keys existed keeps
+SSE-S3 until something rewrites it. `db/recovery.db` rewrites itself (every
+write-back is a new object, stored under the default), and every deploy
+rewrites `web/`. The files nothing rewrites — `attachments/` and
+`personal/` — are what `infra/reencrypt.sh` is for: it copies each object
+onto its facet key in place, skips the ones already there (so a rerun is a
+no-op) and never touches the lock object. `--dry-run` lists first. The
+app's S3 client presigns with SigV4 (`signature_version="s3v4"` in
+`app/aws/storage.py`) because S3 refuses a SigV2 presigned URL or POST for
+an SSE-KMS object; in us-east-1 botocore would otherwise still use SigV2.
+
+**Sports.** The sports facet has rows, org scoping and tags, and no bucket
+or key, because nothing in it is an object yet: athletes' data is the same
+wearable stream and the same tables as everyone else's, scoped by
+`sports_profiles.org_id` and `team_id`. The first sports object — a video, a
+force-plate export — goes under a `sports/` prefix with its own key and its
+own IAM statement, the way `personal/` did, and gets a row in the table
+above when that day comes.
+
+**Credentials.** Console access is moving from one shared token to
+per-organisation credentials: a `console_credentials` table with `kind`
+(`all` | `hospital` | `sports_org` | `team`), `org_id`, `label`,
+`token_hash`, `created_at`, `last_used_at`, `revoked_at` — built in a
+separate stream, which documents it under *Console access*. The audit below
+lists them by kind, org and label and never prints a hash.
+
+**Seeing it.** `make audit-compartments` prints who is in each compartment
+from the local database; `make audit-compartments AUDIT="--stack
+recovery-copilot"` downloads the deployed database read-only (no lock,
+nothing uploaded) and adds what AWS says about the stack: its `DemoMode`
+and tags, each bucket's default encryption and tags, the KMS aliases and
+their rotation, the parameter names under `/<stack>/`, GuardDuty, the
+trails and whether they cover the stack's buckets, the budget. Without AWS
+credentials that half is one line saying so. `--json` for machines;
+`backend/scripts/audit_compartments.py --help` for the rest.
 
 ## Custom domain
 
@@ -481,6 +570,84 @@ AWS Business Associate Addendum, encryption with a customer-managed KMS key,
 CloudTrail data events, and access logging. Nothing here is HIPAA-ready, and the
 seeded roster is synthetic.
 
+The customer-managed keys (and the role's grant on them, through S3 only), the
+per-facet tags and the per-stack CloudTrail are under *Compartments* above;
+who may sign in to the account, GuardDuty and the cost tags under *Account
+setup* below.
+
+## Account setup
+
+The things no stack owns, done once per account by `infra/account.sh`. It
+is idempotent — every step says what it is about to do and skips what is
+already there — and `--dry-run` only says. Run it as the root user the
+first time (someone has to make the first IAM user, and that is the one
+job root is for); afterwards sign in as that user and leave root alone.
+
+```bash
+./infra/account.sh --dry-run                                   # what would change
+./infra/account.sh --user steve                                # the admins group, and a user in it
+./infra/account.sh --trail-bucket medpull-cloudtrail-logs-1759818803
+```
+
+- **Who signs in.** The account has only ever been used as root. The script
+  creates an IAM group `medpull-admins` with `AdministratorAccess` and a
+  second policy, `medpull-require-mfa`, that denies everything except
+  changing one's own password and registering an MFA device while no MFA
+  is present — so a new user can sign in, set a password, add a device,
+  and do nothing else until they sign in again with the code. Each
+  `--user NAME` becomes a user in that group with a console password (no
+  access keys: deploys run from CloudShell or with the user's own
+  short-lived credentials); the one-time password is printed once and must
+  be changed at first sign-in. Registering the MFA device is the person's
+  own step, in the console, and the script prints the three steps. When
+  that works, delete the root user's access keys in the console; the
+  script reminds you while they exist.
+- **GuardDuty.** One detector for the account (`create-detector --enable`),
+  reading the CloudTrail, DNS and VPC flow logs the account already
+  produces and raising findings on them. Nothing to configure per stack;
+  free for 30 days, then a few dollars a month at this volume.
+- **CloudTrail.** The account already has `medpull-audit-trail`
+  (management events, this region, no log-file validation) writing to
+  `medpull-cloudtrail-logs-1759818803`. Each stack can keep its own trail
+  beside it: `TRAIL_BUCKET=<that bucket>` in the env file and
+  `./infra/deploy.sh --stack-only` creates `<stack>-trail`, which writes
+  under `<stack>/` in the bucket with log-file validation on and records
+  S3 data events for the stack's two data buckets — every object read and
+  write, which is the audit log a clinic asks for. Management events are
+  on by default (`TRAIL_MANAGEMENT_EVENTS=true`); since the first copy per
+  region is free and every further copy is $2 per 100,000 events, the
+  stack that comes second sets it to `false` and keeps its data events
+  (`.env.demo.example` already does). The bucket's policy must let
+  CloudTrail write: `--trail-bucket NAME` checks it and puts the policy
+  only when the bucket has none (an existing policy that says nothing
+  about CloudTrail is printed beside the proposed one, never replaced).
+  Today's bucket already allows it, so that step reports a skip.
+- **Cost allocation tags.** `medpull:facet`, `medpull:deployment` and
+  `medpull:stack` are activated with
+  `aws ce update-cost-allocation-tags-status`, after which Cost Explorer
+  can group spend by them. A tag key can only be activated after it has
+  appeared on a bill, up to 24 hours after the first tagged deploy; until
+  then the step says the key is not on a bill yet, and the script is
+  rerun once it is.
+
+The order, the first time:
+
+1. `./infra/account.sh --dry-run`, as root, to read what it would do.
+2. `./infra/account.sh --user <name>`; sign in as that user, register MFA,
+   sign out and in again. From here on, work as that user.
+3. `./infra/account.sh --trail-bucket medpull-cloudtrail-logs-1759818803`
+   (expected: the policy is already in place).
+4. Per stack: `TRAIL_BUCKET` in its env file, then `./infra/deploy.sh
+   --stack-only`. This first deploy of the template creates the two keys,
+   switches both buckets' default encryption to them, tags everything and
+   creates the trail; the distribution picks up its tags too, which takes
+   the usual few minutes. Then the site, and an upload from the app, as a
+   smoke test.
+5. `./infra/reencrypt.sh --dry-run`, then without, per stack.
+6. `make audit-compartments AUDIT="--stack <name>"` to see the result.
+7. A day later, `./infra/account.sh` again: the cost tags activate.
+8. Delete root's access keys in the console.
+
 ## Files
 
 | File | Purpose |
@@ -488,11 +655,14 @@ seeded roster is synthetic.
 | `cloudformation.yaml` | The whole stack, one template |
 | `build-lambda.sh` | Builds the arm64 deployment zip from `uv.lock` |
 | `deploy.sh` | Build → deploy → upload SPA → seed (demo only) → invalidate → smoke test; `--env FILE` picks the stack |
-| `destroy.sh` | Tears one stack down; keeps the database and the SSM parameters unless `--delete-data` / `--delete-secrets` |
+| `destroy.sh` | Tears one stack down; keeps the database, the keys and the SSM parameters unless `--delete-data` / `--delete-secrets` |
+| `account.sh` | Account hygiene, once per account: admins group with MFA required, users, GuardDuty, cost tags, the CloudTrail bucket policy. Idempotent; `--dry-run` |
+| `reencrypt.sh` | Rewrites a stack's pre-existing objects under its facet keys; skips the ones already there; `--dry-run` |
 
 Application-side code lives in `backend/app/aws/` and
 `backend/app/lambda_handler.py`, covered by `backend/tests/test_aws_storage.py`
-and `backend/tests/test_lambda_handler.py`.
+and `backend/tests/test_lambda_handler.py`. The compartment audit is
+`backend/scripts/audit_compartments.py` (`make audit-compartments`).
 
 ## Troubleshooting
 

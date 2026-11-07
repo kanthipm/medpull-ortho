@@ -226,9 +226,32 @@ Parameters:
     Default: 1
     Description: Monthly spend that triggers the alert, in USD.
 
+  TrailBucketName:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional. An existing bucket CloudTrail may write to (its bucket policy
+      must allow cloudtrail.amazonaws.com; infra/account.sh --trail-bucket
+      writes one). Set, the stack keeps its own trail under <stack name>/ in
+      that bucket: S3 data events for the two data buckets, management events
+      when TrailManagementEvents is true, log file validation on, this region
+      only. Blank: no trail.
+  TrailManagementEvents:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Whether the trail records management events as well. The first copy per
+      region is free and later copies are $2 per 100,000 events, so when the
+      account trail (or another stack's) already records them, keep this
+      stack's trail to its data events.
+
 Conditions:
   HasBudgetEmail: !Not [!Equals [!Ref BudgetAlertEmail, ""]]
   HasReservedConcurrency: !Not [!Equals [!Ref ApiReservedConcurrency, -1]]
+  IsDemo: !Equals [!Ref DemoMode, "true"]
+  HasTrail: !Not [!Equals [!Ref TrailBucketName, ""]]
+  TrailManagement: !Equals [!Ref TrailManagementEvents, "true"]
   # Both halves or neither: an alias without a certificate is rejected by
   # CloudFront, and a certificate without an alias does nothing.
   HasCustomDomain: !And
@@ -236,6 +259,114 @@ Conditions:
     - !Not [!Equals [!Ref CertificateArn, ""]]
 
 Resources:
+  # ------------------------------------------------------------------
+  # Compartments (infra/README.md, "Compartments"). Each facet that owns
+  # objects has its own customer-managed key, rotated yearly by KMS: who can
+  # read the bytes is a key policy the account controls and CloudTrail
+  # records, not a property of S3. Retained like the buckets they encrypt (a
+  # deleted key is deleted data); the aliases go with the stack, so a stack
+  # of the same name can be created again, with new keys. The old key stays
+  # readable by the account, found by its description and tags.
+  #
+  # Every taggable resource carries medpull:facet (clinic | personal |
+  # sports | shared) and medpull:deployment (demo | real, from DemoMode);
+  # deploy.sh adds medpull:stack at the stack level. EventBridge rules,
+  # CloudFront functions, Function URLs and permissions have no Tags
+  # property; the two rules say their facet in their description.
+  # ------------------------------------------------------------------
+  ClinicKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub "${AWS::StackName} clinic data: DataBucket db/ and attachments/"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          # The account administers the key, and IAM policies apply to it.
+          - Sid: Account
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: kms:*
+            Resource: "*"
+          # The function, through S3 only. Matched by its generated role
+          # name rather than !GetAtt: the role's policy names the bucket and
+          # the bucket names this key, so a reference back would be a cycle.
+          # LambdaKmsPolicy grants the same through IAM; either suffices.
+          - Sid: FunctionViaS3
+            Effect: Allow
+            Principal: "*"
+            Action: [kms:Encrypt, kms:Decrypt, kms:ReEncrypt*, kms:GenerateDataKey*, kms:DescribeKey]
+            Resource: "*"
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AWS::StackName}-LambdaRole-*"
+              StringEquals:
+                kms:ViaService: !Sub "s3.${AWS::Region}.amazonaws.com"
+          # CloudFront serves the SPA out of the same bucket, so its OAC must
+          # decrypt. Any distribution of this account, for the same reason:
+          # the distribution depends on the bucket, the bucket on this key.
+          - Sid: CloudFrontServesSpa
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: kms:Decrypt
+            Resource: "*"
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*"
+      Tags:
+        - Key: medpull:facet
+          Value: clinic
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
+
+  ClinicKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/${AWS::StackName}-clinic"
+      TargetKeyId: !Ref ClinicKey
+
+  PersonalKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub "${AWS::StackName} personal data: PersonalDataBucket (subscribers' files, exports, lake)"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: Account
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: kms:*
+            Resource: "*"
+          - Sid: FunctionViaS3
+            Effect: Allow
+            Principal: "*"
+            Action: [kms:Encrypt, kms:Decrypt, kms:ReEncrypt*, kms:GenerateDataKey*, kms:DescribeKey]
+            Resource: "*"
+            Condition:
+              ArnLike:
+                aws:PrincipalArn: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AWS::StackName}-LambdaRole-*"
+              StringEquals:
+                kms:ViaService: !Sub "s3.${AWS::Region}.amazonaws.com"
+      Tags:
+        - Key: medpull:facet
+          Value: personal
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
+
+  PersonalKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/${AWS::StackName}-personal"
+      TargetKeyId: !Ref PersonalKey
+
   # ------------------------------------------------------------------
   # Storage: one private bucket for both the SQLite database and the SPA
   # ------------------------------------------------------------------
@@ -252,9 +383,14 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              # SSE-S3, not SSE-KMS: encryption at rest with no per-request
-              # KMS charge.
-              SSEAlgorithm: AES256
+              # SSE-KMS under the clinic key. A default applies to objects
+              # written from now on: what was uploaded before keeps SSE-S3
+              # until it is rewritten (infra/reencrypt.sh). The bucket key
+              # has S3 cache one data key per bucket, so KMS is called a few
+              # times a day rather than per request.
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt ClinicKey.Arn
+            BucketKeyEnabled: true
       VersioningConfiguration:
         # Cheap point-in-time recovery for the database — a few MB per version,
         # expired after a week by the rule below.
@@ -307,6 +443,11 @@ Resources:
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
+      Tags:
+        - Key: medpull:facet
+          Value: clinic
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
 
   # ------------------------------------------------------------------
   # The personal tier's bucket: subscribers' files and data exports.
@@ -329,7 +470,10 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+              # The personal key, never the clinic's: see ClinicKey.
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt PersonalKey.Arn
+            BucketKeyEnabled: true
       VersioningConfiguration:
         Status: Enabled
       CorsConfiguration:
@@ -368,6 +512,11 @@ Resources:
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
+      Tags:
+        - Key: medpull:facet
+          Value: personal
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
 
   PersonalDataBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -491,12 +640,41 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ConsoleAccessTokenParameter}"
               - Effect: Allow
                 # Decrypting a SecureString written under the AWS-managed
-                # aws/ssm key, and only through SSM.
+                # aws/ssm key, and only through SSM. The facet keys are
+                # granted separately, in LambdaKmsPolicy.
                 Action: kms:Decrypt
                 Resource: !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
                 Condition:
                   StringEquals:
                     kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
+      Tags:
+        - Key: medpull:facet
+          Value: shared
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
+
+  # The function's grant on the two facet keys, exactly those two, and only
+  # through S3: every read and write of a data object is an S3 call that uses
+  # the key, and the code never calls KMS itself. Its own resource rather
+  # than a statement in the role, because the role names the buckets and the
+  # buckets name the keys; a key reference inside the role would close that
+  # loop into a cycle.
+  LambdaKmsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: facet-keys
+      Roles: [!Ref LambdaRole]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: [kms:Encrypt, kms:Decrypt, kms:ReEncrypt*, kms:GenerateDataKey*, kms:DescribeKey]
+            Resource:
+              - !GetAtt ClinicKey.Arn
+              - !GetAtt PersonalKey.Arn
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub "s3.${AWS::Region}.amazonaws.com"
 
   # Declared explicitly so retention is 14 days. Left to Lambda, log groups are
   # created with "never expire" and quietly grow past the 5 GB free tier.
@@ -506,6 +684,11 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-api"
       RetentionInDays: 14
+      Tags:
+        - Key: medpull:facet
+          Value: shared
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
 
   SeedLogGroup:
     Type: AWS::Logs::LogGroup
@@ -513,10 +696,16 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-seed"
       RetentionInDays: 14
+      Tags:
+        - Key: medpull:facet
+          Value: shared
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
 
   ApiFunction:
     Type: AWS::Lambda::Function
-    DependsOn: ApiLogGroup
+    # The key grant too: the first request must not run before it is attached.
+    DependsOn: [ApiLogGroup, LambdaKmsPolicy]
     Properties:
       FunctionName: !Sub "${AWS::StackName}-api"
       Description: Recovery Copilot API (FastAPI via Mangum)
@@ -589,12 +778,17 @@ Resources:
           # The warmer is a laptop convenience; on Lambda it would re-run every
           # cold start and race other instances. The seed does it once instead.
           WARM_CACHES_ON_STARTUP: "false"
+      Tags:
+        - Key: medpull:facet
+          Value: shared
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
 
   # Same artifact, longer timeout. Seeding rebuilds the roster and warms every
   # insight through Groq, which takes minutes — far past the API's 30s.
   SeedFunction:
     Type: AWS::Lambda::Function
-    DependsOn: SeedLogGroup
+    DependsOn: [SeedLogGroup, LambdaKmsPolicy]
     Properties:
       FunctionName: !Sub "${AWS::StackName}-seed"
       Description: Rebuilds the demo database and uploads it to S3 (demo stack only)
@@ -635,6 +829,11 @@ Resources:
           # cover it — but stay under the 900s timeout above, or a seed the
           # runtime kills leaves a lock no later writer is allowed to break.
           LOCK_TTL_SECONDS: "840"
+      Tags:
+        - Key: medpull:facet
+          Value: shared
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
 
   # ------------------------------------------------------------------
   # The personal tier's morning run, on a schedule. The same API function is
@@ -647,7 +846,8 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Name: !Sub "${AWS::StackName}-personal-daily"
-      Description: MedPull Personal morning run (plans, briefs, texts)
+      # No Tags property on this resource type; the facet is in the text.
+      Description: "MedPull Personal morning run (plans, briefs, texts). Facet: personal"
       ScheduleExpression: !Ref PersonalDailyCron
       State: ENABLED
       Targets:
@@ -669,7 +869,7 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Name: !Sub "${AWS::StackName}-sports-daily"
-      Description: MedPull Sports demo re-anchored to today (roster and showcased accounts)
+      Description: "MedPull Sports demo re-anchored to today (roster and showcased accounts). Facet: sports"
       ScheduleExpression: !Ref SportsDailyCron
       State: ENABLED
       Targets:
@@ -832,9 +1032,46 @@ Resources:
             # Managed-AllViewerExceptHostHeader: a Function URL origin rejects
             # a forwarded viewer Host header, so this policy is required.
             OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+      Tags:
+        - Key: medpull:facet
+          Value: shared
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
 
   # ------------------------------------------------------------------
-  # Cost alarm
+  # Audit trail, optional (TrailBucketName): who touched which object in the
+  # two data buckets, with the log files signed so a gap or an edit shows.
+  # Writes under <stack>/ in a bucket that already exists, so both stacks can
+  # share one log bucket and neither owns it. Nothing for the sports facet to
+  # list here: it has rows, not objects (see the README).
+  # ------------------------------------------------------------------
+  Trail:
+    Type: AWS::CloudTrail::Trail
+    Condition: HasTrail
+    Properties:
+      TrailName: !Sub "${AWS::StackName}-trail"
+      S3BucketName: !Ref TrailBucketName
+      S3KeyPrefix: !Ref AWS::StackName
+      IsLogging: true
+      IsMultiRegionTrail: false
+      IncludeGlobalServiceEvents: !If [TrailManagement, true, false]
+      EnableLogFileValidation: true
+      EventSelectors:
+        - ReadWriteType: All
+          IncludeManagementEvents: !If [TrailManagement, true, false]
+          DataResources:
+            - Type: AWS::S3::Object
+              Values:
+                - !Sub "${DataBucket.Arn}/"
+                - !Sub "${PersonalDataBucket.Arn}/"
+      Tags:
+        - Key: medpull:facet
+          Value: shared
+        - Key: medpull:deployment
+          Value: !If [IsDemo, demo, real]
+
+  # ------------------------------------------------------------------
+  # Cost alarm (no Tags property on budgets)
   # ------------------------------------------------------------------
   Budget:
     Type: AWS::Budgets::Budget
@@ -884,6 +1121,12 @@ Outputs:
   PersonalDataBucketName:
     Description: Subscribers' files and exports (the personal tier); never served by CloudFront.
     Value: !Ref PersonalDataBucket
+  ClinicKeyArn:
+    Description: Encrypts DataBucket (alias/<stack>-clinic).
+    Value: !GetAtt ClinicKey.Arn
+  PersonalKeyArn:
+    Description: Encrypts PersonalDataBucket (alias/<stack>-personal).
+    Value: !GetAtt PersonalKey.Arn
   ApiFunctionName:
     Value: !Ref ApiFunction
   SeedFunctionName:
