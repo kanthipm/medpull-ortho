@@ -14,6 +14,7 @@ import {
   useCreateJunctionLink,
   useDisconnectJunction,
   useJunctionBackfill,
+  useIsDemo,
   usePatientWearables,
   useRefreshWearables,
 } from '../../api/queries'
@@ -29,9 +30,14 @@ import { relativeTime } from '../../lib/format'
  *  lib/risk.ts: low 4.731 / 6.484, med 5.165 / 6.890, high 4.835 / 5.701,
  *  missing 6.367 / 5.093; "Not linked" is body on soft 6.367 / 6.211). */
 function StatusChip({ data }: { data: PatientWearables }) {
+  const demo = useIsDemo()
   const c = data.connection
   if (!data.aggregator.configured && (!c || c.status === 'disconnected')) {
-    return <span className="chip bg-risk-missing-tint text-risk-missing-ink">Demo source</span>
+    return (
+      <span className="chip bg-risk-missing-tint text-risk-missing-ink">
+        {demo ? 'Demo source' : 'No aggregator'}
+      </span>
+    )
   }
   if (!c || c.status === 'disconnected') {
     return <span className="chip bg-soft text-body">Not linked</span>
@@ -196,6 +202,7 @@ export default function WearableConnectionCard({
 }) {
   const toast = useToast()
   const { data, isLoading, isError } = usePatientWearables(patientId)
+  const demo = useIsDemo()
   const createLink = useCreateJunctionLink(patientId)
   const backfill = useJunctionBackfill(patientId)
   const disconnect = useDisconnectJunction(patientId)
@@ -291,9 +298,11 @@ export default function WearableConnectionCard({
 
       {!configured && !active && (
         <p className="text-copy text-body">
-          {firstName}'s chart runs on the demo data source. Live device linking arrives the moment
-          Junction is configured on the Integrations page — the button below lights up and nothing
-          else on this chart changes.
+          {demo
+            ? `${firstName}'s chart runs on the demo data source.`
+            : `No wearable aggregator is configured, so nothing delivers to ${firstName}'s chart yet.`}{' '}
+          Live device linking arrives the moment Junction is configured on the Integrations page —
+          the button below lights up and nothing else on this chart changes.
         </p>
       )}
 

@@ -453,3 +453,14 @@ export interface PublicTask {
   deep_link: string
   completed: boolean
 }
+
+/** GET /api/health */
+export interface Health {
+  status: string
+  db_ok: boolean
+  console_auth: boolean
+  /** The public demo stack, or the real app. The server decides, not the hostname. */
+  demo: boolean
+  llm_provider: string
+  model: string | null
+}
