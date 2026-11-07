@@ -23,9 +23,7 @@ class HospitalSpec:
     timezone: str = "America/Chicago"
 
 
-# The hospital list the app's first screen shows. The real patients (Steve,
-# Guest, Kanthi) sit under the MedPull demo institute; the seeded roster is
-# spread over the others so every hospital has someone to find.
+# The hospital list the app's first screen shows.
 HOSPITALS: list[HospitalSpec] = [
     # The demo org: anyone can join it from the app as a general patient, so
     # a demo works with no roster entry. Rename to the partner org's name.
@@ -79,16 +77,9 @@ def _spec(
     )
 
 
+# What the demo stack seeds. No real person belongs here: real charts are
+# created in the app or by the clinic on the real deployment, never by a seed.
 PATIENTS: list[PatientSpec] = [
-    # The real patients: no synthetic device, observations, check-ins or
-    # adherence history — data arrives only through the live Junction path.
-    # ("Guest" is a placeholder display name; age 45 is a decade-level guess.)
-    _spec("steve", "Steve", 19, "M", ProcedureType.TKA,
-          "Total Knee Replacement (TKA)", 1, None, "", 1),
-    _spec("guest", "Guest", 45, "M", ProcedureType.TKA,
-          "Total Knee Replacement (TKA)", 1, None, "", 1),
-    _spec("kanthi", "Kanthi", 21, "F", ProcedureType.TKA,
-          "Total Knee Replacement (TKA)", 1, None, "", 1),
     # The seeded high-risk case: a TKA at day 8 with a coupled vitals shift
     # and activity collapse (see scenarios.py), so the demo worklist always
     # has one patient in the HIGH tier.
@@ -99,6 +90,20 @@ PATIENTS: list[PatientSpec] = [
           "General care", 0, None, "", 0, "hosp_demo"),
     _spec("ana", "Ana Lee", 28, "F", ProcedureType.TKA,
           "Total Knee Replacement (TKA)", 5, SourceProvider.APPLE, "Apple Watch Series 9", 1, "hosp_demo"),
+]
+
+
+# Blank charts with no device, used by the test suite as the "real person with
+# no data yet" case. They were once in the shipped seed; they are not any more,
+# so the demo never carries a real name and the real app never gets them from
+# a reseed. Seeded only through ``full_roster()``.
+BLANK_CHART_FIXTURES: list[PatientSpec] = [
+    _spec("steve", "Steve", 19, "M", ProcedureType.TKA,
+          "Total Knee Replacement (TKA)", 1, None, "", 1),
+    _spec("guest", "Guest", 45, "M", ProcedureType.TKA,
+          "Total Knee Replacement (TKA)", 1, None, "", 1),
+    _spec("kanthi", "Kanthi", 21, "F", ProcedureType.TKA,
+          "Total Knee Replacement (TKA)", 1, None, "", 1),
 ]
 
 
@@ -152,10 +157,13 @@ ORTHO_DEMO_PATIENTS: list[PatientSpec] = [
 
 def full_roster() -> tuple[list[HospitalSpec], list[PatientSpec]]:
     """Every hospital and patient the seed knows how to build: the shipped
-    demo hospital plus the ortho demo roster. What the test suite seeds, so
-    the fixtures the engine tests are calibrated against exist whatever the
-    shipped roster is trimmed to."""
-    return (HOSPITALS + ORTHO_DEMO_HOSPITALS, PATIENTS + ORTHO_DEMO_PATIENTS)
+    demo hospital plus the blank charts and the ortho demo roster. What the
+    test suite seeds, so the fixtures the engine tests are calibrated against
+    exist whatever the shipped roster is trimmed to."""
+    return (
+        HOSPITALS + ORTHO_DEMO_HOSPITALS,
+        PATIENTS + BLANK_CHART_FIXTURES + ORTHO_DEMO_PATIENTS,
+    )
 
 
 def get_spec(patient_id: str) -> PatientSpec | None:

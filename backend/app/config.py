@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # patient id in its body, so it exists only where a developer asks for it.
     # Off, the route answers 404 like any unknown provider.
     allow_mock_webhook: bool = False
+    # True on the public demo stack only: the console shows the welcome and
+    # the roster caption, and the seed may run. The real app leaves it off.
+    demo_mode: bool = False
     # Junction (fka Vital), the wearable aggregator. The API key is the switch:
     # without it the registry reports Junction as needing setup and every
     # Junction endpoint answers 503, while signed deliveries to the webhook are

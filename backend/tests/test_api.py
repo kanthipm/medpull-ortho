@@ -29,6 +29,7 @@ def test_health(client):
     assert body["status"] == "ok" and body["db_ok"] is True
     assert body["llm_provider"] == "fallback"
     assert body["console_auth"] is False
+    assert body["demo"] is False
 
 
 def test_console_token_guards_console_routes_only(client, monkeypatch):
