@@ -9,13 +9,14 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
-    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- No READ_MEDIA_*: the photo picker and the document picker hand over
+         URIs with their own grants. No HIGH_SAMPLING_RATE_SENSORS: the
+         recorder samples at 50 Hz, well under the 200 Hz that needs it. -->
 
     <!-- Health Connect: one read permission per record type the engine reads. -->
     <uses-permission android:name="android.permission.health.READ_STEPS" />
@@ -57,7 +58,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.MedPull.Starting"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="${cleartext}"
         tools:targetApi="34">
 
         <activity
