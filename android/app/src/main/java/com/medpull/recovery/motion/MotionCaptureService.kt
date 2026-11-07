@@ -76,7 +76,9 @@ class MotionCaptureService : Service() {
                 seconds += 1
                 if (seconds % 60 == 0) recorder.closeMinute()
                 val mm = seconds / 60; val ss = seconds % 60
-                notify(title, String.format(java.util.Locale.getDefault(), "%d:%02d · %d steps", mm, ss, recorder.steps))
+                // A passive bout stays quiet: its line in the shade only moves every half minute.
+                if (!freeLiving || seconds % 30 == 0)
+                    notify(title, String.format(java.util.Locale.getDefault(), "%d:%02d · %d steps", mm, ss, recorder.steps))
                 if (seconds >= durationS) { finish(); break }
             }
         }
@@ -111,11 +113,20 @@ class MotionCaptureService : Service() {
     private fun notification(title: String, text: String): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, MotionCaptureService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
-        return NotificationCompat.Builder(this, MedPullApp.CHANNEL_MOTION)
+        val b = NotificationCompat.Builder(this, MedPullApp.CHANNEL_MOTION)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(title).setContentText(text).setOngoing(true).setOnlyAlertOnce(true)
-            .setContentIntent(open).addAction(0, "Stop", stop)
-            .setPriority(NotificationCompat.PRIORITY_LOW).build()
+            .setContentTitle(title).setContentText(text).setOnlyAlertOnce(true).setSilent(true)
+            .setContentIntent(open)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+        if (freeLiving) {
+            // Nobody asked for this one: let Android hold it back for its first seconds (no action
+            // buttons, or it shows at once) and let the person swipe it away; the capture carries on.
+            b.setOngoing(false).setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
+        } else {
+            b.setOngoing(true).addAction(0, "Stop", stop)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+        return b.build()
     }
 
     override fun onDestroy() { ticker?.cancel(); wakeLock?.let { if (it.isHeld) it.release() }; super.onDestroy() }

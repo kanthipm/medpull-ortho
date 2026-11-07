@@ -168,35 +168,6 @@ fun ConnectionsScreen(nav: NavHostController) {
     }
 }
 
-/** Opt-in background walking bouts: the Android stand-in for Apple's passive gait. */
-@Composable
-fun PassiveWalksCard() {
-    val context = LocalContext.current
-    val c = MP.colors
-    var enabled by remember { mutableStateOf(com.medpull.recovery.motion.PassiveCapture.isEnabled(context)) }
-    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        if (grants[android.Manifest.permission.ACTIVITY_RECOGNITION] == true) {
-            com.medpull.recovery.motion.PassiveCapture.setEnabled(context, true); enabled = true
-        }
-    }
-    Panel {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Record walks automatically", style = MaterialTheme.typography.titleLarge, color = c.ink)
-                Text("When your phone notices you walking, it records two minutes in a pocket and sends them to MedPull, at most once every half hour. A small notification shows while it records.",
-                    color = c.body, style = MaterialTheme.typography.bodyMedium)
-            }
-            androidx.compose.material3.Switch(checked = enabled, onCheckedChange = { on ->
-                if (on && !com.medpull.recovery.motion.PassiveCapture.hasPermission(context)) {
-                    val wanted = mutableListOf(android.Manifest.permission.ACTIVITY_RECOGNITION)
-                    if (android.os.Build.VERSION.SDK_INT >= 33) wanted += android.Manifest.permission.POST_NOTIFICATIONS
-                    ask.launch(wanted.toTypedArray())
-                } else { com.medpull.recovery.motion.PassiveCapture.setEnabled(context, on); enabled = on }
-            })
-        }
-    }
-}
-
 @Composable
 fun ReminderCard() {
     val context = LocalContext.current

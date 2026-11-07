@@ -52,6 +52,7 @@ import com.medpull.recovery.MedPullApp
 import com.medpull.recovery.core.AppModel
 import com.medpull.recovery.features.profile.HealthConnectCard
 import com.medpull.recovery.features.profile.WearableLinkCard
+import com.medpull.recovery.features.profile.rememberPassiveWalkEnabler
 import com.medpull.recovery.ui.Chip
 import com.medpull.recovery.ui.ErrorBanner
 import com.medpull.recovery.ui.Gap
@@ -86,6 +87,7 @@ fun OnboardingFlow() {
         composable(Step.JOIN.name) { JoinStep(nav, model) }
         composable(Step.VERIFY.name) { VerifyStep(nav, model) }
         composable(Step.HEALTH.name) { HealthStep(nav, app) }
+        composable(Step.WALKS.name) { WalksStep(nav) }
         composable(Step.WEARABLE.name) { WearableStep(nav, app) }
         composable(Step.DONE.name) { DoneStep(app) }
     }
@@ -322,13 +324,44 @@ private fun VerifyStep(nav: NavHostController, model: OnboardingModel) {
 
 @Composable
 private fun HealthStep(nav: NavHostController, app: AppModel) {
-    StepFrame(nav, "Step 5 of 5", "Connect Health Connect", back = false,
+    StepFrame(nav, "Step 5 of 6", "Connect Health Connect", back = false,
         blurb = "Steps, sleep, heart rate and workouts from your phone and watch, so your care team can follow your recovery between visits.") {
         HealthConnectCard(app)
         Gap()
-        SecondaryButton("Skip for now") { nav.navigate(Step.WEARABLE.name) }
+        SecondaryButton("Skip for now") { nav.navigate(Step.WALKS.name) }
         Gap(8.dp)
-        PrimaryButton("Continue") { nav.navigate(Step.WEARABLE.name) }
+        PrimaryButton("Continue") { nav.navigate(Step.WALKS.name) }
+    }
+}
+
+/** On by default: one tap fires the system prompts, and capture starts as soon as they are granted. */
+@Composable
+private fun WalksStep(nav: NavHostController) {
+    val context = LocalContext.current
+    val c = MP.colors
+    var on by remember { mutableStateOf(com.medpull.recovery.motion.PassiveCapture.isActive(context)) }
+    var declined by remember { mutableStateOf(false) }
+    val enable = rememberPassiveWalkEnabler { ok -> on = ok; if (!ok) declined = true }
+    StepFrame(nav, "Step 6 of 6", "Let MedPull notice your walks", back = false,
+        blurb = "Your walking speed, step length and symmetry tell your care team how you are healing. With your phone in a pocket, MedPull can measure them from everyday walks without you doing anything.") {
+        Panel {
+            Text("How it works", style = MaterialTheme.typography.titleMedium, color = c.ink)
+            Gap(6.dp)
+            Text("• When your phone notices you walking, it records two minutes of motion, at most once every half hour.", color = c.body, style = MaterialTheme.typography.bodyMedium)
+            Text("• A silent line shows in your notifications while it records. You can swipe it away.", color = c.body, style = MaterialTheme.typography.bodyMedium)
+            Text("• Nothing is recorded when you are still, and you can turn it off any time from Connections.", color = c.body, style = MaterialTheme.typography.bodyMedium)
+        }
+        Gap()
+        if (on) {
+            Text("On. Your walks will be measured automatically.", color = c.brandInk, style = MaterialTheme.typography.bodyMedium)
+            Gap(8.dp)
+            PrimaryButton("Continue") { nav.navigate(Step.WEARABLE.name) }
+        } else {
+            if (declined) { Text("You can turn this on later from Today or Connections.", color = c.muted, style = MaterialTheme.typography.bodyMedium); Gap(8.dp) }
+            SecondaryButton("Not now") { nav.navigate(Step.WEARABLE.name) }
+            Gap(8.dp)
+            PrimaryButton("Turn on") { enable() }
+        }
     }
 }
 

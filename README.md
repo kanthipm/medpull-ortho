@@ -535,10 +535,13 @@ the same `/api/mobile/*` routes. What differs is what the phone can produce:
   gyroscope, gravity, barometer, step counter and optional GPS in a
   foreground service and upload them with `platform: "android"`; the server
   converts the frame and computes every number.
-- **Passive walks** (`motion/PassiveCapture.kt`): opt-in from Connections,
-  the Activity Recognition API starts a two-minute recording when the person
-  starts walking, at most once every half hour, uploaded as a `free_living`
-  bout. This is the Android stand-in for Apple's passive daily gait.
+- **Passive walks** (`motion/PassiveCapture.kt`): on by default once the
+  person grants Physical Activity (asked as the last onboarding step, nudged
+  from Today until then, switched off from Connections). The Activity
+  Recognition API starts a two-minute recording when the person starts
+  walking, at most once every half hour, uploaded as a `free_living` bout
+  behind a silent, dismissible notification. Re-armed after reboot. This is
+  the Android stand-in for Apple's passive daily gait.
 - **Care**: the thread with photos, video, voice notes and files, with the
   same size budgets as the iPhone, and the copilot through the platform
   speech recogniser and synthesiser.

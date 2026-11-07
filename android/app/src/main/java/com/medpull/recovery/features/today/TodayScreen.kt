@@ -34,6 +34,7 @@ import com.medpull.recovery.core.Me
 import com.medpull.recovery.core.RecoveryTask
 import com.medpull.recovery.core.Tab
 import com.medpull.recovery.features.measure.MeasureStatus
+import com.medpull.recovery.features.profile.PassiveWalksNudge
 import com.medpull.recovery.features.tasks.TaskRow
 import com.medpull.recovery.ui.ErrorBanner
 import com.medpull.recovery.ui.Gap
@@ -103,6 +104,7 @@ fun TodayScreen(nav: NavHostController) {
                 }
                 Gap()
             }
+            if (state.me?.isPersonal == false) { PassiveWalksNudge(); Gap() }
             PlainButton("Task history") { nav.navigate(Routes.HISTORY) }
             Guardrail()
             Gap(24.dp)

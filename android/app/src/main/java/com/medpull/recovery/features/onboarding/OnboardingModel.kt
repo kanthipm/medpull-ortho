@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import java.time.LocalDate
 
-enum class Step { WELCOME, MODE, CONSENT, HOSPITAL, PATH, IDENTITY, JOIN, VERIFY, HEALTH, WEARABLE, DONE, PERSONAL_SOON }
+enum class Step { WELCOME, MODE, CONSENT, HOSPITAL, PATH, IDENTITY, JOIN, VERIFY, HEALTH, WALKS, WEARABLE, DONE, PERSONAL_SOON }
 enum class Path { FIND_RECORD, JOIN_GENERAL, JOIN_AFTER_SURGERY }
 
 data class OnboardingState(
