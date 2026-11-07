@@ -8,6 +8,12 @@
       "port": 8000
     },
     {
+      "name": "console",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "cd frontend && npm run dev"],
+      "port": 5173
+    },
+    {
       "name": "patient-web",
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-lc", "cd patient-web && npm run dev"],

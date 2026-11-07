@@ -104,8 +104,10 @@ function HeadlineTile({
               <span className="mt-1 block text-label text-white/90">{m.value_label}</span>
             )}
           </span>
+          {/* The "i" sits over the tile's top-right corner (below), so the
+              date label stops short of it rather than running underneath. */}
           {when && !countdown && (
-            <span className="gtile-side shrink-0">
+            <span className="gtile-side shrink-0 pr-8">
               <b>{when.replace(/^Post-op day /i, 'Day ').replace(/^D(\d+)$/, 'Day $1')}</b>
               latest
             </span>

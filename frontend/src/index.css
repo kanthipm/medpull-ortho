@@ -1695,6 +1695,11 @@ body {
     font-size: 15px;
     letter-spacing: 0;
     opacity: 0.85;
+    /* An atomic inline: on a narrow tile "vs expected" moves to the next
+       line whole, never "vs" beside the number and "expected" under it, and
+       never past the tile's edge (there is no space before it to break at). */
+    display: inline-block;
+    white-space: nowrap;
   }
   .gtile-side {
     text-align: right;
