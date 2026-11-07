@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.worklist import ensure_fresh_assessment
 from app.config import settings
 from app.database import get_db
+from app.engine.reported import reported_progress
 from app.llm.prose import humanize_codes
 from app.models.adherence import AdherenceTask
 from app.models.checkin import Checkin
@@ -118,6 +119,10 @@ def patient_detail(patient_id: str, db: Session = Depends(get_db)) -> dict:
         "actions_provider": actions.llm_provider,
         "last_checkin_at": last_checkin.isoformat() if last_checkin else None,
         "narratives_pending": pending,
+        # The progress line for a chart followed by check-ins that carry
+        # training (engine/reported.py): load vs the prior weeks, pain this
+        # week, program done. None for everyone else, whose row is unchanged.
+        "progress": reported_progress(analytics),
     }
 
 

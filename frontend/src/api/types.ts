@@ -96,6 +96,24 @@ export interface PatientDetail {
   last_checkin_at: string | null
   /** The summary and/or actions are still rules-based; see WorklistResponse. */
   narratives_pending: number
+  /** The progress line for a chart followed by check-ins that carry training
+   *  (a lifter, no wearable): null for everyone else, and absent on an API
+   *  from before the field. */
+  progress?: ReportedProgress | null
+}
+
+/** What the patient reported, read as progress (backend engine/reported.py). */
+export interface ReportedProgress {
+  /** This week's mean daily training load against the weeks before, signed percent. */
+  load_vs_prior_pct: number | null
+  /** The acute:chronic ratio the M1 tile shows. */
+  load_ratio: number | null
+  load_week_mean: number | null
+  load_prior_mean: number | null
+  pain: { latest: number; prior_mean: number | null; delta: number | null } | null
+  program: { done: number; of: number; rate_3d: number | null } | null
+  checkins_7d: number
+  days_since_checkin: number | null
 }
 
 export interface MetricInsight {
