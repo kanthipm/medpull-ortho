@@ -110,6 +110,21 @@ Parameters:
       access token. deploy.sh writes it when CONSOLE_ACCESS_TOKEN is set;
       with the parameter absent every console route stays open (the public
       demo), and with it present the SPA asks for the token on /login.
+  DemoMode:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      "true" on the public demo stack only: the console shows the demo
+      welcome and the roster caption, and the seed function may rebuild the
+      database. The real app leaves it "false" and its seed refuses to run.
+  AllowMockWebhook:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Opens the unsigned demo webhook (POST /api/webhooks/wearables/mock),
+      which trusts the patient id in its body. Demo stack only.
   PublicBaseUrl:
     Type: String
     Default: ""
@@ -544,6 +559,8 @@ Resources:
           SENDBLUE_API_SECRET_PARAMETER: !Ref SendblueApiSecretParameter
           SENDBLUE_WEBHOOK_SECRET_PARAMETER: !Ref SendblueWebhookSecretParameter
           CONSOLE_ACCESS_TOKEN_PARAMETER: !Ref ConsoleAccessTokenParameter
+          DEMO_MODE: !Ref DemoMode
+          ALLOW_MOCK_WEBHOOK: !Ref AllowMockWebhook
           SENDBLUE_FROM_NUMBER: !Ref SendblueFromNumber
           CARE_TEAM_PHONES: !Ref CareTeamPhones
           IOS_TEAM_ID: !Ref IosTeamId
@@ -571,7 +588,7 @@ Resources:
     DependsOn: SeedLogGroup
     Properties:
       FunctionName: !Sub "${AWS::StackName}-seed"
-      Description: Rebuilds the demo database and uploads it to S3
+      Description: Rebuilds the demo database and uploads it to S3 (demo stack only)
       Runtime: python3.12
       Architectures: [arm64]
       Handler: app.lambda_handler.handler
@@ -601,6 +618,8 @@ Resources:
           # A reseed wipes care-team rows; the phone map re-applies on the
           # next app import so SMS recipients survive it.
           CARE_TEAM_PHONES: !Ref CareTeamPhones
+          # The seed refuses to run unless this is "true" (or it is forced).
+          DEMO_MODE: !Ref DemoMode
           OLLAMA_URL: ""
           WARM_CACHES_ON_STARTUP: "false"
           # The seed holds the write lock for its whole run, so the TTL has to

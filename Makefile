@@ -1,5 +1,6 @@
 .PHONY: setup seed dev dev-backend dev-frontend dev-patient-web build build-patient-web run test lint clean \
-        deploy deploy-backend reseed destroy ios ios-build openapi android-build android-test android-install
+        deploy deploy-backend reseed destroy deploy-demo deploy-demo-backend reseed-demo destroy-demo \
+        ios ios-build openapi android-build android-test android-install
 
 setup: ## Install backend (uv) and frontend (npm) dependencies
 	cd backend && uv sync
@@ -42,17 +43,29 @@ lint: ## ESLint over frontend and patient-web + ruff over backend/app and backen
 openapi: ## Refresh backend/openapi.json, the contract the patient apps are generated against
 	cd backend && uv run python scripts/export_openapi.py
 
-deploy: ## Deploy to AWS (see infra/README.md)
+deploy: ## Deploy the real app to AWS, from .env (see infra/README.md)
 	./infra/deploy.sh
 
-deploy-backend: ## Deploy the API only, skipping the frontend build
+deploy-backend: ## Deploy the real app's API only, skipping the frontend build
 	./infra/deploy.sh --backend-only
 
-reseed: ## Rebuild the demo database on AWS (dates shift to today)
+reseed: ## Rebuild the database (the real stack refuses this; use reseed-demo)
 	./infra/deploy.sh --reseed
 
-destroy: ## Tear the AWS stack down
+destroy: ## Tear the real app's stack down
 	./infra/destroy.sh
+
+deploy-demo: ## Deploy the public demo stack, from .env.demo
+	./infra/deploy.sh --env .env.demo
+
+deploy-demo-backend: ## Demo stack, API only
+	./infra/deploy.sh --env .env.demo --backend-only
+
+reseed-demo: ## Rebuild the demo stack's database (dates shift to today)
+	./infra/deploy.sh --env .env.demo --reseed
+
+destroy-demo: ## Tear the demo stack down
+	./infra/destroy.sh --env .env.demo
 
 ios: ## Generate the Xcode project for the patient app (needs xcodegen) and open it
 	cd ios && xcodegen generate && open MedPull.xcodeproj
