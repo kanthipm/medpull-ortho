@@ -187,6 +187,7 @@ class AppModel(
 
     /** medpull://tasks/<id> opens the task; medpull://wearables[/connected] refreshes. */
     fun handle(uri: Uri) {
+        Log.d("MedPull", "link $uri")
         if (uri.scheme != config.scheme) return
         when (uri.host) {
             "tasks" -> uri.lastPathSegment?.toIntOrNull()?.let { id ->

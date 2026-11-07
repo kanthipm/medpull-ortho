@@ -1,5 +1,8 @@
 package com.medpull.recovery.features.care
 
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.graphics.Color
 import com.medpull.recovery.ui.PrimaryButton
 import androidx.compose.foundation.border
@@ -140,6 +143,7 @@ fun CareScreen(nav: NavHostController) {
     var uploading by remember { mutableStateOf(false) }
     val pending = remember { mutableStateListOf<ChatAttachment>() }
     val turns = remember { mutableStateListOf<Pair<Boolean, String>>() }   // copilot turns, this session only
+    val composerFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     var menuOpen by remember { mutableStateOf(false) }
     var captureUri by remember { mutableStateOf<Uri?>(null) }
     val listening by speech.listening.collectAsStateWithLifecycle()
@@ -196,11 +200,13 @@ fun CareScreen(nav: NavHostController) {
         sending = true
         try {
             if (toAssistant || channel == "voice") {
+                // The server stores both sides of the exchange and ask() refreshes the
+                // thread, so the local echo only bridges the round trip.
                 turns.add(true to t); thinking = true
-                val r = app.ask(t, channel)
-                thinking = false
-                turns.add(false to r.reply + if (r.flagged) "\n\nPassed to your care team." else "")
-                if (speak) speech.speak(r.reply)
+                try {
+                    val r = app.ask(t, channel)
+                    if (speak) speech.speak(r.reply)
+                } finally { thinking = false; turns.clear() }
             } else {
                 app.send(t, pending.map { it.id })
                 pending.clear()
@@ -245,7 +251,7 @@ fun CareScreen(nav: NavHostController) {
         if (draft.isBlank() && pending.isEmpty() && !listening) {
             LazyRow(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { Text("Quick log", style = MPType.labelMedium, color = c.muted, modifier = Modifier.padding(top = 9.dp)) }
-                items(QUICK_LOG) { q -> QuickChip(q.trim() + if (q.endsWith(" ") || q.endsWith(": ")) "…" else "") { draft = q; toAssistant = true } }
+                items(QUICK_LOG) { q -> QuickChip(q.trim() + if (q.endsWith(" ") || q.endsWith(": ")) "…" else "") { draft = q; toAssistant = true; composerFocus.requestFocus() } }
             }
             Gap(6.dp)
         }
@@ -299,7 +305,7 @@ fun CareScreen(nav: NavHostController) {
                 text = draft, onChange = { draft = it; if (it.isEmpty()) toAssistant = false },
                 placeholder = if (listening) "Listening…" else if (recordingNote) "Recording a voice note…" else if (toAssistant) "Ask MedPull" else "Write to your care team",
                 canSend = !sending && !uploading && !listening && (draft.isNotBlank() || pending.isNotEmpty()), busy = sending,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f), focusRequester = composerFocus,
             ) { scope.launch { send(draft, "app", speak = false) } }
             if (draft.isBlank() && pending.isEmpty()) {
                 ComposerRound(if (listening) Icons.Default.MicOff else Icons.Default.Mic, active = listening, onClick = {
@@ -498,13 +504,17 @@ private fun ComposerRound(icon: ImageVector, enabled: Boolean = true, active: Bo
 /** The composer: a capsule field with the send button inside it. */
 @Composable
 private fun ComposerField(text: String, onChange: (String) -> Unit, placeholder: String, canSend: Boolean, busy: Boolean,
-                          modifier: Modifier = Modifier, onSend: () -> Unit) {
+                          modifier: Modifier = Modifier, focusRequester: androidx.compose.ui.focus.FocusRequester? = null, onSend: () -> Unit) {
     val c = MP.colors
     Row(modifier.defaultMinSize(minHeight = 44.dp).background(c.panel, RoundedCornerShape(22.dp)).border(1.dp, c.lineStrong.copy(alpha = .75f), RoundedCornerShape(22.dp))
         .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.Bottom) {
+        // A quick log fills the field from outside: the caret goes to the end so typing continues the phrase.
+        var value by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
+        if (value.text != text) value = TextFieldValue(text, TextRange(text.length))
         Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
             if (text.isEmpty()) Text(placeholder, style = MPType.copyLarge, color = c.muted)
-            BasicTextField(text, onChange, textStyle = MPType.copyLarge.copy(color = c.ink), maxLines = 5, cursorBrush = SolidColor(c.brand))
+            BasicTextField(value, { value = it; if (it.text != text) onChange(it.text) }, textStyle = MPType.copyLarge.copy(color = c.ink), maxLines = 5, cursorBrush = SolidColor(c.brand),
+                modifier = if (focusRequester != null) Modifier.fillMaxWidth().focusRequester(focusRequester) else Modifier.fillMaxWidth())
         }
         Spacer(Modifier.width(4.dp))
         Box(Modifier.size(36.dp).clip(CircleShape).background(if (canSend) c.action else c.soft).clickable(enabled = canSend && !busy, onClick = onSend), contentAlignment = Alignment.Center) {

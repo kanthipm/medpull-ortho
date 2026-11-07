@@ -107,7 +107,13 @@ fun MainTabs() {
     LaunchedEffect(state.showConnections) { if (state.showConnections) { nav.navigate(Routes.CONNECTIONS); app.showConnections(false) } }
     // A task link can arrive while Profile, Connections or a detail screen is
     // up, where Today (which opens it) is not composed: bring Today back first.
-    LaunchedEffect(state.pendingTaskId) { if (state.pendingTaskId != null && route != Routes.TODAY) nav.navigateTab(Routes.TODAY) }
+    LaunchedEffect(state.pendingTaskId) {
+        val id = state.pendingTaskId ?: return@LaunchedEffect
+        val current = nav.currentDestination?.route
+        android.util.Log.d("MedPull", "pending task $id on $current")
+        // Today is usually underneath a pushed screen: pop back to it; otherwise switch tabs.
+        if (current != Routes.TODAY && !nav.popBackStack(Routes.TODAY, inclusive = false)) nav.navigateTab(Routes.TODAY)
+    }
 
     FogBackground { Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
