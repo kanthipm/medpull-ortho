@@ -45,6 +45,12 @@ for arg in "$@"; do
 done
 $want_env && { echo "--env needs a file" >&2; exit 1; }
 case "$ENV_FILE" in /*) ;; *) ENV_FILE="$PWD/$ENV_FILE" ;; esac
+# A named env file that is not there would fall through to every default —
+# STACK_NAME=recovery-copilot, DEMO_MODE=false, no domain — and redeploy the
+# real stack as something else. Refuse instead.
+if [ "$ENV_FILE" != "$ROOT/.env" ] && [ ! -f "$ENV_FILE" ]; then
+  echo "env file not found: $ENV_FILE" >&2; exit 1
+fi
 
 dotenv_value() {  # dotenv_value VAR -> its value in $ENV_FILE, or nothing; never fails
   [ -f "$ENV_FILE" ] || return 0

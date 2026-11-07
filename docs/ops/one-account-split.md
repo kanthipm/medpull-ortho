@@ -47,18 +47,22 @@ Generated: clinic `ana dana helen kevin lucia marcus omar rosa tom` (hosp_demo),
 ### 0. Ship the merged code to the real stack  [AWS]
 `DEMO_MODE=true ./infra/deploy.sh --plan` first: the change set should read Add for the two keys and their aliases and Modify with Replacement False for the buckets, the function and the distribution; anything marked Replacement True or Remove on a bucket stops here. Then `DEMO_MODE=true ./infra/deploy.sh` one last time in demo mode (the data is still mixed), which also creates the two KMS keys (`alias/recovery-copilot-clinic`, `-personal`), switches both buckets to SSE-KMS for new objects (the app now presigns with SigV4, which SSE-KMS requires) and tags every resource. Smoke-test one attachment upload from a phone afterwards and run `make audit-compartments AUDIT="--stack recovery-copilot"`. Existing objects stay SSE-S3 until `./infra/reencrypt.sh` runs (`--dry-run` first; optional, any time).
 
-### 1. Create the demo stack  [AWS]
-- `cp .env.demo.example .env.demo`; set `STACK_NAME=medpull-demo`, `DEMO_MODE=true`, `SEED=none` (the database is copied in step 2, not seeded), `ALLOW_MOCK_WEBHOOK=true`, `SENDBLUE_VERIFIED_CONTACTS_ONLY=false`, the demo Groq key, the Sendblue API key and secret from `.env` (outbound only — no `SENDBLUE_WEBHOOK_SECRET`, no Junction keys), `SITE_DOMAIN=demo.medpull.org`, `SITE_CERTIFICATE_ARN=arn:aws:acm:us-east-1:556683673972:certificate/4a262c26-1fc5-4803-ab5e-088c5c835c03` (its primary name is demo.medpull.org; a certificate may serve two distributions).
-- `./infra/deploy.sh --env .env.demo` — prints the new distribution domain and the data bucket name.
+### 1. Create the demo stack  [AWS]  — done 2026-11-07, without the domain
+- `cp .env.demo.example .env.demo`; set `STACK_NAME=medpull-demo`, `DEMO_MODE=true`, `SEED=none` (the database is copied in step 2, not seeded), `ALLOW_MOCK_WEBHOOK=true`, `SENDBLUE_VERIFIED_CONTACTS_ONLY=false`, the demo Groq key, the Sendblue API key, secret and from-number from `.env` (outbound only — no `SENDBLUE_WEBHOOK_SECRET`, no Junction keys), and **both `SITE_DOMAIN` and `SITE_CERTIFICATE_ARN` blank**: `demo.medpull.org` is still an alternate domain name on the redirect distribution in the other account (`aws cloudfront list-conflicting-aliases --distribution-id E1AQUZI9S5GVUO --alias demo.medpull.org` shows it, account …273521), and CloudFront refuses a second distribution with the same alias — the create would roll back. The domain is attached in step 3.
+- `./infra/deploy.sh --env .env.demo` — creates the stack and prints the distribution domain and the data bucket name (2026-11-07: `https://d9w8mctktwvg9.cloudfront.net`, data bucket `medpull-demo-databucket-3ly03wbbch7n`, personal bucket `medpull-demo-personaldatabucket-rtuvllza92hs`, secrets under `/medpull-demo/`). A first deploy leaves `PublicBaseUrl` blank, so follow it at once with `./infra/deploy.sh --env .env.demo --stack-only`, which fills it from the stack's own `SiteUrl` output (texted check-in links carry it).
 
 ### 2. Give the demo its database  [AWS]
-- `aws s3 cp s3://recovery-copilot-databucket-cay8lc5zark5/db/recovery.db s3://<demo data bucket>/db/recovery.db` (server-side copy; the demo API re-hydrates on its next request).
-- Remove the real people, under the demo's own lock: `cd backend && uv run python scripts/admin_db.py --bucket <demo data bucket> --revoke-sessions steve --revoke-sessions steve-me --revoke-sessions medha-pulluru --revoke-sessions medha-pulluru-77ca --revoke-sessions medha-pulluru-me --revoke-sessions naga --revoke-sessions naga-me --revoke-sessions app-review-me --revoke-sessions steve-zhang-ath --delete-patient steve-me --delete-patient steve --delete-patient medha-pulluru-me --delete-patient medha-pulluru-77ca --delete-patient medha-pulluru --delete-patient naga-me --delete-patient naga --delete-patient app-review-me --delete-patient steve-zhang-ath --purge-phone-verifications` (dry-run first with `--dry-run`).
-- Re-anchor the roster to today and add the fictional HIRT lifters: `uv run python scripts/push_demo_fill.py --bucket <demo data bucket>`.
-- Mint the demo's HIRT login: `uv run python scripts/admin_db.py --bucket <demo data bucket> --mint-token hospital:hirt "HIRT demo"` → the link is `https://demo.medpull.org/login#token=<printed once>`.
+- `aws s3 cp s3://recovery-copilot-databucket-cay8lc5zark5/db/recovery.db s3://medpull-demo-databucket-3ly03wbbch7n/db/recovery.db` (server-side copy; the demo API re-hydrates on its next request).
+- Remove the real people, under the demo's own lock: `cd backend && uv run python scripts/admin_db.py --bucket medpull-demo-databucket-3ly03wbbch7n --revoke-sessions steve --revoke-sessions steve-me --revoke-sessions medha-pulluru --revoke-sessions medha-pulluru-77ca --revoke-sessions medha-pulluru-me --revoke-sessions naga --revoke-sessions naga-me --revoke-sessions app-review-me --revoke-sessions steve-zhang-ath --delete-patient steve-me --delete-patient steve --delete-patient medha-pulluru-me --delete-patient medha-pulluru-77ca --delete-patient medha-pulluru --delete-patient naga-me --delete-patient naga --delete-patient app-review-me --delete-patient steve-zhang-ath --purge-phone-verifications` (dry-run first with `--dry-run`).
+- Re-anchor the roster to today and add the fictional HIRT lifters: `uv run python scripts/push_demo_fill.py --bucket medpull-demo-databucket-3ly03wbbch7n`.
+- Mint the demo's HIRT login: `uv run python scripts/admin_db.py --bucket medpull-demo-databucket-3ly03wbbch7n --mint-token hospital:hirt "HIRT demo"` → the link is `https://d9w8mctktwvg9.cloudfront.net/login#token=<printed once>` (demo.medpull.org once step 3 is done).
 
-### 3. Point demo.medpull.org at it  [other account]
-A CNAME from `demo.medpull.org` to the distribution domain step 1 printed, in the account that hosts the zone. Until then the old redirect (to demo.medpull.app) stands.
+### 3. Point demo.medpull.org at it  [other account, then AWS]
+1. Zone owner: remove `demo.medpull.org` from the alternate domain names of the redirect distribution (…V32PMWR in account …273521). From that moment until step 3 the name answers with a CloudFront 403, so do the three parts in one sitting.
+2. Here: set `SITE_DOMAIN=demo.medpull.org` and `SITE_CERTIFICATE_ARN=arn:aws:acm:us-east-1:556683673972:certificate/4a262c26-1fc5-4803-ab5e-088c5c835c03` in `.env.demo` (its primary name is demo.medpull.org; a certificate may serve two distributions) and run `./infra/deploy.sh --env .env.demo --stack-only`.
+3. Zone owner: `demo.medpull.org  CNAME  <the demo distribution's domain>`.
+
+Until all three, the demo answers on its `*.cloudfront.net` URL and the old redirect to demo.medpull.app stands.
 
 ### 4. Lock the real stack and remove the personas  [AWS]
 - In `.env`: `DEMO_MODE=false`, `ALLOW_MOCK_WEBHOOK=false`, `CONSOLE_ACCESS_TOKEN=generate` (printed once; keep it), then `./infra/deploy.sh`. From here the console at demo.medpull.app asks for a token and the welcome screen is gone.
@@ -75,6 +79,6 @@ A CNAME from `demo.medpull.org` to the distribution domain step 1 printed, in th
 - The sports facet's first object store (`sports/` prefix, its own key) when sports gains attachments.
 
 ## Checks after each AWS step
-- `curl https://<host>/api/health` → `demo` true on the demo, false on the real stack; `console_auth` true on the real stack.
+- `curl https://<host>/api/health` → `demo` true on the demo (`https://d9w8mctktwvg9.cloudfront.net` until step 3), false on the real stack; `console_auth` true on the real stack.
 - `make audit-compartments AUDIT="--stack recovery-copilot"` and `AUDIT="--stack medpull-demo"`: no real person on the demo, no persona on the real stack, every org with a credential, both buckets on their keys.
 - A phone signed in as Steve still refreshes (real stack unchanged).
