@@ -534,12 +534,17 @@ def get_daily_briefing(
                 "reason": reason.content.get("reason", ""),
                 "postop_day": assessment.analytics.get("postop_day"),
                 "procedure": patient.procedure_display,
+                "risk_score": float(assessment.risk_score or 0.0),
             }
         )
 
-    # sort: high first for the prompt/template
+    # sort: high first for the prompt/template, and within a tier the way the
+    # worklist orders its rows (score, then the roster order), so "start
+    # with" names the same patient the list puts on top.
     order = {"high": 0, "medium": 1, "missing_data": 2, "low": 3}
-    roster.sort(key=lambda p: order.get(p["priority"], 4))
+    roster.sort(key=lambda p: (order.get(p["priority"], 4), -p["risk_score"]))
+    for entry in roster:
+        entry.pop("risk_score", None)
 
     content: dict[str, Any] | None = None
     if provider != "fallback":

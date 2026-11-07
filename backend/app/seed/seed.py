@@ -29,6 +29,7 @@ from app.models import (
 )
 from app.models.enums import NotificationChannel
 from app.seed import adherence as adh
+from app.seed import hirt
 from app.seed.conversations import CONVERSATIONS
 from app.seed.generators import generate_patient_observations
 from app.seed.patients import CARE_TEAM, HOSPITALS, PATIENTS
@@ -165,8 +166,9 @@ def seed_core(
                 surgery_date=surgery,
                 discharge_date=surgery + timedelta(days=spec.discharge_offset),
                 surgeon_id=spec.surgeon_id,
-                assigned_provider_id=spec.surgeon_id,
+                assigned_provider_id=spec.assigned_id or spec.surgeon_id,
                 hospital_id=spec.hospital_id,
+                care_pathway=spec.care_pathway,
             )
         )
         if spec.provider is not None:
@@ -208,6 +210,14 @@ def seed_core(
                 db.add(CheckinMessage(checkin_id=checkin.id, seq=seq, who=who, text=text))
             n_checkins += 1
     counts["checkins"] = n_checkins
+
+    # The lifters followed by text alone: fourteen evenings of the lifter
+    # check-in, as transcripts plus the training observations they produce.
+    for spec in patients:
+        if spec.id in hirt.HISTORY:
+            written = hirt.write_history(db, spec.id, today)
+            counts["checkins"] += written["checkins"]
+            counts["observations"] += written["observations"]
 
     # adherence tasks + last-14-day records
     n_records = 0

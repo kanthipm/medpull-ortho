@@ -6,6 +6,7 @@ import { useCareMetrics } from '../../api/care'
 import { explainSection, useExplain } from '../../api/explain'
 import { usePatientDelivery } from '../../api/plan'
 import { useNarrativeWarming, usePatient, useRecompute } from '../../api/queries'
+import type { ReportedProgress } from '../../api/types'
 import { NarrativeTile } from '../../components/AIAttribution'
 import Avatar from '../../components/Avatar'
 import EmptyState from '../../components/EmptyState'
@@ -130,6 +131,63 @@ function Stats({
       ))}
     </dl>
   )
+}
+
+/** The recovery-card stats for a chart followed by check-ins that carry
+ *  training (a lifter, no wearable): load against the prior weeks, pain
+ *  this week, program done. The numbers come with the record
+ *  (`PatientDetail.progress`, engine/reported.py); nothing is derived here
+ *  beyond wording and tone. Every tinted figure carries a word. */
+function progressStats(progress: ReportedProgress) {
+  const items: Parameters<typeof Stats>[0]['items'] = []
+  const load = progress.load_vs_prior_pct
+  items.push({
+    key: 'load',
+    label: 'Load vs prior weeks',
+    value: load == null ? '—' : load === 0 ? '0%' : signedPct(load),
+    tone: load == null ? undefined : load >= 50 ? 'high' : load >= 30 || load <= -40 ? 'med' : 'low',
+    hint:
+      load == null
+        ? 'building'
+        : load >= 50
+          ? 'Jumped'
+          : load >= 30
+            ? 'Up'
+            : load <= -40
+              ? 'Dropped'
+              : 'Held',
+  })
+  const pain = progress.pain
+  const delta = pain?.delta ?? null
+  items.push({
+    key: 'pain',
+    label: 'Pain, 7-day trend',
+    value:
+      pain == null
+        ? '—'
+        : delta == null
+          ? `${pain.latest}`
+          : Math.abs(delta) < 0.5
+            ? '0'
+            : `${delta > 0 ? '+' : '−'}${Math.abs(Math.round(delta))}`,
+    tone: delta == null ? undefined : delta >= 2 ? 'high' : delta >= 1 ? 'med' : delta <= -1 ? 'low' : undefined,
+    hint:
+      pain == null
+        ? 'no log yet'
+        : delta == null || pain.prior_mean == null
+          ? `${pain.latest}/10 today`
+          : `${Math.round(pain.prior_mean)} → ${Math.round(pain.latest)}`,
+  })
+  const program = progress.program
+  const rate = program ? program.done / Math.max(1, program.of) : null
+  items.push({
+    key: 'program',
+    label: 'Program',
+    value: program ? `${Number.isInteger(program.done) ? program.done : program.done.toFixed(1)} of ${program.of}` : '—',
+    tone: rate == null ? undefined : rate < 0.5 ? 'med' : rate >= 0.75 ? 'low' : undefined,
+    hint: rate == null ? 'no answers yet' : rate < 0.5 ? 'Slipping' : rate >= 0.75 ? 'Done' : 'Partly',
+  })
+  return items
 }
 
 export default function PatientDetailPage() {
@@ -352,43 +410,50 @@ export default function PatientDetailPage() {
               <RefreshOverlay show={refreshing} />
               <p className="max-w-[68ch] text-copy-lg text-ink">{p.summary.text}</p>
               <Stats
-                items={[
-                  // A general patient never had an operation: "Post-op day D6"
-                  // is simply false about them.
-                  general
-                    ? { key: 'day', label: 'Days monitored', value: `${p.postop_day ?? 0}` }
-                    : { key: 'day', label: 'Post-op day', value: `D${p.postop_day}` },
-                  {
-                    key: 'traj',
-                    label: general ? 'Vs. baseline' : 'Vs. expected',
-                    value: trajValue,
-                    tone:
-                      p.trajectory.state === 'behind'
-                        ? 'med'
-                        : p.trajectory.state === 'on' || p.trajectory.state === 'ahead'
-                          ? 'low'
-                          : undefined,
-                    hint:
-                      p.trajectory.state !== 'on' && p.trajectory.state !== 'unknown'
-                        ? TRAJECTORY_LABEL[p.trajectory.state].replace(
-                            / expected curve| of expected curve/i,
-                            '',
-                          )
-                        : undefined,
-                    info: (
-                      <InfoTip
-                        entry={explainSection(glossary, 'trajectory')}
-                        className="-my-2 !h-7 !w-7"
-                        placement="bottom-start"
-                      />
-                    ),
-                  },
-                  {
-                    key: 'checkin',
-                    label: 'Last check-in',
-                    value: p.last_checkin_at ? relativeTime(p.last_checkin_at) : 'None yet',
-                  },
-                ]}
+                items={
+                  // A lifter followed by text alone reads progress in the
+                  // clinic's own terms: load vs prior weeks, pain this week,
+                  // program done. Every other chart keeps its row.
+                  p.progress
+                    ? progressStats(p.progress)
+                    : [
+                        // A general patient never had an operation: "Post-op
+                        // day D6" is simply false about them.
+                        general
+                          ? { key: 'day', label: 'Days monitored', value: `${p.postop_day ?? 0}` }
+                          : { key: 'day', label: 'Post-op day', value: `D${p.postop_day}` },
+                        {
+                          key: 'traj',
+                          label: general ? 'Vs. baseline' : 'Vs. expected',
+                          value: trajValue,
+                          tone:
+                            p.trajectory.state === 'behind'
+                              ? 'med'
+                              : p.trajectory.state === 'on' || p.trajectory.state === 'ahead'
+                                ? 'low'
+                                : undefined,
+                          hint:
+                            p.trajectory.state !== 'on' && p.trajectory.state !== 'unknown'
+                              ? TRAJECTORY_LABEL[p.trajectory.state].replace(
+                                  / expected curve| of expected curve/i,
+                                  '',
+                                )
+                              : undefined,
+                          info: (
+                            <InfoTip
+                              entry={explainSection(glossary, 'trajectory')}
+                              className="-my-2 !h-7 !w-7"
+                              placement="bottom-start"
+                            />
+                          ),
+                        },
+                        {
+                          key: 'checkin',
+                          label: 'Last check-in',
+                          value: p.last_checkin_at ? relativeTime(p.last_checkin_at) : 'None yet',
+                        },
+                      ]
+                }
               />
             </SectionCard>
           </Block>

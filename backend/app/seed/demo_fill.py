@@ -16,11 +16,17 @@ What it does, anchored to today:
 * the throwaway onboarding rows in the demo hospital ("Steve Test",
   "Debug Test", "iOS Test", ...) are removed and replaced by named demo
   patients with a device, a scenario, tasks, check-ins and a message thread;
+* the H.I.R.T. Physical Therapy roster (app/seed/hirt.py) — a second demo
+  org: five lifters followed by text check-in alone, no wearable — is created
+  or refreshed with its fourteen days of check-ins re-anchored to today, and
+  its hospital and two therapists are added to a database that predates them;
 * the risk engine is re-run for every patient it touched, and with ``--warm``
   the Groq insight caches are filled so the first console load is instant.
 
 Deterministic: the same numpy streams as the seed, so re-running produces
 the same numbers for the same day.
+
+Demo orgs: see the module docstring of app/seed/patients.py.
 """
 
 from __future__ import annotations
@@ -78,10 +84,13 @@ class Persona:
     # Set by --no-persona-phones: leave this chart without a number so a
     # message sent to it on camera stores cleanly instead of failing to send.
     suppress_phone: bool = False
+    # A chart followed by text check-in alone (no device, no generated
+    # observations): the fourteen days of answers app.seed.hirt writes.
+    reported_history: bool = False
 
 
-def _build_roster(today: date) -> tuple[list[Persona], list[Persona]]:
-    """(legacy roster to refresh, new demo-hospital roster)."""
+def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Persona]]:
+    """(legacy roster to refresh, new demo-hospital roster, the HIRT lifters)."""
     from app.models.enums import ProcedureType as PT
     from app.models.enums import SourceProvider as SP
     from app.seed import adherence as adh
@@ -468,7 +477,51 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona]]:
             ],
         ),
     ]
-    return legacy, new
+
+    # --- H.I.R.T. Physical Therapy ------------------------------------------
+    #
+    # The second demo org. Five lifters, no devices: their history is the
+    # lifter check-in, fourteen evenings of it (app/seed/hirt.py), and their
+    # tiers come from what they reported. The thread carries the enrolment
+    # text and a line or two, because the clinic texts rather than charts.
+    from app.seed import hirt
+
+    GREGG, HARRIS = "ct_gregg", "ct_harris"
+    enrol = (
+        "Welcome to the two-week check-in. Each evening you'll get one text — pain, the "
+        "night, today's program, how hard you trained. Tap through or reply here; it takes "
+        "under a minute."
+    )
+    hirt_messages = {
+        "hirt-cole": [
+            MessageSpec(14, 11, "care_team", enrol, GREGG, channel="sms"),
+            MessageSpec(14, 12, "patient", "Got it. Do I count my own lifting as training or just the program?", channel="sms"),
+            MessageSpec(14, 12, "care_team", "Everything you do in the gym counts — that's the point of asking.", GREGG, channel="sms"),
+        ],
+        "hirt-tessa": [
+            MessageSpec(14, 11, "care_team", enrol, GREGG, channel="sms"),
+            MessageSpec(13, 21, "patient", "Thanks, done. Quick to fill in.", channel="sms"),
+        ],
+        "hirt-devon": [
+            MessageSpec(14, 11, "care_team", enrol, HARRIS, channel="sms"),
+        ],
+        "hirt-june": [
+            MessageSpec(14, 11, "care_team", enrol, HARRIS, channel="sms"),
+        ],
+        "hirt-rafael": [
+            MessageSpec(14, 11, "care_team", enrol, GREGG, channel="sms"),
+            MessageSpec(14, 13, "patient", "Cool, thanks for the screen today.", channel="sms"),
+        ],
+    }
+    lifters: list[Persona] = [
+        Persona(
+            spec=spec, scenario=ScenarioSpec(), phone=hirt.PHONES[spec.id], mrn=hirt.MRNS[spec.id],
+            care_pathway=spec.care_pathway, messages=hirt_messages.get(spec.id, []),
+            reported_history=True,
+        )
+        for spec in hirt.HIRT_PATIENTS
+    ]
+    return legacy, new, lifters
 
 
 # --------------------------------------------------------------------------
@@ -572,7 +625,7 @@ def write_persona(db, persona: Persona, today: date, *, create: bool) -> dict[st
     patient.discharge_date = discharge
     patient.timezone = TZ
     patient.surgeon_id = spec.surgeon_id
-    patient.assigned_provider_id = spec.surgeon_id
+    patient.assigned_provider_id = spec.assigned_id or spec.surgeon_id
     patient.hospital_id = spec.hospital_id
     # Personas carry their placeholder number so the charts read as complete;
     # Steve asked for that explicitly and drives every real SMS through his
@@ -587,23 +640,34 @@ def write_persona(db, persona: Persona, today: date, *, create: bool) -> dict[st
     patient.care_pathway = persona.care_pathway
     db.flush()
 
-    device = db.get(Device, f"dev_{spec.id}")
-    if device is None:
-        device = Device(id=f"dev_{spec.id}", patient_id=spec.id)
-        db.add(device)
-    device.source_provider = spec.provider
-    device.device_model = spec.device_model
-    device.connected_at = datetime.combine(surgery - timedelta(days=14), dtime(10, 0))
-    device.last_sync_at = datetime.combine(today, dtime(7, 30))
-    device.status = "connected"
-    db.commit()
-
     counts: dict[str, int] = {}
-    obs = generate_patient_observations(spec, persona.scenario, today)
-    ingested, _, _ = ingest_observations(db, obs)
-    counts["observations"] = ingested
+    if spec.provider is not None:
+        device = db.get(Device, f"dev_{spec.id}")
+        if device is None:
+            device = Device(id=f"dev_{spec.id}", patient_id=spec.id)
+            db.add(device)
+        device.source_provider = spec.provider
+        device.device_model = spec.device_model
+        device.connected_at = datetime.combine(surgery - timedelta(days=14), dtime(10, 0))
+        device.last_sync_at = datetime.combine(today, dtime(7, 30))
+        device.status = "connected"
+        db.commit()
+        obs = generate_patient_observations(spec, persona.scenario, today)
+        ingested, _, _ = ingest_observations(db, obs)
+        counts["observations"] = ingested
+    else:
+        # No wearable: a chart followed by what the patient reports. Any
+        # device row left from an earlier life is gone with purge_patient.
+        db.commit()
+        counts["observations"] = 0
 
     n = 0
+    if persona.reported_history:
+        from app.seed import hirt
+
+        written = hirt.write_history(db, spec.id, today)
+        n += written["checkins"]
+        counts["observations"] += written["observations"]
     for days_ago, hour, lines in persona.conversations:
         checkin = Checkin(
             patient_id=spec.id,
@@ -709,27 +773,39 @@ def main() -> None:
 
     ensure_schema()
     today = date.today()
-    legacy, new = _build_roster(today)
+    legacy, new, lifters = _build_roster(today)
     if args.no_persona_phones:
         legacy = [replace(p, suppress_phone=True) for p in legacy]
         new = [replace(p, suppress_phone=True) for p in new]
+        lifters = [replace(p, suppress_phone=True) for p in lifters]
         print("demo patients will be left without a phone number")
     touched: list[str] = []
 
     db = SessionLocal()
     try:
         if args.warm_only:
-            ids = [p.spec.id for p in legacy + new]
+            ids = [p.spec.id for p in legacy + new + lifters]
             refresh_briefing_and_engine(db, ids)
             warm_insights(db, ids, args.pause)
             print("Done.")
             return
         tables = _existing_tables(db)
+        # The HIRT org itself: a database filled before it existed has no
+        # row for the hospital or its therapists, and every lifter below
+        # points at them.
+        from app.seed import hirt
+
+        added = hirt.ensure_org(db)
+        if added:
+            print(f"added the {hirt.HIRT_HOSPITAL.name} org ({added} row(s))")
         roster = {p.id: p for p in db.scalars(select(Patient)).all()}
         protected = sorted(pid for pid in roster if pid in PROTECTED)
         print(f"protected (untouched): {', '.join(protected)}")
 
         legacy_ids = {p.spec.id for p in legacy}
+        # The demo-hospital personas and the lifters are both authored here:
+        # purged with their identity rows and rewritten in full.
+        new = new + lifters
         new_ids = {p.spec.id for p in new}
         demo_ids = legacy_ids | new_ids
         # A patient this script did not author, carrying a phone number or an

@@ -22,6 +22,8 @@ ADDITIVE = {
     str(MetricType.FLIGHTS_CLIMBED),
     str(MetricType.SIT_TO_STAND),
     str(MetricType.EXERCISE_SESSION),
+    # Two reported sessions on one day are two sessions' worth of load.
+    str(MetricType.SESSION_LOAD),
 }
 
 _SUMMARY = str(Granularity.DAILY_SUMMARY)

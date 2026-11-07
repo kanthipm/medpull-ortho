@@ -1,26 +1,31 @@
 """The seeded roster. Nine patients ported from the orthopedic-demo domain
-model plus one new early-post-op case (Grace Kim)."""
+model plus one new early-post-op case (Grace Kim).
 
-from dataclasses import dataclass
+Demo orgs
+---------
+The shipped seed is two organizations, each of which a demo can be given on
+its own (the console token is minted per hospital):
+
+* ``hosp_demo`` — MedPull Demo Hospital, the surgical and general-care
+  roster with wearables (``PATIENTS`` here, filled out by
+  ``app.seed.demo_fill`` for a filmed demo);
+* ``hirt`` — H.I.R.T. Physical Therapy, a cash-pay PT clinic inside a gym
+  whose five lifters are followed by text check-in alone, no wearable
+  (``app.seed.hirt``). Their tiers come from what they report.
+
+The nine-patient ortho roster below is the test suite's, seeded only through
+``full_roster()``.
+"""
 
 from app.models.enums import CareRole, ProcedureType, SourceProvider
+from app.seed import hirt
+from app.seed.specs import CareTeamSpec, HospitalSpec, PatientSpec
 
-
-@dataclass(frozen=True)
-class CareTeamSpec:
-    id: str
-    name: str
-    role: CareRole
-
-
-@dataclass(frozen=True)
-class HospitalSpec:
-    id: str
-    name: str
-    city: str
-    state: str
-    system: str | None = None
-    timezone: str = "America/Chicago"
+__all__ = [
+    "CareTeamSpec", "HospitalSpec", "PatientSpec", "HOSPITALS", "CARE_TEAM", "PATIENTS",
+    "BLANK_CHART_FIXTURES", "ORTHO_DEMO_HOSPITALS", "ORTHO_DEMO_PATIENTS", "full_roster",
+    "get_spec",
+]
 
 
 # The hospital list the app's first screen shows.
@@ -28,6 +33,8 @@ HOSPITALS: list[HospitalSpec] = [
     # The demo org: anyone can join it from the app as a general patient, so
     # a demo works with no roster entry. Rename to the partner org's name.
     HospitalSpec("hosp_demo", "MedPull Demo Hospital", "Houston", "TX", "Demo organization"),
+    # The PT clinic whose lifters are followed by text alone (app/seed/hirt.py).
+    hirt.HIRT_HOSPITAL,
 ]
 
 
@@ -36,25 +43,8 @@ CARE_TEAM: list[CareTeamSpec] = [
     CareTeamSpec("ct_chen", "Dr. Chen", CareRole.SURGEON),
     CareTeamSpec("ct_torres", "Maya Torres, RN", CareRole.NURSE),
     CareTeamSpec("ct_wooley", "Sam Wooley, PT", CareRole.PT),
+    *hirt.HIRT_CARE_TEAM,
 ]
-
-
-@dataclass(frozen=True)
-class PatientSpec:
-    id: str
-    name: str
-    initials: str
-    age: int
-    sex: str
-    procedure: ProcedureType
-    procedure_display: str
-    postop_day: int
-    provider: SourceProvider | None  # None = real patient, no seeded device
-    device_model: str
-    surgeon_id: str
-    # discharge N days after surgery (joint replacements 1-2, others 0-1)
-    discharge_offset: int = 1
-    hospital_id: str = "hosp_demo"
 
 
 def _surgeon_for(procedure: ProcedureType) -> str:
@@ -90,6 +80,9 @@ PATIENTS: list[PatientSpec] = [
           "General care", 0, None, "", 0, "hosp_demo"),
     _spec("ana", "Ana Lee", 28, "F", ProcedureType.TKA,
           "Total Knee Replacement (TKA)", 5, SourceProvider.APPLE, "Apple Watch Series 9", 1, "hosp_demo"),
+    # H.I.R.T. Physical Therapy: five lifters, no wearables, fourteen days of
+    # text check-ins (app/seed/hirt.py writes their history).
+    *hirt.HIRT_PATIENTS,
 ]
 
 

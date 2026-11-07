@@ -797,7 +797,10 @@ SECTIONS: dict[str, Explanation] = {
                "index is high or two signals including heart rate or temperature are flagged. "
                "Needs review for any flag, drift, limp, a vital gone dark, a behind trajectory "
                "or low adherence. On track otherwise. A reading more than five days old never "
-               "moves the tier.",
+               "moves the tier. A chart with no wearable but a run of check-ins is judged on "
+               "what was reported instead: training load against the patient's own recent "
+               "weeks, pain against the week before, anything new since the visit, whether the "
+               "program is getting done, and whether they have gone quiet.",
         "reading": "Each reason under the tier is the rule that fired, in words.",
         "shows_after": "Immediately; Missing data until the patient can be seen.",
         "patient_what": "Whether your care team is keeping a closer eye this week.",

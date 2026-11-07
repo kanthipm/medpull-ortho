@@ -137,6 +137,15 @@ class MetricType(StrEnum):
     ROM_FLEXION = "rom_flexion"                     # degrees
     ROM_EXTENSION = "rom_extension"                 # degrees of residual flexion (negative = hyperextension)
     ROM_ABDUCTION = "rom_abduction"                 # degrees
+    # --- Reported training (the lifter check-in, tasks/reported.py) ---
+    # A clinic that follows people who train between visits has no wearable
+    # to read load from; the patient texts it. Session load is the session's
+    # effort (RPE 0-10) times its minutes, in arbitrary units (Foster's
+    # session-RPE), one row per reported session, summed per day. Program
+    # done is the day's answer to "did you get today's program in?": 1 for
+    # all, 0.5 for some, 0 for none.
+    SESSION_LOAD = "session_load"                   # RPE x minutes, arbitrary units
+    PROGRAM_DONE = "program_done"                   # 1 | 0.5 | 0 per day
 
 
 class Granularity(StrEnum):

@@ -132,6 +132,54 @@ class AdherenceResult:
 
 
 @dataclass
+class ReportedSignals:
+    """What the patient told us, for a chart that has no device series.
+
+    Built by engine/reported.py from the check-in transcripts and the
+    reported-training observations (SESSION_LOAD, PROGRAM_DONE). The risk
+    scorer reads it only when nothing a wearable would report is on file; the
+    console's progress line reads it whenever reported training exists. Days
+    are program days (post-op day index), like every other series.
+    """
+
+    checkins_7d: int = 0
+    checkins_14d: int = 0
+    days_since_checkin: int | None = None          # None = never checked in
+    # Training load: the same acute:chronic ratio M1 computes (care/load.py).
+    load_ratio: float | None = None
+    load_provisional: bool = False                  # under M1_FIRM_DAYS of load
+    load_days: int = 0                              # days of reported load on file
+    load_week_mean: float | None = None             # mean daily load, the last 7 days
+    load_prior_mean: float | None = None            # mean daily load, the weeks before
+    load_vs_prior_pct: float | None = None          # week vs prior, signed percent
+    # Pain, from the transcripts: the latest score against the week before it.
+    pain_latest: float | None = None
+    pain_latest_day: int | None = None
+    pain_prior_mean: float | None = None
+    pain_delta: float | None = None
+    new_pain: bool = False                          # "new pain since the visit: yes", recently
+    new_pain_day: int | None = None
+    # Program completion, from PROGRAM_DONE: 1 all, 0.5 some, 0 none.
+    program_days: int = 0                           # answers on file
+    program_rate_3d: float | None = None            # mean of the last 3 days' answers
+    program_answers_3d: int = 0
+    program_done_7d: float = 0.0                    # days' worth done in the last 7
+    program_week_days: int = 7
+    week_end_day: int | None = None                 # the day the 7-day windows end on
+
+    @property
+    def followed(self) -> bool:
+        """Someone is answering: three check-ins in the last two weeks. Two
+        weeks rather than one so a patient who checked in daily and then went
+        quiet for five days is still scored (and told off for going quiet)
+        instead of dropping back into Missing data."""
+        return self.checkins_14d >= 3
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**asdict(self), "followed": self.followed}
+
+
+@dataclass
 class RiskReason:
     code: str                     # e.g. "RHR_RISING", "COMPOSITE_HIGH", "LOW_COVERAGE"
     text: str                     # human sentence fragment, e.g. "Resting HR rising 4 days"
@@ -164,6 +212,9 @@ class AnalyticsBundle:
     # "metrics": [CareMetric.to_dict() ...]}. Already plain JSON — the engine
     # serializes each metric itself so numpy scalars never reach the column.
     care_metrics: dict[str, Any] = field(default_factory=dict)
+    # ReportedSignals.to_dict(): what the patient reported by check-in, which
+    # is the whole picture for a chart with no wearable (engine/reported.py).
+    reported: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

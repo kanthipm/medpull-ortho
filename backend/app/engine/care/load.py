@@ -8,7 +8,10 @@ unit of load cost them symptoms the next morning, and is the limp settling.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
+import pandas as pd
 
 from app.engine.care._common import (
     NO_RECENT_TEXT,
@@ -58,21 +61,56 @@ SYMPTOM_NAMES = {
 }
 LOAD_SCALE = {str(M.STEPS): (1000.0, "1,000 steps", "pts / 1k steps"),
               str(M.ACTIVE_ENERGY): (100.0, "100 kcal", "pts / 100 kcal"),
-              str(M.EXERCISE_SESSION): (10.0, "10 minutes", "pts / 10 min")}
+              str(M.EXERCISE_SESSION): (10.0, "10 minutes", "pts / 10 min"),
+              str(M.SESSION_LOAD): (100.0, "100 units of load", "pts / 100 load")}
 
 
-def m1(ctx: CareContext) -> CareMetric:
-    series, key, label = load_source(ctx)
-    if series is None:
-        return nodata("M1", ctx)
+@dataclass
+class LoadWindows:
+    """M1's acute and chronic windows over one daily load series, so the
+    tile and the risk tier (engine/risk.py, for a chart whose only load is
+    what the patient reported) compute the one ratio from the one function
+    and can never disagree about it."""
+
+    latest_day: int | None
+    full: pd.Series
+    acute: pd.Series
+    chronic: pd.Series
+    acute_len: int
+    n_acute: int
+    n_chronic: int
+    provisional: bool
+    short: bool
+
+    @property
+    def enough(self) -> bool:
+        return not (self.n_chronic < M1_MIN_DAYS or self.n_acute < 2
+                    or self.n_chronic <= self.n_acute)
+
+    @property
+    def acute_mean(self) -> float:
+        return float(self.acute.mean()) if self.n_acute else float("nan")
+
+    @property
+    def chronic_mean(self) -> float:
+        return float(self.chronic.mean()) if self.n_chronic else float("nan")
+
+    @property
+    def ratio(self) -> float | None:
+        """Acute over chronic, or None while the history is too thin or the
+        chronic mean is zero (nothing to compare against)."""
+        if not self.enough or not self.chronic_mean > 0:
+            return None
+        return self.acute_mean / self.chronic_mean
+
+
+def load_windows(series: pd.Series, day: int) -> LoadWindows:
+    """The windows M1 judges a load series on at ``day``: the chronic window
+    is everything from day 2 (the last 28 days once a month is on file) and
+    the acute window the last 7 days inside it — 3 while fewer than
+    M1_FIRM_DAYS of history exist, when the reading is provisional."""
     post = series[series.index >= 2]
     latest_day = int(post.index.max()) if len(post) else None
-    if stale(latest_day, ctx.postop_day):
-        return nodata(
-            "M1", ctx, NO_RECENT_TEXT,
-            finding=f"The latest {label} reading is from {ctx.day_phrase(latest_day)}.",
-        )
-    day = ctx.postop_day
     full = grid(post, 2, day)
     short = day < 30
     chronic = full if short else full[full.index > day - 28]
@@ -83,11 +121,31 @@ def m1(ctx: CareContext) -> CareMetric:
     provisional = n_chronic < M1_FIRM_DAYS
     acute_len = 3 if provisional else 7
     acute = full[full.index > day - acute_len]
-    n_acute = int(acute.notna().sum())
+    return LoadWindows(
+        latest_day=latest_day, full=full, acute=acute, chronic=chronic, acute_len=acute_len,
+        n_acute=int(acute.notna().sum()), n_chronic=n_chronic, provisional=provisional,
+        short=short,
+    )
+
+
+def m1(ctx: CareContext) -> CareMetric:
+    series, key, label = load_source(ctx)
+    if series is None:
+        return nodata("M1", ctx)
+    day = ctx.postop_day
+    w = load_windows(series, day)
+    latest_day = w.latest_day
+    if stale(latest_day, day):
+        return nodata(
+            "M1", ctx, NO_RECENT_TEXT,
+            finding=f"The latest {label} reading is from {ctx.day_phrase(latest_day)}.",
+        )
+    full, short, chronic, acute = w.full, w.short, w.chronic, w.acute
+    n_chronic, provisional, acute_len, n_acute = w.n_chronic, w.provisional, w.acute_len, w.n_acute
     coverage = f"{n_acute} of {acute_len} days of {label} · {n_chronic}-day chronic window"
     wait = max(0, 2 - day)
     note = f"days of {label}"
-    if n_chronic < M1_MIN_DAYS or n_acute < 2 or n_chronic <= n_acute:
+    if not w.enough:
         return building(
             "M1", ctx, n_chronic, M1_MIN_DAYS, M1_FIRM_DAYS, note=note,
             coverage_text=coverage, extra_wait=wait,
@@ -97,8 +155,8 @@ def m1(ctx: CareContext) -> CareMetric:
                     f"after {M1_FIRM_DAYS}.",
         )
     ready = established(n_chronic, M1_MIN_DAYS, M1_FIRM_DAYS, note=note)
-    acute_mean = float(acute.mean())
-    chronic_mean = float(chronic.mean())
+    acute_mean = w.acute_mean
+    chronic_mean = w.chronic_mean
     if chronic_mean <= 0:
         return building("M1", ctx, n_chronic, M1_MIN_DAYS, M1_FIRM_DAYS, note=note,
                         coverage_text=coverage, extra_wait=wait)
@@ -154,8 +212,11 @@ def m1(ctx: CareContext) -> CareMetric:
 
     next_step = None
     if status is not MetricStatus.OK:
+        # A lifter's load is the program, not a step count: the hold is on
+        # last week's numbers, which is what the clinic would say.
+        target = "step target" if key == str(M.STEPS) else label
         next_step = (
-            "Hold the step target for 2–3 days, then progress ~10%/week."
+            f"Hold the {target} for 2–3 days, then progress ~10%/week."
             if adjusted > 1.0
             else "Ask what is limiting activity — pain, fatigue, fear of movement."
         )

@@ -17,6 +17,7 @@ from app.engine.types import (
     CompositeResult,
     ConfidenceResult,
     DeviationResult,
+    ReportedSignals,
     RiskReason,
     RiskResult,
     TrajectoryResult,
@@ -28,6 +29,19 @@ from app.models.enums import RiskLevel, TrajectoryState
 GAIT_FLAG_PCT = 10.0
 GAIT_FLAG_AFTER_DAY = 10
 ADHERENCE_LOW = 0.5
+
+# --- a chart followed by check-ins alone (engine/reported.py) ---------------------
+# The same bands M1 draws on the load ratio, so the tile and the tier agree.
+LOAD_SPIKE_RATIO = 1.5
+LOAD_WATCH_RATIO = 1.3
+# Pain this check-in against the mean of the week before it, in points.
+PAIN_RISE_POINTS = 2.0
+# Program completion over the last three days (1 all, 0.5 some, 0 none).
+PROGRAM_LOW = 0.5
+# Days without a check-in before someone has gone quiet, and quiet for too long.
+QUIET_DAYS = 3
+QUIET_DAYS_HIGH = 5
+REPORTED_CODES = ("LOAD_SPIKE", "PAIN_RISING", "NEW_PAIN", "PROGRAM_SLIPPING", "WENT_QUIET")
 
 _FLAG_REASONS: dict[str, tuple[str, str, int]] = {
     str(M.RESTING_HR): ("RHR_RISING", "Resting HR rising vs baseline", 3),
@@ -76,6 +90,117 @@ def coverage_reason(pct: int, has_history: bool = False) -> str:
     return f"Device data on only {pct}% of recent days"
 
 
+def _ago(days: int | None) -> str:
+    if days is None:
+        return "at the last check-in"
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    return f"{days} days ago"
+
+
+def score_reported(reported: ReportedSignals, postop_day: int) -> RiskResult:
+    """The tier for a chart with no device series, from what the patient
+    reported by check-in: training load against their own recent weeks, pain
+    against the week before, anything new since the visit, whether the
+    program is getting done, and whether they are still answering at all.
+
+    The texts are what a clinician reads on the worklist and under the tier,
+    so they say the finding in the clinic's words — "too much, too soon",
+    "went quiet" — never a code.
+    """
+    reasons: list[RiskReason] = []
+    r = reported
+
+    quiet = r.days_since_checkin is not None and r.days_since_checkin >= QUIET_DAYS
+    quiet_long = r.days_since_checkin is not None and r.days_since_checkin >= QUIET_DAYS_HIGH
+    if quiet:
+        reasons.append(RiskReason(
+            code="WENT_QUIET",
+            text=f"Went quiet — no check-in for {r.days_since_checkin} days",
+            metric_type=None, severity=3 if quiet_long else 2,
+        ))
+
+    ratio = r.load_ratio
+    spike = ratio is not None and ratio >= LOAD_SPIKE_RATIO and not r.load_provisional
+    load_up = ratio is not None and ratio >= LOAD_WATCH_RATIO
+    if spike:
+        reasons.append(RiskReason(
+            code="LOAD_SPIKE",
+            text=f"Training load {ratio:.1f}× its recent average — too much, too soon",
+            metric_type=str(M.SESSION_LOAD), severity=3,
+        ))
+    elif load_up:
+        # Above the band, or a spike on under ten days of history: M1 calls
+        # the same reading an early read and never flags it, so neither do we.
+        lead = "Early read: training load" if r.load_provisional else "Training load"
+        reasons.append(RiskReason(
+            code="LOAD_SPIKE",
+            text=f"{lead} {ratio:.1f}× its recent average — above the band",
+            metric_type=str(M.SESSION_LOAD), severity=2,
+        ))
+
+    pain_rising = r.pain_delta is not None and r.pain_delta >= PAIN_RISE_POINTS
+    if pain_rising:
+        reasons.append(RiskReason(
+            code="PAIN_RISING",
+            text=(f"Pain up {r.pain_delta:.0f} points on the week before "
+                  f"({r.pain_prior_mean:.0f} → {r.pain_latest:.0f})"),
+            metric_type=str(M.PAIN_NRS), severity=2,
+        ))
+    if r.new_pain:
+        when = _ago(postop_day - r.new_pain_day if r.new_pain_day is not None else None)
+        reasons.append(RiskReason(
+            code="NEW_PAIN",
+            text=f"New pain since the last visit, reported {when}",
+            metric_type=str(M.PAIN_NRS), severity=2,
+        ))
+
+    slipping = r.program_rate_3d is not None and r.program_rate_3d < PROGRAM_LOW
+    if slipping:
+        reasons.append(RiskReason(
+            code="PROGRAM_SLIPPING",
+            text=f"Program slipping — {int(round(r.program_rate_3d * 100))}% done over the "
+                 "last 3 days",
+            metric_type=str(M.PROGRAM_DONE), severity=2,
+        ))
+
+    reasons.sort(key=lambda x: -x.severity)
+
+    # HIGH: the load spike itself, pain moving with load above the band
+    # (the overload story told from two sides), or five days of silence.
+    if spike or quiet_long or (load_up and (pain_rising or r.new_pain)):
+        score = 72.0
+        if spike:
+            score = min(80.0, 74.0 + 10.0 * (ratio - LOAD_SPIKE_RATIO))
+        if spike and (pain_rising or r.new_pain):
+            score = min(82.0, score + 2.0)
+        return RiskResult(level=RiskLevel.HIGH, score=round(score, 1), reasons=reasons)
+
+    if reasons:
+        score = min(60.0, 45.0 + 5.0 * (len(reasons) - 1))
+        return RiskResult(level=RiskLevel.MEDIUM, score=round(score, 1), reasons=reasons)
+
+    steady: list[str] = []
+    if ratio is not None and 0.8 <= ratio < LOAD_WATCH_RATIO:
+        steady.append("load steady")
+    if r.pain_delta is not None and r.pain_delta <= -1.0:
+        steady.append("pain easing")
+    if r.program_rate_3d is not None and r.program_rate_3d >= 0.75:
+        steady.append("program done")
+    # Six of the last seven days is every day at 7:55 in the morning: today's
+    # evening check-in has not happened yet.
+    if r.checkins_7d >= 6:
+        text = "Checking in daily"
+    else:
+        text = f"Checked in {min(r.checkins_7d, 7)} of the last 7 days"
+    if steady:
+        text += " — " + ", ".join(steady)
+    reasons.append(RiskReason(code="ON_TRACK", text=text, metric_type=None, severity=1))
+    return RiskResult(level=RiskLevel.LOW, score=10.0, reasons=reasons)
+
+
 def score_risk(
     postop_day: int,
     deviations: dict[str, DeviationResult],
@@ -85,11 +210,20 @@ def score_risk(
     adherence: AdherenceResult,
     gait_asymmetry_latest: float | None,
     gait_asymmetry_day: int | None = None,
+    reported: ReportedSignals | None = None,
 ) -> RiskResult:
     reasons: list[RiskReason] = []
 
     # Gate: we can't assess what we can't see.
     if confidence.level == ConfidenceLevel.LOW:
+        # ...unless the patient is telling us. A chart with no device series
+        # at all but a run of check-ins is judged on what was reported; the
+        # device path below is untouched for everyone who has one.
+        if (
+            reported is not None and reported.followed
+            and not deviations and not confidence.panel
+        ):
+            return score_reported(reported, postop_day)
         pct = int(round(confidence.score * 100))
         reasons.append(
             RiskReason(

@@ -58,7 +58,36 @@ _ACTION_LIBRARY: list[tuple[tuple[str, ...], dict[str, str]]] = [
         "detail": "A signal is sliding gradually — worth confirming the trend before acting.",
         "urgency": "routine",
     }),
+    # What the patient reported by check-in (engine/reported.py).
+    (("LOAD_SPIKE",), {
+        "title": "Hold the load at last week's numbers",
+        "detail": "Reported training load jumped against the prior weeks — a note to hold "
+                  "the load until the next session is drafted for review.",
+        "urgency": "today",
+    }),
+    (("NEW_PAIN", "PAIN_RISING"), {
+        "title": "Ask about the pain",
+        "detail": "Pain is up on the week, or something new hurts since the last visit — ask "
+                  "where and what sets it off before the next session.",
+        "urgency": "today",
+    }),
+    (("WENT_QUIET",), {
+        "title": "Send a one-tap check-in",
+        "detail": "No check-in for several days — a one-line text is usually enough to "
+                  "restart the daily answers.",
+        "urgency": "this_week",
+    }),
+    (("PROGRAM_SLIPPING",), {
+        "title": "Ask what is getting in the way of the program",
+        "detail": "The program was done on under half of the last three days.",
+        "urgency": "this_week",
+    }),
 ]
+
+# Reasons the reported-signals rules write (engine/risk.py). They arrive as
+# finished clinic sentences — "Training load 1.6× its recent average — too
+# much, too soon" — so the summary repeats them rather than rephrasing.
+_REPORTED_CODES = ("LOAD_SPIKE", "PAIN_RISING", "NEW_PAIN", "PROGRAM_SLIPPING", "WENT_QUIET")
 
 _DEFAULT_ACTION = {
     "title": "Continue routine monitoring",
@@ -199,6 +228,9 @@ def _signal_sentences(
         out.append(f"{_cap(dark[0]['text'].replace(' no longer reporting', ''))} "
                    f"{'has' if ',' not in dark[0]['text'] else 'have'} stopped reporting, so "
                    "part of the picture is missing.")
+    for r in reasons:
+        if r["code"] in _REPORTED_CODES and r.get("text"):
+            out.append(_cap(str(r["text"]).rstrip(".")) + ".")
     return out
 
 
