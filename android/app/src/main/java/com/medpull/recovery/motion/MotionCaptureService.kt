@@ -22,12 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-
-enum class CaptureState { IDLE, RUNNING, DONE }
 
 /**
  * Keeps the sensors alive for the length of a Measure test (or a passive
@@ -49,17 +45,17 @@ class MotionCaptureService : Service() {
                 val durationS = intent?.getIntExtra(EXTRA_DURATION_S, 180) ?: 180
                 val outdoors = intent?.getBooleanExtra(EXTRA_OUTDOORS, false) ?: false
                 val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Measure test"
-                freeLiving = intent?.getBooleanExtra(EXTRA_FREE_LIVING, false) ?: false
-                begin(title, durationS, outdoors)
+                begin(title, durationS, outdoors, intent?.getBooleanExtra(EXTRA_FREE_LIVING, false) ?: false)
             }
         }
         return START_NOT_STICKY
     }
 
-    private fun begin(title: String, durationS: Int, outdoors: Boolean) {
+    private val freeLiving get() = CaptureSession.freeLiving
+
+    private fun begin(title: String, durationS: Int, outdoors: Boolean, freeLiving: Boolean) {
         val recorder = MotionRecorder(applicationContext)
-        current = recorder
-        _state.value = CaptureState.RUNNING
+        CaptureSession.begin(recorder, freeLiving)
         val notification = notification(title, "Starting…")
         if (Build.VERSION.SDK_INT >= 34) startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
         else startForeground(NOTIFICATION_ID, notification)
@@ -85,17 +81,15 @@ class MotionCaptureService : Service() {
 
     private fun finish() {
         ticker?.cancel(); ticker = null
-        val recorder = current
+        val recorder = CaptureSession.recorder
         recorder?.stop()
-        _state.value = CaptureState.DONE
+        CaptureSession.finished()
         wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
         if (freeLiving && recorder != null) {
             // Nobody is watching: hand the bout to WorkManager, which outlives
             // this service and the process and waits for a network.
             val window = recorder.window("free_living", null)
-            freeLiving = false
-            current = null
-            _state.value = CaptureState.IDLE
+            CaptureSession.reset()
             if (window != null) {
                 val upload = MotionUpload(listOf(window), Stature.get(applicationContext), AppConfig.deviceName)
                 MotionUploadWorker.enqueue(applicationContext, upload, (application as MedPullApp).graph.api.json)
@@ -138,14 +132,8 @@ class MotionCaptureService : Service() {
         const val EXTRA_FREE_LIVING = "free_living"
         private const val NOTIFICATION_ID = 41
 
-        /** The recorder of the current or last test, read by the Measure screens. */
-        @Volatile var current: MotionRecorder? = null; private set
-        @Volatile var freeLiving: Boolean = false; private set
-        private val _state = MutableStateFlow(CaptureState.IDLE)
-        val state: StateFlow<CaptureState> = _state
-
         fun start(context: Context, title: String, durationS: Int, outdoors: Boolean, freeLiving: Boolean = false) {
-            _state.value = CaptureState.IDLE
+            CaptureSession.reset()
             val intent = Intent(context, MotionCaptureService::class.java)
                 .putExtra(EXTRA_TITLE, title).putExtra(EXTRA_DURATION_S, durationS).putExtra(EXTRA_OUTDOORS, outdoors)
                 .putExtra(EXTRA_FREE_LIVING, freeLiving)
@@ -156,6 +144,5 @@ class MotionCaptureService : Service() {
             context.startService(Intent(context, MotionCaptureService::class.java).setAction(ACTION_STOP))
         }
 
-        fun reset() { current = null; _state.value = CaptureState.IDLE }
     }
 }

@@ -59,6 +59,7 @@ import com.medpull.recovery.core.sixMinuteWalk
 import com.medpull.recovery.core.uploadMotion
 import com.medpull.recovery.features.progress.Signals
 import com.medpull.recovery.features.progress.fmt
+import com.medpull.recovery.motion.CaptureSession
 import com.medpull.recovery.motion.CaptureState
 import com.medpull.recovery.motion.LiveStats
 import com.medpull.recovery.motion.MotionCaptureService
@@ -188,8 +189,8 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
     var error by remember { mutableStateOf<String?>(null) }
     var walkResult by remember { mutableStateOf<MotionWindowSummary?>(null) }
     var sixResult by remember { mutableStateOf<SixMinuteWalkResponse?>(null) }
-    val capture by MotionCaptureService.state.collectAsStateWithLifecycle()
-    val recorder = MotionCaptureService.current
+    val capture by CaptureSession.state.collectAsStateWithLifecycle()
+    val recorder = CaptureSession.recorder
     val live by (recorder?.live ?: MutableStateFlow(LiveStats())).collectAsStateWithLifecycle()
 
     val askPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
@@ -204,7 +205,7 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
     }
 
     suspend fun upload() {
-        val rec = MotionCaptureService.current ?: return
+        val rec = CaptureSession.recorder ?: return
         phase = WalkPhase.UPLOADING
         val h = height.toDoubleOrNull()?.takeIf { it in 100.0..250.0 }?.also { Stature.set(context, it) }
         val side = if (pocket == 0) "left" else "right"
@@ -228,11 +229,11 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
             phase = WalkPhase.RESULT
             app.refreshPortfolio(false)
         } catch (e: Exception) { error = e.message; phase = WalkPhase.SETUP }
-        MotionCaptureService.reset()
+        CaptureSession.reset()
     }
 
     LaunchedEffect(capture) { if (capture == CaptureState.DONE && phase == WalkPhase.RUNNING) upload() }
-    DisposableEffect(Unit) { onDispose { if (MotionCaptureService.state.value == CaptureState.RUNNING) MotionCaptureService.stop(context) } }
+    DisposableEffect(Unit) { onDispose { if (CaptureSession.state.value == CaptureState.RUNNING) MotionCaptureService.stop(context) } }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         BackBar(nav, title)

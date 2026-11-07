@@ -104,10 +104,10 @@ object PassiveCapture {
             val stopped = result.transitionEvents.any {
                 it.activityType == DetectedActivity.WALKING && it.transitionType == ActivityTransition.ACTIVITY_TRANSITION_EXIT
             }
-            if (started && isActive(context) && cooledDown(context) && MotionCaptureService.state.value != CaptureState.RUNNING) {
+            if (started && isActive(context) && cooledDown(context) && CaptureSession.state.value != CaptureState.RUNNING) {
                 noteCapture(context)
                 MotionCaptureService.start(context, "Recording your walk", WINDOW_S, outdoors = false, freeLiving = true)
-            } else if (stopped && MotionCaptureService.state.value == CaptureState.RUNNING && MotionCaptureService.freeLiving) {
+            } else if (stopped && CaptureSession.state.value == CaptureState.RUNNING && CaptureSession.freeLiving) {
                 MotionCaptureService.stop(context)
             }
         }
