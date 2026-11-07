@@ -2,6 +2,7 @@ package com.medpull.recovery.core
 
 import android.net.Uri
 import android.util.Log
+import com.medpull.recovery.health.HealthConnector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +39,10 @@ data class AppState(
  * feeds the tabs show. One instance lives in the app graph; screens read
  * it and call its actions. Mirrors ios/MedPull/Core/AppModel.swift.
  */
-class AppModel(val api: ApiClient, private val session: SessionStore, val config: AppConfig) {
+class AppModel(
+    val api: ApiClient, private val session: SessionStore, val config: AppConfig,
+    private val health: HealthConnector,
+) {
     private val _state = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = _state
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -68,8 +72,11 @@ class AppModel(val api: ApiClient, private val session: SessionStore, val config
         scope.launch { refreshAll() }
     }
 
+    /** Ends the server session and the health SDK's, so the next person on
+     *  this phone never syncs into the previous patient's wearable account. */
     suspend fun signOut() {
         try { api.signOut() } catch (_: Exception) {}
+        health.disconnect()
         session.clear()
         _state.value = AppState(phase = Phase.ONBOARDING)
     }

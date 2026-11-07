@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.activity.result.contract.ActivityResultContract
 import com.medpull.recovery.core.AppModel
 import com.medpull.recovery.core.junctionSession
+import com.medpull.recovery.core.SessionStore
+import io.tryvital.client.AuthenticateRequest
 import io.tryvital.client.VitalClient
 import io.tryvital.vitalhealthconnect.VitalHealthConnectManager
 import io.tryvital.vitalhealthconnect.model.PermissionOutcome
@@ -37,7 +39,7 @@ sealed class HealthConnectState {
  * reads, and the SDK syncs on app start and on request. Apple's gait types
  * have no Health Connect equivalent, so nothing is posted to the gait route.
  */
-class HealthConnector(private val context: Context) {
+class HealthConnector(private val context: Context, private val session: SessionStore) {
     private val _state = MutableStateFlow<HealthConnectState>(HealthConnectState.Idle)
     val state: StateFlow<HealthConnectState> = _state
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -54,6 +56,13 @@ class HealthConnector(private val context: Context) {
     )
 
     val isSignedIn: Boolean get() = VitalClient.Status.SignedIn in VitalClient.status
+
+    /** The SDK is signed in as the patient this session belongs to, not a previous one. */
+    private val signedInAsCurrentPatient: Boolean
+        get() {
+            val id = session.patientId ?: return false
+            return isSignedIn && VitalClient.identifiedExternalUser?.startsWith("medpull:$id:") == true
+        }
     val isConnected: Boolean get() = _state.value is HealthConnectState.Connected
 
     fun availability(): ProviderAvailability = VitalHealthConnectManager.isAvailable(context)
@@ -62,9 +71,9 @@ class HealthConnector(private val context: Context) {
     fun permissionContract(): ActivityResultContract<Unit, Deferred<PermissionOutcome>> =
         manager.createPermissionRequestContract(resources, emptySet())
 
-    /** On launch: reflect an existing sign-in without asking again. */
+    /** On launch: reflect an existing sign-in for this patient without asking again. */
     fun restore() {
-        if (isSignedIn) {
+        if (signedInAsCurrentPatient) {
             _state.value = HealthConnectState.Connected()
             observeStatus()
         }
@@ -83,9 +92,16 @@ class HealthConnector(private val context: Context) {
         }
         _state.value = HealthConnectState.Connecting
         return try {
-            if (!isSignedIn) {
-                val session = app.api.junctionSession()
-                VitalClient.signIn(context, session.signInToken)
+            // The identity names the patient AND their Junction user, as on the
+            // iPhone: the SDK skips re-authentication when the id is unchanged
+            // and signs in afresh when it is, so a second patient on this phone
+            // (or a chart whose Junction account was replaced) never pushes into
+            // the old account.
+            val patientId = app.current.me?.patient?.id ?: session.patientId
+                ?: throw IllegalStateException("Sign in first.")
+            val junction = app.api.junctionSession()
+            VitalClient.identifyExternalUser(context, "medpull:$patientId:${junction.userId}") {
+                AuthenticateRequest.SignInToken(junction.signInToken)
             }
             manager.configureHealthConnectClient(false, true, 90, null, ConnectionPolicy.AutoConnect)
             true

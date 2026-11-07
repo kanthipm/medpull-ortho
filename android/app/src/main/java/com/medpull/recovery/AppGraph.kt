@@ -12,6 +12,6 @@ class AppGraph(context: Context) {
     val config = AppConfig(context)
     val session = SessionStore(context)
     val api = ApiClient(config, session)
-    val app = AppModel(api, session, config)
-    val health = HealthConnector(context)
+    val health = HealthConnector(context, session)
+    val app = AppModel(api, session, config, health)
 }
