@@ -3,6 +3,7 @@ package com.medpull.recovery
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import com.medpull.recovery.motion.PassiveCapture
 
 class MedPullApp : Application() {
     lateinit var graph: AppGraph
@@ -12,7 +13,7 @@ class MedPullApp : Application() {
         super.onCreate()
         graph = AppGraph(this)
         graph.health.restore()
-        com.medpull.recovery.motion.PassiveCapture.restore(this)
+        PassiveCapture.restore(this)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_MOTION, getString(R.string.motion_channel), NotificationManager.IMPORTANCE_MIN).apply {

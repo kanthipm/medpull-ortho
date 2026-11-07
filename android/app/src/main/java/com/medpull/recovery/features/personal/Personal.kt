@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.medpull.recovery.core.ConsentDocument
 import com.medpull.recovery.core.consentDocument
-import com.medpull.recovery.features.onboarding.Field
+import com.medpull.recovery.ui.Field
 import com.medpull.recovery.ui.ErrorBanner
 import com.medpull.recovery.ui.Gap
 import com.medpull.recovery.ui.MP

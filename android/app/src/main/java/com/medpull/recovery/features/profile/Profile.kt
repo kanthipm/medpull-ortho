@@ -1,8 +1,12 @@
 package com.medpull.recovery.features.profile
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,10 +42,13 @@ import com.medpull.recovery.MedPullApp
 import com.medpull.recovery.core.AppConfig
 import com.medpull.recovery.core.AppModel
 import com.medpull.recovery.core.Dates
+import com.medpull.recovery.core.Reminders
 import com.medpull.recovery.core.wearableLink
-import com.medpull.recovery.features.onboarding.Field
 import com.medpull.recovery.health.HealthConnectState
+import com.medpull.recovery.ui.BackBar
 import com.medpull.recovery.ui.ErrorBanner
+import com.medpull.recovery.ui.Field
+import com.medpull.recovery.ui.FlowChips
 import com.medpull.recovery.ui.Gap
 import com.medpull.recovery.ui.Guardrail
 import com.medpull.recovery.ui.Hairline
@@ -60,14 +68,6 @@ import com.medpull.recovery.ui.toneFor
 import kotlinx.coroutines.launch
 
 @Composable
-private fun Bar(nav: NavHostController, title: String) {
-    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MP.colors.ink) }
-        Text(title, style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
-    }
-}
-
-@Composable
 fun ProfileScreen(nav: NavHostController) {
     val app = appModel()
     val state by app.state.collectAsStateWithLifecycle()
@@ -78,7 +78,7 @@ fun ProfileScreen(nav: NavHostController) {
     var serverUrl by remember { mutableStateOf(app.config.baseUrl) }
     var signingOut by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        Bar(nav, "Profile")
+        BackBar(nav, "Profile")
         if (me != null) {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -153,7 +153,7 @@ fun ConnectionsScreen(nav: NavHostController) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { app.refreshWearables(force = false, surface = false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        Bar(nav, "Connections")
+        BackBar(nav, "Connections")
         state.lastError?.let { ErrorBanner(it, onDismiss = { app.clearError() }); Gap() }
         HealthConnectCard(app)
         Gap()
@@ -172,25 +172,25 @@ fun ConnectionsScreen(nav: NavHostController) {
 fun ReminderCard() {
     val context = LocalContext.current
     val c = MP.colors
-    var hour by remember { mutableStateOf(com.medpull.recovery.core.Reminders.hour(context)) }
-    val askNotify = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+    var hour by remember { mutableStateOf(Reminders.hour(context)) }
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Daily reminder", style = MaterialTheme.typography.titleLarge, color = c.ink)
                 Text(hour?.let { "Every day at ${if (it > 12) it - 12 else it} ${if (it >= 12) "pm" else "am"}" } ?: "Off", color = c.body, style = MaterialTheme.typography.bodyMedium)
             }
-            androidx.compose.material3.Switch(checked = hour != null, onCheckedChange = { on ->
+            Switch(checked = hour != null, onCheckedChange = { on ->
                 if (on) {
-                    if (android.os.Build.VERSION.SDK_INT >= 33) askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                    com.medpull.recovery.core.Reminders.set(context, 8); hour = 8
-                } else { com.medpull.recovery.core.Reminders.set(context, null); hour = null }
+                    if (Build.VERSION.SDK_INT >= 33) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    Reminders.set(context, 8); hour = 8
+                } else { Reminders.set(context, null); hour = null }
             })
         }
         if (hour != null) {
             Gap(8.dp)
-            com.medpull.recovery.features.onboarding.FlowChips(listOf("7 am", "8 am", "9 am", "10 am", "6 pm"), listOf(7, 8, 9, 10, 18).indexOf(hour)) { i ->
-                val h = listOf(7, 8, 9, 10, 18)[i]; com.medpull.recovery.core.Reminders.set(context, h); hour = h
+            FlowChips(listOf("7 am", "8 am", "9 am", "10 am", "6 pm"), listOf(7, 8, 9, 10, 18).indexOf(hour)) { i ->
+                val h = listOf(7, 8, 9, 10, 18)[i]; Reminders.set(context, h); hour = h
             }
         }
     }
@@ -209,7 +209,7 @@ fun HealthConnectCard(app: AppModel) {
     val ready = state.me?.features?.deviceHealth ?: false
     val connected = hc is HealthConnectState.Connected || serverSays
     val contract = remember { health.permissionContract() }
-    val askPermissions = androidx.activity.compose.rememberLauncherForActivityResult(contract) { deferred ->
+    val askPermissions = rememberLauncherForActivityResult(contract) { deferred ->
         scope.launch {
             health.onPermissions(deferred.await())
             app.refreshWearables(force = true, surface = false); app.refreshMe(false)

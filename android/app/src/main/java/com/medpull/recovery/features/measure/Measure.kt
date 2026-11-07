@@ -57,14 +57,16 @@ import com.medpull.recovery.core.SixMinuteWalkUpload
 import com.medpull.recovery.core.rangeOfMotion
 import com.medpull.recovery.core.sixMinuteWalk
 import com.medpull.recovery.core.uploadMotion
-import com.medpull.recovery.features.onboarding.Field
-import com.medpull.recovery.features.onboarding.FlowChips
 import com.medpull.recovery.features.progress.Signals
 import com.medpull.recovery.features.progress.fmt
 import com.medpull.recovery.motion.CaptureState
+import com.medpull.recovery.motion.LiveStats
 import com.medpull.recovery.motion.MotionCaptureService
+import com.medpull.recovery.ui.BackBar
 import com.medpull.recovery.ui.Chip
 import com.medpull.recovery.ui.ErrorBanner
+import com.medpull.recovery.ui.Field
+import com.medpull.recovery.ui.FlowChips
 import com.medpull.recovery.ui.Gap
 import com.medpull.recovery.ui.Guardrail
 import com.medpull.recovery.ui.Hairline
@@ -75,13 +77,16 @@ import com.medpull.recovery.ui.PrimaryButton
 import com.medpull.recovery.ui.Routes
 import com.medpull.recovery.ui.SecondaryButton
 import com.medpull.recovery.ui.SectionTitle
+import com.medpull.recovery.ui.Stat
 import com.medpull.recovery.ui.StatusPill
 import com.medpull.recovery.ui.Tone
 import com.medpull.recovery.ui.appModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.util.Locale
 import kotlin.math.atan2
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 /** When each test is due, from the portfolio's latest readings (as on iPhone). */
 object MeasureStatus {
@@ -164,14 +169,6 @@ fun MeasureScreen(nav: NavHostController) {
     }
 }
 
-@Composable
-private fun Bar(nav: NavHostController, title: String) {
-    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MP.colors.ink) }
-        Text(title, style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
-    }
-}
-
 private enum class WalkPhase { SETUP, RUNNING, UPLOADING, RESULT }
 
 /** The guided walk (60 s) and the six-minute walk (360 s): same capture, different test. */
@@ -192,7 +189,7 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
     var sixResult by remember { mutableStateOf<SixMinuteWalkResponse?>(null) }
     val capture by MotionCaptureService.state.collectAsStateWithLifecycle()
     val recorder = MotionCaptureService.current
-    val live by (recorder?.live ?: kotlinx.coroutines.flow.MutableStateFlow(com.medpull.recovery.motion.LiveStats())).collectAsStateWithLifecycle()
+    val live by (recorder?.live ?: MutableStateFlow(LiveStats())).collectAsStateWithLifecycle()
 
     val askPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
@@ -237,7 +234,7 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
     DisposableEffect(Unit) { onDispose { if (MotionCaptureService.state.value == CaptureState.RUNNING) MotionCaptureService.stop(context) } }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        Bar(nav, title)
+        BackBar(nav, title)
         error?.let { ErrorBanner(it, onDismiss = { error = null }); Gap() }
         when (phase) {
             WalkPhase.SETUP -> {
@@ -273,8 +270,8 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
                 Panel(tint = c.brandTint) {
                     Text("Walking…", style = MaterialTheme.typography.labelMedium, color = c.brandInk)
                     val s = live.elapsedS.toInt()
-                    Text(String.format(java.util.Locale.getDefault(), "%d:%02d", s / 60, s % 60), style = MaterialTheme.typography.displayLarge, color = c.ink)
-                    Text("of ${durationS / 60}:${String.format(java.util.Locale.getDefault(), "%02d", durationS % 60)}", color = c.muted)
+                    Text(String.format(Locale.getDefault(), "%d:%02d", s / 60, s % 60), style = MaterialTheme.typography.displayLarge, color = c.ink)
+                    Text("of ${durationS / 60}:${String.format(Locale.getDefault(), "%02d", durationS % 60)}", color = c.muted)
                     Gap(8.dp)
                     Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         Stat("Steps", "${live.steps}")
@@ -323,11 +320,6 @@ fun GuidedWalkScreen(nav: NavHostController, sixMinute: Boolean) {
         }
         Gap(24.dp)
     }
-}
-
-@Composable
-private fun Stat(label: String, value: String) {
-    Column { Text(label, style = MaterialTheme.typography.labelSmall, color = MP.colors.muted); Text(value, style = MaterialTheme.typography.titleMedium, color = MP.colors.ink) }
 }
 
 private data class Protocol(val id: String, val label: String, val reference: String, val movement: String)
@@ -386,7 +378,7 @@ fun RangeOfMotionScreen(nav: NavHostController) {
 
     val p = PROTOCOLS[protocol]
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        Bar(nav, "Range of motion")
+        BackBar(nav, "Range of motion")
         error?.let { ErrorBanner(it, onDismiss = { error = null }); Gap() }
         if (result == null) {
             FlowChips(PROTOCOLS.map { it.label }, protocol) { protocol = it; reference = null; movement = null }

@@ -8,6 +8,8 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.format.TextStyle
+import java.util.Locale
 
 /** The server's timestamps are naive local wall time or dated strings; the
  *  app parses on demand, like the iPhone's `Dates`. */
@@ -34,7 +36,7 @@ object Dates {
     fun iso(instant: Instant = Instant.now()): String =
         DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(instant.atZone(ZoneId.systemDefault()))
 
-    fun monthDay(d: LocalDate): String = "${d.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())} ${d.dayOfMonth}"
+    fun monthDay(d: LocalDate): String = "${d.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${d.dayOfMonth}"
 
     fun relative(value: String?): String? {
         val t = parse(value) ?: return null
@@ -48,5 +50,5 @@ object Dates {
         }
     }
 
-    fun shortDay(d: LocalDate): String = d.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())
+    fun shortDay(d: LocalDate): String = d.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
 }

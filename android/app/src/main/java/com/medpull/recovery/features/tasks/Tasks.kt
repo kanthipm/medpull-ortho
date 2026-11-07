@@ -3,6 +3,7 @@ package com.medpull.recovery.features.tasks
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,6 +50,7 @@ import com.medpull.recovery.core.AnswerValue
 import com.medpull.recovery.core.Dates
 import com.medpull.recovery.core.Question
 import com.medpull.recovery.core.RecoveryTask
+import com.medpull.recovery.ui.BackBar
 import com.medpull.recovery.ui.Chip
 import com.medpull.recovery.ui.ErrorBanner
 import com.medpull.recovery.ui.Gap
@@ -57,6 +59,7 @@ import com.medpull.recovery.ui.MP
 import com.medpull.recovery.ui.Panel
 import com.medpull.recovery.ui.PlainButton
 import com.medpull.recovery.ui.PrimaryButton
+import com.medpull.recovery.ui.Routes
 import com.medpull.recovery.ui.SecondaryButton
 import com.medpull.recovery.ui.SectionTitle
 import com.medpull.recovery.ui.StatusPill
@@ -88,14 +91,6 @@ fun TaskRow(task: RecoveryTask, onOpen: () -> Unit, onDone: (() -> Unit)? = null
 }
 
 @Composable
-private fun BackBar(nav: NavHostController, title: String) {
-    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MP.colors.ink) }
-        Text(title, style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
-    }
-}
-
-@Composable
 fun TaskHistoryScreen(nav: NavHostController) {
     val app = appModel()
     val state by app.state.collectAsStateWithLifecycle()
@@ -105,13 +100,13 @@ fun TaskHistoryScreen(nav: NavHostController) {
         Panel {
             SectionTitle("To do")
             if (state.tasks.open.isEmpty()) Text("Nothing open.", color = MP.colors.muted)
-            state.tasks.open.forEach { t -> TaskRow(t, onOpen = { nav.navigate(if (t.isCheckin) "checkin/${t.id}" else "task/${t.id}") }); Hairline() }
+            state.tasks.open.forEach { t -> TaskRow(t, onOpen = { nav.navigate(if (t.isCheckin) Routes.checkin(t.id) else Routes.task(t.id)) }); Hairline() }
         }
         Gap()
         Panel {
             SectionTitle("Recently done")
             if (state.tasks.recent.isEmpty()) Text("Nothing yet.", color = MP.colors.muted)
-            state.tasks.recent.forEach { t -> TaskRow(t, onOpen = { nav.navigate("task/${t.id}") }); Hairline() }
+            state.tasks.recent.forEach { t -> TaskRow(t, onOpen = { nav.navigate(Routes.task(t.id)) }); Hairline() }
         }
         Gap(24.dp)
     }
@@ -190,7 +185,7 @@ fun QuestionView(q: Question, value: AnswerValue?, onChange: (AnswerValue?) -> U
         "yes_no", "choice" -> {
             val options = q.options ?: listOf("yes", "no")
             val sel = (value as? AnswerValue.Text)?.value
-            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 options.forEach { o -> Chip(choiceLabel(o), selected = sel == o) { onChange(if (sel == o) null else AnswerValue.Text(o)) } }
             }
         }

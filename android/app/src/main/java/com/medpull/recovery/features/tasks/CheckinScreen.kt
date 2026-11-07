@@ -3,6 +3,7 @@ package com.medpull.recovery.features.tasks
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -85,7 +86,7 @@ fun CheckinScreen(nav: NavHostController, id: Int?) {
             Text("Question ${step + 1} of ${qs.size}", style = MaterialTheme.typography.labelMedium, color = c.muted)
             Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 qs.indices.forEach { i ->
-                    androidx.compose.foundation.layout.Box(Modifier.size(8.dp).clip(CircleShape).background(
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(
                         if (i <= step) c.brand else c.line))
                 }
             }

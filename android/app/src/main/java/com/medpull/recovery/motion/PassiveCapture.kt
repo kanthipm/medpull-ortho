@@ -16,6 +16,7 @@ import com.google.android.gms.location.ActivityTransition
 import com.google.android.gms.location.ActivityTransitionRequest
 import com.google.android.gms.location.ActivityTransitionResult
 import com.google.android.gms.location.DetectedActivity
+import com.medpull.recovery.core.Reminders
 
 /**
  * The Android answer to Apple's passive daily gait: when the phone notices
@@ -117,7 +118,7 @@ object PassiveCapture {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
             restore(context)
-            com.medpull.recovery.core.Reminders.hour(context)?.let { com.medpull.recovery.core.Reminders.set(context, it) }
+            Reminders.hour(context)?.let { Reminders.set(context, it) }
         }
     }
 }

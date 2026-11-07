@@ -7,6 +7,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -90,7 +91,7 @@ val MPTypography = Typography(
 @Composable
 fun MedPullTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val colors = if (dark) DarkColors else LightColors
-    androidx.compose.runtime.CompositionLocalProvider(LocalMPColors provides colors) {
+    CompositionLocalProvider(LocalMPColors provides colors) {
         MaterialTheme(colorScheme = scheme(colors, dark), typography = MPTypography, content = content)
     }
 }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -49,7 +50,7 @@ fun SeriesChart(values: List<Double?>, bars: Boolean, modifier: Modifier = Modif
                 val top = y(v); val bottom = y(lo)
                 val last = i == values.indexOfLast { it != null }
                 drawRoundRect(if (last) stroke else stroke.copy(alpha = .55f), Offset(i * slot + (slot - w) / 2, top),
-                    Size(w, (bottom - top).coerceAtLeast(2f)), cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()))
+                    Size(w, (bottom - top).coerceAtLeast(2f)), cornerRadius = CornerRadius(4.dp.toPx()))
             }
         } else {
             val path = Path(); var started = false

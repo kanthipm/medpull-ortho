@@ -8,24 +8,31 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,10 +43,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavHostController
 
 /** The iPhone's radii: surface 26, control 18, thumb 14, tile 9. */
 object Radii {
@@ -260,3 +271,42 @@ fun Guardrail(modifier: Modifier = Modifier) = Text(
 
 @Composable
 fun Gap(h: Dp = 12.dp) = Spacer(Modifier.height(h))
+
+/** The back bar every pushed screen uses: the arrow and the title. */
+@Composable
+fun BackBar(nav: NavHostController, title: String) {
+    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MP.colors.ink) }
+        Text(title, style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
+    }
+}
+
+/** A small labelled figure, for a row of results. */
+@Composable
+fun Stat(label: String, value: String) {
+    Column { Text(label, style = MaterialTheme.typography.labelSmall, color = MP.colors.muted); Text(value, style = MaterialTheme.typography.titleMedium, color = MP.colors.ink) }
+}
+
+@Composable
+fun Field(value: String, onChange: (String) -> Unit, label: String, keyboard: KeyboardType = KeyboardType.Text,
+          password: Boolean = false, modifier: Modifier = Modifier, singleLine: Boolean = true) {
+    val c = MP.colors
+    OutlinedTextField(
+        value = value, onValueChange = onChange, label = { Text(label) }, singleLine = singleLine,
+        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboard),
+        visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+        shape = RoundedCornerShape(14.dp),
+        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.brand, unfocusedBorderColor = c.lineStrong,
+            focusedTextColor = c.ink, unfocusedTextColor = c.ink, cursorColor = c.brand, focusedLabelColor = c.brandInk,
+            unfocusedLabelColor = c.muted),
+    )
+}
+
+@Composable
+fun FlowChips(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        labels.forEachIndexed { i, l -> Chip(l, selected = i == selected) { onSelect(i) } }
+    }
+}
+

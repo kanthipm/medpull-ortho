@@ -9,32 +9,21 @@ import android.content.IntentFilter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.core.content.ContextCompat
-import com.google.android.gms.auth.api.phone.SmsRetriever
-import com.google.android.gms.common.api.CommonStatusCodes
-import com.google.android.gms.common.api.Status
-import kotlinx.coroutines.flow.update
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -45,13 +34,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,22 +48,31 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.google.android.gms.auth.api.phone.SmsRetriever
+import com.google.android.gms.common.api.CommonStatusCodes
+import com.google.android.gms.common.api.Status
 import com.medpull.recovery.MedPullApp
 import com.medpull.recovery.core.AppModel
 import com.medpull.recovery.features.profile.HealthConnectCard
 import com.medpull.recovery.features.profile.WearableLinkCard
 import com.medpull.recovery.features.profile.rememberPassiveWalkEnabler
+import com.medpull.recovery.motion.PassiveCapture
 import com.medpull.recovery.ui.Chip
 import com.medpull.recovery.ui.ErrorBanner
+import com.medpull.recovery.ui.Field
+import com.medpull.recovery.ui.FlowChips
 import com.medpull.recovery.ui.Gap
 import com.medpull.recovery.ui.Guardrail
 import com.medpull.recovery.ui.MP
@@ -84,11 +81,12 @@ import com.medpull.recovery.ui.PlainButton
 import com.medpull.recovery.ui.PrimaryButton
 import com.medpull.recovery.ui.SecondaryButton
 import com.medpull.recovery.ui.appModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 @Composable
 fun OnboardingFlow() {
@@ -408,7 +406,7 @@ private fun HealthStep(nav: NavHostController, app: AppModel) {
 private fun WalksStep(nav: NavHostController) {
     val context = LocalContext.current
     val c = MP.colors
-    var on by remember { mutableStateOf(com.medpull.recovery.motion.PassiveCapture.isActive(context)) }
+    var on by remember { mutableStateOf(PassiveCapture.isActive(context)) }
     var declined by remember { mutableStateOf(false) }
     val enable = rememberPassiveWalkEnabler { ok -> on = ok; if (!ok) declined = true }
     StepFrame(nav, null, "Let MedPull notice your walks", back = false, step = Step.WALKS,
@@ -455,29 +453,6 @@ private fun DoneStep(app: AppModel) {
 }
 
 // --- small shared pieces --------------------------------------------------------------
-
-@Composable
-fun Field(value: String, onChange: (String) -> Unit, label: String, keyboard: KeyboardType = KeyboardType.Text,
-          password: Boolean = false, modifier: Modifier = Modifier, singleLine: Boolean = true) {
-    val c = MP.colors
-    OutlinedTextField(
-        value = value, onValueChange = onChange, label = { Text(label) }, singleLine = singleLine,
-        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp),
-        keyboardOptions = KeyboardOptions(keyboardType = keyboard),
-        visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.brand, unfocusedBorderColor = c.lineStrong,
-            focusedTextColor = c.ink, unfocusedTextColor = c.ink, cursorColor = c.brand, focusedLabelColor = c.brandInk,
-            unfocusedLabelColor = c.muted),
-    )
-}
-
-@Composable
-fun FlowChips(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        labels.forEachIndexed { i, l -> Chip(l, selected = i == selected) { onSelect(i) } }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

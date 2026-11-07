@@ -1,7 +1,7 @@
 package com.medpull.recovery.features.care
 
 import android.Manifest
-import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -60,9 +61,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
 import com.medpull.recovery.MedPullApp
@@ -81,10 +87,11 @@ import com.medpull.recovery.ui.PlainButton
 import com.medpull.recovery.ui.StatusPill
 import com.medpull.recovery.ui.Tone
 import com.medpull.recovery.ui.appModel
+import java.io.File
+import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.io.File
 
 private val QUICK_LOG = listOf("My pain is a ", "I did my exercises", "I walked today", "A note for my nurse: ")
 
@@ -197,22 +204,21 @@ fun CareScreen(nav: NavHostController) {
         (error ?: speechError ?: state.lastError)?.let {
             ErrorBanner(it, Modifier.padding(horizontal = 16.dp), onDismiss = { error = null; app.clearError() }); Gap(8.dp)
         }
-        LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(state.messages, key = { it.id }) { m -> Bubble(m, cache, onOpenTask = { id ->
-                app.state.value.let { }
                 scope.launch { app.refreshTasks(false) }
                 app.handle(Uri.parse("${app.config.scheme}://tasks/$id"))
             }) }
             items(turns) { (mine, text) -> TurnBubble(mine, text) }
             if (thinking) item { TurnBubble(false, "…") }
         }
-        if (listening || transcript.isNotBlank() && listening) {
+        if (listening) {
             Text(if (transcript.isBlank()) "Listening…" else transcript, color = c.muted, style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
         }
         if (pending.isNotEmpty()) {
-            LazyRow(Modifier.fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyRow(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(pending, key = { it.id }) { a ->
                     Row(Modifier.clip(RoundedCornerShape(999.dp)).background(c.soft).padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(a.filename ?: a.kind, style = MaterialTheme.typography.labelMedium, color = c.ink)
@@ -225,7 +231,7 @@ fun CareScreen(nav: NavHostController) {
             Gap(6.dp)
         }
         if (draft.isBlank() && pending.isEmpty() && !listening) {
-            LazyRow(Modifier.fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyRow(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(QUICK_LOG) { q -> Chip(q.trim().trimEnd(':'), selected = false) { draft = q; toAssistant = true } }
             }
             Gap(6.dp)
@@ -236,12 +242,12 @@ fun CareScreen(nav: NavHostController) {
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("Take a photo") }, leadingIcon = { Icon(Icons.Default.PhotoCamera, null) }, onClick = {
                         menuOpen = false
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) askCamera.launch(Manifest.permission.CAMERA)
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) askCamera.launch(Manifest.permission.CAMERA)
                         else takePhoto.launch(captureFile("jpg"))
                     })
                     DropdownMenuItem(text = { Text("Record a video") }, leadingIcon = { Icon(Icons.Default.Videocam, null) }, onClick = {
                         menuOpen = false
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) askCamera.launch(Manifest.permission.CAMERA)
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) askCamera.launch(Manifest.permission.CAMERA)
                         else takeVideo.launch(captureFile("mp4"))
                     })
                     DropdownMenuItem(text = { Text("Photo library") }, leadingIcon = { Icon(Icons.Default.PhotoLibrary, null) }, onClick = {
@@ -252,7 +258,7 @@ fun CareScreen(nav: NavHostController) {
                         if (recordingNote) {
                             recordingNote = false
                             recorder.stop()?.let { p -> scope.launch { uploading = true; try { pending.add(graph.api.uploadAttachment(p.bytes, p.contentType, p.filename)) } catch (e: Exception) { error = e.message }; uploading = false } }
-                        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                             try { recorder.start(); recordingNote = true } catch (e: Exception) { error = "Couldn't start recording." }
                         } else askMic.launch(Manifest.permission.RECORD_AUDIO)
                     })
@@ -273,7 +279,7 @@ fun CareScreen(nav: NavHostController) {
                     if (listening) {
                         val heard = speech.stopListening()
                         if (heard.isNotBlank()) scope.launch { send(heard, "voice", speak = true) }
-                    } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) speech.startListening()
+                    } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) speech.startListening()
                     else askMic.launch(Manifest.permission.RECORD_AUDIO)
                 }) { Icon(if (listening) Icons.Default.MicOff else Icons.Default.Mic, "Talk", tint = if (listening) c.riskHigh else c.ink) }
             } else {
@@ -338,7 +344,7 @@ private fun AttachmentStrip(files: List<ChatAttachment>, cache: MediaCache) {
 }
 
 fun ChatAttachment.displayName() = filename ?: if (isImage) "Photo" else if (isVideo) "Video" else if (isAudio) "Voice note" else "File"
-fun ChatAttachment.sizeLabel(): String = if (byteSize >= 1_000_000) String.format(java.util.Locale.getDefault(), "%.1f MB", byteSize / 1e6) else "${byteSize / 1000} KB"
+fun ChatAttachment.sizeLabel(): String = if (byteSize >= 1_000_000) String.format(Locale.getDefault(), "%.1f MB", byteSize / 1e6) else "${byteSize / 1000} KB"
 
 @Composable
 private fun ImageTile(a: ChatAttachment, cache: MediaCache) {
@@ -368,19 +374,17 @@ private fun MediaTile(a: ChatAttachment, cache: MediaCache) {
 @Composable
 private fun Player(file: File, video: Boolean, onEnded: () -> Unit) {
     val context = LocalContext.current
-    val player = remember(file) { androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-        setMediaItem(androidx.media3.common.MediaItem.fromUri(Uri.fromFile(file))); prepare(); playWhenReady = true
+    val player = remember(file) { ExoPlayer.Builder(context).build().apply {
+        setMediaItem(MediaItem.fromUri(Uri.fromFile(file))); prepare(); playWhenReady = true
     } }
     DisposableEffect(player) {
-        val l = object : androidx.media3.common.Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) { if (playbackState == androidx.media3.common.Player.STATE_ENDED) onEnded() }
+        val l = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) { if (playbackState == Player.STATE_ENDED) onEnded() }
         }
         player.addListener(l)
         onDispose { player.removeListener(l); player.release() }
     }
-    if (video) androidx.compose.ui.viewinterop.AndroidView(factory = { ctx -> androidx.media3.ui.PlayerView(ctx).apply { this.player = player; useController = true } },
+    if (video) AndroidView(factory = { ctx -> PlayerView(ctx).apply { this.player = player; useController = true } },
         modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)))
 }
 
-@Suppress("unused")
-private fun Context.unused() {}

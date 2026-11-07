@@ -16,6 +16,7 @@ import com.medpull.recovery.R
 import com.medpull.recovery.core.AppConfig
 import com.medpull.recovery.core.MotionUpload
 import com.medpull.recovery.features.measure.Stature
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -76,7 +77,7 @@ class MotionCaptureService : Service() {
                 val mm = seconds / 60; val ss = seconds % 60
                 // A passive bout stays quiet: its line in the shade only moves every half minute.
                 if (!freeLiving || seconds % 30 == 0)
-                    notify(title, String.format(java.util.Locale.getDefault(), "%d:%02d · %d steps", mm, ss, recorder.steps))
+                    notify(title, String.format(Locale.getDefault(), "%d:%02d · %d steps", mm, ss, recorder.steps))
                 if (seconds >= durationS) { finish(); break }
             }
         }

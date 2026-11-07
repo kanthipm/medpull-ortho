@@ -1,5 +1,6 @@
 package com.medpull.recovery.features.today
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,7 +50,10 @@ import com.medpull.recovery.ui.PlainButton
 import com.medpull.recovery.ui.PrimaryButton
 import com.medpull.recovery.ui.Routes
 import com.medpull.recovery.ui.SectionTitle
+import com.medpull.recovery.ui.StatusPill
+import com.medpull.recovery.ui.Tone
 import com.medpull.recovery.ui.appModel
+import java.time.LocalTime
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,7 +81,7 @@ fun TodayScreen(nav: NavHostController) {
                     Text(greeting(state.me), style = MaterialTheme.typography.displaySmall, color = c.ink)
                 }
                 state.me?.let { me ->
-                    androidx.compose.foundation.layout.Box(Modifier.padding(start = 8.dp)) {
+                    Box(Modifier.padding(start = 8.dp)) {
                         androidx.compose.material3.IconButton(onClick = { nav.navigate(Routes.PROFILE) }) { Initials(me.patient.initials.ifBlank { me.patient.name }) }
                     }
                 }
@@ -113,7 +117,7 @@ fun TodayScreen(nav: NavHostController) {
 }
 
 private fun greeting(me: Me?): String {
-    val hour = java.time.LocalTime.now().hour
+    val hour = LocalTime.now().hour
     val part = when { hour < 12 -> "Good morning"; hour < 18 -> "Good afternoon"; else -> "Good evening" }
     val name = me?.patient?.firstName?.takeIf { it.isNotBlank() }
     return if (name != null) "$part, $name" else part
@@ -164,7 +168,7 @@ private fun CareRow(last: com.medpull.recovery.core.ChatMessage?, unread: Int, m
                 Text(last?.text?.takeIf { it.isNotBlank() } ?: "Write to your care team any time.",
                     style = MaterialTheme.typography.bodyMedium, color = c.muted, maxLines = 2)
             }
-            if (unread > 0) com.medpull.recovery.ui.StatusPill("$unread new", com.medpull.recovery.ui.Tone.BRAND)
+            if (unread > 0) StatusPill("$unread new", Tone.BRAND)
         }
     }
 }

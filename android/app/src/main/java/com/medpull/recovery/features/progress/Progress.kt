@@ -1,6 +1,7 @@
 package com.medpull.recovery.features.progress
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,6 +39,7 @@ import com.medpull.recovery.core.PatientMetric
 import com.medpull.recovery.core.PatientSignal
 import com.medpull.recovery.core.PortfolioMetric
 import com.medpull.recovery.core.Tab
+import com.medpull.recovery.ui.BackBar
 import com.medpull.recovery.ui.Gap
 import com.medpull.recovery.ui.Guardrail
 import com.medpull.recovery.ui.Hairline
@@ -48,11 +50,15 @@ import com.medpull.recovery.ui.PrimaryButton
 import com.medpull.recovery.ui.Routes
 import com.medpull.recovery.ui.SectionTitle
 import com.medpull.recovery.ui.SeriesChart
+import com.medpull.recovery.ui.Stat
 import com.medpull.recovery.ui.StatusPill
+import com.medpull.recovery.ui.Tone
 import com.medpull.recovery.ui.appModel
 import com.medpull.recovery.ui.toneFor
-import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.util.Locale
+import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 /** The signal groups the iPhone's Progress tab uses, with Apple-only keys left out. */
 object Signals {
@@ -78,8 +84,8 @@ fun dailySlots(series: List<com.medpull.recovery.core.PortfolioPoint>, days: Int
 
 fun fmt(v: Double?, unit: String = ""): String {
     if (v == null) return "—"
-    val s = if (kotlin.math.abs(v) >= 100) String.format(java.util.Locale.getDefault(), "%,.0f", v)
-    else String.format(java.util.Locale.getDefault(), "%.1f", v).trimEnd('0').trimEnd('.')
+    val s = if (abs(v) >= 100) String.format(Locale.getDefault(), "%,.0f", v)
+    else String.format(Locale.getDefault(), "%.1f", v).trimEnd('0').trimEnd('.')
     return if (unit.isBlank()) s else "$s $unit"
 }
 
@@ -183,15 +189,7 @@ private fun WaitingRow(s: PatientSignal) {
             Text(s.title.ifBlank { s.key }, style = MaterialTheme.typography.bodyLarge, color = c.ink)
             Text(s.headline, style = MaterialTheme.typography.bodyMedium, color = c.muted, maxLines = 2)
         }
-        StatusPill(s.stateLabel.ifBlank { "Waiting" }, com.medpull.recovery.ui.Tone.MISSING)
-    }
-}
-
-@Composable
-private fun DetailBar(nav: NavHostController, title: String) {
-    Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MP.colors.ink) }
-        Text(title, style = MaterialTheme.typography.titleLarge, color = MP.colors.ink)
+        StatusPill(s.stateLabel.ifBlank { "Waiting" }, Tone.MISSING)
     }
 }
 
@@ -203,7 +201,7 @@ fun SignalDetailScreen(nav: NavHostController, key: String) {
     val m = state.portfolio.firstOrNull { it.key == key }
     val s = state.metrics?.signals?.firstOrNull { it.key == key }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        DetailBar(nav, s?.title?.ifBlank { null } ?: m?.label ?: key)
+        BackBar(nav, s?.title?.ifBlank { null } ?: m?.label ?: key)
         if (m == null) { Text("No readings yet.", color = c.muted); return@Column }
         val slots = dailySlots(m.series)
         val present = slots.filterNotNull()
@@ -217,7 +215,7 @@ fun SignalDetailScreen(nav: NavHostController, key: String) {
             Gap(12.dp)
             SeriesChart(slots, bars = key in Signals.dailyTotals, height = 160.dp)
             Gap(8.dp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Stat("Average", fmt(present.takeIf { it.isNotEmpty() }?.average()))
                 Stat("Low", fmt(present.minOrNull()))
                 Stat("High", fmt(present.maxOrNull()))
@@ -232,11 +230,6 @@ fun SignalDetailScreen(nav: NavHostController, key: String) {
         }
         Gap(24.dp)
     }
-}
-
-@Composable
-private fun Stat(label: String, value: String) {
-    Column { Text(label, style = MaterialTheme.typography.labelSmall, color = MP.colors.muted); Text(value, style = MaterialTheme.typography.titleMedium, color = MP.colors.ink) }
 }
 
 /** The explanation the server wrote, word for word, plus how far the reading is from showing. */
@@ -278,7 +271,7 @@ fun CareMetricDetailScreen(nav: NavHostController, id: String) {
     val c = MP.colors
     val m = state.metrics?.metrics?.firstOrNull { it.id == id }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        DetailBar(nav, m?.title ?: id)
+        BackBar(nav, m?.title ?: id)
         if (m == null) { Text("Not available.", color = c.muted); return@Column }
         Panel {
             StatusPill(m.stateLabel.ifBlank { m.state }, toneFor(m.state))
