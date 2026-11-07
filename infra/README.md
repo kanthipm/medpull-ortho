@@ -131,6 +131,7 @@ recommends against creating them at all.
 ./infra/deploy.sh --reseed         # rebuild the demo database (dates shift to today; demo stack only)
 ./infra/deploy.sh --backend-only   # skip the frontend builds and uploads (console and patient app)
 ./infra/deploy.sh --stack-only     # template and parameters only; ships no code
+./infra/deploy.sh --plan           # create and print the change set; execute nothing
 ```
 
 `--stack-only` re-points nothing: the function keeps the zip the stack already

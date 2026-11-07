@@ -7,6 +7,7 @@
 #   ./infra/deploy.sh --reseed        # rebuild the demo database (demo stack only)
 #   ./infra/deploy.sh --backend-only  # skip the frontend builds/uploads (console and patient app)
 #   ./infra/deploy.sh --stack-only    # template/parameters only: ships no code
+#   ./infra/deploy.sh --plan          # create the change set, print it, execute nothing
 #
 # Custom domain: set SITE_DOMAIN and SITE_CERTIFICATE_ARN (environment or
 # the env file) once the ACM certificate is ISSUED. See infra/README.md.
@@ -23,6 +24,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 RESEED=false
 BACKEND_ONLY=false
 STACK_ONLY=false
+PLAN_ONLY=false
 # Which env file: --env FILE, else $ENV_FILE, else the repo's .env (the real
 # app). .env.demo is the public demo stack; the two differ in STACK_NAME,
 # DEMO_MODE, the domain and which secrets are present.
@@ -36,6 +38,7 @@ for arg in "$@"; do
     --reseed) RESEED=true ;;
     --backend-only) BACKEND_ONLY=true ;;
     --stack-only) STACK_ONLY=true; BACKEND_ONLY=true ;;
+    --plan) PLAN_ONLY=true ;;
     -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) echo "unknown flag: $arg" >&2; exit 1 ;;
   esac
@@ -403,14 +406,40 @@ PARAMS=(
 # (content-addressed, so an unchanged one is not uploaded twice) and deploys
 # it from there, which lifts the 51,200-byte limit on an inline template
 # body — this one is close to it.
-aws_ cloudformation deploy \
-  --stack-name "$STACK_NAME" \
-  --template-file "$HERE/cloudformation.yaml" \
-  --s3-bucket "$ARTIFACT_BUCKET" --s3-prefix cloudformation \
-  --capabilities CAPABILITY_IAM \
-  --no-fail-on-empty-changeset \
-  --tags "medpull:stack=$STACK_NAME" "medpull:deployment=$DEPLOYMENT_TAG" \
-  --parameter-overrides "${PARAMS[@]}"
+deploy_stack() {  # deploy_stack [extra flags for `aws cloudformation deploy`]
+  aws_ cloudformation deploy \
+    --stack-name "$STACK_NAME" \
+    --template-file "$HERE/cloudformation.yaml" \
+    --s3-bucket "$ARTIFACT_BUCKET" --s3-prefix cloudformation \
+    --capabilities CAPABILITY_IAM \
+    --no-fail-on-empty-changeset \
+    --tags "medpull:stack=$STACK_NAME" "medpull:deployment=$DEPLOYMENT_TAG" \
+    "$@" \
+    --parameter-overrides "${PARAMS[@]}"
+}
+
+if $PLAN_ONLY; then
+  # --plan: the change set is created and described, never executed, so a
+  # template change can be read for replacements (a bucket, the distribution)
+  # before it runs. Nothing after this point happens; a plain deploy later
+  # makes its own change set, and executing that one removes this one.
+  PLAN_OUT="$(mktemp)"
+  deploy_stack --no-execute-changeset | tee "$PLAN_OUT"
+  CHANGE_SET="$(grep -o 'arn:aws:cloudformation:[^ ]*changeSet/[^ ]*' "$PLAN_OUT" | tail -1 || true)"
+  rm -f "$PLAN_OUT"
+  if [ -n "$CHANGE_SET" ]; then
+    info "change set created, nothing executed"
+    aws_ cloudformation describe-change-set --change-set-name "$CHANGE_SET" \
+      --query 'Changes[].ResourceChange.[Action,Replacement,LogicalResourceId,ResourceType]' \
+      --output table
+    info "to drop it without deploying: aws cloudformation delete-change-set --change-set-name $CHANGE_SET"
+  else
+    info "the stack is already up to date"
+  fi
+  exit 0
+fi
+
+deploy_stack
 
 outputs() {
   aws_ cloudformation describe-stacks --stack-name "$STACK_NAME" \
