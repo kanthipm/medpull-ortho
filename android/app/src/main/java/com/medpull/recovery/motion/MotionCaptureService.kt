@@ -9,14 +9,12 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.medpull.recovery.MainActivity
 import com.medpull.recovery.MedPullApp
 import com.medpull.recovery.R
 import com.medpull.recovery.core.AppConfig
 import com.medpull.recovery.core.MotionUpload
-import com.medpull.recovery.core.uploadMotion
 import com.medpull.recovery.features.measure.Stature
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -91,15 +89,15 @@ class MotionCaptureService : Service() {
         _state.value = CaptureState.DONE
         wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
         if (freeLiving && recorder != null) {
-            // Nobody is watching: send the bout and forget it.
-            val api = (application as MedPullApp).graph.api
+            // Nobody is watching: hand the bout to WorkManager, which outlives
+            // this service and the process and waits for a network.
             val window = recorder.window("free_living", null)
             freeLiving = false
             current = null
             _state.value = CaptureState.IDLE
-            if (window != null) scope.launch(Dispatchers.IO) {
-                try { api.uploadMotion(MotionUpload(listOf(window), Stature.get(applicationContext), AppConfig.deviceName)) }
-                catch (e: Exception) { Log.w("PassiveCapture", "free-living upload failed", e) }
+            if (window != null) {
+                val upload = MotionUpload(listOf(window), Stature.get(applicationContext), AppConfig.deviceName)
+                MotionUploadWorker.enqueue(applicationContext, upload, (application as MedPullApp).graph.api.json)
             }
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
