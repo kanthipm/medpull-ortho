@@ -205,15 +205,19 @@ fun SignalDetailScreen(nav: NavHostController, key: String) {
         if (m == null) { Text("No readings yet.", color = c.muted); return@Column }
         val slots = dailySlots(m.series)
         val present = slots.filterNotNull()
+        // A finger on the chart shows that day's reading in place of the latest.
+        var picked by remember { mutableStateOf<Int?>(null) }
+        val shownValue = picked?.let { slots[it] } ?: m.latest ?: m.series.lastOrNull()?.value
+        val shownDay = picked?.let { LocalDate.now().minusDays((slots.size - 1 - it).toLong()) } ?: m.series.lastOrNull()?.let { Dates.day(it.date) }
         Panel {
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(fmt(m.latest ?: m.series.lastOrNull()?.value), style = MaterialTheme.typography.displayMedium, color = c.ink)
+                Text(fmt(shownValue), style = MaterialTheme.typography.displayMedium, color = c.ink)
                 Spacer(Modifier.width(6.dp))
                 Text(m.unit, style = MaterialTheme.typography.titleMedium, color = c.muted, modifier = Modifier.padding(bottom = 8.dp))
             }
-            m.series.lastOrNull()?.let { Text("Latest ${Dates.day(it.date)?.let { d -> Dates.monthDay(d) } ?: it.date}", color = c.muted, style = MaterialTheme.typography.bodyMedium) }
+            shownDay?.let { Text((if (picked == null) "Latest " else "") + Dates.monthDay(it), color = c.muted, style = MaterialTheme.typography.bodyMedium) }
             Gap(12.dp)
-            SeriesChart(slots, bars = key in Signals.dailyTotals, height = 160.dp)
+            SeriesChart(slots, bars = key in Signals.dailyTotals, height = 160.dp, picked = picked, onPick = { picked = it })
             Gap(8.dp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Stat("Average", fmt(present.takeIf { it.isNotEmpty() }?.average()))

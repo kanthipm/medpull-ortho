@@ -1,6 +1,7 @@
 package com.medpull.recovery.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
@@ -13,8 +14,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * A small series chart drawn to scale: bars for daily totals, a line with
@@ -23,11 +27,25 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun SeriesChart(values: List<Double?>, bars: Boolean, modifier: Modifier = Modifier, height: Dp = 140.dp,
-                showAverage: Boolean = true, color: Color? = null) {
+                showAverage: Boolean = true, color: Color? = null, picked: Int? = null, onPick: ((Int?) -> Unit)? = null) {
     val c = MP.colors
     val stroke = color ?: c.brand
     val present = values.filterNotNull()
-    Canvas(modifier.fillMaxWidth().height(height)) {
+    // A finger on the chart picks the nearest slot with a reading; lifting it lets go.
+    val scrub = if (onPick == null) Modifier else Modifier.pointerInput(values) {
+        fun slotAt(px: Float): Int? {
+            val n = values.size
+            if (n == 0) return null
+            val i = if (bars) (px / (size.width / n)).toInt() else ((px / size.width) * (n - 1)).roundToInt()
+            val near = i.coerceIn(0, n - 1)
+            return (0 until n).filter { values[it] != null }.minByOrNull { abs(it - near) }
+        }
+        detectHorizontalDragGestures(
+            onDragStart = { onPick(slotAt(it.x)) },
+            onDragEnd = { onPick(null) }, onDragCancel = { onPick(null) },
+        ) { change, _ -> change.consume(); onPick(slotAt(change.position.x)) }
+    }
+    Canvas(modifier.fillMaxWidth().height(height).then(scrub)) {
         if (present.isEmpty()) return@Canvas
         val lo = minOf(present.min(), if (bars) 0.0 else present.min())
         val hi = present.max()
@@ -73,6 +91,11 @@ fun SeriesChart(values: List<Double?>, bars: Boolean, modifier: Modifier = Modif
             val p = if (bars) Offset((lastIndex + 0.5f) * size.width / n, y(v) - 6.dp.toPx()) else Offset(x(lastIndex), y(v))
             drawCircle(c.lime, 5.dp.toPx(), p)
             drawCircle(stroke, 5.dp.toPx(), p, style = Stroke(1.5.dp.toPx()))
+        }
+        if (picked != null && picked in values.indices) values[picked]?.let { v ->
+            val px = if (bars) (picked + 0.5f) * size.width / n else x(picked)
+            drawLine(c.lineStrong, Offset(px, padTop), Offset(px, padTop + h), strokeWidth = 1.5f)
+            drawCircle(c.ink, 5.dp.toPx(), Offset(px, y(v)))
         }
     }
 }
