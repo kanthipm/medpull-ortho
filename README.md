@@ -518,9 +518,9 @@ environment): the backend then serves `apple-app-site-association` at
 `/.well-known/` for local runs, and `deploy.sh` uploads the same JSON beside
 the SPA, where the CloudFront rewrite exempts it so Apple can fetch it. The
 Android equivalent, `/.well-known/assetlinks.json`, works the same way from
-`ANDROID_CERT_SHA256` once there is an Android app to open. Not built yet: push notifications (texts are the
-notification channel), Android, and a scheduled daily check-in (the console
-assigns tasks; nothing creates one on a timer).
+`ANDROID_CERT_SHA256` (the Android app is below). Not built yet: push
+notifications (texts are the notification channel) and a scheduled daily
+check-in (the console assigns tasks; nothing creates one on a timer).
 
 ## The Android app (`android/`)
 
@@ -580,13 +580,13 @@ the emulator); change it on the Profile screen or in `android/app/build.gradle.k
   bundle and 404s unmatched `/api/*` paths rather than falling through to
   index.html, so it will not serve the database or read outside the bundle. That
   is containment, not authentication.
-- **Android Health Connect and Terra.** Apple Health arrives through
-  Junction's SDK inside the iOS app; Health Connect needs the same SDK inside
-  an Android app, which does not exist. Terra stays scaffolded. See the
+- **Terra.** Apple Health and Health Connect arrive through Junction's SDKs
+  inside the iPhone and Android apps; Terra stays scaffolded. See the
   wearable section above.
 - **Email delivery.** The email channel stub records intent only; SMS is
   real through Sendblue, and the preferences API refuses to enable a channel
   that would deliver nowhere.
-- **Push notifications and Android.** The patient app is iOS only and is
-  told about new tasks by text, not push (see "The patient app").
+- **Push notifications.** Both patient apps are told about new tasks by
+  text, not push (see "The patient app"). The MedPull Personal tier is
+  iPhone only; the Android app and the web app are the clinic product.
 - **FHIR export, multi-clinic tenancy.**
