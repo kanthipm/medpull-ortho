@@ -1,6 +1,6 @@
 .PHONY: setup seed dev dev-backend dev-frontend dev-patient-web build build-patient-web run test lint clean \
         deploy deploy-backend reseed destroy deploy-demo deploy-demo-backend reseed-demo destroy-demo \
-        ios ios-build openapi android-build android-test android-install
+        audit-compartments ios ios-build openapi android-build android-test android-install
 
 setup: ## Install backend (uv) and frontend (npm) dependencies
 	cd backend && uv sync
@@ -66,6 +66,13 @@ reseed-demo: ## Rebuild the demo stack's database (dates shift to today)
 
 destroy-demo: ## Tear the demo stack down
 	./infra/destroy.sh --env .env.demo
+
+# The local database by default; AUDIT="--stack recovery-copilot" reads the
+# deployed one (read-only, no lock) and what AWS says about its compartments.
+AUDIT ?= --local data/recovery.db
+
+audit-compartments: ## Who is in each compartment (hospitals, sports orgs, subscribers, console credentials) and, with AUDIT="--stack NAME", the buckets, keys, trail and tags
+	cd backend && uv run python scripts/audit_compartments.py $(AUDIT)
 
 ios: ## Generate the Xcode project for the patient app (needs xcodegen) and open it
 	cd ios && xcodegen generate && open MedPull.xcodeproj
