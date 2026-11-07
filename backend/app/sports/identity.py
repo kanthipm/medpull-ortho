@@ -239,3 +239,52 @@ def orgs_view(db: Session, query: str = "") -> list[dict[str, Any]]:
 
 def is_athlete(patient: Patient | None) -> bool:
     return is_sports(patient)
+
+
+def delete_sports_org(db, org_id: str) -> dict[str, Any]:
+    """Remove a program nobody plays in: its teams, their events, the staff,
+    and any console credential scoped to the org or one of its teams. Refuses
+    an org that still has an athlete's profile on it (delete or move those
+    rows first), so a roster row is never left pointing at nothing."""
+    from sqlalchemy import delete, select
+
+    from app.models.credential import ConsoleCredential
+    from app.models.sports import SportsEvent, SportsOrg, SportsProfile, SportsStaff, SportsTeam
+
+    org = db.get(SportsOrg, org_id)
+    if org is None:
+        raise ValueError(f"unknown sports org {org_id}")
+    team_ids = list(db.scalars(select(SportsTeam.id).where(SportsTeam.org_id == org_id)).all())
+    athletes = list(db.scalars(
+        select(SportsProfile.patient_id).where(
+            (SportsProfile.org_id == org_id)
+            | (SportsProfile.team_id.in_(team_ids) if team_ids else False)
+        )
+    ).all())
+    if athletes:
+        shown = ", ".join(athletes[:8]) + ("…" if len(athletes) > 8 else "")
+        raise ValueError(
+            f"{org_id} still has {len(athletes)} athlete(s) on it ({shown}); "
+            "delete or move them before the program"
+        )
+    counts: dict[str, int] = {}
+    counts["sports_events"] = (
+        db.execute(delete(SportsEvent).where(SportsEvent.team_id.in_(team_ids))).rowcount
+        if team_ids else 0
+    )
+    counts["sports_staff"] = db.execute(
+        delete(SportsStaff).where(
+            (SportsStaff.org_id == org_id)
+            | (SportsStaff.team_id.in_(team_ids) if team_ids else False)
+        )
+    ).rowcount
+    counts["console_credentials"] = db.execute(
+        delete(ConsoleCredential).where(
+            ((ConsoleCredential.kind == "sports_org") & (ConsoleCredential.org_id == org_id))
+            | ((ConsoleCredential.kind == "team") & (ConsoleCredential.org_id.in_(team_ids)) if team_ids else False)
+        )
+    ).rowcount
+    counts["sports_teams"] = db.execute(delete(SportsTeam).where(SportsTeam.org_id == org_id)).rowcount
+    db.delete(org)
+    db.commit()
+    return {"deleted": org_id, "rows": counts}

@@ -65,6 +65,9 @@ def main() -> int:
                          "before deleting a chart that is signed in)")
     ap.add_argument("--delete-message", action="append", default=[], type=int, metavar="ID",
                     help="remove one thread line and any files on it, bytes included")
+    ap.add_argument("--delete-sports-org", action="append", default=[], metavar="ORG_ID",
+                    help="remove a sports program with its teams, staff, events and console "
+                         "credentials; refuses one that still has athletes on it")
     ap.add_argument("--delete-patient", action="append", default=[], metavar="ID",
                     help="delete a patient and every row that points at them (no merge)")
     ap.add_argument("--mint-token", nargs=2, metavar=("KIND:ORG_ID", "LABEL"), action="append",
@@ -194,6 +197,14 @@ def main() -> int:
                 if patient is None:
                     raise SystemExit(f"unknown patient {patient_id}")
                 report.setdefault("deleted", []).append(delete_patient(db, patient))
+        if args.delete_sports_org:
+            from app.sports.identity import delete_sports_org
+
+            for org_id in args.delete_sports_org:
+                try:
+                    report.setdefault("deleted_sports_orgs", []).append(delete_sports_org(db, org_id))
+                except ValueError as e:
+                    raise SystemExit(str(e)) from None
         if args.prune_assessments:
             keep: list[int] = []
             for pid in db.scalars(select(Patient.id)).all():
