@@ -197,22 +197,8 @@ private fun ConsentStep(nav: NavHostController, model: OnboardingModel) {
         s.error?.let { ErrorBanner(it); Gap() }
         val doc = s.consent
         if (doc == null) { Text("Loading…", color = c.muted) ; return@StepFrame }
-        Panel { Text(doc.text, style = MaterialTheme.typography.bodyMedium, color = c.body) }
-        Gap()
-        doc.scopes.forEach { sc ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = s.consentScopes[sc.key] == true,
-                    onCheckedChange = { v -> model.state.value = s.copy(consentScopes = s.consentScopes + (sc.key to v)) })
-                Column {
-                    Text(sc.label, style = MaterialTheme.typography.bodyLarge, color = c.ink)
-                    Text(if (sc.required) "Needed to use MedPull" else "Your choice. Change it later in Profile.",
-                        style = MaterialTheme.typography.bodyMedium, color = c.muted)
-                    if (sc.detail.isNotBlank()) Text(sc.detail, style = MaterialTheme.typography.bodyMedium, color = c.body)
-                }
-            }
-        }
-        Gap()
-        Field(s.signature, { model.state.value = s.copy(signature = it) }, "Type your name to sign")
+        ConsentForm(doc, s.consentScopes, onScope = { k, v -> model.state.update { it.copy(consentScopes = it.consentScopes + (k to v)) } },
+            signature = s.signature, onSignature = { v -> model.state.update { it.copy(signature = v) } })
         Gap(16.dp)
         PrimaryButton("Agree and continue", enabled = s.canAgree) {
             scope.launch { model.agree(); nav.navigate(Step.HOSPITAL.name) }
@@ -356,7 +342,7 @@ private fun VerifyStep(nav: NavHostController, model: OnboardingModel) {
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
         val message = result.data?.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE).orEmpty()
-        Regex("""(\d{6})""").find(message)?.value?.let { code -> model.state.update { it.copy(code = code) } }
+        Regex("""b(\d{6})b""").find(message)?.value?.let { code -> model.state.update { it.copy(code = code) } }
     }
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
