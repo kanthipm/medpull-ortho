@@ -685,6 +685,15 @@ Resources:
           if (uri.indexOf('/.well-known/') === 0 || uri === '/apple-app-site-association') {
             return event.request;
           }
+          // The patient web app is a second SPA under /patient/ (deploy.sh
+          // uploads patient-web/dist to web/patient/): its routes go to its
+          // own index.html, its hashed assets pass through untouched.
+          if (uri === '/patient' || uri.indexOf('/patient/') === 0) {
+            if (uri.endsWith('/') || uri.split('/').pop().indexOf('.') === -1) {
+              event.request.uri = '/patient/index.html';
+            }
+            return event.request;
+          }
           // Extensionless paths are React Router routes (/patients/marcus),
           // not objects in the bucket. Rewriting here rather than using
           // CustomErrorResponses matters: those apply to every behaviour, so

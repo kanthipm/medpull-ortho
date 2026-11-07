@@ -4,7 +4,7 @@
 #
 #   ./infra/deploy.sh                 # build, deploy, seed on first run
 #   ./infra/deploy.sh --reseed        # rebuild the demo database too
-#   ./infra/deploy.sh --backend-only  # skip the frontend build/upload
+#   ./infra/deploy.sh --backend-only  # skip the frontend builds/uploads (console and patient app)
 #   ./infra/deploy.sh --stack-only    # template/parameters only: ships no code
 #
 # Custom domain: set SITE_DOMAIN and SITE_CERTIFICATE_ARN (environment or
@@ -362,8 +362,10 @@ log "Building and uploading the frontend"
   DIST="$ROOT/frontend/dist"
   [ -f "$DIST/index.html" ] || die "frontend build produced no dist/index.html"
 
+  # patient/ is the patient web app's prefix, uploaded below; --delete must
+  # not take it out.
   aws_ s3 sync "$DIST/" "s3://$DATA_BUCKET/web/" --delete --only-show-errors \
-    --cache-control "public,max-age=3600"
+    --exclude "patient/*" --cache-control "public,max-age=3600"
   # Vite content-hashes everything under assets/, so those can be immutable.
   aws_ s3 cp "$DIST/assets/" "s3://$DATA_BUCKET/web/assets/" --recursive --only-show-errors \
     --metadata-directive REPLACE --cache-control "public,max-age=31536000,immutable"
@@ -396,6 +398,22 @@ log "Building and uploading the frontend"
   else
     info "ANDROID_CERT_SHA256 not set — task links open the web page on Android, not the app"
   fi
+
+# --------------------------------------------------------------------------
+log "Building and uploading the patient web app"
+# --------------------------------------------------------------------------
+  # Served at $SITE_URL/patient/ (vite base, router basename); the CloudFront
+  # function sends its extensionless routes to web/patient/index.html.
+  (cd "$ROOT/patient-web" && npm ci --no-audit --no-fund && npm run build)
+  PDIST="$ROOT/patient-web/dist"
+  [ -f "$PDIST/index.html" ] || die "patient-web build produced no dist/index.html"
+
+  aws_ s3 sync "$PDIST/" "s3://$DATA_BUCKET/web/patient/" --delete --only-show-errors \
+    --cache-control "public,max-age=3600"
+  aws_ s3 cp "$PDIST/assets/" "s3://$DATA_BUCKET/web/patient/assets/" --recursive --only-show-errors \
+    --metadata-directive REPLACE --cache-control "public,max-age=31536000,immutable"
+  aws_ s3 cp "$PDIST/index.html" "s3://$DATA_BUCKET/web/patient/index.html" --only-show-errors \
+    --cache-control "no-cache" --content-type "text/html; charset=utf-8"
 fi
 
 # --------------------------------------------------------------------------
