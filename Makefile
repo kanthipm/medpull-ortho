@@ -1,5 +1,5 @@
 .PHONY: setup seed dev dev-backend dev-frontend dev-patient-web build build-patient-web run test lint clean \
-        deploy deploy-backend reseed destroy ios ios-build openapi android-build android-install
+        deploy deploy-backend reseed destroy ios ios-build openapi android-build android-test android-install
 
 setup: ## Install backend (uv) and frontend (npm) dependencies
 	cd backend && uv sync
@@ -34,8 +34,9 @@ run: ## Single-process demo: API + built frontend on :8000
 test: ## Backend test suite (pytest). There are no frontend tests.
 	cd backend && uv run pytest -q
 
-lint: ## ESLint over frontend/src + ruff over backend/app and backend/tests
+lint: ## ESLint over frontend and patient-web + ruff over backend/app and backend/tests
 	cd frontend && npm run lint
+	cd patient-web && npm run lint
 	cd backend && uv run ruff check app tests
 
 openapi: ## Refresh backend/openapi.json, the contract the patient apps are generated against
@@ -60,8 +61,14 @@ ios-build: ## Build the patient app for the iPhone simulator (CI-style, no signi
 	cd ios && xcodegen generate && xcodebuild -project MedPull.xcodeproj -scheme MedPull \
 		-destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO build
 
-android-build: ## Debug APK of the Android patient app (Android Studio's JDK, the local SDK)
-	cd android && JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" ./gradlew :app:assembleDebug -q
+# Android Studio's JDK unless JAVA_HOME is already set (CI sets it).
+ANDROID_JAVA_HOME ?= $(or $(JAVA_HOME),/c/Program Files/Android/Android Studio/jbr)
+
+android-build: ## Debug APK of the Android patient app
+	cd android && JAVA_HOME="$(ANDROID_JAVA_HOME)" ./gradlew :app:assembleDebug -q
+
+android-test: ## Unit tests and Android lint for the patient app
+	cd android && JAVA_HOME="$(ANDROID_JAVA_HOME)" ./gradlew :app:testDebugUnitTest :app:lintDebug -q
 
 android-install: ## Install the debug APK on the connected device or emulator
 	"$(LOCALAPPDATA)/Android/Sdk/platform-tools/adb" install -r android/app/build/outputs/apk/debug/app-debug.apk
