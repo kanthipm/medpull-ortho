@@ -17,8 +17,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.medpull.recovery.R
 import com.medpull.recovery.core.ConsentDocument
 import com.medpull.recovery.core.consentDocument
 import com.medpull.recovery.features.consent.ConsentForm
@@ -48,15 +50,15 @@ fun ConsentGate() {
         catch (e: Exception) { error = e.message }
     }
     Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Text("BEFORE WE CONTINUE", style = MaterialTheme.typography.labelSmall, color = c.muted)
-        Text("Our consent form has changed", style = MaterialTheme.typography.displaySmall, color = c.ink)
+        Text(stringResource(R.string.personal_before_we_continue), style = MaterialTheme.typography.labelSmall, color = c.muted)
+        Text(stringResource(R.string.personal_consent_changed), style = MaterialTheme.typography.displaySmall, color = c.ink)
         Gap()
         error?.let { ErrorBanner(it); Gap() }
         val d = doc
         if (d != null) {
             ConsentForm(d, scopes, onScope = { k, v -> scopes = scopes + (k to v) }, signature = signature, onSignature = { signature = it })
             Gap(16.dp)
-            PrimaryButton("Agree", enabled = d.agreed(scopes, signature), loading = working) {
+            PrimaryButton(stringResource(R.string.agree), enabled = d.agreed(scopes, signature), loading = working) {
                 scope.launch {
                     working = true
                     try { app.acceptConsent(d, scopes, signature.trim()) } catch (e: Exception) { error = e.message }
@@ -65,7 +67,7 @@ fun ConsentGate() {
             }
         }
         Gap()
-        PlainButton("Sign out instead") { scope.launch { app.signOut() } }
+        PlainButton(stringResource(R.string.personal_sign_out_instead)) { scope.launch { app.signOut() } }
     }
 }
 
@@ -78,16 +80,16 @@ fun PersonalPlaceholder() {
     val c = MP.colors
     val clinic = state.me?.profiles?.firstOrNull { it.kind == "clinic" }
     Column(Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp)) {
-        Text("MEDPULL PERSONAL", style = MaterialTheme.typography.labelSmall, color = c.muted)
-        Text("Not on Android yet", style = MaterialTheme.typography.displaySmall, color = c.ink)
+        Text(stringResource(R.string.personal_eyebrow), style = MaterialTheme.typography.labelSmall, color = c.muted)
+        Text(stringResource(R.string.personal_not_on_android), style = MaterialTheme.typography.displaySmall, color = c.ink)
         Gap()
-        Text("Your readiness, training and sleep readouts are on iPhone today and come to Android after the care-team app. Your account and data are unchanged.",
+        Text(stringResource(R.string.personal_not_on_android_body),
             style = MaterialTheme.typography.bodyLarge, color = c.body)
         Gap(20.dp)
         if (clinic != null) {
-            PrimaryButton("Switch to my hospital space") { scope.launch { try { app.switchSpace(clinic.patientId) } catch (e: Exception) { app.note(e) } } }
+            PrimaryButton(stringResource(R.string.personal_switch_hospital)) { scope.launch { try { app.switchSpace(clinic.patientId) } catch (e: Exception) { app.note(e) } } }
             Gap(8.dp)
         }
-        SecondaryButton("Sign out") { scope.launch { app.signOut() } }
+        SecondaryButton(stringResource(R.string.profile_sign_out)) { scope.launch { app.signOut() } }
     }
 }

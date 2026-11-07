@@ -22,7 +22,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.app.ActivityCompat
+import com.medpull.recovery.R
 import com.medpull.recovery.motion.PassiveCapture
 import com.medpull.recovery.ui.ListRow
 import com.medpull.recovery.ui.MP
@@ -75,10 +77,10 @@ fun PassiveWalksCard() {
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Record walks automatically", style = MaterialTheme.typography.titleLarge, color = c.ink)
+                Text(stringResource(R.string.passive_title), style = MaterialTheme.typography.titleLarge, color = c.ink)
                 Text(
-                    if (blocked) "Physical activity is turned off for MedPull in your phone's settings. Switch it on there to record walks."
-                    else "When your phone notices you walking, it records two minutes in a pocket and sends them to MedPull, at most once every half hour. A silent line shows in your notifications while it records; you can swipe it away.",
+                    if (blocked) stringResource(R.string.passive_blocked)
+                    else stringResource(R.string.passive_body),
                     color = c.body, style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -98,7 +100,7 @@ fun PassiveWalksNudge() {
     if (active) return
     val enable = rememberPassiveWalkEnabler { active = it }
     Panel(tint = c.brandTint, onClick = enable) {
-        ListRow("Record walks automatically", "Your walks aren't being measured between tests. Turn on",
+        ListRow(stringResource(R.string.passive_title), stringResource(R.string.passive_nudge_body),
             leading = { Icon(Icons.Default.DirectionsWalk, null, tint = c.brandInk) })
     }
 }
