@@ -195,9 +195,18 @@ for user in ${USERS[@]+"${USERS[@]}"}; do
     skip "console password set"
   elif act "set a one-time console password for $user (change required at first sign-in)"; then
     PASSWORD="$(new_password)"
-    # Through stdin rather than an argument, so it never shows in a process list.
+    # Through a private temp file rather than an argument, so it never shows
+    # in a process list. (Not a pipe: the CLI refuses --cli-input-json from
+    # /dev/stdin on macOS, "Invalid JSON received".)
+    PROFILE_JSON="$(mktemp)"
+    chmod 600 "$PROFILE_JSON"
     printf '{"UserName":"%s","Password":"%s","PasswordResetRequired":true}' "$user" "$PASSWORD" \
-      | aws_ iam create-login-profile --cli-input-json file:///dev/stdin >/dev/null
+      > "$PROFILE_JSON"
+    if ! aws_ iam create-login-profile --cli-input-json "file://$PROFILE_JSON" >/dev/null; then
+      rm -f "$PROFILE_JSON"; unset PASSWORD
+      die "could not set the console password for $user"
+    fi
+    rm -f "$PROFILE_JSON"
     info "one-time password for $user (shown once, stored nowhere): $PASSWORD"
     unset PASSWORD
   fi
