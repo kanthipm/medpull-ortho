@@ -10,10 +10,11 @@ import { AppConfig } from './config'
 import { HealthConnector } from './health'
 import { Keychain } from './keychain'
 import type {
-  AgentResponse, Answers, ChatMessage, ConsentAcceptance, Me, PatientMetricsResponse,
-  PortfolioMetric, ProgressDay, RecoveryTask, TasksResponse, WearableSummary,
+  AgentResponse, Answers, ChatMessage, ConsentAcceptance, ExerciseAssignment, ExerciseCompletionBody,
+  ExercisesResponse, Me, PatientMetricsResponse, PortfolioMetric, ProgressDay, RecoveryTask,
+  TasksResponse, WearableSummary,
 } from './models'
-import { isPersonalProfile } from './models'
+import { Dates, isPersonalProfile } from './models'
 
 export type Phase = 'launching' | 'onboarding' | 'home'
 /** The four tabs of a hospital record: Today, Progress, Measure, Care. */
@@ -31,6 +32,9 @@ export class AppModel {
 
   me: Me | null = null
   tasks: TasksResponse = { open: [], recent: [] }
+  /** Today's exercise schedule (docs/dev/hep-schedule.md); null until the
+   *  first answer, which is also what a server without the route leaves. */
+  exercises: ExercisesResponse | null = null
   messages: ChatMessage[] = []
   progress: ProgressDay[] = []
   portfolio: PortfolioMetric[] = []
@@ -73,7 +77,16 @@ export class AppModel {
   // MARK: lifecycle
 
   async bootstrap(): Promise<void> {
-    const stored = Keychain.get(TOKEN_KEY)
+    // The demo screen opens this app as `/patient/#session=<token>`, a
+    // session it minted for the lifter it shows. That token replaces
+    // whatever this browser held, and the URL is cleaned before anyone
+    // sees it.
+    const handed = takeSessionFromHash()
+    if (handed) {
+      Keychain.clear()
+      Keychain.set(handed, TOKEN_KEY)
+    }
+    const stored = handed ?? Keychain.get(TOKEN_KEY)
     if (stored) {
       this.api.token = stored
       this.set('phase', 'home')
@@ -115,6 +128,7 @@ export class AppModel {
     this.api.token = null
     this.me = null
     this.tasks = { open: [], recent: [] }
+    this.exercises = null
     this.messages = []
     this.progress = []
     this.portfolio = []
@@ -149,7 +163,7 @@ export class AppModel {
   async refreshAll(): Promise<void> {
     // These share one banner, and the 14-day portfolio is the heaviest call
     // and the first to be throttled. The banner means what it says: nothing
-    // got through. The five are independent, so they go out together — the
+    // got through. The six are independent, so they go out together — the
     // tabs fill in at once rather than one feed after another — and each
     // still records its own outcome. `refresh` never rejects.
     const outcomes: Outcome[] = await Promise.all([
@@ -161,6 +175,7 @@ export class AppModel {
         this.notify()
       }),
       this.refreshMetrics(false),
+      this.refreshExercises(undefined, false),
     ])
     if (outcomes.includes('ok')) this.clearError()
     else if (outcomes.includes('failed')) {
@@ -207,6 +222,66 @@ export class AppModel {
     })
   }
 
+  /** The exercise schedule for one day — the phone's own day unless told
+   *  otherwise, so an evening in Texas is not tomorrow in UTC. One call at
+   *  a time: a slow answer is not stacked behind the poll's next tick. */
+  refreshExercises(date?: string, surface = true): Promise<Outcome> {
+    if (this.exercisesInFlight) return this.exercisesInFlight
+    const day = date ?? Dates.dayString(new Date())
+    const run = this.refresh(surface, async () => {
+      this.exercises = await this.api.exercises(day)
+      this.notify()
+    }).finally(() => { this.exercisesInFlight = null })
+    this.exercisesInFlight = run
+    return run
+  }
+
+  private exercisesInFlight: Promise<Outcome> | null = null
+  private exerciseWatchers = 0
+  private exerciseTimer: number | null = null
+
+  /** Keep the schedule fresh while a screen of the Today tab is showing:
+   *  every ten seconds while the page is visible, nothing while it is not,
+   *  and once more the moment it comes back. Returns the stop. A therapist
+   *  assigning something during the demo sees it land on the phone without
+   *  a reload. */
+  watchExercises(): () => void {
+    this.exerciseWatchers++
+    if (this.exerciseWatchers === 1) {
+      document.addEventListener('visibilitychange', this.onExerciseVisibility)
+      this.startExerciseTimer()
+    }
+    return () => {
+      this.exerciseWatchers--
+      if (this.exerciseWatchers === 0) {
+        document.removeEventListener('visibilitychange', this.onExerciseVisibility)
+        this.stopExerciseTimer()
+      }
+    }
+  }
+
+  private onExerciseVisibility = () => {
+    if (document.visibilityState === 'visible') {
+      void this.refreshExercises(undefined, false)
+      this.startExerciseTimer()
+    } else {
+      this.stopExerciseTimer()
+    }
+  }
+
+  private startExerciseTimer(): void {
+    this.stopExerciseTimer()
+    if (document.visibilityState !== 'visible') return
+    this.exerciseTimer = window.setInterval(() => { void this.refreshExercises(undefined, false) }, 10_000)
+  }
+
+  private stopExerciseTimer(): void {
+    if (this.exerciseTimer != null) {
+      window.clearInterval(this.exerciseTimer)
+      this.exerciseTimer = null
+    }
+  }
+
   // MARK: actions
 
   async complete(task: RecoveryTask, answers: Answers, via = 'app'): Promise<void> {
@@ -218,6 +293,33 @@ export class AppModel {
   async skip(task: RecoveryTask): Promise<void> {
     await this.api.skip(task.id)
     await this.refreshTasks()
+  }
+
+  /** "Mark done" on an exercise: the row comes back done, and the thread
+   *  gained a line (the server writes it), so the thread is refreshed too. */
+  async completeExercise(a: ExerciseAssignment, body: ExerciseCompletionBody): Promise<ExerciseAssignment> {
+    const updated = await this.api.completeExercise(a.id, body)
+    this.replaceAssignment(updated)
+    void this.refreshMessages(false)
+    return updated
+  }
+
+  /** "Can't do it today": the row is skipped with the reason. */
+  async skipExercise(a: ExerciseAssignment, reason: string): Promise<ExerciseAssignment> {
+    const updated = await this.api.skipExercise(a.id, reason)
+    this.replaceAssignment(updated)
+    return updated
+  }
+
+  private replaceAssignment(updated: ExerciseAssignment): void {
+    const feed = this.exercises
+    if (!feed) return
+    const items = feed.items.map((x) => (x.id === updated.id ? updated : x))
+    const week = feed.week.map((d) => (d.date === feed.date
+      ? { ...d, done: items.filter((x) => x.status === 'done').length }
+      : d))
+    this.exercises = { ...feed, items, week }
+    this.notify()
   }
 
   /** Write to the care team. A photo can be the whole message, so the text
@@ -295,6 +397,21 @@ export class AppModel {
   setPendingTaskId(id: number | null): void { this.set('pendingTaskId', id) }
   setShowConnections(on: boolean): void { this.set('showConnections', on) }
   setSelectedTab(tab: Tab): void { this.set('selectedTab', tab) }
+}
+
+/** `#session=<token>` on the URL this page opened with: the token, with the
+ *  fragment taken off the address so a copied link or a reload does not carry
+ *  it. The router keeps its own state. */
+function takeSessionFromHash(): string | null {
+  const hash = window.location.hash
+  if (!hash.includes('session=')) return null
+  const token = new URLSearchParams(hash.replace(/^#/, '')).get('session')?.trim() ?? ''
+  try {
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
+  } catch {
+    /* an opaque origin: the hash stays, harmlessly */
+  }
+  return token || null
 }
 
 /** What to show the person when an action fails, or null when there is
