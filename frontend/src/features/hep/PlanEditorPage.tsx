@@ -1,23 +1,11 @@
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  ChevronLeft,
-  Eye,
-  Film,
-  Plus,
-  Search,
-  Send,
-  X,
-} from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { ArrowDown, ArrowUp, ChevronLeft, Eye, Film, Plus, Send, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { Exercise, HepOptions, Plan, PublishResult } from '../../api/hep'
 import {
   useArchivePlan,
   useCreatePlan,
-  useExercises,
   useHepOptions,
   usePlan,
   usePublishPlan,
@@ -31,6 +19,7 @@ import { SkeletonCard } from '../../components/Skeleton'
 import { useToast } from '../../components/Toast'
 import { relativeTime } from '../../lib/format'
 import { diagnosticWarning } from './hepCopy'
+import LibraryPicker from './LibraryPicker'
 import {
   doseLine,
   editable,
@@ -423,83 +412,6 @@ function Fact({ label: l, children }: { label: string; children: ReactNode }) {
 
 function label(vocab: { key: string; label: string }[], key: string): string {
   return vocab.find((v) => v.key === key)?.label ?? key
-}
-
-// --- the library picker --------------------------------------------------------
-
-function LibraryPicker({
-  options,
-  chosen,
-  onAdd,
-}: {
-  options: HepOptions
-  chosen: number[]
-  onAdd: (e: Exercise) => void
-}) {
-  const [q, setQ] = useState('')
-  const [region, setRegion] = useState('')
-  const [category, setCategory] = useState('')
-  const library = useExercises({ q, region: region || undefined, category: category || undefined })
-  const rows = useMemo(() => library.data?.exercises ?? [], [library.data])
-
-  return (
-    <SectionCard title="Library" aside={library.data ? `${rows.length} match${rows.length === 1 ? '' : 'es'}` : undefined} flush>
-      <div className="space-y-2 px-4 pb-3">
-        <label className="relative block">
-          <span className="sr-only">Search the library</span>
-          <Search aria-hidden size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-          <input type="search" className="field !pl-10" value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by name or what it’s also called" />
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label>
-            <span className="sr-only">Body region</span>
-            <select className="field cursor-pointer" value={region} onChange={(e) => setRegion(e.target.value)}>
-              <option value="">All regions</option>
-              {options.regions.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-            </select>
-          </label>
-          <label>
-            <span className="sr-only">Category</span>
-            <select className="field cursor-pointer" value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="">All categories</option>
-              {options.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-            </select>
-          </label>
-        </div>
-      </div>
-      <div className="max-h-[520px] overflow-y-auto border-t border-hairline">
-        {library.isLoading ? (
-          <div className="p-4"><SkeletonCard rows={4} /></div>
-        ) : rows.length === 0 ? (
-          <p className="px-4 py-6 text-center text-copy text-secondary">Nothing matches.</p>
-        ) : (
-          <ul className="divide-y divide-hairline">
-            {rows.map((e) => {
-              const added = chosen.includes(e.id)
-              return (
-                <li key={e.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <span className="block truncate text-copy font-medium text-ink">{e.title}</span>
-                    <span className="meta block truncate">
-                      {e.body_region_label} · {e.category_label}
-                      {e.origin === 'custom' ? ' · Yours' : ''}
-                      {e.media?.playable ? ' · Clip' : ''}
-                    </span>
-                  </div>
-                  <button type="button" className={`btn-sm ${added ? 'btn-gray' : 'btn-tinted'}`} disabled={added}
-                    aria-label={added ? `${e.title} is in the plan` : `Add ${e.title}`} onClick={() => onAdd(e)}>
-                    {added ? <Check size={14} /> : <Plus size={14} />}
-                    {added ? 'Added' : 'Add'}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
-    </SectionCard>
-  )
 }
 
 // --- one tray row --------------------------------------------------------------
