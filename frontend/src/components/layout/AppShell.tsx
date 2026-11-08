@@ -33,8 +33,9 @@ const NAV = [
   {
     key: 'exercises',
     label: 'Exercises',
-    to: '/exercise-plans',
-    match: (pathname: string) => pathname.startsWith('/exercise-'),
+    to: '/exercise-schedule',
+    // the schedule, plans and library, and the demo screen built on the schedule
+    match: (pathname: string) => pathname.startsWith('/exercise-') || pathname.startsWith('/demo/'),
   },
   {
     key: 'settings',
@@ -164,7 +165,13 @@ export default function AppShell() {
   const inScope = !scope || allowed.some((item) => navMatches(item, pathname))
   const active = useActiveRoute(items)
   const { trackRef, style } = useSlidingIndicator(active, items.length)
-  const pageClass = PAGE_CLASS[pageWidthFor(pathname)]
+  const width = pageWidthFor(pathname)
+  const pageClass = PAGE_CLASS[width]
+  // A full-bleed page (the demo screen) takes the whole viewport under the
+  // bar; the bar itself keeps the container width, so the nav capsule looks
+  // as it does on every other page.
+  const full = width === 'full'
+  const barClass = full ? PAGE_CLASS.wide : pageClass
   const shellRef = useRef<HTMLDivElement>(null)
   const mainRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -199,7 +206,7 @@ export default function AppShell() {
       </a>
 
       <header className="appbar" data-scrolled={scrolled ? '' : undefined}>
-        <div className={pageClass}>
+        <div className={barClass}>
           <div className="appbar-inner flex items-center gap-2 sm:gap-4">
             <Link
               to={home}
@@ -274,7 +281,9 @@ export default function AppShell() {
         ref={mainRef}
         id="main"
         tabIndex={-1}
-        className={`${pageClass} flex-1 pb-20 pt-8 outline-0 [outline-style:none] sm:pt-12`}
+        className={`${pageClass} flex-1 outline-0 [outline-style:none] ${
+          full ? 'pb-4 pt-4' : 'pb-20 pt-8 sm:pt-12'
+        }`}
       >
         {inScope ? <Outlet /> : <Navigate to={home} replace />}
       </main>

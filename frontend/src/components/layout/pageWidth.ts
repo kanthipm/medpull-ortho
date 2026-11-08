@@ -4,13 +4,18 @@
  *    worklist  1080px   ('/')
  *    patient   1240px   ('/patients/…', '/sports…' — the team boards)
  *    settings   960px   ('/settings…', '/integrations', '/exercise-…')
- *    wide      --container-max (any other route)
+ *    wide      --container-max ('/exercise-schedule', any other route)
+ *    full      the whole viewport, a small gutter ('/demo/…' — the demo
+ *              screen's schedule-and-phone layout; the bar keeps `wide`)
  *  Kept out of AppShell.tsx so that file exports components only. */
-export type PageWidth = 'worklist' | 'patient' | 'settings' | 'wide'
+export type PageWidth = 'worklist' | 'patient' | 'settings' | 'wide' | 'full'
 
 export function pageWidthFor(pathname: string): PageWidth {
   if (pathname === '/') return 'worklist'
+  if (pathname.startsWith('/demo/')) return 'full'
   if (pathname.startsWith('/patients/')) return 'patient'
+  // the week grid wants every column it can get
+  if (pathname.startsWith('/exercise-schedule')) return 'wide'
   // the plan editor is two columns, like the patient page
   if (/^\/exercise-plans\/[^/]+/.test(pathname)) return 'patient'
   if (pathname === '/sports' || pathname.startsWith('/sports/')) return 'patient'
@@ -28,4 +33,5 @@ export const PAGE_CLASS: Record<PageWidth, string> = {
   patient: 'page page-patient',
   settings: 'page page-settings',
   wide: 'page',
+  full: 'page page-full',
 }

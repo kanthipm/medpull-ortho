@@ -1,18 +1,24 @@
 import { useLocation } from 'react-router-dom'
 import SegmentedControl from '../../components/SegmentedControl'
 
-type Page = 'plans' | 'library'
+type Page = 'schedule' | 'plans' | 'library'
 
 const OPTIONS: { key: Page; label: string; text: string; to: string }[] = [
+  { key: 'schedule', label: 'Schedule', text: 'Schedule', to: '/exercise-schedule' },
   { key: 'plans', label: 'Plans', text: 'Plans', to: '/exercise-plans' },
   { key: 'library', label: 'Library', text: 'Library', to: '/exercise-library' },
 ]
 
 /** Sub-nav for the exercise pages, like SettingsNav: the glass segmented
- *  control on the sky, sized as a sub-nav under the app bar. */
+ *  control on the sky, sized as a sub-nav under the app bar. The schedule
+ *  (the week grid) comes first; plans and the library stay. */
 export default function ExercisesNav({ className = '' }: { className?: string }) {
   const { pathname } = useLocation()
-  const value: Page = pathname.startsWith('/exercise-library') ? 'library' : 'plans'
+  const value: Page = pathname.startsWith('/exercise-schedule')
+    ? 'schedule'
+    : pathname.startsWith('/exercise-library')
+      ? 'library'
+      : 'plans'
   return (
     <SegmentedControl<Page>
       options={OPTIONS}
