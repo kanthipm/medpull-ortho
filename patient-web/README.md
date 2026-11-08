@@ -67,3 +67,10 @@ same SF name (`ui/icons.tsx`), so a screen ported from Swift keeps its
 Deep links: `/patient/tasks/<id>` opens that task on Today (the phone's
 `medpull://tasks/<id>`); `/patient/connections` opens the Connections sheet
 (`medpull://wearables`).
+
+The exercise schedule (`docs/dev/hep-schedule.md`): Today shows the day's
+assignments above the plan and polls them every ten seconds while the tab is
+visible; `/patient/today/exercises/<id>` is one exercise with the therapist's
+clip, "Mark done" (pain, a note, a clip of the attempt) and "Can't do it today".
+`/patient/#session=<token>` on boot stores that token as the session and strips
+the hash — the demo screen's phone frame signs in this way.

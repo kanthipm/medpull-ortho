@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { useNavigate } from 'react-router-dom'
 import { messageFor, useApp } from '../../core/appModel'
 import {
-  Dates, DOT, isOpenTask, isRecovery, scheduleLabel, toneForLevel, typeset,
+  Dates, DOT, hasExerciseSchedule, isOpenTask, isRecovery, scheduleLabel, toneForLevel, typeset,
   type CareTeamMember, type Me, type RecoveryTask,
 } from '../../core/models'
 import {
@@ -17,6 +17,7 @@ import {
 import { Sym } from '../../ui/icons'
 import { CardTitleRow, Chevron, Glyph, ListRow, RowDivider, StateLabel } from '../../ui/rows'
 import { RecoveryCurveArt } from '../../ui/tileArt'
+import { ExercisesCard } from '../exercises/ExercisesSection'
 import { flowTitle, measureFlows, measureStatus } from '../progress/progressModel'
 import { ProfileView } from '../profile/ProfileView'
 
@@ -41,6 +42,10 @@ export function TodayView() {
   })
 
   const openTask = useCallback((t: RecoveryTask) => navigate(`/today/tasks/${t.id}`, { state: { from: 'Today' } }), [navigate])
+
+  // The exercise schedule polls while this tab is showing, so what the
+  // therapist assigns lands here without a reload.
+  useEffect(() => app.watchExercises(), [app])
 
   // A `medpull://tasks/<id>` link or a thread button: open it once it is here.
   useEffect(() => {
@@ -92,7 +97,13 @@ export function TodayView() {
           </Rise>
           {me && <Rise index={1}><RecoveryHero me={me} onClick={() => navigate('/progress')} /></Rise>}
 
-          <Rise index={2} id="plan">
+          {hasExerciseSchedule(app.exercises) && (
+            <Rise index={2} id="exercises">
+              <ExercisesCard feed={app.exercises} onOpen={(a) => navigate(`/today/exercises/${a.id}`, { state: { from: 'Today' } })} />
+            </Rise>
+          )}
+
+          <Rise index={3} id="plan">
             <Card padding={0}>
               <CardTitleRow
                 title="Today’s plan"
@@ -156,8 +167,8 @@ export function TodayView() {
             </Card>
           </Rise>
 
-          <Rise index={3} id="measure"><MeasureRow onClick={() => navigate('/measure')} /></Rise>
-          <Rise index={4} id="care"><CareRow onClick={() => navigate('/care')} /></Rise>
+          <Rise index={4} id="measure"><MeasureRow onClick={() => navigate('/measure')} /></Rise>
+          <Rise index={5} id="care"><CareRow onClick={() => navigate('/care')} /></Rise>
           {quickError && <ErrorBanner text={quickError} />}
           {app.lastError && <ErrorBanner text={app.lastError} />}
           <span className="footnote">Monitoring signals for your care team — not a diagnosis.</span>
