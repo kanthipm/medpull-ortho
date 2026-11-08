@@ -12,7 +12,7 @@ import { useIsDemo } from '../api/queries'
  *  Escape, the button and the quiet link all dismiss it; focus lands on the
  *  button. */
 
-const STORAGE_KEY = 'medpull.demo-welcomed'
+const STORAGE_KEY = 'medpull-console.demo-welcomed'
 
 function forcedByUrl(): boolean {
   if (typeof window === 'undefined') return false

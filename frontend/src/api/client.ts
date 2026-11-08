@@ -27,7 +27,11 @@ export const REQUEST_TIMEOUT_MS = 30_000
 // their own credential and never send it. localStorage, not sessionStorage:
 // a clinician opening a second tab should not be asked again.
 
-const TOKEN_KEY = 'medpull.console-token'
+// Its own prefix, not the patient app's `medpull.`: the two apps share one
+// origin (the patient app lives at /patient/), and the patient app clears
+// every key under its prefix when it signs a new patient in — which, on the
+// demo screen, used to sign the therapist out of the console.
+const TOKEN_KEY = 'medpull-console.token'
 
 export function getConsoleToken(): string | null {
   try {
