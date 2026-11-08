@@ -352,6 +352,7 @@ function LibraryTable({
 
 function DemoCell({ exercise }: { exercise: Exercise }) {
   const m = exercise.media
+  if (exercise.clinic_media?.playable) return <span className="inline-flex items-center gap-1.5 text-body"><Film aria-hidden size={14} /> Your clip</span>
   if (m?.playable) return <span className="inline-flex items-center gap-1.5 text-body"><Film aria-hidden size={14} /> Approved clip</span>
   if (m) return <span className="text-secondary">{m.approval_status === 'rejected' ? 'Clip needs replacing' : 'Clip in review'}</span>
   return <span className="text-secondary">Coming soon</span>

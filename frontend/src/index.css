@@ -589,6 +589,12 @@ body {
   .page-settings {
     --page-max: var(--page-settings);
   }
+  /* The demo screen: the whole viewport with a small gutter, so the week
+     grid and the phone frame share every pixel of a projector. */
+  .page-full {
+    max-width: none;
+    padding-inline: var(--space-4);
+  }
 
   /* ── ATMOSPHERE ──────────────────────────────────────────────────────────
      .ambient-host   the full-bleed shell.

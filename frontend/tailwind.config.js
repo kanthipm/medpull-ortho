@@ -27,6 +27,7 @@ export default {
     'page-worklist',
     'page-patient',
     'page-settings',
+    'page-full',
     'ambient',
     'ambient-host',
     'appbar',
