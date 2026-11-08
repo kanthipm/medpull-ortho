@@ -5,10 +5,15 @@ Separate from the care-plan task library (``app/plan``) on purpose: a task
 there is a check-in with data verification, while an exercise here is dosed
 (sets, reps, hold, frequency, side) and carries a reviewed demonstration.
 
-* ``models``   the tables (exercises, media, plans, completions, invitations)
+* ``models``   the tables (exercises, media, plans, completions, assignments,
+               invitations)
 * ``catalog``  the standard library and its idempotent seed
-* ``service``  search, custom exercises, payloads
-* ``api``      the console routes under ``/api/hep``
+* ``service``  search, custom exercises, payloads, which clip an exercise plays
+* ``plans``    the standing prescription and its published snapshots
+* ``schedule`` the calendar: one exercise on one patient's day, and what came back
+* ``media``    a clinic's own demonstration clips
+* ``api``      the console routes under ``/api/hep`` (the patient's are
+               ``app/api/exercises.py``)
 """
 
 from __future__ import annotations

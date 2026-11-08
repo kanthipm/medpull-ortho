@@ -85,6 +85,11 @@ def _view(a: Attachment, *, with_url: bool = False) -> dict[str, Any]:
     return view
 
 
+# The same view under a name other packages may import: the exercise
+# schedule shows a patient's return clip beside their pain score (app/hep).
+attachment_view = _view
+
+
 def attachments_for(db: Session, messages: list[Message]) -> dict[int, list[dict[str, Any]]]:
     """Every message's attachments in one query, keyed by message id.
 
@@ -190,7 +195,14 @@ def _ticket(patient: Patient, content_type: str, byte_size: int) -> dict[str, An
         blobs.check_size(byte_size, content_type)
     except blobs.BlobError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    key = blobs.new_key(patient.id, content_type, personal=_personal(patient))
+    return ticket_for(blobs.new_key(patient.id, content_type, personal=_personal(patient)),
+                      content_type)
+
+
+def ticket_for(key: str, content_type: str) -> dict[str, Any]:
+    """The ticket shape for a key the caller has minted and a type it has
+    checked: a patient's file here, a clinic's demonstration clip in
+    ``app/hep``. One shape, so one client uploader serves both."""
     ticket = blobs.upload_ticket(key, content_type)
     if ticket is None:
         # No object store to send the bytes to: this deployment takes them.
@@ -205,7 +217,7 @@ def _ticket(patient: Patient, content_type: str, byte_size: int) -> dict[str, An
     }
 
 
-def _confirm(
+def confirm_upload(
     db: Session,
     patient: Patient,
     *,
@@ -317,16 +329,23 @@ def _own(db: Session, attachment_id: int, patient_id: str) -> Attachment:
 def _bytes_response(row: Attachment) -> Response:
     """Serve the bytes from this API. The laptop path, and the fallback for a
     client that cannot follow a redirect."""
+    return bytes_response(row.storage_key, row.content_type, row.filename, inline=row.is_media)
+
+
+def bytes_response(storage_key: str, content_type: str, filename: str | None, *,
+                   inline: bool) -> Response:
+    """One stored object as a response with headers that cannot be made to
+    execute: the thread's files here, a demonstration clip in ``app/hep``."""
     try:
-        data = blobs.read(row.storage_key)
+        data = blobs.read(storage_key)
     except blobs.BlobError as e:
         raise HTTPException(status_code=410, detail=str(e))
-    disposition = "inline" if row.is_media else "attachment"
-    if row.filename:
-        disposition = f'{disposition}; filename="{row.filename}"'
+    disposition = "inline" if inline else "attachment"
+    if filename:
+        disposition = f'{disposition}; filename="{filename}"'
     return Response(
         content=data,
-        media_type=row.content_type,
+        media_type=content_type,
         headers={
             "Content-Disposition": disposition,
             "Cache-Control": "private, max-age=300",
@@ -362,7 +381,7 @@ def confirm(
     patient: Patient = Depends(current_patient),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = _confirm(
+    row = confirm_upload(
         db, patient, storage_key=body.storage_key, content_type=body.content_type,
         byte_size=body.byte_size, filename=body.filename,
         uploaded_by="patient", uploaded_by_id=None, source="app",
@@ -473,7 +492,7 @@ def console_confirm(
     sender_id = body.sender_id or patient.assigned_provider_id
     if db.get(CareTeamMember, sender_id) is None:
         raise HTTPException(status_code=404, detail=f"Unknown sender: {sender_id}")
-    row = _confirm(
+    row = confirm_upload(
         db, patient, storage_key=body.storage_key, content_type=body.content_type,
         byte_size=body.byte_size, filename=body.filename,
         uploaded_by="care_team", uploaded_by_id=sender_id, source="console",

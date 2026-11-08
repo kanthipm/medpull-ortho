@@ -230,6 +230,246 @@
         "title": "AssignTaskBody",
         "type": "object"
       },
+      "AssignmentComplete": {
+        "properties": {
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 600,
+            "title": "Note",
+            "type": "string"
+          },
+          "pain_after": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pain After"
+          }
+        },
+        "title": "AssignmentComplete",
+        "type": "object"
+      },
+      "AssignmentCreate": {
+        "properties": {
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          },
+          "assigned_by": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned By"
+          },
+          "clinician_instructions": {
+            "default": "",
+            "maxLength": 400,
+            "title": "Clinician Instructions",
+            "type": "string"
+          },
+          "dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "maxItems": 31,
+            "minItems": 1,
+            "title": "Dates",
+            "type": "array"
+          },
+          "exercise_id": {
+            "title": "Exercise Id",
+            "type": "integer"
+          },
+          "hold_seconds": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Seconds"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "sets": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets"
+          },
+          "side": {
+            "default": "not_applicable",
+            "title": "Side",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "exercise_id",
+          "dates"
+        ],
+        "title": "AssignmentCreate",
+        "type": "object"
+      },
+      "AssignmentPatch": {
+        "description": "Only the fields sent are applied (``exclude_unset``), so ``\"sets\":\nnull`` clears the sets while leaving them out leaves them alone.",
+        "properties": {
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          },
+          "assigned_by": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned By"
+          },
+          "clinician_instructions": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clinician Instructions"
+          },
+          "hold_seconds": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Seconds"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled For"
+          },
+          "sets": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets"
+          },
+          "side": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Side"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          }
+        },
+        "title": "AssignmentPatch",
+        "type": "object"
+      },
       "BackfillBody": {
         "properties": {
           "refresh": {
@@ -409,15 +649,46 @@
         "title": "CheckinAnswers",
         "type": "object"
       },
-      "CompleteBody": {
+      "ClipConfirm": {
         "properties": {
-          "result": {
-            "additionalProperties": true,
-            "title": "Result",
-            "type": "object"
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          },
+          "byte_size": {
+            "default": 0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "storage_key": {
+            "maxLength": 300,
+            "minLength": 8,
+            "title": "Storage Key",
+            "type": "string"
           }
         },
-        "title": "CompleteBody",
+        "required": [
+          "storage_key",
+          "content_type"
+        ],
+        "title": "ClipConfirm",
         "type": "object"
       },
       "ConfirmBody": {
@@ -2156,6 +2427,19 @@
         "title": "OrgJoinBody",
         "type": "object"
       },
+      "PatientSessionBody": {
+        "properties": {
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id"
+        ],
+        "title": "PatientSessionBody",
+        "type": "object"
+      },
       "PersonalJoinBody": {
         "properties": {
           "anchor_date": {
@@ -2759,6 +3043,64 @@
         "title": "ResetBody",
         "type": "object"
       },
+      "ReturnClip": {
+        "description": "The clip the patient filmed, in whichever form the upload left it.\n\nWith an object store the client put the bytes at the key its ticket\nminted and sends ``storage_key``, and the row is confirmed here as any\nthread file is. Without one the direct route has already confirmed the\n``Attachment`` row (and never shows its key), so the client sends that\nrow's ``attachment_id`` instead. One of the two is required.",
+        "properties": {
+          "attachment_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
+          },
+          "byte_size": {
+            "default": 0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "storage_key": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Key"
+          }
+        },
+        "title": "ReturnClip",
+        "type": "object"
+      },
       "SearchBody": {
         "properties": {
           "date_of_birth": {
@@ -3053,6 +3395,18 @@
           "duration_s"
         ],
         "title": "SixMinuteWalkBody",
+        "type": "object"
+      },
+      "SkipBody": {
+        "properties": {
+          "reason": {
+            "default": "",
+            "maxLength": 400,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "SkipBody",
         "type": "object"
       },
       "StaffMessageBody": {
@@ -3565,6 +3919,41 @@
         "title": "WellnessBody",
         "type": "object"
       },
+      "app__api__exercises__CompleteBody": {
+        "properties": {
+          "note": {
+            "default": "",
+            "maxLength": 600,
+            "title": "Note",
+            "type": "string"
+          },
+          "pain_after": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pain After"
+          },
+          "video": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReturnClip"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "CompleteBody",
+        "type": "object"
+      },
       "app__api__mobile__JoinBody": {
         "properties": {
           "app_version": {
@@ -3721,6 +4110,17 @@
           }
         },
         "title": "MessageBody",
+        "type": "object"
+      },
+      "app__api__plan__CompleteBody": {
+        "properties": {
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          }
+        },
+        "title": "CompleteBody",
         "type": "object"
       },
       "app__api__plan__PlanItemBody": {
@@ -4625,6 +5025,68 @@
         ]
       }
     },
+    "/api/demo/patient-session": {
+      "post": {
+        "description": "A patient-app session for a chart in this console's scope, for the\ndemo screen's phone frame. 404 off the demo stack, and for any chart the\nconsole could not open itself.",
+        "operationId": "demo_patient_session_api_demo_patient_session_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientSessionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Demo Patient Session Api Demo Patient Session Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Patient Session",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
     "/api/explain": {
       "get": {
         "operationId": "explain_all_api_explain_get",
@@ -5078,6 +5540,413 @@
         ]
       }
     },
+    "/api/hep/exercises/{exercise_id}/media": {
+      "post": {
+        "description": "The clip is at its key; check it and write the row, approved. From\nhere the exercise plays her clip wherever this clinic assigns it.",
+        "operationId": "confirm_clip_api_hep_exercises__exercise_id__media_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exercise_id",
+            "required": true,
+            "schema": {
+              "title": "Exercise Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClipConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Clip Api Hep Exercises  Exercise Id  Media Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Clip",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/exercises/{exercise_id}/media/direct": {
+      "post": {
+        "description": "The clip as the raw request body: the laptop and test path, and the\nfallback when a presigned POST is refused (see\n``attachments.console_upload_direct`` for why not multipart).",
+        "operationId": "upload_clip_direct_api_hep_exercises__exercise_id__media_direct_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exercise_id",
+            "required": true,
+            "schema": {
+              "title": "Exercise Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filename",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filename"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "default": "provider",
+              "maxLength": 60,
+              "title": "Actor",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Content-Type",
+            "required": true,
+            "schema": {
+              "title": "Content-Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "title": "Data",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Clip Direct Api Hep Exercises  Exercise Id  Media Direct Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Clip Direct",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/exercises/{exercise_id}/media/upload-ticket": {
+      "get": {
+        "description": "Where to put the therapist's own demonstration: the attachments\nticket shape, for a clinic key. A GET, like the patient's ticket, so\npicking a clip never takes the database write lock.",
+        "operationId": "clip_upload_ticket_api_hep_exercises__exercise_id__media_upload_ticket_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exercise_id",
+            "required": true,
+            "schema": {
+              "title": "Exercise Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content_type",
+            "required": true,
+            "schema": {
+              "title": "Content Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "byte_size",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Byte Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Clip Upload Ticket Api Hep Exercises  Exercise Id  Media Upload Ticket Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clip Upload Ticket",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/exercises/{exercise_id}/media/{media_id}": {
+      "delete": {
+        "operationId": "delete_clip_api_hep_exercises__exercise_id__media__media_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exercise_id",
+            "required": true,
+            "schema": {
+              "title": "Exercise Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "media_id",
+            "required": true,
+            "schema": {
+              "title": "Media Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "default": "provider",
+              "maxLength": 60,
+              "title": "Actor",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Clip Api Hep Exercises  Exercise Id  Media  Media Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Clip",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/media/{media_id}/raw": {
+      "get": {
+        "description": "A clip's bytes from this API, where there is no object store to\npresign against. ``service.media_url`` points here on a laptop.",
+        "operationId": "read_clip_bytes_api_hep_media__media_id__raw_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "media_id",
+            "required": true,
+            "schema": {
+              "title": "Media Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "poster",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Poster",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Clip Bytes",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
     "/api/hep/options": {
       "get": {
         "operationId": "plan_options_api_hep_options_get",
@@ -5184,6 +6053,113 @@
           }
         },
         "summary": "Patient Exercise Plans",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/patients/{patient_id}/schedule": {
+      "get": {
+        "description": "One chart's strip, for the patient page.",
+        "operationId": "patient_schedule_api_hep_patients__patient_id__schedule_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 28,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "today",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Today"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Patient Schedule Api Hep Patients  Patient Id  Schedule Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patient Schedule",
         "tags": [
           "hep"
         ]
@@ -5601,6 +6577,397 @@
           }
         },
         "summary": "Publish Exercise Plan",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/schedule": {
+      "get": {
+        "description": "The week grid: the clinic's charts as rows, their assignments in the\nwindow, today marked. ``start`` defaults to the Monday of ``today``'s\nweek; ``today`` to the server date.",
+        "operationId": "read_schedule_api_hep_schedule_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 28,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "today",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Today"
+            }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Patient Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Schedule Api Hep Schedule Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Schedule",
+        "tags": [
+          "hep"
+        ]
+      },
+      "post": {
+        "description": "One exercise, at one dose, on each of the days given. A day that\nalready carries it refuses the whole request, naming the day.",
+        "operationId": "create_schedule_api_hep_schedule_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignmentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Schedule Api Hep Schedule Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Schedule",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/schedule/{assignment_id}": {
+      "delete": {
+        "operationId": "delete_schedule_api_hep_schedule__assignment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "default": "provider",
+              "maxLength": 60,
+              "title": "Actor",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Schedule Api Hep Schedule  Assignment Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Schedule",
+        "tags": [
+          "hep"
+        ]
+      },
+      "patch": {
+        "operationId": "update_schedule_api_hep_schedule__assignment_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignmentPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Schedule Api Hep Schedule  Assignment Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Schedule",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/schedule/{assignment_id}/complete": {
+      "post": {
+        "description": "The therapist logging a day done from the room, with the pain the\npatient told her. ``completion_source`` reads ``console``.",
+        "operationId": "complete_schedule_api_hep_schedule__assignment_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AssignmentComplete"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Complete Schedule Api Hep Schedule  Assignment Id  Complete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Schedule",
         "tags": [
           "hep"
         ]
@@ -6683,6 +8050,297 @@
         "summary": "Verify",
         "tags": [
           "mobile"
+        ]
+      }
+    },
+    "/api/mobile/exercises": {
+      "get": {
+        "description": "The day's exercises in order, a seven-day strip around it, and whose\nschedule it is. Clip URLs are playable as given: presigned on AWS, this\nAPI's own stream under the session on a laptop.",
+        "operationId": "today_exercises_api_mobile_exercises_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Today Exercises Api Mobile Exercises Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Today Exercises",
+        "tags": [
+          "exercises"
+        ]
+      }
+    },
+    "/api/mobile/exercises/media/{media_id}/raw": {
+      "get": {
+        "description": "A demonstration's bytes under the patient's session: their clinic's\nown clip, or a library clip. What the laptop serves in place of a\npresigned URL.",
+        "operationId": "read_clip_bytes_api_mobile_exercises_media__media_id__raw_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "media_id",
+            "required": true,
+            "schema": {
+              "title": "Media Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "poster",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Poster",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Clip Bytes",
+        "tags": [
+          "exercises"
+        ]
+      }
+    },
+    "/api/mobile/exercises/{assignment_id}/complete": {
+      "post": {
+        "description": "Mark a day done with the pain after it and, when the patient filmed\nthe attempt, the clip. The clip is settled first — confirmed from its\nkey as any thread file is (owned by this patient, there, within the\ncap, what its type says), or taken as the row the direct upload left —\nthen one line goes on the thread with it, and the row records the rest.\nA day already done is a 409 before anything is stored.",
+        "operationId": "complete_exercise_api_mobile_exercises__assignment_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/app__api__exercises__CompleteBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Complete Exercise Api Mobile Exercises  Assignment Id  Complete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Exercise",
+        "tags": [
+          "exercises"
+        ]
+      }
+    },
+    "/api/mobile/exercises/{assignment_id}/skip": {
+      "post": {
+        "operationId": "skip_exercise_api_mobile_exercises__assignment_id__skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SkipBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skip Exercise Api Mobile Exercises  Assignment Id  Skip Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Skip Exercise",
+        "tags": [
+          "exercises"
         ]
       }
     },
@@ -12783,7 +14441,7 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/CompleteBody"
+                    "$ref": "#/components/schemas/app__api__plan__CompleteBody"
                   },
                   {
                     "type": "null"

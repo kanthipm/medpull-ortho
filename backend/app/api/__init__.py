@@ -7,6 +7,8 @@ from app.api import (
     auth,
     care,
     checkin,
+    demo,
+    exercises,
     explain,
     integrations,
     mobile,
@@ -60,6 +62,10 @@ api_router.include_router(explain.router, dependencies=CONSOLE)
 api_router.include_router(narratives.router, dependencies=CONSOLE)
 api_router.include_router(plan.router, dependencies=CONSOLE)
 api_router.include_router(hep.router, dependencies=CONSOLE)
+# The patient's side of the exercise schedule: authorised by the app session.
+api_router.include_router(exercises.router)
+# Demo-stack-only routes (404 elsewhere), behind the console's door.
+api_router.include_router(demo.router, dependencies=CONSOLE)
 api_router.include_router(attachments.router)
 api_router.include_router(attachments.console_router, dependencies=CONSOLE)
 api_router.include_router(personal.router)

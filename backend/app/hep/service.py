@@ -201,38 +201,118 @@ def patch_exercise(db: Session, clinic: str, exercise: Exercise, patch: dict[str
 # --- payloads -------------------------------------------------------------------
 
 
-def media_payload(media: ExerciseMedia | None) -> dict[str, Any] | None:
+# Where a client fetches a clip's bytes when there is no object store to
+# presign against (a laptop, the tests): the console's route and the patient
+# app's, each behind its own credential.
+CONSOLE_MEDIA_ROUTE = "/api/hep/media"
+PATIENT_MEDIA_ROUTE = "/api/mobile/exercises/media"
+
+
+def media_source(media: ExerciseMedia) -> str:
+    """``clinic`` for a clinic's own demonstration, ``library`` for the
+    shared clip a standard exercise ships with."""
+    return "clinic" if media.hospital_id else "library"
+
+
+def media_payload(
+    media: ExerciseMedia | None, *, route: str = CONSOLE_MEDIA_ROUTE,
+    uploaded_by_name: str | None = None,
+) -> dict[str, Any] | None:
     """What a client may play. The URL is present only once a reviewer has
-    approved the clip; until then the UI shows a placeholder and the text."""
+    approved the clip; until then the UI shows a placeholder and the text.
+    ``route`` is where the bytes stream from on a laptop (the console's
+    route or the patient app's); on AWS both are a presigned URL."""
     if media is None:
         return None
     approved = media.approval_status == "approved"
     return {
-        "id": media.id, "kind": media.kind, "approval_status": media.approval_status,
+        "id": media.id, "kind": media.kind, "source": media_source(media),
+        "exercise_id": media.exercise_id, "clinic_id": media.hospital_id,
+        "approval_status": media.approval_status,
         "playable": approved,
-        "url": media_url(media.storage_key, media.content_type) if approved else None,
-        "poster_url": media_url(media.poster_key, "image/jpeg") if approved and media.poster_key else None,
+        "url": media_url(media.storage_key, media.content_type, media.id, route=route)
+        if approved else None,
+        "poster_url": media_url(media.poster_key, "image/jpeg", media.id, poster=True, route=route)
+        if approved and media.poster_key else None,
+        "content_type": media.content_type,
         "width": media.width, "height": media.height, "duration_ms": media.duration_ms,
+        "uploaded_by": media.uploaded_by, "uploaded_by_name": uploaded_by_name,
         "reviewed_by": media.reviewed_by,
         "reviewed_at": media.reviewed_at.isoformat() if media.reviewed_at else None,
         "version": media.version,
+        "created_at": media.created_at.isoformat() if media.created_at else None,
     }
 
 
-def media_url(key: str | None, content_type: str) -> str | None:
+def media_url(
+    key: str | None, content_type: str, media_id: int | None = None, *,
+    poster: bool = False, route: str = CONSOLE_MEDIA_ROUTE,
+) -> str | None:
     """``public:<path>`` is a non-PHI file served by the SPA bucket at
     ``/hep/<path>``; anything else is an attachments blob behind a
-    presigned URL (or the API's own stream on the laptop)."""
+    presigned URL or, with no object store, the API's own stream of that
+    media row (``GET <route>/<id>/raw``, ``?poster=1`` for the still)."""
     if not key:
         return None
     if key.startswith("public:"):
         return "/hep/" + key.removeprefix("public:").lstrip("/")
     from app.storage import blobs
 
-    return blobs.download_url(key, content_type) or f"/api/hep/media/{key}"
+    url = blobs.download_url(key, content_type)
+    if url or media_id is None:
+        return url
+    return f"{route}/{media_id}/raw" + ("?poster=1" if poster else "")
 
 
-def exercise_payload(e: Exercise, media: ExerciseMedia | None = None) -> dict[str, Any]:
+def clinic_clips(db: Session, clinic: str) -> dict[int, ExerciseMedia]:
+    """The clinic's own approved demonstrations, newest per exercise. One
+    query for a whole library list or a week of the schedule."""
+    rows = db.scalars(
+        select(ExerciseMedia).where(
+            ExerciseMedia.hospital_id == clinic,
+            ExerciseMedia.exercise_id.is_not(None),
+            ExerciseMedia.approval_status == "approved",
+        ).order_by(ExerciseMedia.created_at, ExerciseMedia.id)
+    ).all()
+    # Ascending, so the latest upload for an exercise is the one kept.
+    return {row.exercise_id: row for row in rows}
+
+
+def clinic_clip(db: Session, clinic: str, exercise_id: int) -> ExerciseMedia | None:
+    return db.scalar(
+        select(ExerciseMedia).where(
+            ExerciseMedia.hospital_id == clinic,
+            ExerciseMedia.exercise_id == exercise_id,
+            ExerciseMedia.approval_status == "approved",
+        ).order_by(ExerciseMedia.created_at.desc(), ExerciseMedia.id.desc())
+    )
+
+
+def resolve_clip(
+    db: Session, clinic: str | None, exercise: Exercise,
+    clips: dict[int, ExerciseMedia] | None = None,
+) -> ExerciseMedia | None:
+    """The demonstration a clinic and its patients see for an exercise: the
+    clinic's latest approved clip, else the library clip, else none.
+    ``clips`` is a ``clinic_clips`` map when the caller already has one."""
+    own = None
+    if clinic:
+        own = clips.get(exercise.id) if clips is not None else clinic_clip(db, clinic, exercise.id)
+    if own is not None:
+        return own
+    if exercise.media_id:
+        media = db.get(ExerciseMedia, exercise.media_id)
+        if media is not None and media.approval_status == "approved":
+            return media
+    return None
+
+
+def exercise_payload(
+    e: Exercise, media: ExerciseMedia | None = None, clinic_media: ExerciseMedia | None = None,
+) -> dict[str, Any]:
+    """``media`` is the library clip; ``clinic_media`` the clinic's own
+    demonstration of this exercise, which wins wherever the exercise is
+    shown to that clinic or its patients (``resolve_clip``)."""
     return {
         "id": e.id, "key": e.key, "origin": e.origin, "clinic_id": e.hospital_id,
         "title": e.title, "synonyms": list(e.synonyms or []),
@@ -244,6 +324,7 @@ def exercise_payload(e: Exercise, media: ExerciseMedia | None = None) -> dict[st
         "status": e.status, "version": int(e.version or 1),
         "usage_count": int(e.usage_count or 0),
         "media": media_payload(media),
+        "clinic_media": media_payload(clinic_media),
         "created_by": e.created_by,
         "created_at": e.created_at.isoformat() if e.created_at else None,
         "updated_at": e.updated_at.isoformat() if e.updated_at else None,
