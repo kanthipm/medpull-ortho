@@ -30,6 +30,9 @@ experiment was pitched:
 Every lifter is fictional. The seed (app/seed/seed.py) and the demo fill
 (app/seed/demo_fill.py) both write the history through ``write_history``,
 so a scratch database and the deployed one carry the same fourteen days.
+``write_schedule`` sits beside it: the exercise calendar each therapist
+laid out (docs/dev/hep-schedule.md), with the past days' outcomes shaped
+to the same five stories.
 
 Demo orgs: see the module docstring of app/seed/patients.py.
 """
@@ -273,6 +276,199 @@ def write_history(db, patient_id: str, today: date) -> dict[str, int]:
     return {"checkins": len(days), "observations": ingested}
 
 
+# --- the schedule -----------------------------------------------------------------
+#
+# The calendar each lifter's therapist laid out: program day 0 through today
+# + 7, in catalog exercises that fit the pathway, three to five on a training
+# day, with the past days' outcomes matching the check-in story above. Today's
+# rows and the week ahead are open. Nothing here carries a clip: bytes need
+# an object store, and scripts/seed_hirt_media.py adds placeholders.
+
+# How far past today the calendar is filled in.
+SCHEDULE_AHEAD = 7
+MON_WED_FRI = (0, 2, 4)
+TUE_THU_SAT = (1, 3, 5)
+
+
+@dataclass(frozen=True)
+class ScheduledExercise:
+    """One exercise on a lifter's calendar: its dose, the therapist's words
+    to the patient, and the weekdays it falls on (Monday is 0; None is
+    every day)."""
+
+    key: str
+    sets: int | None = None
+    reps: int | None = None
+    hold_seconds: int | None = None
+    side: str = "not_applicable"
+    note: str = ""
+    weekdays: tuple[int, ...] | None = None
+
+
+SCHEDULE: dict[str, tuple[ScheduledExercise, ...]] = {
+    "hirt-cole": (
+        ScheduledExercise("functional_step_ups", sets=3, reps=10, side="left",
+                          note="Slow on the way down.", weekdays=MON_WED_FRI),
+        ScheduledExercise("functional_wall_sits", sets=3, hold_seconds=30,
+                          note="Knees over the ankles, not past the toes.", weekdays=MON_WED_FRI),
+        ScheduledExercise("functional_mini_squats", sets=3, reps=12,
+                          note="Only as deep as stays comfortable.", weekdays=MON_WED_FRI),
+        ScheduledExercise("knee_terminal_extensions", sets=3, reps=15, side="left",
+                          note="Squeeze the thigh at the top.", weekdays=MON_WED_FRI),
+        ScheduledExercise("knee_heel_slides", sets=2, reps=10, side="left",
+                          note="Every day, after your warm-up."),
+    ),
+    "hirt-tessa": (
+        ScheduledExercise("ankle_calf_raises", sets=3, reps=15, side="right",
+                          note="Slow on the way down — count to three."),
+        ScheduledExercise("ankle_dorsiflexion_stretch", sets=3, hold_seconds=30, side="right",
+                          note="Heel stays down."),
+        ScheduledExercise("balance_single_leg_stance", sets=3, hold_seconds=30, side="right",
+                          note="Fingertips on the counter if you need them.",
+                          weekdays=TUE_THU_SAT),
+    ),
+    "hirt-devon": (
+        ScheduledExercise("back_bird_dog", sets=3, reps=8,
+                          note="Slow and level; nothing in the back should move."),
+        ScheduledExercise("hip_glute_bridges", sets=3, reps=12, note="Squeeze at the top, no arch."),
+        ScheduledExercise("back_pelvic_tilts", sets=2, reps=10),
+        ScheduledExercise("back_cat_cow", sets=2, reps=8, note="Breathe with it."),
+    ),
+    "hirt-june": (
+        ScheduledExercise("back_pelvic_tilts", sets=2, reps=10),
+        ScheduledExercise("back_bird_dog", sets=3, reps=8, note="Reach long, stay level."),
+        ScheduledExercise("hip_glute_bridges", sets=3, reps=10),
+        ScheduledExercise("functional_sit_to_stand", sets=3, reps=8,
+                          note="Hinge from the hips, chest up."),
+    ),
+    "hirt-rafael": (
+        ScheduledExercise("shoulder_pendulum_swings", sets=2, reps=20, side="right",
+                          note="Let the arm hang; small circles."),
+        ScheduledExercise("shoulder_wall_slides", sets=3, reps=10, side="right"),
+        ScheduledExercise("shoulder_band_external_rotation", sets=3, reps=12, side="right",
+                          note="Elbow tucked to your side."),
+        ScheduledExercise("shoulder_scapular_retractions", sets=3, reps=12,
+                          note="Shoulders down and back, not up."),
+    ),
+}
+
+# Pain after the work, by program day 0..13, for the days that were done.
+# Cole's climbs with his leg day; everyone else stays low.
+PAIN_AFTER: dict[str, tuple[int, ...]] = {
+    "hirt-cole": (2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 4, 4, 5, 6),
+    "hirt-tessa": (2, 2, 2, 1, 2, 1, 1, 1, 1, 0, 1, 1, 0, 1),
+    "hirt-devon": (4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3),
+    "hirt-june": (2, 2, 2, 1, 2, 1, 2, 1, 1, 2, 1, 1, 1, 1),
+    "hirt-rafael": (3, 2, 3, 2, 2, 3, 2, 2, 3, 2, 2, 3, 2, 2),
+}
+# When each lifter marks a day done, local time; the rows of one day follow
+# a few minutes apart.
+DONE_AT: dict[str, time] = {
+    "hirt-cole": time(18, 40), "hirt-tessa": time(7, 15), "hirt-devon": time(21, 10),
+    "hirt-june": time(8, 30), "hirt-rafael": time(19, 20),
+}
+# What a lifter typed under a done day: (lifter, program day, exercise).
+DONE_NOTES: dict[tuple[str, int, str], str] = {
+    ("hirt-cole", 11, "knee_heel_slides"): "Knee was stiff all morning.",
+    ("hirt-cole", 13, "knee_heel_slides"): "Knee's talking on the way down stairs.",
+    ("hirt-tessa", 7, "ankle_calf_raises"): "Full set without the pinch.",
+    ("hirt-june", 13, "functional_sit_to_stand"): "Easy today.",
+}
+# Devon's two skips, both the same reason.
+DEVON_SKIPPED = frozenset({(11, "back_bird_dog"), (13, "back_cat_cow")})
+SKIP_REASON = "Long shift"
+
+# What the past fourteen days read on a fresh fill, per lifter. Fourteen
+# days hold every weekday exactly twice, so these do not move with the
+# weekday the fill lands on; today's rows and the week ahead are always
+# open, and the tests count those from the calendar. Pinned by the tests.
+EXPECTED_SCHEDULE: dict[str, dict[str, int]] = {
+    "hirt-cole": {"done": 38, "skipped": 0, "missed": 0},
+    "hirt-tessa": {"done": 34, "skipped": 0, "missed": 0},
+    "hirt-devon": {"done": 10, "skipped": 2, "missed": 44},
+    "hirt-june": {"done": 56, "skipped": 0, "missed": 0},
+    "hirt-rafael": {"done": 48, "skipped": 0, "missed": 8},
+}
+
+
+def _outcome(patient_id: str, program_day: int, key: str) -> tuple[str, str | None]:
+    """What a past day's row reads: ``done``, ``skipped`` with the reason, or
+    ``assigned`` (missed). Each lifter's rule is their story: Devon did the
+    first two days, two of the four a week later and little else; Rafael
+    did everything until he went quiet; the other three did it all."""
+    if patient_id == "hirt-devon":
+        if (program_day, key) in DEVON_SKIPPED:
+            return "skipped", SKIP_REASON
+        if program_day in (0, 1) or (
+            program_day == 7 and key in ("back_bird_dog", "hip_glute_bridges")
+        ):
+            return "done", None
+        return "assigned", None
+    if patient_id == "hirt-rafael":
+        return ("done", None) if program_day <= 11 else ("assigned", None)
+    return "done", None
+
+
+def write_schedule(db, patient_id: str, today: date) -> dict[str, int]:
+    """One lifter's calendar, program day 0 through today + 7, with the past
+    days' outcomes. Needs the catalog for the exercise rows and upserts it
+    if a key is missing; replaces any schedule the lifter already has, so a
+    refill is clean. Returns row counts."""
+    from sqlalchemy import delete, select
+
+    from app.hep.catalog import ensure_catalog
+    from app.hep.models import Exercise, ExerciseAssignment
+
+    items = SCHEDULE.get(patient_id)
+    counts = {"assignments": 0, "done": 0, "skipped": 0}
+    if not items:
+        return counts
+    spec = next(p for p in HIRT_PATIENTS if p.id == patient_id)
+    keys = {item.key for item in items}
+
+    def _exercises() -> dict[str, Exercise]:
+        return {e.key: e for e in db.scalars(select(Exercise).where(Exercise.key.in_(keys)))}
+
+    exercises = _exercises()
+    if keys - set(exercises):
+        ensure_catalog(db)
+        exercises = _exercises()
+    db.execute(delete(ExerciseAssignment).where(ExerciseAssignment.patient_id == patient_id))
+    start = today - timedelta(days=PROGRAM_DAYS)
+    laid_out = datetime.combine(start, time(9, 0))
+    for offset in range(PROGRAM_DAYS + SCHEDULE_AHEAD + 1):
+        day = start + timedelta(days=offset)
+        order = 0
+        for item in items:
+            if item.weekdays is not None and day.weekday() not in item.weekdays:
+                continue
+            row = ExerciseAssignment(
+                hospital_id=HOSPITAL_ID, patient_id=patient_id, exercise_id=exercises[item.key].id,
+                scheduled_for=day, sort_order=order, sets=item.sets, reps=item.reps,
+                hold_seconds=item.hold_seconds, side=item.side, clinician_instructions=item.note,
+                assigned_by=spec.assigned_id, status="assigned", created_at=laid_out,
+                updated_at=laid_out,
+            )
+            if day < today:
+                status, reason = _outcome(patient_id, offset, item.key)
+                if status == "done":
+                    at = datetime.combine(day, DONE_AT[patient_id]) + timedelta(minutes=4 * order)
+                    row.status, row.completed_at, row.updated_at = "done", at, at
+                    row.pain_after = PAIN_AFTER[patient_id][offset]
+                    row.note = DONE_NOTES.get((patient_id, offset, item.key))
+                    row.completion_source = "app"
+                    counts["done"] += 1
+                elif status == "skipped":
+                    row.status, row.skip_reason = "skipped", reason
+                    row.updated_at = datetime.combine(day, time(22, 5))
+                    counts["skipped"] += 1
+            db.add(row)
+            order += 1
+            counts["assignments"] += 1
+    db.commit()
+    return counts
+
+
 def ensure_org(db) -> int:
     """The hospital and its two therapists, for a database that predates
     them (the deployed one, under demo_fill). Idempotent; returns rows added."""
@@ -301,4 +497,6 @@ __all__ = [
     "HOSPITAL_ID", "TZ", "PROGRAM_DAYS", "QSET", "HIRT_HOSPITAL", "HIRT_CARE_TEAM",
     "HIRT_PATIENTS", "HIRT_IDS", "PATHWAYS", "PHONES", "MRNS", "CheckinDay", "HISTORY",
     "EXPECTED_TIERS", "write_history", "ensure_org",
+    "SCHEDULE_AHEAD", "ScheduledExercise", "SCHEDULE", "PAIN_AFTER", "EXPECTED_SCHEDULE",
+    "write_schedule",
 ]
