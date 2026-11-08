@@ -287,7 +287,8 @@ export default function AppShell() {
       >
         {inScope ? <Outlet /> : <Navigate to={home} replace />}
       </main>
-      <DemoWelcome />
+      {/* the presenter's demo screen is not a visitor's first page */}
+        {!pathname.startsWith('/demo') && <DemoWelcome />}
     </div>
   )
 }
