@@ -8,6 +8,7 @@ from app.models.credential import ConsoleCredential
 from app.hep.models import (
     AuditEvent,
     Exercise,
+    ExerciseAssignment,
     ExerciseCompletion,
     ExerciseMedia,
     ExercisePlan,
@@ -56,6 +57,7 @@ __all__ = [
     "Hospital",
     "AuditEvent",
     "Exercise",
+    "ExerciseAssignment",
     "ExerciseCompletion",
     "ExerciseMedia",
     "ExercisePlan",

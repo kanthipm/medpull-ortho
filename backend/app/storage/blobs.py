@@ -295,9 +295,28 @@ def new_key(patient_id: str, content_type: str, personal: bool = False) -> str:
 
 
 def owned_by(key: str, patient_id: str) -> bool:
-    """Whether a key was minted for this patient, under either prefix."""
+    """Whether a key was minted for this patient, under either prefix. The
+    clinic segment is not a patient."""
+    if patient_id == CLINIC_SEGMENT:
+        return False
     return key.startswith(f"{PREFIX}/{patient_id}/") or \
         key.startswith(f"{PERSONAL_PREFIX}/{patient_id}/")
+
+
+# A clinic's own files — its therapists' demonstration clips — live under the
+# same prefix as patient attachments, in a segment no patient id can collide
+# with, so the bucket policy, CORS rule and lifecycle apply to them unchanged.
+CLINIC_SEGMENT = "clinic"
+
+
+def new_clinic_key(hospital_id: str, content_type: str) -> str:
+    """attachments/clinic/<hospital>/<random>.<ext>: opaque like a patient key,
+    purgeable per clinic by prefix."""
+    return f"{PREFIX}/{CLINIC_SEGMENT}/{hospital_id}/{uuid.uuid4().hex}{ALLOWED_TYPES[content_type]}"
+
+
+def owned_by_clinic(key: str, hospital_id: str) -> bool:
+    return key.startswith(f"{PREFIX}/{CLINIC_SEGMENT}/{hospital_id}/")
 
 
 # --- writing -------------------------------------------------------------------

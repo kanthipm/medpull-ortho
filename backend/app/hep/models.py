@@ -41,6 +41,7 @@ SIDES = ("left", "right", "both", "not_applicable")
 MEDIA_STATUSES = ("pending", "approved", "rejected")
 PLAN_STATUSES = ("draft", "active", "superseded", "archived")
 INVITATION_STATUSES = ("pending", "sent", "failed", "claimed", "expired", "revoked")
+ASSIGNMENT_STATUSES = ("assigned", "done", "skipped")
 
 
 class Exercise(Base):
@@ -87,6 +88,12 @@ class ExerciseMedia(Base):
         ForeignKey("hospitals.id"), nullable=True, index=True
     )
     kind: Mapped[str] = mapped_column(String, default="video")  # video | image
+    # The exercise a clinic's own clip demonstrates (its therapist doing it),
+    # so a standard exercise can carry one demonstration per clinic without
+    # being copied. Library clips are reached through Exercise.media_id and
+    # leave this empty. A plain integer, not a foreign key: exercises already
+    # point here through media_id and a cycle would stall table creation.
+    exercise_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # "public:<path>" under the SPA bucket for standard clips, or an
     # attachments blob key for a clinic upload
     storage_key: Mapped[str] = mapped_column(String)
@@ -210,3 +217,51 @@ class AuditEvent(Base):
     subject_id: Mapped[str] = mapped_column(String)
     detail: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class ExerciseAssignment(Base):
+    """One exercise on one patient's calendar day — the clinic's schedule, as
+    against a plan's standing prescription. This is what the therapist puts
+    on the week grid and what the patient's Today shows. Done, the row itself
+    carries what the patient reported after it: pain, a note, the clip they
+    sent back (an ``attachments`` row on their thread). One row per
+    patient, exercise and day; a second assignment of the same exercise on
+    the same day is refused rather than stacked."""
+
+    __tablename__ = "exercise_assignments"
+    __table_args__ = (
+        UniqueConstraint("patient_id", "exercise_id", "scheduled_for",
+                         name="uq_exercise_assignment_day"),
+        Index("ix_exercise_assignments_clinic_day", "hospital_id", "scheduled_for"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    hospital_id: Mapped[str] = mapped_column(ForeignKey("hospitals.id"), index=True)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), index=True)
+    exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id"), index=True)
+    # Set when the day was generated from a plan item; the therapist's own
+    # calendar entries leave it empty.
+    plan_exercise_id: Mapped[int | None] = mapped_column(
+        ForeignKey("plan_exercises.id"), nullable=True
+    )
+    scheduled_for: Mapped[date] = mapped_column(Date, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hold_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    side: Mapped[str] = mapped_column(String, default="not_applicable")
+    # Patient-facing, in the therapist's words ("slow on the way down").
+    clinician_instructions: Mapped[str] = mapped_column(String, default="")
+    assigned_by: Mapped[str] = mapped_column(String, default="provider")  # care team id
+    status: Mapped[str] = mapped_column(String, default="assigned")  # ASSIGNMENT_STATUSES
+    # --- what came back ---
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    pain_after: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0–10
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
+    completion_source: Mapped[str | None] = mapped_column(String, nullable=True)  # app | console
+    video_attachment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("attachments.id"), nullable=True
+    )
+    skip_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
