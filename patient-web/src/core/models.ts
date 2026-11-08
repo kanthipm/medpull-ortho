@@ -417,6 +417,129 @@ export type CompleteResponse = { ok: boolean; task: RecoveryTask }
 export type AnswerValue = number | string
 export type Answers = Record<string, AnswerValue>
 
+// MARK: - The exercise schedule (docs/dev/hep-schedule.md)
+
+/** The therapist's demonstration of an exercise: the clinic's own clip when
+ *  it has one, else the library's. `url` is playable as sent (presigned on
+ *  AWS; an API path under this session on a laptop). */
+export type ExerciseVideo = {
+  id: number
+  kind: string
+  /** "clinic" or "library". */
+  source: string
+  url: string | null
+  posterUrl: string | null
+  contentType: string
+  durationMs: number | null
+  uploadedBy: string | null
+  uploadedByName: string | null
+  createdAt: string | null
+}
+
+/** What the patient sent back: the attachment view with its link. */
+export type ExerciseClip = ChatAttachment & { url?: string | null }
+
+export type ExerciseCompletion = {
+  completedAt: string
+  painAfter: number | null
+  note: string | null
+  /** "app" (the patient) or "console" (the therapist logged it). */
+  source: string
+  video: ExerciseClip | null
+}
+
+/** One exercise on one of this patient's days. */
+export type ExerciseAssignment = {
+  id: number
+  patientId: string
+  exerciseId: number
+  exerciseKey: string
+  title: string
+  bodyRegion: string
+  bodyRegionLabel: string
+  category: string
+  categoryLabel: string
+  steps: string[]
+  equipment: string
+  precautions: string
+  /** "yyyy-MM-dd". */
+  scheduledFor: string
+  sortOrder: number
+  sets: number | null
+  reps: number | null
+  holdSeconds: number | null
+  side: string
+  sideLabel: string
+  /** "3 sets × 10 reps · Left", built by the server. */
+  dose: string
+  /** The therapist's note to the patient, in her words. */
+  clinicianInstructions: string
+  assignedBy: string
+  assignedByName: string
+  /** assigned | done | skipped */
+  status: string
+  video: ExerciseVideo | null
+  completion: ExerciseCompletion | null
+  skipReason: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export const isOpenAssignment = (a: ExerciseAssignment) => a.status === 'assigned'
+export const isDoneAssignment = (a: ExerciseAssignment) => a.status === 'done'
+
+/** One day of the week strip around the requested date. */
+export type ExerciseDay = { date: string; assigned: number; done: number }
+
+export type ExercisesResponse = {
+  date: string
+  items: ExerciseAssignment[]
+  week: ExerciseDay[]
+  clinic: { id: string; name: string } | null
+}
+
+/** Whether Today shows the schedule at all: a patient with no schedule
+ *  never sees an empty card, and neither does one whose server has no
+ *  schedule yet. A rest day inside a scheduled week does show, so the
+ *  person knows nothing is missing. */
+export function hasExerciseSchedule(feed: ExercisesResponse | null): feed is ExercisesResponse {
+  if (!feed) return false
+  return feed.items.length > 0 || feed.week.some((d) => d.assigned > 0)
+}
+
+/** What the patient sends with "Mark done": the clip is the staged upload
+ *  (ticket + storage POST), confirmed by the server with the completion. */
+export type ExerciseCompletionBody = {
+  painAfter: number | null
+  note: string
+  video: StagedUpload | null
+}
+
+/** A file that reached storage and is waiting to be claimed by the request
+ *  that gives it meaning. On a deployment without an object store the bytes
+ *  went through the API and were confirmed there, so `attachmentId` is set
+ *  and `storageKey` is what that row was stored under, when known. */
+export type StagedUpload = {
+  storageKey: string | null
+  attachmentId: number | null
+  contentType: string
+  byteSize: number
+  filename: string | null
+}
+
+/** "Dr. Ashley Gregg" → "Dr. Gregg"; "Ashley Gregg" → "Ashley". The way a
+ *  patient says their therapist's name. */
+export function therapistShortName(name: string | null | undefined): string {
+  const words = (name ?? '').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return 'your therapist'
+  if (words.length === 1) return words[0]
+  if (words[0].endsWith('.')) return `${words[0]} ${words[words.length - 1]}`
+  return words[0]
+}
+
+/** "pain 4/10", for a row or a sent line. */
+export const painLabel = (n: number | null | undefined) => (n == null ? null : `pain ${n}/10`)
+
 // MARK: - Thread
 
 export type MessageAction = { kind: string; taskId: number | null; label: string }

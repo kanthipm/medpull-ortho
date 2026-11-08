@@ -6,11 +6,12 @@
 import { AppConfig, deviceName } from './config'
 import type {
   AgentResponse, AppleSession, Candidate, ChatAttachment, ChatMessage, CompleteResponse,
-  ConsentAcceptance, ConsentDocument, ConsentStatus, EnrollResponse, GaitUpload, GaitUploadResponse,
+  ConsentAcceptance, ConsentDocument, ConsentStatus, EnrollResponse, ExerciseAssignment,
+  ExerciseCompletionBody, ExercisesResponse, GaitUpload, GaitUploadResponse,
   Hospital, LinkResponse, Me, MessagesResponse, MotionUpload, MotionUploadResponse, OKResponse,
   PatientMetricsResponse, PortfolioResponse, Procedure, ProgressResponse, RangeOfMotionUpload,
   RangeOfMotionResponse, SentMessageResponse, SixMinuteWalkUpload, SixMinuteWalkResponse,
-  TasksResponse, VerificationStatus, WearablesResponse, Answers,
+  StagedUpload, TasksResponse, VerificationStatus, WearablesResponse, Answers,
 } from './models'
 
 export class APIError extends Error {
@@ -219,6 +220,67 @@ export class APIClient {
     return this.post(`/api/mobile/tasks/${taskId}/skip`)
   }
 
+  // MARK: - The exercise schedule (docs/dev/hep-schedule.md)
+
+  /** The day's assignments and the week around them. No `date` means the
+   *  server's own day; Today passes the phone's. */
+  exercises(date?: string, signal?: AbortSignal): Promise<ExercisesResponse> {
+    return this.get('/api/mobile/exercises', date ? { date } : {}, signal)
+  }
+
+  /** "Mark done": the pain after, a note, and the clip that was staged in
+   *  storage — the server confirms the clip and writes the thread line. The
+   *  contract answers `{ assignment }`; a bare assignment is read too. */
+  async completeExercise(assignmentId: number, body: ExerciseCompletionBody): Promise<ExerciseAssignment> {
+    const v = body.video
+    const video = v ? {
+      // Exactly the keys the contract names on the storage path; the direct
+      // path (no object store) has no key to name, so it says which row.
+      storageKey: v.storageKey ?? undefined,
+      attachmentId: v.storageKey ? undefined : v.attachmentId ?? undefined,
+      contentType: v.contentType, byteSize: v.byteSize, filename: v.filename,
+    } : null
+    const r = await this.post<{ assignment: ExerciseAssignment } | ExerciseAssignment>(
+      `/api/mobile/exercises/${assignmentId}/complete`, { painAfter: body.painAfter, note: body.note, video },
+    )
+    return unwrapAssignment(r)
+  }
+
+  /** "Can't do it today": the row is skipped with the reason, in the
+   *  patient's words or none. */
+  async skipExercise(assignmentId: number, reason: string): Promise<ExerciseAssignment> {
+    const r = await this.post<{ assignment: ExerciseAssignment } | ExerciseAssignment>(
+      `/api/mobile/exercises/${assignmentId}/skip`, { reason },
+    )
+    return unwrapAssignment(r)
+  }
+
+  /** A demonstration clip's link, when it is an API path rather than a
+   *  presigned object link: it has to be fetched under this session, and a
+   *  `<video src>` cannot carry the header. */
+  needsSession(url: string): boolean {
+    if (url.startsWith('/')) return true
+    try {
+      const u = new URL(url, window.location.origin)
+      const api = new URL(AppConfig.baseURL || window.location.origin, window.location.origin)
+      return u.origin === api.origin && u.pathname.startsWith('/api/')
+    } catch {
+      return false
+    }
+  }
+
+  /** The bytes behind such a link, as a Blob for an object URL. */
+  async mediaBlob(url: string): Promise<Blob> {
+    let res: Response
+    try {
+      res = await fetch(url.startsWith('/') ? this.url(url) : url, { headers: this.headers() })
+    } catch {
+      throw new APIError(0, UNREACHABLE)
+    }
+    if (!res.ok) throw new APIError(res.status, 'The video could not be loaded.')
+    return res.blob()
+  }
+
   async messages(sinceId = 0, signal?: AbortSignal): Promise<ChatMessage[]> {
     const r = await this.get<MessagesResponse>('/api/mobile/messages', { since_id: String(sinceId) }, signal)
     return r.messages
@@ -276,12 +338,7 @@ export class APIClient {
    *  happens when the file is picked, so the send that follows only ever
    *  carries ids; a row nobody claims with a message is swept server-side. */
   async upload(data: Blob, contentType: string, filename: string | null): Promise<ChatAttachment> {
-    const ticket = await this.get<UploadTicket>('/api/mobile/attachments/upload-ticket', {
-      content_type: contentType, byte_size: String(data.size),
-    })
-    if (data.size > ticket.maxBytes) {
-      throw new APIError(413, `That file is over ${Math.floor(ticket.maxBytes / 1_048_576)} MB.`)
-    }
+    const ticket = await this.ticket(data, contentType)
     if (ticket.direct || !ticket.upload) return this.uploadDirect(data, contentType, filename)
     await this.uploadPresigned(ticket.upload, data, contentType, filename)
     const confirmed = await this.post<{ attachment: ChatAttachment }>('/api/mobile/attachments', {
@@ -290,10 +347,40 @@ export class APIClient {
     return confirmed.attachment
   }
 
+  /** Put a file in storage and stop before confirming it: the request that
+   *  gives the file its meaning (an exercise's "Mark done") confirms it, so
+   *  the row is written beside what it belongs to. `onProgress` is the share
+   *  of the bytes sent, 0...1. With no object store the bytes go through the
+   *  API, which confirms as it stores; the staged upload then names the row. */
+  async stageUpload(
+    data: Blob, contentType: string, filename: string | null, onProgress?: (fraction: number) => void,
+  ): Promise<StagedUpload> {
+    const ticket = await this.ticket(data, contentType)
+    if (ticket.direct || !ticket.upload) {
+      const a = await this.uploadDirect(data, contentType, filename, onProgress)
+      return { storageKey: null, attachmentId: a.id, contentType: a.contentType, byteSize: a.byteSize, filename: a.filename }
+    }
+    await this.uploadPresigned(ticket.upload, data, contentType, filename, onProgress)
+    return { storageKey: ticket.storageKey, attachmentId: null, contentType, byteSize: data.size, filename }
+  }
+
+  /** Where to put a file, and the cap it must fit under. */
+  private async ticket(data: Blob, contentType: string): Promise<UploadTicket> {
+    const ticket = await this.get<UploadTicket>('/api/mobile/attachments/upload-ticket', {
+      content_type: contentType, byte_size: String(data.size),
+    })
+    if (data.size > ticket.maxBytes) {
+      throw new APIError(413, `That file is over ${Math.floor(ticket.maxBytes / 1_048_576)} MB.`)
+    }
+    return ticket
+  }
+
   /** The bytes as the request body — no multipart. */
-  private async uploadDirect(data: Blob, contentType: string, filename: string | null): Promise<ChatAttachment> {
+  private async uploadDirect(
+    data: Blob, contentType: string, filename: string | null, onProgress?: (fraction: number) => void,
+  ): Promise<ChatAttachment> {
     const url = this.url('/api/mobile/attachments/direct', filename ? { filename } : {})
-    const r = await this.attempt(url, { method: 'POST', headers: this.headers(contentType), body: data })
+    const r = await this.sendBytes(url, this.headers(contentType), data, onProgress)
     this.check(r)
     return camelize<{ attachment: ChatAttachment }>(r.json).attachment
   }
@@ -303,17 +390,41 @@ export class APIClient {
    *  last, which the storage service requires. */
   private async uploadPresigned(
     upload: UploadTicket['upload'] & object, data: Blob, contentType: string, filename: string | null,
+    onProgress?: (fraction: number) => void,
   ): Promise<void> {
     const form = new FormData()
     for (const [k, v] of Object.entries(upload.fields)) form.append(k, v)
     form.append('file', new File([data], filename ?? 'upload', { type: contentType }))
-    let res: Response
-    try {
-      res = await fetch(upload.url, { method: 'POST', body: form })
-    } catch {
-      throw new APIError(0, UNREACHABLE)
-    }
-    if (!res.ok) throw new APIError(res.status, 'The upload was refused by storage.')
+    const r = await this.sendBytes(upload.url, {}, form, onProgress)
+    if (r.status === 0) throw new APIError(0, UNREACHABLE)
+    if (r.status < 200 || r.status >= 300) throw new APIError(r.status, 'The upload was refused by storage.')
+  }
+
+  /** One upload, as an XMLHttpRequest: `fetch` cannot report how much of a
+   *  body has gone out, and a clip is big enough that the person waits on
+   *  it. The answer is shaped like `attempt`'s. */
+  private sendBytes(
+    url: string, headers: Record<string, string>, body: Blob | FormData, onProgress?: (fraction: number) => void,
+  ): Promise<Attempt> {
+    return new Promise((resolve) => {
+      const x = new XMLHttpRequest()
+      x.open('POST', url)
+      for (const [k, v] of Object.entries(headers)) x.setRequestHeader(k, v)
+      if (onProgress) {
+        x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.min(1, e.loaded / e.total)) }
+      }
+      x.onerror = () => resolve({ status: 0, statusText: '', json: null, bytes: null })
+      x.onabort = () => resolve({ status: 0, statusText: '', json: null, bytes: null })
+      x.onload = () => {
+        onProgress?.(1)
+        let json: unknown = null
+        if ((x.getResponseHeader('content-type') ?? '').includes('application/json')) {
+          try { json = JSON.parse(x.responseText) } catch { json = null }
+        }
+        resolve({ status: x.status, statusText: x.statusText, json, bytes: null })
+      }
+      x.send(body)
+    })
   }
 
   /** The bytes of one attachment, ready to draw, as an object URL. Where
@@ -349,6 +460,11 @@ export class APIClient {
 }
 
 type Attempt = { status: number; statusText: string; json: unknown; bytes: ArrayBuffer | null }
+
+/** The complete and skip routes answer `{ assignment }`; read a bare row too. */
+function unwrapAssignment(r: { assignment: ExerciseAssignment } | ExerciseAssignment): ExerciseAssignment {
+  return 'assignment' in r && r.assignment && typeof r.assignment === 'object' ? r.assignment : (r as ExerciseAssignment)
+}
 
 /** Where to put a file. The server decides: a deployment with object
  *  storage presigns an upload, one without takes the bytes itself. */
