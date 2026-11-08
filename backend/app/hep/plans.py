@@ -300,22 +300,29 @@ def _title(title: str) -> str:
 # --- payloads -----------------------------------------------------------------------
 
 
-def dose_line(row: PlanExercise) -> str:
+def dose_text(sets: int | None, reps: int | None, hold_seconds: int | None, side: str,
+              frequency: str | None = None) -> str:
     """The one-line prescription under an exercise ("3 sets × 10 reps · hold
-    5 s · Twice a day · Left")."""
+    5 s · Twice a day · Left"). A calendar day has no frequency, so the
+    schedule leaves that part out."""
     parts = []
-    if row.sets and row.reps:
-        parts.append(f"{row.sets} sets × {row.reps} reps")
-    elif row.sets:
-        parts.append(f"{row.sets} sets")
-    elif row.reps:
-        parts.append(f"{row.reps} reps")
-    if row.hold_seconds:
-        parts.append(f"hold {row.hold_seconds} s")
-    parts.append(FREQUENCY_LABELS.get(row.frequency, row.frequency))
-    if SIDE_LABELS.get(row.side):
-        parts.append(SIDE_LABELS[row.side])
+    if sets and reps:
+        parts.append(f"{sets} sets × {reps} reps")
+    elif sets:
+        parts.append(f"{sets} sets")
+    elif reps:
+        parts.append(f"{reps} reps")
+    if hold_seconds:
+        parts.append(f"hold {hold_seconds} s")
+    if frequency:
+        parts.append(FREQUENCY_LABELS.get(frequency, frequency))
+    if SIDE_LABELS.get(side):
+        parts.append(SIDE_LABELS[side])
     return " · ".join(p for p in parts if p)
+
+
+def dose_line(row: PlanExercise) -> str:
+    return dose_text(row.sets, row.reps, row.hold_seconds, row.side, row.frequency)
 
 
 def item_payload(db: Session, row: PlanExercise) -> dict[str, Any]:

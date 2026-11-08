@@ -1,8 +1,11 @@
-"""Console routes for the exercise library, under ``/api/hep``."""
+"""Console routes for the exercise library, the plans and the schedule,
+under ``/api/hep``."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date
+
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,6 +16,8 @@ from app.hep import ensure_ready
 from app.hep.models import ExerciseMedia
 from app.hep.service import (
     HepError,
+    clinic_clip,
+    clinic_clips,
     clinic_id,
     create_custom,
     exercise_payload,
@@ -99,11 +104,17 @@ def list_library(
     except HepError as e:
         raise HTTPException(status_code=400, detail=str(e))
     hospital = db.get(Hospital, clinic)
+    own = clinic_clips(db, clinic)
     return {
-        "exercises": [exercise_payload(e, _media_for(db, e.media_id)) for e in rows],
+        "exercises": [exercise_payload(e, _media_for(db, e.media_id), own.get(e.id)) for e in rows],
         "clinic": {"id": clinic, "name": hospital.name if hospital else clinic},
         **vocabulary(),
     }
+
+
+def _with_clips(db: Session, clinic: str, e) -> dict:
+    """One exercise as the clinic sees it: the library clip and its own."""
+    return exercise_payload(e, _media_for(db, e.media_id), clinic_clip(db, clinic, e.id))
 
 
 @router.get("/exercises/{exercise_id}")
@@ -113,7 +124,7 @@ def read_exercise(
     e = get_exercise(db, clinic, exercise_id)
     if e is None:
         raise HTTPException(status_code=404, detail="Unknown exercise")
-    return exercise_payload(e, _media_for(db, e.media_id))
+    return _with_clips(db, clinic, e)
 
 
 @router.post("/exercises/custom")
@@ -148,7 +159,7 @@ def update_exercise(
         e = patch_exercise(db, clinic, e, patch, body.actor)
     except HepError as err:
         raise HTTPException(status_code=422, detail=str(err))
-    return exercise_payload(e, _media_for(db, e.media_id))
+    return _with_clips(db, clinic, e)
 
 
 # --- plans ---------------------------------------------------------------------------
@@ -325,3 +336,267 @@ def patient_exercise_plans(
     except HepError as err:
         raise HTTPException(status_code=404, detail=str(err))
     return patient_plans_payload(db, clinic, patient_id)
+
+
+# --- the schedule --------------------------------------------------------------------
+
+from app.hep import media as clips  # noqa: E402
+from app.hep import schedule  # noqa: E402
+from app.hep.schedule import ScheduleConflict, UnknownRow  # noqa: E402
+
+
+def _schedule_error(err: HepError) -> HTTPException:
+    """The schedule's refusals: a row the clinic cannot see is a 404, a day
+    that is taken or done a 409, anything else a 422."""
+    if isinstance(err, UnknownRow):
+        return HTTPException(status_code=404, detail=str(err))
+    if isinstance(err, ScheduleConflict):
+        return HTTPException(status_code=409, detail=str(err))
+    return HTTPException(status_code=422, detail=str(err))
+
+
+def _assignment_or_404(db: Session, clinic: str, assignment_id: int):
+    row = schedule.get_assignment(db, clinic, assignment_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unknown assignment")
+    return row
+
+
+class AssignmentCreate(BaseModel):
+    patient_id: str
+    exercise_id: int
+    dates: list[date] = Field(min_length=1, max_length=schedule.MAX_DATES)
+    sets: int | None = Field(default=None, ge=0, le=999)
+    reps: int | None = Field(default=None, ge=0, le=999)
+    hold_seconds: int | None = Field(default=None, ge=0, le=999)
+    side: str = "not_applicable"
+    clinician_instructions: str = Field(default="", max_length=schedule.TEXT_LIMIT)
+    # A care-team id; empty means the patient's assigned provider.
+    assigned_by: str | None = Field(default=None, max_length=60)
+    actor: str = Field(default="provider", max_length=60)
+
+
+class AssignmentPatch(BaseModel):
+    """Only the fields sent are applied (``exclude_unset``), so ``"sets":
+    null`` clears the sets while leaving them out leaves them alone."""
+
+    sets: int | None = Field(default=None, ge=0, le=999)
+    reps: int | None = Field(default=None, ge=0, le=999)
+    hold_seconds: int | None = Field(default=None, ge=0, le=999)
+    side: str | None = None
+    clinician_instructions: str | None = Field(default=None, max_length=schedule.TEXT_LIMIT)
+    scheduled_for: date | None = None
+    assigned_by: str | None = Field(default=None, max_length=60)
+    sort_order: int | None = Field(default=None, ge=0, le=999)
+    actor: str = Field(default="provider", max_length=60)
+
+
+class AssignmentComplete(BaseModel):
+    pain_after: int | None = Field(default=None, ge=0, le=10)
+    note: str = Field(default="", max_length=schedule.NOTE_LIMIT)
+    actor: str = Field(default="provider", max_length=60)
+
+
+class ActorBody(BaseModel):
+    actor: str = Field(default="provider", max_length=60)
+
+
+@router.get("/schedule")
+def read_schedule(
+    start: date | None = None,
+    days: int = Query(default=7, ge=1, le=schedule.MAX_WINDOW_DAYS),
+    today: date | None = None,
+    patient_id: str | None = None,
+    db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    """The week grid: the clinic's charts as rows, their assignments in the
+    window, today marked. ``start`` defaults to the Monday of ``today``'s
+    week; ``today`` to the server date."""
+    try:
+        return schedule.schedule_payload(
+            db, clinic, start=start, days=days, today=today or date.today(), patient_id=patient_id,
+        )
+    except HepError as err:
+        raise _schedule_error(err)
+
+
+@router.post("/schedule", status_code=201)
+def create_schedule(
+    body: AssignmentCreate, db: Session = Depends(_ready), clinic: str = Depends(_clinic),
+) -> dict:
+    """One exercise, at one dose, on each of the days given. A day that
+    already carries it refuses the whole request, naming the day."""
+    _no_diagnostic(body.clinician_instructions)
+    try:
+        rows = schedule.create_assignments(
+            db, clinic, patient_id=body.patient_id, exercise_id=body.exercise_id,
+            dates=body.dates, sets=body.sets, reps=body.reps, hold_seconds=body.hold_seconds,
+            side=body.side, clinician_instructions=body.clinician_instructions,
+            assigned_by=body.assigned_by, actor=body.actor, today=date.today(),
+        )
+    except HepError as err:
+        raise _schedule_error(err)
+    return {"assignments": schedule.AssignmentView(db).render_all(rows)}
+
+
+@router.patch("/schedule/{assignment_id}")
+def update_schedule(
+    assignment_id: int, body: AssignmentPatch, db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    row = _assignment_or_404(db, clinic, assignment_id)
+    patch = body.model_dump(exclude_unset=True, exclude={"actor"})
+    _no_diagnostic(patch.get("clinician_instructions"))
+    try:
+        row = schedule.update_assignment(db, clinic, row, patch, actor=body.actor,
+                                         today=date.today())
+    except HepError as err:
+        raise _schedule_error(err)
+    return schedule.AssignmentView(db).render(row)
+
+
+@router.delete("/schedule/{assignment_id}")
+def delete_schedule(
+    assignment_id: int, actor: str = Query(default="provider", max_length=60),
+    db: Session = Depends(_ready), clinic: str = Depends(_clinic),
+) -> dict:
+    row = _assignment_or_404(db, clinic, assignment_id)
+    try:
+        schedule.delete_assignment(db, clinic, row, actor=actor)
+    except HepError as err:
+        raise _schedule_error(err)
+    return {"ok": True}
+
+
+@router.post("/schedule/{assignment_id}/complete")
+def complete_schedule(
+    assignment_id: int, body: AssignmentComplete | None = None, db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    """The therapist logging a day done from the room, with the pain the
+    patient told her. ``completion_source`` reads ``console``."""
+    body = body or AssignmentComplete()
+    row = _assignment_or_404(db, clinic, assignment_id)
+    try:
+        row = schedule.complete_assignment(
+            db, row, pain_after=body.pain_after, note=body.note, source="console",
+            actor=body.actor,
+        )
+    except HepError as err:
+        raise _schedule_error(err)
+    return schedule.AssignmentView(db).render(row)
+
+
+@router.get("/patients/{patient_id}/schedule")
+def patient_schedule(
+    patient_id: str,
+    start: date | None = None,
+    days: int = Query(default=7, ge=1, le=schedule.MAX_WINDOW_DAYS),
+    today: date | None = None,
+    db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    """One chart's strip, for the patient page."""
+    try:
+        patient = clinic_patient(db, clinic, patient_id)
+    except HepError as err:
+        raise HTTPException(status_code=404, detail=str(err))
+    try:
+        return schedule.patient_schedule_payload(
+            db, clinic, patient, start=start, days=days, today=today or date.today(),
+        )
+    except HepError as err:
+        raise _schedule_error(err)
+
+
+# --- the therapist's clip ----------------------------------------------------------
+
+
+def _exercise_or_404(db: Session, clinic: str, exercise_id: int):
+    e = get_exercise(db, clinic, exercise_id)
+    if e is None:
+        raise HTTPException(status_code=404, detail="Unknown exercise")
+    return e
+
+
+class ClipConfirm(BaseModel):
+    storage_key: str = Field(min_length=8, max_length=300)
+    content_type: str
+    byte_size: int = 0
+    filename: str | None = None
+    actor: str = Field(default="provider", max_length=60)
+
+
+@router.get("/exercises/{exercise_id}/media/upload-ticket")
+def clip_upload_ticket(
+    exercise_id: int,
+    content_type: str = Query(...),
+    byte_size: int = Query(..., ge=1),
+    db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    """Where to put the therapist's own demonstration: the attachments
+    ticket shape, for a clinic key. A GET, like the patient's ticket, so
+    picking a clip never takes the database write lock."""
+    _exercise_or_404(db, clinic, exercise_id)
+    return clips.clip_ticket(clinic, content_type, byte_size)
+
+
+@router.post("/exercises/{exercise_id}/media", status_code=201)
+def confirm_clip(
+    exercise_id: int, body: ClipConfirm, db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    """The clip is at its key; check it and write the row, approved. From
+    here the exercise plays her clip wherever this clinic assigns it."""
+    e = _exercise_or_404(db, clinic, exercise_id)
+    clips.confirm_clip(
+        db, clinic, e, storage_key=body.storage_key, content_type=body.content_type,
+        byte_size=body.byte_size, filename=body.filename, actor=body.actor,
+    )
+    return {"exercise": _with_clips(db, clinic, e)}
+
+
+@router.post("/exercises/{exercise_id}/media/direct", status_code=201)
+def upload_clip_direct(
+    exercise_id: int,
+    data: bytes = Body(..., media_type="application/octet-stream"),
+    content_type: str = Header(..., alias="Content-Type"),
+    filename: str | None = Query(default=None),
+    actor: str = Query(default="provider", max_length=60),
+    db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    """The clip as the raw request body: the laptop and test path, and the
+    fallback when a presigned POST is refused (see
+    ``attachments.console_upload_direct`` for why not multipart)."""
+    e = _exercise_or_404(db, clinic, exercise_id)
+    clips.store_clip(db, clinic, e, data, content_type, filename, actor)
+    return {"exercise": _with_clips(db, clinic, e)}
+
+
+@router.delete("/exercises/{exercise_id}/media/{media_id}")
+def delete_clip(
+    exercise_id: int, media_id: int, actor: str = Query(default="provider", max_length=60),
+    db: Session = Depends(_ready), clinic: str = Depends(_clinic),
+) -> dict:
+    _exercise_or_404(db, clinic, exercise_id)
+    media = clips.clinic_media(db, clinic, exercise_id, media_id)
+    if media is None:
+        raise HTTPException(status_code=404, detail="Unknown clip")
+    clips.delete_clip(db, clinic, media, actor=actor)
+    return {"ok": True}
+
+
+@router.get("/media/{media_id}/raw")
+def read_clip_bytes(
+    media_id: int, poster: bool = False, db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> Response:
+    """A clip's bytes from this API, where there is no object store to
+    presign against. ``service.media_url`` points here on a laptop."""
+    media = db.get(ExerciseMedia, media_id)
+    if not clips.readable_by(media, clinic):
+        raise HTTPException(status_code=404, detail="Unknown clip")
+    return clips.stream(media, poster=poster)

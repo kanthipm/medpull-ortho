@@ -534,6 +534,9 @@ PER_PATIENT_TABLES = [
     "adherence_tasks", "messages", "notifications", "care_actions",
     "checkin_invites", "phone_verifications", "checkins",
     "rtm_documents", "rtm_interactions", "rtm_time_logs", "rtm_enrollment",
+    # The exercise calendar (app/hep): one row per patient, exercise and day,
+    # so a refill has to clear the old one before writing today's.
+    "exercise_assignments",
 ]
 IDENTITY_TABLES = ["patient_sessions", "wearable_connections", "devices"]
 
@@ -668,6 +671,7 @@ def write_persona(db, persona: Persona, today: date, *, create: bool) -> dict[st
         written = hirt.write_history(db, spec.id, today)
         n += written["checkins"]
         counts["observations"] += written["observations"]
+        counts["exercise_assignments"] = hirt.write_schedule(db, spec.id, today)["assignments"]
     for days_ago, hour, lines in persona.conversations:
         checkin = Checkin(
             patient_id=spec.id,

@@ -212,12 +212,15 @@ def seed_core(
     counts["checkins"] = n_checkins
 
     # The lifters followed by text alone: fourteen evenings of the lifter
-    # check-in, as transcripts plus the training observations they produce.
+    # check-in, as transcripts plus the training observations they produce,
+    # and the exercise calendar their therapist laid out.
+    counts["exercise_assignments"] = 0
     for spec in patients:
         if spec.id in hirt.HISTORY:
             written = hirt.write_history(db, spec.id, today)
             counts["checkins"] += written["checkins"]
             counts["observations"] += written["observations"]
+            counts["exercise_assignments"] += hirt.write_schedule(db, spec.id, today)["assignments"]
 
     # adherence tasks + last-14-day records
     n_records = 0
