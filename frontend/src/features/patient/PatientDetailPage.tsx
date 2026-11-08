@@ -28,6 +28,7 @@ import HeadlineMetrics from './metrics/HeadlineMetrics'
 import MessagesSection from './plan/MessagesSection'
 import NextSteps from './plan/NextSteps'
 import TasksSection from './plan/TasksSection'
+import ExercisesThisWeek from '../hep/ExercisesThisWeek'
 import PlanSection from '../hep/PlanSection'
 import RecoveryTimeline from './RecoveryTimeline'
 import WearableConnectionCard from './WearableConnectionCard'
@@ -486,6 +487,10 @@ export default function PatientDetailPage() {
 
           <Block index={4} order="order-4">
             <CheckinHistory patientId={p.id} refreshing={refreshing} />
+          </Block>
+
+          <Block index={6} order="order-6" id="exercises-this-week">
+            <ExercisesThisWeek patientId={p.id} refreshing={refreshing} />
           </Block>
 
           <Block index={6} order="order-6" id="exercise-plan">

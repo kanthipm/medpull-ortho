@@ -1,11 +1,14 @@
 import { Archive, ArchiveRestore, Film, Pencil } from 'lucide-react'
 import { useState } from 'react'
 import type { Exercise, Vocab } from '../../api/hep'
-import { useUpdateExercise } from '../../api/hep'
+import { useHepOptions, useUpdateExercise } from '../../api/hep'
 import Modal from '../../components/Modal'
 import { useToast } from '../../components/Toast'
+import ClinicClipUpload from './ClinicClipUpload'
+import ClipPlayer from './ClipPlayer'
 import ExerciseForm from './ExerciseForm'
 import { statusChip, toBody, type ExerciseDraft } from './hepCopy'
+import { clipOf } from './scheduleCopy'
 
 /** One exercise as the patient will read it: the demonstration (or its
  *  placeholder until a clip is reviewed), the steps, equipment and
@@ -115,7 +118,7 @@ export default function ExercisePreviewModal({
         <ExerciseForm value={draft} onChange={setDraft} regions={regions} categories={categories} idPrefix={`edit-${exercise.id}`} />
       ) : (
         <div className="space-y-5">
-          <DemoPlaceholder exercise={exercise} />
+          <Demonstration exercise={exercise} />
           <section aria-labelledby={`steps-${exercise.id}`}>
             <h3 id={`steps-${exercise.id}`} className="mb-2 text-copy font-medium text-body">
               Steps
@@ -149,41 +152,52 @@ export default function ExercisePreviewModal({
   )
 }
 
-/** The demonstration slot. A reviewed clip plays muted on loop; until one is
- *  approved, a labelled still so the layout the patient will see is already
- *  the one the clinician previews. */
-function DemoPlaceholder({ exercise }: { exercise: Exercise }) {
+/** The demonstration slot: the clinic's own clip when it has one, else the
+ *  library's (a reviewed clip plays muted on loop), else a labelled still so
+ *  the layout the patient will see is already the one the clinician
+ *  previews. Under it, the upload: a therapist's own clip is approved on
+ *  the spot and wins wherever this exercise is assigned. */
+function Demonstration({ exercise }: { exercise: Exercise }) {
+  const options = useHepOptions()
+  const actor = options.data?.care_team[0]?.id ?? 'provider'
+  const found = clipOf(exercise.clinic_media ?? null, exercise.media)
+  const own = exercise.clinic_media?.playable ? { id: exercise.clinic_media.id } : null
   const media = exercise.media
-  if (media?.playable && media.url) {
-    return (
-      <video
-        className="aspect-video w-full rounded-surface bg-soft object-cover"
-        src={media.url}
-        poster={media.poster_url ?? undefined}
-        muted
-        loop
-        playsInline
-        autoPlay
-        controls
-        preload="metadata"
-        aria-label={`${exercise.title} demonstration`}
-      />
-    )
-  }
-  const label = media
+  const still = media
     ? media.approval_status === 'rejected'
       ? 'Demonstration needs a new clip'
       : 'Demonstration awaiting review'
-    : 'Demonstration coming soon'
+    : 'No demonstration yet'
+  const caption = found
+    ? found.own
+      ? `Your demonstration${exercise.clinic_media?.uploaded_by_name ? ` · ${exercise.clinic_media.uploaded_by_name}` : ''}`
+      : 'Library demonstration — your own replaces it for your patients'
+    : 'Patients see the written steps until there is a clip'
   return (
-    <div
-      role="img"
-      aria-label={`${label}. The steps below describe the movement.`}
-      className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-surface bg-soft text-secondary"
-    >
-      <Film aria-hidden size={28} />
-      <span className="text-copy font-medium">{label}</span>
-      <span className="text-label">Patients see the written steps until a clip is approved</span>
+    <div>
+      {found ? (
+        <ClipPlayer
+          src={found.url}
+          poster={found.clip.poster_url}
+          label={`${exercise.title} demonstration`}
+          autoPlay
+          className="aspect-video object-cover"
+        />
+      ) : (
+        <div
+          role="img"
+          aria-label={`${still}. The steps below describe the movement.`}
+          className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-surface bg-soft text-secondary"
+        >
+          <Film aria-hidden size={28} />
+          <span className="text-copy font-medium">{still}</span>
+          <span className="text-label">Film yours below, or wait for the library’s to be approved</span>
+        </div>
+      )}
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="meta">{caption}</span>
+        <ClinicClipUpload exerciseId={exercise.id} exerciseTitle={exercise.title} actor={actor} own={own} />
+      </div>
     </div>
   )
 }
