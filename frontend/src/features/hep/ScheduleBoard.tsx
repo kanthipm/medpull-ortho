@@ -163,6 +163,7 @@ export default function ScheduleBoard({
           assignment={opened.a}
           patientName={opened.p.name}
           days={days}
+          careTeam={schedule.data?.care_team ?? []}
           onClose={() => setOpenId(null)}
         />
       )}

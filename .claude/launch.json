@@ -4,7 +4,7 @@
     {
       "name": "api-local",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-lc", "cd backend && DATABASE_URL=sqlite:///./data/patientweb-dev.db GROQ_API_KEY= SENDBLUE_API_KEY= SENDBLUE_API_SECRET= S3_BUCKET= WARM_CACHES_ON_STARTUP=false uv run uvicorn app.main:app --port 8000"],
+      "runtimeArgs": ["-lc", "cd backend && DEMO_MODE=true DATABASE_URL=sqlite:///./data/patientweb-dev.db GROQ_API_KEY= SENDBLUE_API_KEY= SENDBLUE_API_SECRET= S3_BUCKET= WARM_CACHES_ON_STARTUP=false uv run uvicorn app.main:app --port 8000"],
       "port": 8000
     },
     {

@@ -174,3 +174,16 @@ evenings and their threads, and re-runs the engine.
 - `backend/app/api/patients.py` `progress` — the three numbers on the
   console's stats row (`frontend/src/features/patient/PatientDetailPage.tsx`).
 - `backend/tests/test_hirt.py` — every rule, the five tiers, every path.
+
+## The calendar, her clip, their clip (added 2026-11-08)
+
+What Dr. Gregg asked for after the first walkthrough, and how it shows:
+
+1. **The week grid** — Exercises → Schedule (`/exercise-schedule`): one row per lifter, one column per day, today marked. Each chip is an exercise with its dose; a done one carries a check and the pain the lifter reported after it; a skipped one is muted; a film badge means a clip plays on the phone. The `+` in any cell opens the assign dialog: pick from the library, dose, side, a note in her words, who assigns it, and the other days of the week to put it on too.
+2. **Her demonstration** — open any chip (or an exercise in the Library) → *Upload your demonstration*. The file input opens the camera on a phone; the clip goes straight to the clinic's bucket, is approved on upload, and from then on plays on every lifter's phone wherever that exercise is assigned. Standard exercises keep one clip per clinic; nothing is copied. The demo roster ships placeholder title cards (`backend/scripts/seed_hirt_media.py`) until she films hers.
+3. **The phone** — Today shows *Today's exercises* with the dose, her note and a Clip badge. The exercise screen plays her clip, lists the steps and precautions, then *Mark done*: pain after (0–10), an optional note, *Record a clip of you doing it* (the phone's camera; the clip is staged to storage and confirmed with the completion), *Send to Dr. Gregg*. *Can't do it today* skips with a reason. Today polls every ten seconds, so an assignment made in the room appears on the phone during the conversation.
+4. **What comes back** — the chip flips to done with the pain badge; the dialog shows when, pain, the note and the lifter's clip; the chart's thread gets a line "Did Step-Ups · pain 4/10 after" with the clip beside it; the patient page carries an *Exercises this week* strip.
+5. **The demo screen** — `/demo/hirt` on the demo stack only: the schedule on the left two thirds, an iPhone frame on the right running the real patient web app signed in as the lifter you pick (a demo-only session; no text message needed). Assign on the left, watch it land on the right; mark it done on the phone, watch the chip flip on the left.
+
+Seeded for the room: each lifter's calendar from program day 0 through next week in catalog exercises that fit the pathway, with outcomes matching the check-in story (Cole done with pain climbing 2 → 6, Devon mostly missed, Rafael quiet for three days, Tessa and June all done), their beta consent already accepted, and three returned clips. Contract and routes: `docs/dev/hep-schedule.md`.
+

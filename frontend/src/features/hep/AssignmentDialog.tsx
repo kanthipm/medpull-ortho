@@ -1,7 +1,8 @@
 import { ArrowRight, Check, Film, Trash2 } from 'lucide-react'
-import { useId, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useState, type KeyboardEvent } from 'react'
+import { attachmentSrc } from '../../api/attachments'
 import { ApiError } from '../../api/client'
-import type { Assignment, AssignmentCompletion } from '../../api/hep'
+import type { Assignment, AssignmentCompletion, CareTeamMember } from '../../api/hep'
 import {
   useCompleteAssignment,
   useDeleteAssignment,
@@ -36,12 +37,16 @@ export default function AssignmentDialog({
   assignment: a,
   patientName,
   days,
+  careTeam,
   onClose,
 }: {
   assignment: Assignment
   patientName: string
   /** The week on the grid, for "Move to…". */
   days: string[]
+  /** The clinic's own therapists (the schedule payload's care_team); the
+   *  library's whole care-team list is the fallback. */
+  careTeam?: CareTeamMember[]
   onClose: () => void
 }) {
   const toast = useToast()
@@ -53,7 +58,7 @@ export default function AssignmentDialog({
   const done = a.status === 'done'
   const chip = statusChip(a.status)
   const sides = options.data?.sides ?? []
-  const team = options.data?.care_team ?? []
+  const team = careTeam && careTeam.length > 0 ? careTeam : (options.data?.care_team ?? [])
 
   const [sets, setSets] = useState(a.sets == null ? '' : String(a.sets))
   const [reps, setReps] = useState(a.reps == null ? '' : String(a.reps))
@@ -216,7 +221,7 @@ export default function AssignmentDialog({
           </div>
         </section>
 
-        {done && a.completion && <Completion c={a.completion} title={a.title} patientName={patientName} id={`${ids}-done`} />}
+        {done && a.completion && <Completion patientId={a.patient_id} c={a.completion} title={a.title} patientName={patientName} id={`${ids}-done`} />}
         {a.status === 'skipped' && (
           <p className="rounded-control bg-soft px-4 py-3 text-copy text-ink">
             <span className="font-medium">Skipped.</span>
@@ -414,11 +419,13 @@ function Completion({
   c,
   title,
   patientName,
+  patientId,
   id,
 }: {
   c: AssignmentCompletion
   title: string
   patientName: string
+  patientId: string
   id: string
 }) {
   return (
@@ -435,14 +442,55 @@ function Completion({
       </h3>
       {c.note && <p className="mt-2 text-copy text-ink">“{c.note}”</p>}
       <div className="mt-3">
-        {c.video?.url ? (
-          <ClipPlayer src={c.video.url} label={`${patientName}’s clip of ${title}`} className="max-h-[360px]" />
+        {c.video ? (
+          <ReturnedClip patientId={patientId} video={c.video} label={`${patientName}’s clip of ${title}`} />
         ) : (
           <p className="meta">No clip was sent with it.</p>
         )}
       </div>
     </section>
   )
+}
+
+/** The patient's clip. On AWS the payload carries a presigned link; on a
+ *  laptop it carries none and the bytes come through the console's own
+ *  attachment route, fetched with the console's credential the way the
+ *  thread does it (api/attachments.ts). */
+function ReturnedClip({
+  patientId,
+  video,
+  label,
+}: {
+  patientId: string
+  video: NonNullable<AssignmentCompletion['video']>
+  label: string
+}) {
+  const [src, setSrc] = useState<string | null>(video.url ?? null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (video.url) return
+    let revoke: string | null = null
+    let cancelled = false
+    attachmentSrc(patientId, video.id)
+      .then(({ src: s, objectUrl }) => {
+        if (cancelled) {
+          if (objectUrl) URL.revokeObjectURL(s)
+          return
+        }
+        if (objectUrl) revoke = s
+        setSrc(s)
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true)
+      })
+    return () => {
+      cancelled = true
+      if (revoke) URL.revokeObjectURL(revoke)
+    }
+  }, [patientId, video.id, video.url])
+  if (failed) return <p className="meta">The clip could not be loaded.</p>
+  if (!src) return <p className="meta">Loading the clip…</p>
+  return <ClipPlayer src={src} label={label} className="max-h-[360px]" />
 }
 
 function NumberField({

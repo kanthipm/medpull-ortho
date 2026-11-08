@@ -573,6 +573,16 @@ def test_the_seed_lays_out_the_five_lifters_calendars(db):
 
     cole = done_pain("hirt-cole")
     assert max(cole[:20]) == 2 and cole[-1] == 6  # the climb lands on the last day
+
+    # the lifters accepted the beta terms when they enrolled, so neither a
+    # phone nor the demo screen's frame stops at the consent screen
+    from app.models.patient import Patient
+    from app.personal import auth
+
+    for spec in hirt.HIRT_PATIENTS:
+        consent = auth.current_consent(db, db.get(Patient, spec.id))
+        assert consent is not None and consent.version == auth.CONSENT_VERSION, spec.id
+    assert hirt.ensure_consent(db, "hirt-cole") == 0  # idempotent
     assert max(done_pain("hirt-tessa")) <= 2 and set(done_pain("hirt-june")) <= {1, 2}
     skips = db.scalars(select(ExerciseAssignment).where(
         ExerciseAssignment.patient_id == "hirt-devon", ExerciseAssignment.status == "skipped")).all()
@@ -584,5 +594,7 @@ def test_the_seed_lays_out_the_five_lifters_calendars(db):
     # a second write is a clean replacement, not a second calendar
     before = db.scalar(select(func.count(ExerciseAssignment.id)))
     counts = hirt.write_schedule(db, "hirt-june", TODAY)
-    assert counts == {"assignments": 88, "done": 56, "skipped": 0}
+    assert {k: counts[k] for k in ("assignments", "done", "skipped")} == {
+        "assignments": 88, "done": 56, "skipped": 0}
+    assert counts["consents"] == 0  # the first write already gave her the beta consent
     assert db.scalar(select(func.count(ExerciseAssignment.id))) == before

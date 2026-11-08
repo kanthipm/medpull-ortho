@@ -409,6 +409,28 @@ def _outcome(patient_id: str, program_day: int, key: str) -> tuple[str, str | No
     return "done", None
 
 
+def ensure_consent(db, patient_id: str) -> int:
+    """The lifters enrolled by text and accepted the beta terms in the room.
+    Without a row the app stops at the consent screen the first time a
+    phone — or the demo screen's frame — opens as them. Idempotent; returns
+    the number of rows added (0 or 1)."""
+    from app.models.patient import Patient
+    from app.models.personal import Consent
+    from app.personal import auth
+
+    patient = db.get(Patient, patient_id)
+    if patient is None or auth.current_consent(db, patient) is not None:
+        return 0
+    db.add(Consent(
+        patient_id=patient_id, kind=auth.CONSENT_KIND, version=auth.CONSENT_VERSION,
+        text_sha256=auth.consent_hash(),
+        scopes={"data_storage": True, "ai_processing": True, "research_use": True, "beta_ack": True},
+        signature=patient.name, device_name="enrolled by text",
+    ))
+    db.flush()
+    return 1
+
+
 def write_schedule(db, patient_id: str, today: date) -> dict[str, int]:
     """One lifter's calendar, program day 0 through today + 7, with the past
     days' outcomes. Needs the catalog for the exercise rows and upserts it
@@ -420,7 +442,7 @@ def write_schedule(db, patient_id: str, today: date) -> dict[str, int]:
     from app.hep.models import Exercise, ExerciseAssignment
 
     items = SCHEDULE.get(patient_id)
-    counts = {"assignments": 0, "done": 0, "skipped": 0}
+    counts = {"assignments": 0, "done": 0, "skipped": 0, "consents": ensure_consent(db, patient_id)}
     if not items:
         return counts
     spec = next(p for p in HIRT_PATIENTS if p.id == patient_id)
