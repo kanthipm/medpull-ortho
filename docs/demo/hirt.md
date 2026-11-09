@@ -187,3 +187,19 @@ What Dr. Gregg asked for after the first walkthrough, and how it shows:
 
 Seeded for the room: each lifter's calendar from program day 0 through next week in catalog exercises that fit the pathway, with outcomes matching the check-in story (Cole done with pain climbing 2 → 6, Devon mostly missed, Rafael quiet for three days, Tessa and June all done), their beta consent already accepted, and three returned clips. Contract and routes: `docs/dev/hep-schedule.md`.
 
+## The guided task and her side (added 2026-11-08, second pass)
+
+On the phone, an exercise is a task done step by step, each step one screen with one button:
+1. **You have this to do**: the exercise, dose, her note, and "Pain right now?" (one tap, skippable). **Start**.
+2. **Your watch** (when she set the wearable to optional or required): "Checking for your watch…", then a green check, "Detected · Apple Watch". The detection is a demo stand-in.
+3. **Set up your phone**: prop it at knee height, two metres away. **Ready**.
+4. **Do the exercise**: her clip looping, the steps, a timer, "Set 1 of 2 · Next set", a rest countdown between sets.
+5. **Record your attempt** (when she asked for a clip): a live camera with a 3-2-1 countdown where the browser records MP4 (Safari, recent Chrome); elsewhere the camera roll. On the demo stack, **Use a sample clip (demo)** stands in, so the room never waits on a camera prompt. Required means no skipping.
+6. **Checking your recording**: a ring for two seconds, then "Looks good — saved for Dr. Gregg" while the upload actually happens. The check itself is a demo stand-in.
+7. **How did it go?**: pain after and effort, 0–10, and a note. **Send to Dr. Gregg**.
+8. **Done**: pain before → after, effort, time, sets × reps × load, watch on, the clip.
+
+On her side the chip flips to done with pain and effort and an amber dot; the row header carries adherence ("19 of 20 · 95%") and "clips to review"; **Review** (Exercises → Review) lists new clips newest first, opens them beside her demonstration (**Compare**), and **Send reply** puts her note in the lifter's Care thread and on the done card. Also there: load and target effort on every dose, clip and watch requirements per exercise (off / optional / required), **Copy last week**, and **Programs** (templates by phase, applied to a lifter for a number of weeks). The phone's **See the week** shows the program as a 14-day calendar.
+
+For the room, the order that tells the story in under three minutes: on `/demo/hirt`, pick Cole on the phone; on the left, `+` on today, Mini Squats, 2 × 10 at 12 kg, clip and watch required, a note; it lands on the phone at once; run the task on the phone with the sample clip; watch the chip flip on the left; open Review, Compare, reply; the reply shows on the phone.
+
