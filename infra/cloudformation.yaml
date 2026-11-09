@@ -110,6 +110,13 @@ Parameters:
       access token. deploy.sh writes it when CONSOLE_ACCESS_TOKEN is set;
       with the parameter absent every console route stays open (the public
       demo), and with it present the SPA asks for the token on /login.
+  HepClinicId:
+    Type: String
+    Default: ""
+    Description: >-
+      The hospital the open (or staff) console's exercise pages act for. Empty
+      picks the active hospital with the most charts. The demo stack sets
+      "hirt", so its demo screen needs no sign-in.
   AppTimezone:
     Type: String
     Default: ""
@@ -787,6 +794,7 @@ Resources:
           CONSOLE_ACCESS_TOKEN_PARAMETER: !Ref ConsoleAccessTokenParameter
           DEMO_MODE: !Ref DemoMode
           PERSONAL_PAYWALL: !Ref PersonalPaywall
+          HEP_CLINIC_ID: !Ref HepClinicId
           TZ: !If [HasTimezone, !Ref AppTimezone, !Ref AWS::NoValue]
           ALLOW_MOCK_WEBHOOK: !Ref AllowMockWebhook
           SENDBLUE_VERIFIED_CONTACTS_ONLY: !Ref SendblueVerifiedContactsOnly

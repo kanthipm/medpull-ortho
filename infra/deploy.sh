@@ -76,6 +76,8 @@ case "$DEMO_MODE" in true|false) ;; *) echo "DEMO_MODE must be true or false" >&
 # product; on, the apps show the plan step and lapsed accounts are closed.
 PERSONAL_PAYWALL="${PERSONAL_PAYWALL:-$(dotenv_value PERSONAL_PAYWALL)}"
 PERSONAL_PAYWALL="${PERSONAL_PAYWALL:-false}"
+# The clinic the open console's exercise pages act for (empty = the largest).
+HEP_CLINIC_ID="${HEP_CLINIC_ID-$(dotenv_value HEP_CLINIC_ID)}"
 # The functions' TZ (empty = UTC); the demo stack sets America/Chicago.
 APP_TIMEZONE="${APP_TIMEZONE-$(dotenv_value APP_TIMEZONE)}"
 case "$PERSONAL_PAYWALL" in true|false) ;; *) echo "PERSONAL_PAYWALL must be true or false" >&2; exit 1 ;; esac
@@ -388,6 +390,7 @@ PARAMS=(
   "ConsoleAccessTokenParameter=$CONSOLE_TOKEN_PARAM"
   "DemoMode=$DEMO_MODE"
   "AppTimezone=$APP_TIMEZONE"
+  "HepClinicId=$HEP_CLINIC_ID"
   "PersonalPaywall=$PERSONAL_PAYWALL"
   "AllowMockWebhook=$ALLOW_MOCK_WEBHOOK"
   "SendblueVerifiedContactsOnly=$SENDBLUE_VERIFIED_CONTACTS_ONLY"
