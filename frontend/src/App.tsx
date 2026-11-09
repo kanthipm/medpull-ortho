@@ -35,6 +35,9 @@ const ExerciseLibraryPage = lazy(() => import('./features/hep/ExerciseLibraryPag
 const ExercisePlansPage = lazy(() => import('./features/hep/ExercisePlansPage'))
 const PlanEditorPage = lazy(() => import('./features/hep/PlanEditorPage'))
 const SchedulePage = lazy(() => import('./features/hep/SchedulePage'))
+const ReviewPage = lazy(() => import('./features/hep/ReviewPage'))
+const ProgramsPage = lazy(() => import('./features/hep/ProgramsPage'))
+const ProgramEditorPage = lazy(() => import('./features/hep/ProgramEditorPage'))
 const DemoScreenPage = lazy(() => import('./features/hep/DemoScreenPage'))
 
 function preloadRoutes() {
@@ -92,6 +95,9 @@ export default function App() {
         />
         <Route path="integrations" element={<Page><IntegrationsPage /></Page>} />
         <Route path="exercise-schedule" element={<Page><SchedulePage /></Page>} />
+        <Route path="exercise-review" element={<Page><ReviewPage /></Page>} />
+        <Route path="exercise-programs" element={<Page><ProgramsPage /></Page>} />
+        <Route path="exercise-programs/:id" element={<Page><ProgramEditorPage /></Page>} />
         <Route path="exercise-library" element={<Page><ExerciseLibraryPage /></Page>} />
         <Route path="exercise-plans" element={<Page><ExercisePlansPage /></Page>} />
         <Route path="exercise-plans/:id" element={<Page><PlanEditorPage /></Page>} />
