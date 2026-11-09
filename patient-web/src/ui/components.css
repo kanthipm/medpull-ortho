@@ -1220,6 +1220,146 @@ button.round-btn:active:not(:disabled), .press-88:active { transform: scale(0.88
   background: linear-gradient(180deg, rgb(var(--glass-solid-top)), rgb(var(--glass-solid-bottom)));
   box-shadow: 0 -1px 0 rgb(var(--hairline));
 }
+/* The same controls on a screen the tab bar still overlays (the session):
+   they sit above it. */
+.sheet-controls.above-tabbar { padding-bottom: calc(14px + var(--tabbar-h) + var(--safe-bottom)); }
+/* The exercise screen's bar once Start is the primary: the capsule grows a
+   quieter second row for "Just mark it done", so three actions fit a phone. */
+.action-bar.stacked { flex-direction: column; align-items: stretch; gap: 0; padding: 6px 14px 0; border-radius: var(--r-control); }
+.action-bar .action-row { display: flex; align-items: center; gap: 12px; }
+.action-bar .action-sub { display: flex; justify-content: center; min-height: 40px; box-shadow: 0 -0.5px 0 rgb(var(--hairline)); }
+.action-bar .action-sub .btn-text { color: rgb(var(--brand-ink)); font-weight: 500; }
+/* The small facts under an exercise's title: a clip asked for, the watch on. */
+.ask-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.ask-pills .schedule-pill { display: inline-flex; align-items: center; gap: 5px; }
+
+/* The program's fourteen days: two rows of seven, each day a column of
+   weekday, date and one dot per exercise. Today ringed, the chosen day
+   filled; a rest day has no dots. */
+.day-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px 4px; padding: 8px 10px 10px; }
+.day-strip .week-label { grid-column: 1 / -1; padding: 6px 6px 2px; font-size: var(--s-label); font-weight: 500; color: rgb(var(--muted)); }
+.day-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-height: 66px;
+  padding: 6px 0 7px;
+  border-radius: 14px;
+  transition: transform var(--dur-press) var(--spring), background-color var(--dur-state) var(--ease);
+}
+.day-cell:active { transform: scale(0.94); }
+.day-cell .wd { font-size: var(--s-axis); font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: rgb(var(--muted)); }
+.day-cell.past .wd { color: rgb(var(--faint)); }
+.day-cell .num {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: var(--s-copy-lg);
+  font-weight: 500;
+  color: rgb(var(--ink));
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-state) var(--ease), color var(--dur-state) var(--ease);
+}
+.day-cell.past .num { color: rgb(var(--body)); font-weight: 400; }
+.day-cell.today .num { color: rgb(var(--brand-ink)); box-shadow: inset 0 0 0 1.5px rgb(var(--brand)); }
+.day-cell[aria-pressed='true'] .num { color: rgb(var(--on-action)); background: rgb(var(--action)); box-shadow: none; }
+.day-cell.today[aria-pressed='true'] .num { box-shadow: 0 0 0 2px rgb(var(--canvas)), 0 0 0 3.5px rgb(var(--brand)); }
+.day-dots { display: flex; justify-content: center; gap: 3px; min-height: 5px; }
+.day-dots i { width: 5px; height: 5px; border-radius: 50%; background: rgb(var(--line-strong) / 0.5); }
+.day-dots i.done { background: rgb(var(--brand)); }
+.day-dots i.missed { background: rgb(var(--risk-med)); }
+.day-dots i.skipped { background: none; box-shadow: inset 0 0 0 1.2px rgb(var(--line-strong) / 0.8); }
+.dot-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0 16px 12px; font-size: var(--s-label); color: rgb(var(--muted)); }
+.dot-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.dot-legend i { width: 6px; height: 6px; border-radius: 50%; background: rgb(var(--line-strong) / 0.5); }
+.dot-legend i.done { background: rgb(var(--brand)); }
+.dot-legend i.missed { background: rgb(var(--risk-med)); }
+
+/* The session: the clock, the set pips, the rest and hold countdowns. */
+.session-clock {
+  font-size: 56px;
+  font-weight: 300;
+  letter-spacing: -2.7px;
+  line-height: 1;
+  color: rgb(var(--ink));
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+.session-clock.rest { color: rgb(var(--brand-ink)); }
+.set-pips { display: flex; gap: 6px; }
+.set-pips i { flex: 1; height: 6px; border-radius: 999px; background: rgb(var(--track)); transition: background-color var(--dur-state) var(--ease); }
+.set-pips i.done { background: rgb(var(--brand)); }
+.set-pips i.now { background: rgb(var(--ink)); }
+.on-tint .set-pips i { background: rgb(var(--panel) / 0.9); }
+.on-tint .set-pips i.done { background: rgb(var(--brand)); }
+.on-tint .set-pips i.now { background: rgb(var(--ink)); }
+/* What was done: sets, reps and load as three short fields. */
+.dose-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.dose-grid label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dose-grid label > span { font-size: var(--s-label); color: rgb(var(--muted)); text-align: center; }
+.dose-grid .field { text-align: center; padding-inline: 8px; font-variant-numeric: tabular-nums; }
+/* The guided task: the step strip at the top of every stage. */
+.task-strip { display: flex; align-items: center; gap: 12px; padding: 4px 2px 0; }
+.task-dots { display: flex; flex: 1; gap: 5px; }
+.task-dots i { flex: 1; height: 4px; border-radius: 999px; background: rgb(var(--track)); transition: background-color var(--dur-state) var(--ease); }
+.task-dots i.done { background: rgb(var(--brand)); }
+.task-dots i.now { background: rgb(var(--ink)); }
+/* The progress ring of a checking stage: an arc that turns while it works. */
+.ring {
+  display: inline-block;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: conic-gradient(rgb(var(--brand)) var(--turn, 25%), rgb(var(--track)) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  animation: mp-ring-turn 2s linear infinite;
+}
+@keyframes mp-ring-turn { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+/* The camera: the countdown in the frame, the red dot and clock while recording. */
+.rec-count { font-size: 96px; font-weight: 300; letter-spacing: -4px; line-height: 1; color: #fff; text-shadow: 0 2px 18px rgb(0 0 0 / 0.4); animation: mp-pop var(--dur-press) var(--spring) both; }
+.rec-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: var(--s-label);
+  font-weight: 500;
+  color: #fff;
+  background: rgb(0 0 0 / 0.45);
+}
+.rec-badge i { width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--system-red)); animation: mp-blink 1s steps(2) infinite; }
+@keyframes mp-blink { to { opacity: 0.2; } }
+/* Setting up the phone: the illustration's strokes. */
+.setup-art { display: block; width: 100%; height: auto; }
+.setup-art .floor { stroke: rgb(var(--line-strong)); stroke-width: 1.5; stroke-linecap: round; }
+.setup-art .phone { fill: rgb(var(--ink)); }
+.setup-art .phone-screen { fill: rgb(var(--brand-tint)); }
+.setup-art .prop { stroke: rgb(var(--muted)); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 3 4; fill: none; }
+.setup-art .person { stroke: rgb(var(--brand)); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.setup-art .person circle { fill: rgb(var(--brand)); stroke: none; }
+.setup-art .measure { stroke: rgb(var(--muted)); stroke-width: 1.2; stroke-dasharray: 4 4; fill: none; }
+.setup-art .label { font-size: 11px; fill: rgb(var(--muted)); font-family: inherit; }
+/* The done card's figures — pain, effort, the clock — side by side, each
+   with its words under it; on a phone they share the width three ways. */
+.outcome-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 10px 12px; }
+/* The therapist's reply under a done exercise. */
+.review-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-control);
+  background: rgb(var(--panel) / 0.75);
+  box-shadow: inset 0 0 0 1px rgb(var(--line));
+}
 
 /* ── Tile art — white line art on a gradient ────────────────────────────── */
 .art-grid { stroke: rgb(255 255 255 / 0.22); stroke-width: 1; }
