@@ -282,6 +282,17 @@ export class APIClient {
     return unwrapAssignment(r)
   }
 
+  /** Whether this server is a demo stack (`/api/health.demo`), asked once.
+   *  The guided task offers a sample clip there, so a presenter is never
+   *  stuck at a camera picker in front of the room. */
+  isDemo(): Promise<boolean> {
+    this.demoCheck ??= this.get<{ demo?: boolean }>('/api/health')
+      .then((h) => h.demo === true)
+      .catch(() => false)
+    return this.demoCheck
+  }
+  private demoCheck: Promise<boolean> | null = null
+
   /** A demonstration clip's link, when it is an API path rather than a
    *  presigned object link: it has to be fetched under this session, and a
    *  `<video src>` cannot carry the header. */

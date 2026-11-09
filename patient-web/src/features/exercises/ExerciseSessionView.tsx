@@ -505,6 +505,27 @@ function RecordStage({ a, strip, onLeave, onUse, onSkip }: {
   const input = useRef<HTMLInputElement | null>(null)
   const therapist = therapistShortName(a.assignedByName)
   const required = videoRequirement(a) === 'required'
+  const app = useApp()
+  const [demo, setDemo] = useState(false)
+  const [sampling, setSampling] = useState(false)
+  useEffect(() => { void app.api.isDemo().then(setDemo) }, [app])
+
+  /** Demo stacks only: the therapist's own demonstration stands in for the
+   *  patient's attempt, so the task runs end to end in front of a room
+   *  whatever the browser's camera support. Never offered on the real app. */
+  const takeSample = async () => {
+    const url = a.video?.url
+    if (!url) return
+    setSampling(true)
+    try {
+      const blob = app.api.needsSession(url) ? await app.api.mediaBlob(url) : await (await fetch(url)).blob()
+      stopRecording()
+      onUse({ data: blob, contentType: 'video/mp4', filename: 'attempt.mp4' })
+    } catch {
+      setFallback({ name: 'sample', message: 'The sample clip could not be loaded. Try recording instead.' })
+      setSampling(false)
+    }
+  }
 
   // The camera, for as long as this stage is showing.
   useEffect(() => {
@@ -636,6 +657,10 @@ function RecordStage({ a, strip, onLeave, onUse, onSkip }: {
       bottom={
         <>
           {bottom}
+          {demo && a.video?.url && mode !== 'recording' && mode !== 'countdown' && mode !== 'review' && (
+            <SecondaryButton title={sampling ? 'Loading the sample…' : 'Use a sample clip (demo)'} icon="film"
+              disabled={sampling} onClick={() => void takeSample()} />
+          )}
           {onSkip && mode !== 'recording' && mode !== 'countdown' && (
             <MPButton kind="plain" bare className="center" onClick={onSkip}><span className="t-copy-m">Skip recording</span></MPButton>
           )}
