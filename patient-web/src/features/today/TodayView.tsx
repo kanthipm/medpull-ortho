@@ -99,7 +99,11 @@ export function TodayView() {
 
           {hasExerciseSchedule(app.exercises) && (
             <Rise index={2} id="exercises">
-              <ExercisesCard feed={app.exercises} onOpen={(a) => navigate(`/today/exercises/${a.id}`, { state: { from: 'Today' } })} />
+              <ExercisesCard
+                feed={app.exercises}
+                onOpen={(a) => navigate(`/today/exercises/${a.id}`, { state: { from: 'Today' } })}
+                onProgram={() => navigate('/today/program', { state: { from: 'Today' } })}
+              />
             </Rise>
           )}
 

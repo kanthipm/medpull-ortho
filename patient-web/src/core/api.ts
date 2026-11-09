@@ -7,9 +7,9 @@ import { AppConfig, deviceName } from './config'
 import type {
   AgentResponse, AppleSession, Candidate, ChatAttachment, ChatMessage, CompleteResponse,
   ConsentAcceptance, ConsentDocument, ConsentStatus, EnrollResponse, ExerciseAssignment,
-  ExerciseCompletionBody, ExercisesResponse, GaitUpload, GaitUploadResponse,
+  ExerciseCompletionBody, ExercisesResponse, ExerciseStartBody, GaitUpload, GaitUploadResponse,
   Hospital, LinkResponse, Me, MessagesResponse, MotionUpload, MotionUploadResponse, OKResponse,
-  PatientMetricsResponse, PortfolioResponse, Procedure, ProgressResponse, RangeOfMotionUpload,
+  PatientMetricsResponse, PortfolioResponse, Procedure, ProgramResponse, ProgressResponse, RangeOfMotionUpload,
   RangeOfMotionResponse, SentMessageResponse, SixMinuteWalkUpload, SixMinuteWalkResponse,
   StagedUpload, TasksResponse, VerificationStatus, WearablesResponse, Answers,
 } from './models'
@@ -228,9 +228,30 @@ export class APIClient {
     return this.get('/api/mobile/exercises', date ? { date } : {}, signal)
   }
 
-  /** "Mark done": the pain after, a note, and the clip that was staged in
-   *  storage — the server confirms the clip and writes the thread line. The
-   *  contract answers `{ assignment }`; a bare assignment is read too. */
+  /** The program: fourteen days around today unless told otherwise, each
+   *  day with its exercises and the counts the strip's dots draw. */
+  program(start?: string, days?: number, signal?: AbortSignal): Promise<ProgramResponse> {
+    const query: Record<string, string> = {}
+    if (start) query.start = start
+    if (days) query.days = String(days)
+    return this.get('/api/mobile/exercises/program', query, signal)
+  }
+
+  /** "Start": the pain right now and whether the watch is on. The row
+   *  comes back with its session begun; starting again moves the clock. */
+  async startExercise(assignmentId: number, body: ExerciseStartBody): Promise<ExerciseAssignment> {
+    const r = await this.post<{ assignment: ExerciseAssignment } | ExerciseAssignment>(
+      `/api/mobile/exercises/${assignmentId}/start`, { painBefore: body.painBefore, wearableWorn: body.wearableWorn },
+    )
+    return unwrapAssignment(r)
+  }
+
+  /** "Mark done" or a session's "Finish": the pain after, how hard it was,
+   *  what was done, a note, the clip that was staged in storage, and the
+   *  session's clock — the server confirms the clip and writes the thread
+   *  line. A field the sheet did not ask goes as null; the server keeps its
+   *  own `started_at` when the phone sends none. The contract answers
+   *  `{ assignment }`; a bare assignment is read too. */
   async completeExercise(assignmentId: number, body: ExerciseCompletionBody): Promise<ExerciseAssignment> {
     const v = body.video
     const video = v ? {
@@ -241,7 +262,13 @@ export class APIClient {
       contentType: v.contentType, byteSize: v.byteSize, filename: v.filename,
     } : null
     const r = await this.post<{ assignment: ExerciseAssignment } | ExerciseAssignment>(
-      `/api/mobile/exercises/${assignmentId}/complete`, { painAfter: body.painAfter, note: body.note, video },
+      `/api/mobile/exercises/${assignmentId}/complete`, {
+        painAfter: body.painAfter, note: body.note, video,
+        effort: body.effort ?? null,
+        setsDone: body.setsDone ?? null, repsDone: body.repsDone ?? null, loadDoneKg: body.loadDoneKg ?? null,
+        wearableWorn: body.wearableWorn ?? null,
+        startedAt: body.startedAt ?? null, endedAt: body.endedAt ?? null,
+      },
     )
     return unwrapAssignment(r)
   }

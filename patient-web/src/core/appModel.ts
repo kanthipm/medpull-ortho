@@ -11,10 +11,14 @@ import { HealthConnector } from './health'
 import { Keychain } from './keychain'
 import type {
   AgentResponse, Answers, ChatMessage, ConsentAcceptance, ExerciseAssignment, ExerciseCompletionBody,
-  ExercisesResponse, Me, PatientMetricsResponse, PortfolioMetric, ProgressDay, RecoveryTask,
-  TasksResponse, WearableSummary,
+  ExercisesResponse, ExerciseStartBody, Me, PatientMetricsResponse, PortfolioMetric, ProgramDay,
+  ProgramResponse, ProgressDay, RecoveryTask, TasksResponse, WearableSummary,
 } from './models'
 import { Dates, isPersonalProfile } from './models'
+
+/** The program window: a week back, today, and the six days ahead. */
+export const PROGRAM_DAYS = 14
+export const PROGRAM_DAYS_BACK = 7
 
 export type Phase = 'launching' | 'onboarding' | 'home'
 /** The four tabs of a hospital record: Today, Progress, Measure, Care. */
@@ -35,6 +39,9 @@ export class AppModel {
   /** Today's exercise schedule (docs/dev/hep-schedule.md); null until the
    *  first answer, which is also what a server without the route leaves. */
   exercises: ExercisesResponse | null = null
+  /** The fourteen days around today (the Program screen); read when that
+   *  screen opens, then kept fresh beside the day while it is showing. */
+  program: ProgramResponse | null = null
   messages: ChatMessage[] = []
   progress: ProgressDay[] = []
   portfolio: PortfolioMetric[] = []
@@ -129,6 +136,7 @@ export class AppModel {
     this.me = null
     this.tasks = { open: [], recent: [] }
     this.exercises = null
+    this.program = null
     this.messages = []
     this.progress = []
     this.portfolio = []
@@ -240,6 +248,34 @@ export class AppModel {
   private exerciseWatchers = 0
   private exerciseTimer: number | null = null
 
+  /** The program around today: a week back and the six days ahead, from
+   *  the phone's own day. One call at a time, like the day's feed. */
+  refreshProgram(surface = true): Promise<Outcome> {
+    if (this.programInFlight) return this.programInFlight
+    const today = new Date()
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - PROGRAM_DAYS_BACK)
+    const run = this.refresh(surface, async () => {
+      this.program = await this.api.program(Dates.dayString(start), PROGRAM_DAYS)
+      this.notify()
+    }).finally(() => { this.programInFlight = null })
+    this.programInFlight = run
+    return run
+  }
+
+  private programInFlight: Promise<Outcome> | null = null
+  private programWatchers = 0
+
+  /** Keep the program fresh too while the Program screen is showing: the
+   *  same ten-second tick re-reads both. Returns the stop. */
+  watchProgram(): () => void {
+    this.programWatchers++
+    const stopDay = this.watchExercises()
+    return () => {
+      this.programWatchers--
+      stopDay()
+    }
+  }
+
   /** Keep the schedule fresh while a screen of the Today tab is showing:
    *  every ten seconds while the page is visible, nothing while it is not,
    *  and once more the moment it comes back. Returns the stop. A therapist
@@ -262,18 +298,25 @@ export class AppModel {
     }
   }
 
+  /** One tick of the schedule's poll: the day, and the program while a
+   *  screen is showing it. */
+  private pollExercises(): void {
+    void this.refreshExercises(undefined, false)
+    if (this.programWatchers > 0) void this.refreshProgram(false)
+  }
+
   /** The demo screen's frame: the console, on the same origin, says the
    *  schedule changed, so the day is re-read now rather than on the next
    *  poll. A message from any other origin is ignored. */
   private onExerciseMessage = (e: MessageEvent) => {
     if (e.origin !== window.location.origin) return
     const data = e.data as { type?: unknown } | null
-    if (data && data.type === 'medpull:exercises-changed') void this.refreshExercises(undefined, false)
+    if (data && data.type === 'medpull:exercises-changed') this.pollExercises()
   }
 
   private onExerciseVisibility = () => {
     if (document.visibilityState === 'visible') {
-      void this.refreshExercises(undefined, false)
+      this.pollExercises()
       this.startExerciseTimer()
     } else {
       this.stopExerciseTimer()
@@ -283,7 +326,7 @@ export class AppModel {
   private startExerciseTimer(): void {
     this.stopExerciseTimer()
     if (document.visibilityState !== 'visible') return
-    this.exerciseTimer = window.setInterval(() => { void this.refreshExercises(undefined, false) }, 10_000)
+    this.exerciseTimer = window.setInterval(() => this.pollExercises(), 10_000)
   }
 
   private stopExerciseTimer(): void {
@@ -306,8 +349,16 @@ export class AppModel {
     await this.refreshTasks()
   }
 
-  /** "Mark done" on an exercise: the row comes back done, and the thread
-   *  gained a line (the server writes it), so the thread is refreshed too. */
+  /** "Start" on an exercise: the row comes back with its session begun. */
+  async startExercise(a: ExerciseAssignment, body: ExerciseStartBody): Promise<ExerciseAssignment> {
+    const updated = await this.api.startExercise(a.id, body)
+    this.replaceAssignment(updated)
+    return updated
+  }
+
+  /** "Mark done" or "Finish" on an exercise: the row comes back done, and
+   *  the thread gained a line (the server writes it), so the thread is
+   *  refreshed too. */
   async completeExercise(a: ExerciseAssignment, body: ExerciseCompletionBody): Promise<ExerciseAssignment> {
     const updated = await this.api.completeExercise(a.id, body)
     this.replaceAssignment(updated)
@@ -322,14 +373,35 @@ export class AppModel {
     return updated
   }
 
+  /** The row as the server now has it, wherever this app holds it: the
+   *  day's list, the still-to-do group, the program's days. The counts
+   *  beside each day are recounted the way the server counts them. */
   private replaceAssignment(updated: ExerciseAssignment): void {
+    const swap = (x: ExerciseAssignment) => (x.id === updated.id ? updated : x)
     const feed = this.exercises
-    if (!feed) return
-    const items = feed.items.map((x) => (x.id === updated.id ? updated : x))
-    const week = feed.week.map((d) => (d.date === feed.date
-      ? { ...d, done: items.filter((x) => x.status === 'done').length }
-      : d))
-    this.exercises = { ...feed, items, week }
+    if (feed) {
+      const items = feed.items.map(swap)
+      const overdue = feed.overdue?.map(swap)
+      const week = feed.week.map((d) => (d.date === feed.date
+        ? { ...d, done: items.filter((x) => x.status === 'done').length, skipped: items.filter((x) => x.status === 'skipped').length }
+        : d))
+      this.exercises = { ...feed, items, overdue, week }
+    }
+    const program = this.program
+    if (program) {
+      const today = Dates.dayString(new Date())
+      const days: ProgramDay[] = program.days.map((d) => {
+        if (!d.items.some((x) => x.id === updated.id)) return d
+        const items = d.items.map(swap)
+        return {
+          ...d, items,
+          done: items.filter((x) => x.status === 'done').length,
+          skipped: items.filter((x) => x.status === 'skipped').length,
+          missed: d.date < today ? items.filter((x) => x.status === 'assigned').length : 0,
+        }
+      })
+      this.program = { ...program, days }
+    }
     this.notify()
   }
 
