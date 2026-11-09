@@ -254,3 +254,158 @@ the upload button.
 The iPhone and Android apps (they keep showing plans and tasks; the schedule
 reaches them in a later pass), reminders for an assigned day, and any change to the
 risk engine (the schedule's completions do not feed the tier yet).
+
+---
+
+## Second pass (2026-11-08): the whole pipeline, the way a PT would run it
+
+What the first demo showed and what H.I.R.T. asked for next: the patient sees
+their whole program by day, starts an exercise as a session (wearable on, if
+she asks for it), films it when she asks for it, reports how it felt, and all
+of it lands in front of her with a place to answer. Requirements are hers to
+set per exercise. The foundation (columns, the templates table) is already on
+main; the three surfaces build the rest against this section.
+
+### Data (already in `app/hep/models.py`)
+
+- `ExerciseAssignment` gains the lifter's dose `load_kg` and `rpe_target`; the
+  therapist's `video_requirement` and `wearable_requirement`, each
+  `off | optional | required` (`REQUIREMENTS`, default `optional`); the session
+  `started_at`, `ended_at`, `duration_s`, `pain_before`, `wearable_worn`,
+  `hr_avg`, `hr_max`; the completion's `effort` (RPE 0–10), `sets_done`,
+  `reps_done`, `load_done_kg`; and the review `reviewed_at`, `reviewed_by`,
+  `review_note`.
+- `exercise_templates` (`ExerciseTemplate`): a clinic's program — `name`,
+  `description`, `weeks`, `items` JSON (each item is an assignment's fields with
+  `weekdays` `[0..6]` or null for every day, plus `exercise_key` or
+  `exercise_id`).
+
+### Payload additions
+
+**Assignment** gains `load_kg`, `rpe_target`, `video_requirement`,
+`wearable_requirement`, `dose` now ending with the load when set ("3 sets × 10
+reps · 12 kg · Left"), and `session: { "started_at", "ended_at", "duration_s",
+"pain_before", "wearable_worn", "hr_avg", "hr_max" } | null` (null until the
+patient starts it). **Completion** gains `effort`, `sets_done`, `reps_done`,
+`load_done_kg`, `review: { "at", "by", "by_name", "note" } | null`. A done row
+with a clip and no review is "awaiting review".
+
+**Schedule patient row** gains `adherence: { "assigned", "done", "skipped",
+"missed", "pct" }` for the seven days ending today and `load_week: { "this",
+"last", "change_pct" }` (sum of `load_done_kg × reps_done`, else `load_kg ×
+reps × sets` of done rows), and `awaiting_review` (count).
+
+### Console routes (`/api/hep`, clinic from `_clinic`)
+
+- `POST /hep/schedule` and `PATCH /hep/schedule/{id}` accept `load_kg`,
+  `rpe_target`, `video_requirement`, `wearable_requirement` (validated against
+  `REQUIREMENTS`; load 0–500, RPE 0–10).
+- `POST /hep/schedule/{id}/review` `{ "note", "actor" }` → Assignment. Sets the
+  review fields and, when `note` is not empty, writes one thread `Message` from
+  the care team (`sender "care_team"`, `sender_id` = actor) "About your <title>
+  clip: <note>", so the patient reads it in Care. Reviewing an open row → 409.
+- `GET /hep/review?days=14` → `{ "items": [Assignment…] }`: done rows of the
+  clinic with a clip and no review, newest completion first, each carrying
+  `patient_name`.
+- `POST /hep/schedule/copy-week` `{ "patient_id", "from_start", "to_start",
+  "assigned_by" }` → `{ "assignments": [...] }`: every assignment of the seven
+  days from `from_start` copied to the same weekday from `to_start`, dose,
+  note and requirements included, skipping days that already have that
+  exercise; 201.
+- Templates: `GET /hep/templates` → `{ "templates": [...] }` (the clinic's, not
+  archived), `POST /hep/templates` `{ name, description, weeks, items }` → 201,
+  `PUT /hep/templates/{id}`, `DELETE /hep/templates/{id}` (archives),
+  `POST /hep/templates/{id}/apply` `{ "patient_id", "start", "weeks"?,
+  "assigned_by" }` → `{ "assignments": [...] }` (every item on its weekdays from
+  `start` for `weeks` weeks, duplicates skipped). Template payload: `{ id,
+  clinic_id, name, description, weeks, items: [ { exercise_id, exercise_key,
+  title, weekdays, sets, reps, hold_seconds, side, load_kg, rpe_target,
+  clinician_instructions, video_requirement, wearable_requirement } ],
+  created_by, created_at, updated_at }`.
+- Worklist: `/api/worklist` patient rows gain `exercises: { "assigned", "done",
+  "pct", "awaiting_review" } | null` for the seven days ending today (null when
+  the patient has no assignments in that window).
+
+### Patient routes (`/api/mobile/exercises`)
+
+- `GET /mobile/exercises/program?start=YYYY-MM-DD&days=14` → `{ "start",
+  "days": [ { "date", "items": [Assignment…], "assigned", "done", "skipped",
+  "missed" } ], "clinic" }` — the calendar. `missed` = assigned and before
+  today. Default start = today − 7, days 14 (1–35).
+- `POST /mobile/exercises/{id}/start` `{ "pain_before": 0–10 | null,
+  "wearable_worn": bool | null }` → `{ "assignment" }` with `session.started_at`
+  set (restarting an open row moves `started_at`; a done row → 409).
+- `POST /mobile/exercises/{id}/complete` body as before plus `effort`,
+  `sets_done`, `reps_done`, `load_done_kg`, `wearable_worn`, `started_at`,
+  `ended_at` (ISO, optional; the server keeps its own `started_at` if the
+  phone sends none). Enforcement: `video_requirement == "required"` and no
+  clip → 422 "This exercise needs a clip of your attempt"; `wearable_requirement
+  == "required"` and `wearable_worn` is not true → 422 "This exercise is done
+  with your wearable on". `duration_s` = ended − started when both are known.
+  `hr_avg`/`hr_max` from `Observation` rows of `MetricType.HR_SAMPLE` for the
+  patient inside the window, when any. The thread line becomes "Did <title> ·
+  pain <n>/10 after · effort <e>/10" with the note on a new line.
+- `GET /mobile/exercises?date=` unchanged (plus the fields above on each item).
+
+### Console UI
+
+- **Assign and assignment dialogs**: load (kg) and target RPE beside sets/reps;
+  two segmented controls, "Clip of their attempt" and "Wearable on", each
+  off / optional / required; the completion section shows duration, pain before
+  → after, effort, sets × reps × load done, wearable worn with HR avg/max when
+  present; when her clip and theirs both exist, **Compare** shows them side by
+  side; a **Reply** box posts the review (and marks it reviewed), with "Mark
+  reviewed" alone for no note.
+- **Grid**: a small amber dot on chips awaiting review; each patient row header
+  carries the adherence chip "3 of 4 · 75%" (amber under 60%, red under 30%) and
+  the load trend when there is one ("load +12%"); a row menu with "Copy last week
+  →" and "Apply a program…".
+- **Review** (`/exercise-review`, a new tab in the exercises sub-nav with a count):
+  the queue, newest first; a row opens the assignment dialog.
+- **Programs** (`/exercise-programs`, a sub-nav tab): the clinic's templates;
+  create / edit (the library picker, weekdays, dose, requirements per item) and
+  "Apply to…" (patient, start date, weeks).
+- **Worklist card**: the adherence chip for patients with `exercises`.
+- **Demo screen**: unchanged; the board carries the new chips.
+
+### Patient web UI
+
+- **Program** at `/today/program` (a link "See the week" on the exercises card
+  and a row under it): a strip of the 14 days (dots: assigned, done, missed,
+  today ringed), the chosen day's list below, past days read-only with the
+  outcome, future days as a preview. Today is the default.
+- **Start the exercise**: the exercise screen's primary button becomes **Start**
+  (Mark done stays as a secondary "Just mark it done" for an exercise done away
+  from the phone). Start → the session screen: pain right now (0–10, skippable
+  unless the therapist set nothing — always shown, one tap), the wearable line
+  ("Wear your watch for this one" with a confirmation switch; required → the
+  session cannot begin without it; optional → a gentle line; off → nothing), then
+  the running session: her clip looping muted, the dose, a timer, a set counter
+  ("Set 2 of 3 · Next set"), rest between sets when `hold_seconds` is not the
+  unit. **Finish** → the completion sheet: pain after, effort (0–10 with the
+  words "easy … all out"), sets/reps/load done prefilled from the dose, note,
+  the clip (`required` → Send disabled until a clip is attached, with the words
+  why; `optional` → as today; `off` → no clip control), Send. The app sends
+  `started_at`/`ended_at` from its own clock.
+- **Done state** shows duration and effort beside pain; a review from the
+  therapist shows under it ("Dr. Gregg: …") and in Care.
+
+### Seed (`app/seed/hirt.py`)
+
+Requirements and loads on the lifters' rows: Cole's Step-Ups and Wall Sits
+`video_requirement: required`, `load_kg` 10 and none, `rpe_target` 7; Tessa's
+Calf Raises `wearable_requirement: required`; Devon and June `optional` across;
+Rafael's band work `off` for the wearable. Done rows carry `started_at`/`ended_at`
+(8–14 minutes), `effort` tracking the pain story (Cole 5 → 8), `pain_before` one
+below `pain_after`, `sets_done`/`reps_done` equal to the dose; two of Cole's and
+one of June's reviewed with a note from their therapist (and the matching thread
+line). Two templates for `hirt`: "Patellar tendinopathy · phase 2" (Cole's
+pattern) and "Lumbar · return to lifting" (June's). `EXPECTED_SCHEDULE` stays
+true.
+
+### Out of scope here
+
+Texted reminders at a time of day (a daily job and a per-patient setting; the
+real stack only), feeding assignment adherence into the risk tier (the check-in's
+program answer still does that), and the phone apps.
+

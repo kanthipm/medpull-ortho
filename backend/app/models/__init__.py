@@ -12,6 +12,7 @@ from app.hep.models import (
     ExerciseCompletion,
     ExerciseMedia,
     ExercisePlan,
+    ExerciseTemplate,
     PatientInvitation,
     PlanExercise,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "ExerciseCompletion",
     "ExerciseMedia",
     "ExercisePlan",
+    "ExerciseTemplate",
     "PatientInvitation",
     "PlanExercise",
     "Message",

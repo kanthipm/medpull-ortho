@@ -13,8 +13,10 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -42,6 +44,9 @@ MEDIA_STATUSES = ("pending", "approved", "rejected")
 PLAN_STATUSES = ("draft", "active", "superseded", "archived")
 INVITATION_STATUSES = ("pending", "sent", "failed", "claimed", "expired", "revoked")
 ASSIGNMENT_STATUSES = ("assigned", "done", "skipped")
+# What the therapist asks for with an exercise: a clip of the attempt, and
+# the wearable on during it. "required" holds the completion until it is there.
+REQUIREMENTS = ("off", "optional", "required")
 
 
 class Exercise(Base):
@@ -250,18 +255,67 @@ class ExerciseAssignment(Base):
     reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hold_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     side: Mapped[str] = mapped_column(String, default="not_applicable")
+    # The lifter's dose beyond counts: the load on the bar or in hand, and
+    # the effort the therapist wants it to feel like (RPE 0–10).
+    load_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rpe_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Patient-facing, in the therapist's words ("slow on the way down").
     clinician_instructions: Mapped[str] = mapped_column(String, default="")
     assigned_by: Mapped[str] = mapped_column(String, default="provider")  # care team id
+    # REQUIREMENTS: what she asks for with this one.
+    video_requirement: Mapped[str] = mapped_column(String, default="optional")
+    wearable_requirement: Mapped[str] = mapped_column(String, default="optional")
     status: Mapped[str] = mapped_column(String, default="assigned")  # ASSIGNMENT_STATUSES
+    # --- the session, when the patient started it from the phone ---
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    duration_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pain_before: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0–10, at the start
+    wearable_worn: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # From the wearable's heart-rate samples inside [started_at, ended_at],
+    # when any arrived; the server fills these, never the phone.
+    hr_avg: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hr_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # --- what came back ---
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     pain_after: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0–10
+    effort: Mapped[int | None] = mapped_column(Integer, nullable=True)  # RPE 0–10, how it felt
+    sets_done: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reps_done: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    load_done_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     note: Mapped[str | None] = mapped_column(String, nullable=True)
     completion_source: Mapped[str | None] = mapped_column(String, nullable=True)  # app | console
     video_attachment_id: Mapped[int | None] = mapped_column(
         ForeignKey("attachments.id"), nullable=True
     )
     skip_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    # --- the therapist's look at it ---
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String, nullable=True)  # care team id
+    review_note: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class ExerciseTemplate(Base):
+    """A program: the exercises a clinic puts on a kind of patient's week,
+    with their days and doses, applied to a patient from a start date for a
+    number of weeks ("Patellar tendinopathy · phase 2"). Items are the
+    assignment's own fields, as JSON, with ``weekdays`` (0 = Monday … 6, or
+    null for every day) in place of a date."""
+
+    __tablename__ = "exercise_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    hospital_id: Mapped[str] = mapped_column(ForeignKey("hospitals.id"), index=True)
+    name: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(String, default="")
+    # [{"exercise_key" | "exercise_id", "weekdays": [0,2,4] | null, "sets", "reps",
+    #   "hold_seconds", "side", "load_kg", "rpe_target", "clinician_instructions",
+    #   "video_requirement", "wearable_requirement"}]
+    items: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    weeks: Mapped[int] = mapped_column(Integer, default=2)
+    created_by: Mapped[str] = mapped_column(String, default="provider")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
