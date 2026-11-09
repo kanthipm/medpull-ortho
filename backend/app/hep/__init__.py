@@ -11,6 +11,8 @@ there is a check-in with data verification, while an exercise here is dosed
 * ``service``  search, custom exercises, payloads, which clip an exercise plays
 * ``plans``    the standing prescription and its published snapshots
 * ``schedule`` the calendar: one exercise on one patient's day, and what came back
+               (the session, the completion, the therapist's review)
+* ``templates`` programs: a clinic's exercises-by-weekday, applied from a date
 * ``media``    a clinic's own demonstration clips
 * ``api``      the console routes under ``/api/hep`` (the patient's are
                ``app/api/exercises.py``)
