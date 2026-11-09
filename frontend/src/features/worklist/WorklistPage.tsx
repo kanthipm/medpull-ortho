@@ -18,6 +18,7 @@ import type { NextStep, NextStepActionType, WorklistRowWithStep } from '../../ap
 import { useCompleteNextStep, useExecuteNextStep } from '../../api/plan'
 import { useIsDemo, useNarrativeWarming, usePrefetchPatient, useWorklist } from '../../api/queries'
 import type { WorklistResponse } from '../../api/types'
+import { AdherenceChip, AwaitingReview } from '../hep/AdherenceChip'
 import DotLine from '../patient/DotLine'
 import MessageComposerModal from '../patient/plan/MessageComposerModal'
 import { loadPatientDetailPage } from '../patient/preload'
@@ -765,6 +766,14 @@ function WorklistRow({
         {showConfidence && (
           <p className="mt-0.5 truncate">
             <ConfidenceChip level={p.data_confidence.level} variant="meta" />
+          </p>
+        )}
+        {p.exercises && p.exercises.assigned > 0 && (
+          // The exercise schedule's last seven days (docs/dev/hep-schedule.md):
+          // done over assigned, and the clips waiting on the therapist.
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <AdherenceChip done={p.exercises.done} assigned={p.exercises.assigned} pct={p.exercises.pct} />
+            <AwaitingReview count={p.exercises.awaiting_review} />
           </p>
         )}
       </div>

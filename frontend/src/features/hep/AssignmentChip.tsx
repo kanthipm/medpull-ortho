@@ -1,12 +1,14 @@
 import { Check, CircleSlash, Film } from 'lucide-react'
 import type { Assignment } from '../../api/hep'
-import { assignmentSummary, painChipClass } from './scheduleCopy'
+import { ReviewDot } from './AdherenceChip'
+import { assignmentSummary, awaitingReview, painChipClass } from './scheduleCopy'
 
 /** One exercise on one day, as the week grid and the patient page's strip
  *  draw it: the title over the dose; once done, a check and a `pain n`
  *  badge (5 and up in the warning tone); muted when skipped; a film mark
- *  when a clip exists. It is a button — it opens the AssignmentDialog — and
- *  its name says everything its marks do. */
+ *  when a clip exists; a small amber dot when the patient's clip is waiting
+ *  for the therapist's answer. It is a button — it opens the
+ *  AssignmentDialog — and its name says everything its marks do. */
 export default function AssignmentChip({
   assignment: a,
   onOpen,
@@ -17,6 +19,7 @@ export default function AssignmentChip({
   const done = a.status === 'done'
   const skipped = a.status === 'skipped'
   const pain = done ? (a.completion?.pain_after ?? null) : null
+  const review = awaitingReview(a)
   const tone = done
     ? 'bg-risk-low-tint/60 ring-risk-low-tint hover:bg-risk-low-tint'
     : skipped
@@ -27,7 +30,7 @@ export default function AssignmentChip({
       type="button"
       onClick={() => onOpen(a)}
       aria-label={assignmentSummary(a)}
-      title={a.dose ? `${a.title} · ${a.dose}` : a.title}
+      title={`${a.title}${a.dose ? ` · ${a.dose}` : ''}${review ? ' · awaiting review' : ''}`}
       className={`block w-full rounded-[10px] px-2 py-1.5 text-left ring-1 ring-inset transition-[background-color,box-shadow] duration-state ease-apple focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${tone}`}
     >
       <span
@@ -38,7 +41,8 @@ export default function AssignmentChip({
         {done && <Check aria-hidden size={12} className="shrink-0 text-risk-low-ink" />}
         {skipped && <CircleSlash aria-hidden size={12} className="shrink-0" />}
         <span className="min-w-0 truncate">{a.title}</span>
-        {a.video && <Film aria-hidden size={11} className="ml-auto shrink-0 text-secondary" />}
+        {review && <ReviewDot className="ml-auto" />}
+        {a.video && <Film aria-hidden size={11} className={`shrink-0 text-secondary ${review ? '' : 'ml-auto'}`} />}
       </span>
       {(a.dose || pain != null) && (
         <span className="mt-0.5 flex items-center gap-1 text-micro leading-tight text-secondary">

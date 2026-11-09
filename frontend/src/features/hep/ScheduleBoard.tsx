@@ -1,14 +1,18 @@
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, Users } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, ClipboardList, CopyPlus, Plus, Users } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Assignment, SchedulePatient } from '../../api/hep'
 import { todayIso, useSchedule } from '../../api/hep'
 import Avatar from '../../components/Avatar'
 import EmptyState from '../../components/EmptyState'
+import { Menu } from '../../components/Menu'
 import { SkeletonCard } from '../../components/Skeleton'
+import { AdherenceChip, AwaitingReview, LoadTrendChip } from './AdherenceChip'
+import ApplyProgramDialog from './ApplyProgramDialog'
 import AssignDialog from './AssignDialog'
 import AssignmentChip from './AssignmentChip'
 import AssignmentDialog from './AssignmentDialog'
+import CopyWeekDialog from './CopyWeekDialog'
 import {
   addDays,
   assignable,
@@ -23,10 +27,12 @@ import {
 } from './scheduleCopy'
 
 /** The week on one grid: ← Today → over the dates, one row per clinic chart
- *  (avatar, name, pathway, tier), one column per day with today marked. A
- *  cell lists its assignments as chips and ends in a `+`; the chip opens
- *  AssignmentDialog, the `+` AssignDialog. A real table, so the dates are
- *  column headers and the names row headers.
+ *  (avatar, name, pathway, tier, the week's adherence and load trend, a
+ *  menu), one column per day with today marked. A cell lists its
+ *  assignments as chips and ends in a `+`; the chip opens AssignmentDialog,
+ *  the `+` AssignDialog. The row menu copies last week forward or applies a
+ *  program. A real table, so the dates are column headers and the names row
+ *  headers.
  *
  *  `live` polls every 15 s (the demo screen, where a completion from the
  *  phone should land on the board by itself); `dense` tightens the columns
@@ -54,10 +60,13 @@ export default function ScheduleBoard({
   const thisWeek = start === home
   const [assign, setAssign] = useState<{ patientId: string; date: string } | null>(null)
   const [openId, setOpenId] = useState<number | null>(null)
+  const [rowAction, setRowAction] = useState<{ kind: 'copy' | 'apply'; patientId: string } | null>(null)
   const captionId = useId()
 
   const patients = schedule.data?.patients ?? []
+  const careTeam = schedule.data?.care_team ?? []
   const assigning = assign ? patients.find((p) => p.id === assign.patientId) : undefined
+  const acting = rowAction ? patients.find((p) => p.id === rowAction.patientId) : undefined
   let opened: { a: Assignment; p: SchedulePatient } | undefined
   if (openId != null) {
     for (const p of patients) {
@@ -70,6 +79,7 @@ export default function ScheduleBoard({
   }
   const all = patients.flatMap((p) => p.assignments)
   const doneCount = all.filter((a) => a.status === 'done').length
+  const waiting = patients.reduce((n, p) => n + (p.awaiting_review ?? 0), 0)
 
   return (
     <div>
@@ -108,6 +118,14 @@ export default function ScheduleBoard({
             {patients.length} patient{patients.length === 1 ? '' : 's'} · {all.length} exercise
             {all.length === 1 ? '' : 's'}
             {all.length > 0 && ` · ${doneCount} done`}
+            {waiting > 0 && (
+              <>
+                {' · '}
+                <Link to="/exercise-review" className="text-risk-med-ink hover:underline">
+                  {waiting} to review
+                </Link>
+              </>
+            )}
           </span>
         )}
         {aside && <div className="ml-auto flex items-center gap-2">{aside}</div>}
@@ -148,6 +166,7 @@ export default function ScheduleBoard({
             captionId={captionId}
             onAssign={(patientId, date) => setAssign({ patientId, date })}
             onOpen={(a) => setOpenId(a.id)}
+            onRowAction={(kind, patientId) => setRowAction({ kind, patientId })}
           />
         )}
       </div>
@@ -159,7 +178,7 @@ export default function ScheduleBoard({
           date={assign.date}
           days={days}
           assignments={assigning.assignments}
-          careTeam={schedule.data?.care_team ?? []}
+          careTeam={careTeam}
           onClose={() => setAssign(null)}
         />
       )}
@@ -169,8 +188,26 @@ export default function ScheduleBoard({
           assignment={opened.a}
           patientName={opened.p.name}
           days={days}
-          careTeam={schedule.data?.care_team ?? []}
+          careTeam={careTeam}
           onClose={() => setOpenId(null)}
+        />
+      )}
+      {rowAction?.kind === 'copy' && acting && (
+        <CopyWeekDialog
+          key={`copy-${acting.id}-${start}`}
+          patient={acting}
+          toStart={start}
+          careTeam={careTeam}
+          onClose={() => setRowAction(null)}
+        />
+      )}
+      {rowAction?.kind === 'apply' && acting && (
+        <ApplyProgramDialog
+          key={`apply-${acting.id}-${start}`}
+          patient={acting}
+          defaultStart={start}
+          careTeam={careTeam}
+          onClose={() => setRowAction(null)}
         />
       )}
     </div>
@@ -185,6 +222,7 @@ function Grid({
   captionId,
   onAssign,
   onOpen,
+  onRowAction,
 }: {
   patients: SchedulePatient[]
   days: string[]
@@ -193,8 +231,10 @@ function Grid({
   captionId: string
   onAssign: (patientId: string, date: string) => void
   onOpen: (a: Assignment) => void
+  onRowAction: (kind: 'copy' | 'apply', patientId: string) => void
 }) {
   const colMin = dense ? 'min-w-[92px]' : 'min-w-[128px]'
+  const lastWeek = rangeLabel(weekDays(addDays(days[0], -7)))
   return (
     <div className="card-group">
       <div className="overflow-x-auto" role="region" aria-labelledby={captionId} tabIndex={0}>
@@ -209,7 +249,7 @@ function Grid({
             <tr>
               <th
                 scope="col"
-                className={`${dense ? 'w-[168px]' : 'w-[220px]'} px-4 py-3 align-bottom text-label font-medium tracking-label text-secondary`}
+                className={`${dense ? 'w-[176px]' : 'w-[236px]'} px-4 py-3 align-bottom text-label font-medium tracking-label text-secondary`}
               >
                 Patient
               </th>
@@ -244,12 +284,13 @@ function Grid({
           <tbody>
             {patients.map((p) => {
               const tier = tierChip(p.risk_tier)
+              const adherence = p.adherence ?? null
               return (
                 <tr key={p.id}>
-                  <th scope="row" className="border-t border-hairline px-4 py-3 align-top text-left font-normal">
+                  <th scope="row" className={`border-t border-hairline py-3 pl-4 pr-2 align-top text-left font-normal`}>
                     <div className="flex items-start gap-3">
                       <Avatar name={p.name} tier={tierKey(p.risk_tier)} size="sm" className="mt-0.5" />
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <Link
                           to={`/patients/${p.id}`}
                           className="block truncate rounded-[6px] text-copy font-medium text-ink hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
@@ -257,8 +298,37 @@ function Grid({
                           {p.name}
                         </Link>
                         {p.pathway && <span className="meta block truncate">{p.pathway}</span>}
-                        {tier && <span className={`chip mt-1.5 ${tier.pill}`}>{tier.label}</span>}
+                        {(tier || (adherence && adherence.assigned > 0) || p.load_week) && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                            {tier && <span className={`chip ${tier.pill}`}>{tier.label}</span>}
+                            {adherence && (
+                              <AdherenceChip done={adherence.done} assigned={adherence.assigned} pct={adherence.pct} />
+                            )}
+                            {!dense && <LoadTrendChip changePct={p.load_week?.change_pct} />}
+                          </div>
+                        )}
+                        {(p.awaiting_review ?? 0) > 0 && <AwaitingReview count={p.awaiting_review} className="mt-1.5" />}
                       </div>
+                      <Menu
+                        label={`More for ${p.name}`}
+                        triggerClassName="btn-icon btn-sm -mr-1 -mt-1 shrink-0"
+                        items={[
+                          {
+                            key: 'copy',
+                            label: 'Copy last week →',
+                            description: `${lastWeek} onto ${rangeLabel(days)}`,
+                            icon: <CopyPlus />,
+                            onSelect: () => onRowAction('copy', p.id),
+                          },
+                          {
+                            key: 'apply',
+                            label: 'Apply a program…',
+                            description: 'A pattern by weekday, from a start date',
+                            icon: <ClipboardList />,
+                            onSelect: () => onRowAction('apply', p.id),
+                          },
+                        ]}
+                      />
                     </div>
                   </th>
                   {days.map((d) => (
