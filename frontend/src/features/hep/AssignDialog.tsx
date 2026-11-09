@@ -1,22 +1,23 @@
 import { Film, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { ApiError } from '../../api/client'
-import type { Assignment, CareTeamMember, Exercise, SchedulePatientSummary } from '../../api/hep'
+import type { Assignment, CareTeamMember, Exercise, Requirement, SchedulePatientSummary } from '../../api/hep'
 import { useCreateAssignments, useHepOptions } from '../../api/hep'
 import Modal from '../../components/Modal'
 import { SkeletonCard } from '../../components/Skeleton'
 import { useToast } from '../../components/Toast'
+import { LABEL, NumberField, RequirementControl } from './DoseFields'
 import { diagnosticWarning } from './hepCopy'
 import LibraryPicker from './LibraryPicker'
-import { countOf, doseText, longDay, shortDay, vocabLabel } from './scheduleCopy'
-
-const LABEL = 'mb-1 block px-1 text-label font-medium tracking-label text-secondary'
+import { countOf, decimalOf, doseText, longDay, requirementsText, shortDay, vocabLabel } from './scheduleCopy'
 
 /** The `+` in a cell: put one exercise on one patient's day (and, with
  *  "also on", the other days of the week). Pick from the library first,
- *  then the dose, side, a note the patient reads, who assigns it, and the
- *  days. Save is one POST; a day that already has the exercise comes back
- *  as a 409 naming the date, shown in place. */
+ *  then the dose — sets, reps, hold, the load on the bar, the effort it
+ *  should feel like — the side, what she asks for with it (a clip of their
+ *  attempt, the wearable on), a note the patient reads, who assigns it, and
+ *  the days. Save is one POST; a day that already has the exercise comes
+ *  back as a 409 naming the date, shown in place. */
 export default function AssignDialog({
   patient,
   date,
@@ -42,7 +43,11 @@ export default function AssignDialog({
   const [sets, setSets] = useState('')
   const [reps, setReps] = useState('')
   const [hold, setHold] = useState('')
+  const [load, setLoad] = useState('')
+  const [rpe, setRpe] = useState('')
   const [side, setSide] = useState('not_applicable')
+  const [video, setVideo] = useState<Requirement>('optional')
+  const [wearable, setWearable] = useState<Requirement>('optional')
   const [note, setNote] = useState('')
   const [assignedBy, setAssignedBy] = useState(patient.assigned_provider_id ?? careTeam[0]?.id ?? '')
   const [alsoOn, setAlsoOn] = useState<string[]>([])
@@ -55,7 +60,9 @@ export default function AssignDialog({
   const otherDays = days.filter((d) => d !== date)
   const dates = [date, ...alsoOn].sort()
   const warn = diagnosticWarning(note)
-  const dose = doseText(sets, reps, hold, side, vocabLabel(sides, side))
+  const dose = doseText({ sets, reps, hold, load, side, sideLabel: vocabLabel(sides, side) })
+  const rpeTarget = countOf(rpe)
+  const asks = requirementsText(video, wearable)
 
   const toggleDay = (d: string) =>
     setAlsoOn((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]))
@@ -72,6 +79,10 @@ export default function AssignDialog({
         reps: countOf(reps),
         hold_seconds: countOf(hold),
         side,
+        load_kg: decimalOf(load),
+        rpe_target: rpeTarget,
+        video_requirement: video,
+        wearable_requirement: wearable,
         clinician_instructions: note.trim(),
         assigned_by: assignedBy || undefined,
       },
@@ -150,32 +161,44 @@ export default function AssignDialog({
             </button>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-            <NumberField id="assign-sets" label="Sets" value={sets} onChange={setSets} />
-            <NumberField id="assign-reps" label="Reps" value={reps} onChange={setReps} />
-            <NumberField id="assign-hold" label="Hold (s)" value={hold} onChange={setHold} />
-            <div className="col-span-3 sm:col-span-1">
-              <label htmlFor="assign-side" className={LABEL}>
-                Side
-              </label>
-              <select
-                id="assign-side"
-                className="field cursor-pointer !min-h-10 !py-1.5"
-                value={side}
-                onChange={(e) => setSide(e.target.value)}
-              >
-                {sides.length === 0 && <option value="not_applicable">Not applicable</option>}
-                {sides.map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+          <fieldset>
+            <legend className={LABEL}>Dose</legend>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-7">
+              <NumberField id="assign-sets" label="Sets" value={sets} onChange={setSets} />
+              <NumberField id="assign-reps" label="Reps" value={reps} onChange={setReps} />
+              <NumberField id="assign-hold" label="Hold (s)" value={hold} onChange={setHold} />
+              <NumberField id="assign-load" label="Load (kg)" value={load} max={500} step={0.5} onChange={setLoad} />
+              <NumberField id="assign-rpe" label="Target RPE" value={rpe} max={10} onChange={setRpe} />
+              <div className="sm:col-span-2">
+                <label htmlFor="assign-side" className={LABEL}>
+                  Side
+                </label>
+                <select
+                  id="assign-side"
+                  className="field cursor-pointer !min-h-10 !py-1.5"
+                  value={side}
+                  onChange={(e) => setSide(e.target.value)}
+                >
+                  {sides.length === 0 && <option value="not_applicable">Not applicable</option>}
+                  {sides.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
+            <p className="meta mt-2 px-1">
+              {dose ? `The patient reads: ${dose}` : 'No dose yet — the patient sees the exercise without counts.'}
+              {rpeTarget != null && ` · should feel like ${rpeTarget}/10`}
+            </p>
+          </fieldset>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <RequirementControl label="Clip of their attempt" value={video} onChange={setVideo} />
+            <RequirementControl label="Wearable on" value={wearable} onChange={setWearable} />
+            {asks && <p className="meta -mt-1 px-1 sm:col-span-2">{asks}</p>}
           </div>
-          <p className="meta -mt-2 px-1">
-            {dose ? `The patient reads: ${dose}` : 'No dose yet — the patient sees the exercise without counts.'}
-          </p>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -261,35 +284,5 @@ export default function AssignDialog({
         </div>
       )}
     </Modal>
-  )
-}
-
-function NumberField({
-  id,
-  label,
-  value,
-  onChange,
-}: {
-  id: string
-  label: string
-  value: string
-  onChange: (v: string) => void
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className={LABEL}>
-        {label}
-      </label>
-      <input
-        id={id}
-        type="number"
-        inputMode="numeric"
-        min={0}
-        max={999}
-        className="field !min-h-10 !py-1.5 tabular-nums"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
   )
 }

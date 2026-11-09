@@ -344,6 +344,37 @@ export function useArchivePlan() {
 
 export type AssignmentStatus = 'assigned' | 'done' | 'skipped'
 
+/** What the therapist asks for with one exercise — a clip of the attempt,
+ *  the wearable on — each `off | optional | required`. The server's
+ *  default is `optional`; `required` is enforced when the patient sends the
+ *  completion (a 422 with the words why). */
+export type Requirement = 'off' | 'optional' | 'required'
+export const REQUIREMENTS: readonly Requirement[] = ['off', 'optional', 'required']
+
+/** The patient's session on the phone: Start → Finish. Null until started;
+ *  `duration_s` once both ends are known; the heart-rate pair only when the
+ *  wearable had samples inside the window. */
+export interface AssignmentSession {
+  started_at: string | null
+  ended_at: string | null
+  duration_s: number | null
+  /** 0–10 at the start, before the exercise. */
+  pain_before: number | null
+  wearable_worn: boolean | null
+  hr_avg: number | null
+  hr_max: number | null
+}
+
+/** The therapist's answer to a completion. `note` empty means "Mark
+ *  reviewed" with nothing to say; a note is also texted to the patient's
+ *  thread as "About your <title> clip: …". */
+export interface AssignmentReview {
+  at: string
+  by: string
+  by_name: string | null
+  note: string
+}
+
 /** The clip an assignment plays. `source` says whose it is. */
 export interface AssignmentVideo {
   id: number
@@ -378,6 +409,15 @@ export interface AssignmentCompletion {
   /** `app` — the patient marked it done; `console` — logged in the room. */
   source: 'app' | 'console' | string
   video: CompletionVideo | null
+  /** RPE 0–10, how it felt; null when the patient skipped the question. */
+  effort: number | null
+  /** What they actually did, prefilled from the dose on the phone. */
+  sets_done: number | null
+  reps_done: number | null
+  load_done_kg: number | null
+  /** Null until the therapist replies or marks it reviewed. A done row
+   *  with a clip and no review is "awaiting review". */
+  review: AssignmentReview | null
 }
 
 /** The one shape both clients read. */
@@ -403,17 +443,45 @@ export interface Assignment {
   hold_seconds: number | null
   side: Side | string
   side_label: string
-  /** "3 sets × 10 reps · Left" — `plans.dose_line` without the frequency. */
+  /** The lifter's dose: kilograms on the bar (0–500), and the effort it
+   *  should feel like (RPE 0–10). */
+  load_kg: number | null
+  rpe_target: number | null
+  /** "3 sets × 10 reps · 12 kg · Left" — `plans.dose_line` without the
+   *  frequency, the load before the side when set. */
   dose: string
   clinician_instructions: string
   assigned_by: string
   assigned_by_name: string | null
+  /** A clip of their attempt / the wearable on: off, optional, required. */
+  video_requirement: Requirement | string
+  wearable_requirement: Requirement | string
   status: AssignmentStatus | string
   video: AssignmentVideo | null
+  /** Null until the patient presses Start on the phone. */
+  session: AssignmentSession | null
   completion: AssignmentCompletion | null
   skip_reason: string | null
   created_at: string | null
   updated_at: string | null
+}
+
+/** The seven days ending today, on a schedule row and a worklist row.
+ *  `missed` is assigned and before today; `pct` is done over assigned. */
+export interface Adherence {
+  assigned: number
+  done: number
+  skipped: number
+  missed: number
+  pct: number
+}
+
+/** Load lifted this week against last (the sum of load × reps × sets of
+ *  the done rows). `change_pct` is null when last week had none. */
+export interface LoadWeek {
+  this: number
+  last: number
+  change_pct: number | null
 }
 
 export interface CareTeamMember {
@@ -437,6 +505,12 @@ export interface SchedulePatientSummary {
 
 export interface SchedulePatient extends SchedulePatientSummary {
   assignments: Assignment[]
+  /** The row header's chips. Read as absent on a server that predates the
+   *  second pass. */
+  adherence: Adherence | null
+  load_week: LoadWeek | null
+  /** Done rows with a clip and no review. */
+  awaiting_review: number
 }
 
 /** GET /api/hep/schedule */
@@ -467,7 +541,11 @@ export interface ScheduleCreateBody {
   reps?: number | null
   hold_seconds?: number | null
   side?: string
+  load_kg?: number | null
+  rpe_target?: number | null
   clinician_instructions?: string
+  video_requirement?: Requirement | string
+  wearable_requirement?: Requirement | string
   /** A care-team id; the server defaults to the patient's provider. */
   assigned_by?: string
 }
@@ -479,10 +557,92 @@ export interface AssignmentPatch {
   reps?: number | null
   hold_seconds?: number | null
   side?: string
+  load_kg?: number | null
+  rpe_target?: number | null
   clinician_instructions?: string
+  video_requirement?: Requirement | string
+  wearable_requirement?: Requirement | string
   scheduled_for?: string
   assigned_by?: string
   sort_order?: number
+}
+
+/** POST /api/hep/schedule/{id}/review — the therapist's answer. An empty
+ *  note is "Mark reviewed"; a note is also texted to the patient. An open
+ *  row is a 409. */
+export interface ReviewBody {
+  note: string
+  actor: string
+}
+
+/** GET /api/hep/review — a done row with a clip and no review, with the
+ *  name the queue prints. */
+export interface ReviewItem extends Assignment {
+  patient_name: string
+}
+
+/** POST /api/hep/schedule/copy-week — every assignment of the seven days
+ *  from `from_start` onto the same weekday from `to_start`, dose, note and
+ *  requirements included; days that already hold the exercise are skipped. */
+export interface CopyWeekBody {
+  patient_id: string
+  from_start: string
+  to_start: string
+  assigned_by?: string
+}
+
+/** One exercise of a program: an assignment's fields plus the weekdays it
+ *  lands on — Monday 0 … Sunday 6 (the server's `date.weekday()`), or null
+ *  for every day. */
+export interface TemplateItem {
+  exercise_id: number
+  exercise_key: string | null
+  title: string
+  weekdays: number[] | null
+  sets: number | null
+  reps: number | null
+  hold_seconds: number | null
+  side: Side | string
+  load_kg: number | null
+  rpe_target: number | null
+  clinician_instructions: string
+  video_requirement: Requirement | string
+  wearable_requirement: Requirement | string
+}
+
+/** A clinic's program: a name, how many weeks it runs, and its exercises
+ *  by weekday. Applied to a patient from a start date. */
+export interface Template {
+  id: number
+  clinic_id: string
+  name: string
+  description: string
+  weeks: number
+  items: TemplateItem[]
+  created_by: string
+  created_at: string | null
+  updated_at: string | null
+}
+
+export type TemplateItemBody = Omit<TemplateItem, 'exercise_key' | 'title'> &
+  Partial<Pick<TemplateItem, 'exercise_key' | 'title'>>
+
+/** POST / PUT /api/hep/templates. */
+export interface TemplateBody {
+  name: string
+  description: string
+  weeks: number
+  items: TemplateItemBody[]
+  actor?: string
+}
+
+/** POST /api/hep/templates/{id}/apply — every item on its weekdays from
+ *  `start` for `weeks` weeks (the template's when omitted); duplicates skipped. */
+export interface ApplyTemplateBody {
+  patient_id: string
+  start: string
+  weeks?: number
+  assigned_by?: string
 }
 
 /** POST /api/hep/schedule/{id}/complete — the therapist logging it from
@@ -559,6 +719,10 @@ export function usePatientSchedule(
 function invalidateSchedule(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: ['hep', 'schedule'] })
   void qc.invalidateQueries({ queryKey: ['hep', 'patient-schedule'] })
+  // A completion or a review moves the queue; the worklist's adherence
+  // chip reads the same seven days.
+  void qc.invalidateQueries({ queryKey: ['hep', 'review'] })
+  void qc.invalidateQueries({ queryKey: ['worklist'] })
   // The demo screen listens and tells the phone frame to re-read its day.
   window.dispatchEvent(new CustomEvent('medpull:schedule-changed'))
 }
@@ -615,6 +779,102 @@ export function useDemoPatientSession() {
         method: 'POST',
         body: JSON.stringify({ patient_id: patientId }),
       }),
+  })
+}
+
+// --- review, copy-week, programs -------------------------------------------------
+//
+// The second pass (docs/dev/hep-schedule.md): what the patient sent back
+// lands in a queue until the therapist answers; a week can be copied
+// forward; a program (template) puts a whole pattern on a calendar.
+
+/** The clinic's done rows with a clip and no review, newest completion
+ *  first, from the last `days` days. The sub-nav's count reads the default. */
+export function useReviewQueue(days = 14) {
+  return useQuery({
+    queryKey: ['hep', 'review', { days }],
+    queryFn: () => fetchJson<{ items: ReviewItem[] }>(`/api/hep/review?days=${days}`),
+    placeholderData: (prev) => prev,
+  })
+}
+
+/** Reply to a completion (the note reaches the patient's thread) or mark it
+ *  reviewed with nothing to say. The row comes back with `completion.review`. */
+export function useReviewAssignment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: ReviewBody & { id: number }) =>
+      fetchJson<Assignment>(`/api/hep/schedule/${id}/review`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => invalidateSchedule(qc),
+  })
+}
+
+export function useCopyWeek() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: CopyWeekBody) =>
+      fetchJson<{ assignments: Assignment[] }>('/api/hep/schedule/copy-week', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => invalidateSchedule(qc),
+  })
+}
+
+/** The clinic's programs, archived ones left out. */
+export function useTemplates(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['hep', 'templates'],
+    queryFn: () => fetchJson<{ templates: Template[] }>('/api/hep/templates'),
+    enabled: options.enabled ?? true,
+    placeholderData: (prev) => prev,
+  })
+}
+
+function invalidateTemplates(qc: ReturnType<typeof useQueryClient>) {
+  void qc.invalidateQueries({ queryKey: ['hep', 'templates'] })
+}
+
+export function useCreateTemplate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: TemplateBody) =>
+      fetchJson<Template>('/api/hep/templates', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => invalidateTemplates(qc),
+  })
+}
+
+export function useUpdateTemplate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: TemplateBody & { id: number }) =>
+      fetchJson<Template>(`/api/hep/templates/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    onSuccess: () => invalidateTemplates(qc),
+  })
+}
+
+/** DELETE archives: the program leaves the list; calendars built from it stay. */
+export function useArchiveTemplate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) =>
+      fetchJson<{ ok: boolean }>(`/api/hep/templates/${id}`, { method: 'DELETE' }),
+    onSuccess: () => invalidateTemplates(qc),
+  })
+}
+
+export function useApplyTemplate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: ApplyTemplateBody & { id: number }) =>
+      fetchJson<{ assignments: Assignment[] }>(`/api/hep/templates/${id}/apply`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => invalidateSchedule(qc),
   })
 }
 

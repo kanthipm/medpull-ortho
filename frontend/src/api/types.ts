@@ -29,6 +29,18 @@ export interface WorklistPatient {
   assigned_provider: { name: string; role: string }
   data_confidence: DataConfidence
   trajectory: Trajectory
+  /** The exercise schedule's seven days ending today (docs/dev/hep-schedule.md):
+   *  null when nothing was assigned in that window, absent on a server
+   *  without the schedule. */
+  exercises?: WorklistExercises | null
+}
+
+export interface WorklistExercises {
+  assigned: number
+  done: number
+  pct: number
+  /** Done rows with a clip the therapist has not answered. */
+  awaiting_review: number
 }
 
 export interface WorklistResponse {
