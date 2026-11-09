@@ -1,44 +1,57 @@
-import { ArrowRight, Check, Film, Trash2 } from 'lucide-react'
-import { useEffect, useId, useState, type KeyboardEvent } from 'react'
+import { ArrowRight, Check, Columns2, Film, MessageSquare, Trash2, Watch } from 'lucide-react'
+import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { attachmentSrc } from '../../api/attachments'
 import { ApiError } from '../../api/client'
-import type { Assignment, AssignmentCompletion, CareTeamMember } from '../../api/hep'
+import type { Assignment, AssignmentCompletion, CareTeamMember, Requirement } from '../../api/hep'
 import {
   useCompleteAssignment,
   useDeleteAssignment,
   useHepOptions,
+  useReviewAssignment,
   useUpdateAssignment,
 } from '../../api/hep'
 import Modal from '../../components/Modal'
 import { useToast } from '../../components/Toast'
 import { relativeTime } from '../../lib/format'
+import { ReviewDot } from './AdherenceChip'
 import ClinicClipUpload from './ClinicClipUpload'
 import ClipPlayer from './ClipPlayer'
+import { LABEL, NumberField, RequirementControl } from './DoseFields'
 import { diagnosticWarning } from './hepCopy'
 import {
+  awaitingReview,
   completionSource,
   countOf,
+  decimalOf,
   doseText,
+  durationText,
+  fieldOf,
+  kgText,
   longDay,
   painChipClass,
+  requirementOf,
+  requirementsText,
+  sessionSeconds,
   shortDay,
   statusChip,
   vocabLabel,
 } from './scheduleCopy'
 
-const LABEL = 'mb-1 block px-1 text-label font-medium tracking-label text-secondary'
-
 /** A chip on the grid, opened: the clip the patient follows (or the button
- *  to film one), what came back once it is done — when, pain, the note, the
- *  patient's own clip — the steps and precautions, the dose editor, a move
- *  to another day, Remove, and "Log it done" for the room. A done row keeps
- *  its dose and its day (the server answers 409), so those controls close. */
+ *  to film one), what came back once it is done — when, how long, pain
+ *  before and after, effort, what they lifted, the wearable's numbers, the
+ *  note, their clip beside hers — and the place to answer it; the steps and
+ *  precautions; the dose editor with the load, the target effort and what
+ *  she asks for (PATCH); a move to another day; Remove; "Log it done" for
+ *  the room. A done row keeps its dose and its day (the server answers 409),
+ *  so those controls close. */
 export default function AssignmentDialog({
   assignment: a,
   patientName,
   days,
   careTeam,
   onClose,
+  onChanged,
 }: {
   assignment: Assignment
   patientName: string
@@ -48,6 +61,9 @@ export default function AssignmentDialog({
    *  library's whole care-team list is the fallback. */
   careTeam?: CareTeamMember[]
   onClose: () => void
+  /** The row as the server returned it after a change, for an opener that
+   *  holds the row itself rather than reading it from a refetched list. */
+  onChanged?: (a: Assignment) => void
 }) {
   const toast = useToast()
   const options = useHepOptions()
@@ -60,10 +76,14 @@ export default function AssignmentDialog({
   const sides = options.data?.sides ?? []
   const team = careTeam && careTeam.length > 0 ? careTeam : (options.data?.care_team ?? [])
 
-  const [sets, setSets] = useState(a.sets == null ? '' : String(a.sets))
-  const [reps, setReps] = useState(a.reps == null ? '' : String(a.reps))
-  const [hold, setHold] = useState(a.hold_seconds == null ? '' : String(a.hold_seconds))
+  const [sets, setSets] = useState(fieldOf(a.sets))
+  const [reps, setReps] = useState(fieldOf(a.reps))
+  const [hold, setHold] = useState(fieldOf(a.hold_seconds))
+  const [load, setLoad] = useState(fieldOf(a.load_kg))
+  const [rpe, setRpe] = useState(fieldOf(a.rpe_target))
   const [side, setSide] = useState(a.side)
+  const [video, setVideo] = useState<Requirement>(requirementOf(a.video_requirement))
+  const [wearable, setWearable] = useState<Requirement>(requirementOf(a.wearable_requirement))
   const [note, setNote] = useState(a.clinician_instructions)
   const [assignedBy, setAssignedBy] = useState(a.assigned_by)
   const [moveTo, setMoveTo] = useState('')
@@ -73,14 +93,21 @@ export default function AssignmentDialog({
   const [logNote, setLogNote] = useState('')
 
   const dirty =
-    countOf(sets) !== a.sets ||
-    countOf(reps) !== a.reps ||
-    countOf(hold) !== a.hold_seconds ||
+    countOf(sets) !== (a.sets ?? null) ||
+    countOf(reps) !== (a.reps ?? null) ||
+    countOf(hold) !== (a.hold_seconds ?? null) ||
+    decimalOf(load) !== (a.load_kg ?? null) ||
+    countOf(rpe) !== (a.rpe_target ?? null) ||
     side !== a.side ||
+    video !== requirementOf(a.video_requirement) ||
+    wearable !== requirementOf(a.wearable_requirement) ||
     note.trim() !== a.clinician_instructions ||
     assignedBy !== a.assigned_by
   const warn = diagnosticWarning(note)
-  const dose = doseText(sets, reps, hold, side, vocabLabel(sides, side))
+  const dose = doseText({ sets, reps, hold, load, side, sideLabel: vocabLabel(sides, side) })
+  const rpeTarget = countOf(rpe)
+  const asks = requirementsText(video, wearable)
+  const actor = assignedBy || a.assigned_by
 
   const fail = (fallback: string) => (e: unknown) =>
     toast(e instanceof ApiError && e.message ? e.message : fallback, 'warning')
@@ -93,10 +120,20 @@ export default function AssignmentDialog({
         reps: countOf(reps),
         hold_seconds: countOf(hold),
         side,
+        load_kg: decimalOf(load),
+        rpe_target: rpeTarget,
+        video_requirement: video,
+        wearable_requirement: wearable,
         clinician_instructions: note.trim(),
         assigned_by: assignedBy,
       },
-      { onSuccess: () => toast('Dose updated', 'success'), onError: fail('Could not save the dose') },
+      {
+        onSuccess: (row) => {
+          toast('Dose updated', 'success')
+          onChanged?.(row)
+        },
+        onError: fail('Could not save the dose'),
+      },
     )
 
   const move = () => {
@@ -104,9 +141,10 @@ export default function AssignmentDialog({
     update.mutate(
       { id: a.id, scheduled_for: moveTo },
       {
-        onSuccess: () => {
+        onSuccess: (row) => {
           toast(`${a.title} moved to ${shortDay(moveTo)}`, 'success')
           setMoveTo('')
+          onChanged?.(row)
         },
         onError: fail('Could not move it'),
       },
@@ -124,11 +162,12 @@ export default function AssignmentDialog({
 
   const logDone = () =>
     complete.mutate(
-      { id: a.id, pain_after: pain, note: logNote.trim(), actor: assignedBy || a.assigned_by },
+      { id: a.id, pain_after: pain, note: logNote.trim(), actor },
       {
-        onSuccess: () => {
+        onSuccess: (row) => {
           toast(`${a.title} logged as done`, 'success')
           setLogging(false)
+          onChanged?.(row)
         },
         onError: fail('Could not log it'),
       },
@@ -139,6 +178,10 @@ export default function AssignmentDialog({
       ? `Your demonstration${a.video.uploaded_by_name ? ` · ${a.video.uploaded_by_name}` : ''}`
       : 'Library demonstration — your own replaces it on their phone'
     : 'No demonstration for this exercise yet'
+
+  const description = [a.dose, a.rpe_target != null ? `should feel like ${a.rpe_target}/10` : '']
+    .filter(Boolean)
+    .join(' · ')
 
   const footer = (
     <>
@@ -181,9 +224,14 @@ export default function AssignmentDialog({
           <span aria-hidden>·</span>
           <span>{longDay(a.scheduled_for)}</span>
           <span className={`chip ${chip.pill}`}>{chip.label}</span>
+          {awaitingReview(a) && (
+            <span className="chip bg-risk-med-tint text-risk-med-ink">
+              <ReviewDot /> Awaiting your review
+            </span>
+          )}
         </p>
       }
-      description={a.dose || undefined}
+      description={description || undefined}
     >
       <div className="space-y-5">
         <section aria-labelledby={`${ids}-clip`}>
@@ -221,7 +269,16 @@ export default function AssignmentDialog({
           </div>
         </section>
 
-        {done && a.completion && <Completion patientId={a.patient_id} c={a.completion} title={a.title} patientName={patientName} id={`${ids}-done`} />}
+        {done && a.completion && (
+          <Completion
+            assignment={a}
+            c={a.completion}
+            patientName={patientName}
+            actor={actor}
+            id={`${ids}-done`}
+            onChanged={onChanged}
+          />
+        )}
         {a.status === 'skipped' && (
           <p className="rounded-control bg-soft px-4 py-3 text-copy text-ink">
             <span className="font-medium">Skipped.</span>
@@ -257,15 +314,25 @@ export default function AssignmentDialog({
         <section aria-labelledby={`${ids}-dose`}>
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <h3 id={`${ids}-dose`} className="text-copy font-medium text-body">
-              Dose and note
+              Dose, requirements and note
             </h3>
             {done && <span className="meta">A done row keeps its dose.</span>}
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-7">
             <NumberField id={`${ids}-sets`} label="Sets" value={sets} disabled={done} onChange={setSets} />
             <NumberField id={`${ids}-reps`} label="Reps" value={reps} disabled={done} onChange={setReps} />
             <NumberField id={`${ids}-hold`} label="Hold (s)" value={hold} disabled={done} onChange={setHold} />
-            <div className="col-span-3 sm:col-span-1">
+            <NumberField
+              id={`${ids}-load`}
+              label="Load (kg)"
+              value={load}
+              max={500}
+              step={0.5}
+              disabled={done}
+              onChange={setLoad}
+            />
+            <NumberField id={`${ids}-rpe`} label="Target RPE" value={rpe} max={10} disabled={done} onChange={setRpe} />
+            <div className="sm:col-span-2">
               <label htmlFor={`${ids}-side`} className={LABEL}>
                 Side
               </label>
@@ -285,7 +352,15 @@ export default function AssignmentDialog({
               </select>
             </div>
           </div>
-          <p className="meta mt-2 px-1">{dose ? `The patient reads: ${dose}` : 'No counts set.'}</p>
+          <p className="meta mt-2 px-1">
+            {dose ? `The patient reads: ${dose}` : 'No counts set.'}
+            {rpeTarget != null && ` · should feel like ${rpeTarget}/10`}
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <RequirementControl label="Clip of their attempt" value={video} disabled={done} onChange={setVideo} />
+            <RequirementControl label="Wearable on" value={wearable} disabled={done} onChange={setWearable} />
+            {asks && <p className="meta -mt-1 px-1 sm:col-span-2">{asks}</p>}
+          </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_200px]">
             <div>
               <label htmlFor={`${ids}-note`} className={LABEL}>
@@ -414,38 +489,218 @@ export default function AssignmentDialog({
   )
 }
 
-/** What came back: when, from where, the pain, the note, the patient's clip. */
+/** What came back, and the place to answer it: when and from where; how
+ *  long the session ran; pain before → after; effort; what they lifted; the
+ *  wearable with its heart rate when it was on; the note; their clip — and
+ *  Compare, her clip beside theirs, when both exist. Under it the review:
+ *  the therapist's reply when there is one, else a Reply box (the note is
+ *  texted to the patient and the row is marked reviewed) and "Mark reviewed"
+ *  for nothing to say. */
 function Completion({
+  assignment: a,
   c,
-  title,
   patientName,
-  patientId,
+  actor,
   id,
+  onChanged,
 }: {
+  assignment: Assignment
   c: AssignmentCompletion
-  title: string
   patientName: string
-  patientId: string
+  /** The care-team id the review is filed under. */
+  actor: string
   id: string
+  onChanged?: (a: Assignment) => void
 }) {
+  const toast = useToast()
+  const review = useReviewAssignment()
+  const [reply, setReply] = useState('')
+  const [compare, setCompare] = useState(false)
+  const replyId = `${id}-reply`
+  const seconds = sessionSeconds(a.session)
+  const before = a.session?.pain_before ?? null
+  const after = c.pain_after ?? null
+  const warn = diagnosticWarning(reply)
+  const canCompare = Boolean(a.video?.url && c.video)
+  const reviewed = c.review ?? null
+  const waiting = awaitingReview(a)
+
+  const facts: { key: string; label: string; value: ReactNode }[] = []
+  if (seconds != null) facts.push({ key: 'dur', label: 'Duration', value: durationText(seconds) })
+  if (before != null || after != null) {
+    facts.push({
+      key: 'pain',
+      label: 'Pain',
+      value:
+        before != null && after != null ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="tabular-nums">{before}</span>
+            <ArrowRight aria-hidden size={12} className="text-secondary" />
+            <span className="sr-only">then</span>
+            <span className={`rounded-pill px-1.5 tabular-nums ${painChipClass(after)}`}>{after}</span>
+            <span className="text-secondary">/10</span>
+          </span>
+        ) : (
+          <span className="tabular-nums">
+            {after ?? before}/10 {after == null ? <span className="text-secondary">before</span> : ''}
+          </span>
+        ),
+    })
+  }
+  if (c.effort != null) facts.push({ key: 'eff', label: 'Effort', value: `${c.effort}/10` })
+  const did = [
+    c.sets_done != null ? `${c.sets_done} sets` : '',
+    c.reps_done != null ? `${c.reps_done} reps` : '',
+    c.load_done_kg != null ? kgText(c.load_done_kg) : '',
+  ].filter(Boolean)
+  if (did.length > 0) facts.push({ key: 'did', label: 'Did', value: did.join(' × ') })
+  if (a.session?.wearable_worn != null) {
+    const hr = [
+      a.session.hr_avg != null ? `${a.session.hr_avg} avg` : '',
+      a.session.hr_max != null ? `${a.session.hr_max} max` : '',
+    ].filter(Boolean)
+    facts.push({
+      key: 'wear',
+      label: 'Wearable',
+      value: (
+        <span className="inline-flex items-center gap-1.5">
+          <Watch aria-hidden size={14} className="text-secondary" />
+          {a.session.wearable_worn ? `Worn${hr.length ? ` · HR ${hr.join(' · ')}` : ''}` : 'Not worn'}
+        </span>
+      ),
+    })
+  }
+
+  const send = (note: string) =>
+    review.mutate(
+      { id: a.id, note, actor },
+      {
+        onSuccess: (row) => {
+          toast(note ? `Your reply is on its way to ${patientName}` : 'Marked reviewed', 'success')
+          setReply('')
+          onChanged?.(row)
+        },
+        onError: (e) => toast(e instanceof ApiError && e.message ? e.message : 'Could not send it', 'warning'),
+      },
+    )
+
   return (
     <section aria-labelledby={id} className="rounded-surface bg-risk-low-tint/50 p-4">
       <h3 id={id} className="flex flex-wrap items-center gap-2 text-copy font-medium text-ink">
         <Check aria-hidden size={16} className="text-risk-low-ink" />
         Done {relativeTime(c.completed_at)}
         {completionSource(c.source) && <span className="meta">{completionSource(c.source)}</span>}
-        {c.pain_after != null ? (
-          <span className={`chip ${painChipClass(c.pain_after)}`}>pain {c.pain_after}/10</span>
-        ) : (
-          <span className="chip bg-soft text-secondary">no pain score</span>
-        )}
+        {after == null && before == null && <span className="chip bg-soft text-secondary">no pain score</span>}
       </h3>
-      {c.note && <p className="mt-2 text-copy text-ink">“{c.note}”</p>}
+
+      {facts.length > 0 && (
+        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+          {facts.map((f) => (
+            <div key={f.key} className="min-w-[72px]">
+              <dt className="text-label font-medium tracking-label text-secondary">{f.label}</dt>
+              <dd className="mt-0.5 text-copy-lg font-medium text-ink">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {c.note && <p className="mt-3 text-copy text-ink">“{c.note}”</p>}
+
       <div className="mt-3">
         {c.video ? (
-          <ReturnedClip patientId={patientId} video={c.video} label={`${patientName}’s clip of ${title}`} />
+          <>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="meta">{patientName}’s clip of their attempt</span>
+              {canCompare && (
+                <button
+                  type="button"
+                  className="btn-plain btn-sm"
+                  aria-pressed={compare}
+                  onClick={() => setCompare((v) => !v)}
+                >
+                  <Columns2 size={14} aria-hidden /> Compare
+                </button>
+              )}
+            </div>
+            {compare && a.video?.url ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <figure>
+                  <ClipPlayer
+                    src={a.video.url}
+                    poster={a.video.poster_url}
+                    label={`Your demonstration of ${a.title}`}
+                    className="max-h-[360px]"
+                  />
+                  <figcaption className="meta mt-1">Your demonstration</figcaption>
+                </figure>
+                <figure>
+                  <ReturnedClip patientId={a.patient_id} video={c.video} label={`${patientName}’s clip of ${a.title}`} />
+                  <figcaption className="meta mt-1">Their attempt</figcaption>
+                </figure>
+              </div>
+            ) : (
+              <ReturnedClip patientId={a.patient_id} video={c.video} label={`${patientName}’s clip of ${a.title}`} />
+            )}
+          </>
         ) : (
           <p className="meta">No clip was sent with it.</p>
+        )}
+      </div>
+
+      <div className="mt-4 border-t border-hairline pt-3">
+        {reviewed ? (
+          <div>
+            <p className="flex flex-wrap items-center gap-2 text-copy font-medium text-ink">
+              <MessageSquare aria-hidden size={14} className="text-secondary" />
+              Reviewed by {reviewed.by_name ?? reviewed.by}
+              <span className="meta">{relativeTime(reviewed.at)}</span>
+            </p>
+            <p className="mt-1 text-copy text-ink">
+              {reviewed.note ? `“${reviewed.note}”` : <span className="text-secondary">Marked reviewed, nothing said.</span>}
+            </p>
+          </div>
+        ) : (
+          <div>
+            <label htmlFor={replyId} className={LABEL}>
+              Reply to {patientName}
+              {waiting && <span className="font-normal"> · they are waiting on this clip</span>}
+            </label>
+            <textarea
+              id={replyId}
+              rows={2}
+              className="field"
+              value={reply}
+              maxLength={600}
+              placeholder="e.g. Good depth. Keep the knee over the second toe on the way down."
+              onChange={(e) => setReply(e.target.value)}
+            />
+            {warn ? (
+              <p role="alert" className="mt-1 px-1 text-label text-risk-med-ink">
+                {warn}
+              </p>
+            ) : (
+              <p className="meta mt-1 px-1">
+                They read it in Care as “About your {a.title} clip: …”. Sending marks it reviewed.
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="btn-plain-muted btn-sm"
+                disabled={review.isPending}
+                onClick={() => send('')}
+              >
+                <Check size={14} aria-hidden /> Mark reviewed
+              </button>
+              <button
+                type="button"
+                className="btn-filled btn-sm"
+                disabled={!reply.trim() || review.isPending || !!warn}
+                onClick={() => send(reply.trim())}
+              >
+                <MessageSquare size={14} aria-hidden /> {review.isPending ? 'Sending…' : 'Send reply'}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </section>
@@ -491,39 +746,6 @@ function ReturnedClip({
   if (failed) return <p className="meta">The clip could not be loaded.</p>
   if (!src) return <p className="meta">Loading the clip…</p>
   return <ClipPlayer src={src} label={label} className="max-h-[360px]" />
-}
-
-function NumberField({
-  id,
-  label,
-  value,
-  disabled,
-  onChange,
-}: {
-  id: string
-  label: string
-  value: string
-  disabled: boolean
-  onChange: (v: string) => void
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className={LABEL}>
-        {label}
-      </label>
-      <input
-        id={id}
-        type="number"
-        inputMode="numeric"
-        min={0}
-        max={999}
-        className="field !min-h-10 !py-1.5 tabular-nums"
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
-  )
 }
 
 /** 0–10 as a row of radios: one tab stop, arrows move, the number is the

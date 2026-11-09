@@ -1,5 +1,6 @@
-import type { Assignment, AssignmentStatus } from '../../api/hep'
-import { isoDate } from '../../api/hep'
+import type { Assignment, AssignmentStatus, Requirement } from '../../api/hep'
+import { REQUIREMENTS, isoDate } from '../../api/hep'
+import { signedPct } from '../../lib/format'
 import { PRIORITY, type Priority } from '../../lib/risk'
 import { titleCase } from './planCopy'
 
@@ -117,6 +118,11 @@ export function completionSource(source: string | null | undefined): string {
   return source ? titleCase(source) : ''
 }
 
+/** A done row with a clip the therapist has not answered. */
+export function awaitingReview(a: Assignment): boolean {
+  return a.status === 'done' && !!a.completion?.video && !a.completion.review
+}
+
 /** The accessible name of a chip: everything its marks say. */
 export function assignmentSummary(a: Assignment): string {
   const parts = [a.title]
@@ -124,11 +130,119 @@ export function assignmentSummary(a: Assignment): string {
   if (a.status === 'done') {
     parts.push('done')
     if (a.completion?.pain_after != null) parts.push(`pain ${a.completion.pain_after} of 10`)
+    if (a.completion?.effort != null) parts.push(`effort ${a.completion.effort} of 10`)
+    if (awaitingReview(a)) parts.push('awaiting review')
   } else if (a.status === 'skipped') {
     parts.push('skipped')
   }
   if (a.video) parts.push('has a clip')
   return parts.join(', ')
+}
+
+// --- requirements ---------------------------------------------------------------
+
+/** The server's default when a row predates the field or carries something
+ *  the console does not know. */
+export function requirementOf(value: string | null | undefined): Requirement {
+  return REQUIREMENTS.includes(value as Requirement) ? (value as Requirement) : 'optional'
+}
+
+export const REQUIREMENT_LABEL: Record<Requirement, string> = {
+  off: 'Off',
+  optional: 'Optional',
+  required: 'Required',
+}
+
+export const REQUIREMENT_OPTIONS = REQUIREMENTS.map((key) => ({ key, label: REQUIREMENT_LABEL[key] }))
+
+/** One line under the dose: what she asked for with this exercise, or
+ *  nothing when both are left optional. */
+export function requirementsText(video: string, wearable: string): string {
+  const parts: string[] = []
+  const v = requirementOf(video)
+  const w = requirementOf(wearable)
+  if (v === 'required') parts.push('a clip of their attempt')
+  if (w === 'required') parts.push('the wearable on')
+  const asked = parts.length ? `Asks for ${parts.join(' and ')}` : ''
+  const off: string[] = []
+  if (v === 'off') off.push('no clip')
+  if (w === 'off') off.push('no wearable')
+  return [asked, off.length ? `${off.join(', ')} for this one` : ''].filter(Boolean).join(' · ')
+}
+
+// --- adherence and load ----------------------------------------------------------
+
+/** Done over assigned for the seven days ending today: the calm tone from
+ *  60%, amber under it, red under 30%. The numbers are always printed
+ *  beside it, so the tone never carries the state alone. */
+export function adherenceChipClass(pct: number): string {
+  if (pct < 30) return 'bg-risk-high-tint text-risk-high-ink'
+  if (pct < 60) return 'bg-risk-med-tint text-risk-med-ink'
+  return 'bg-risk-low-tint text-risk-low-ink'
+}
+
+/** "3 of 4 · 75%" */
+export function adherenceText(done: number, assigned: number, pct: number): string {
+  return `${done} of ${assigned} · ${Math.round(pct)}%`
+}
+
+/** "load +12%", or nothing when there is no last week to compare with. */
+export function loadTrendText(changePct: number | null | undefined): string | null {
+  if (changePct == null || !Number.isFinite(changePct)) return null
+  return `load ${signedPct(changePct)}`
+}
+
+/** "12 kg", "12.5 kg" */
+export function kgText(kg: number): string {
+  const rounded = Math.round(kg * 10) / 10
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)} kg`
+}
+
+/** "11 min", "45 s", "1 h 05 min" */
+export function durationText(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds))
+  if (s < 60) return `${s} s`
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60)
+  return `${h} h ${String(m % 60).padStart(2, '0')} min`
+}
+
+/** A session's length: the server's `duration_s`, else the two ends. */
+export function sessionSeconds(session: {
+  duration_s: number | null
+  started_at: string | null
+  ended_at: string | null
+} | null | undefined): number | null {
+  if (!session) return null
+  if (session.duration_s != null) return session.duration_s
+  if (session.started_at && session.ended_at) {
+    const ms = new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()
+    return Number.isFinite(ms) && ms >= 0 ? ms / 1000 : null
+  }
+  return null
+}
+
+// --- weekdays (programs) ---------------------------------------------------------
+
+/** Monday 0 … Sunday 6, as the server's `date.weekday()` numbers them. */
+export const WEEKDAYS = [
+  { key: 0, short: 'Mon', long: 'Monday' },
+  { key: 1, short: 'Tue', long: 'Tuesday' },
+  { key: 2, short: 'Wed', long: 'Wednesday' },
+  { key: 3, short: 'Thu', long: 'Thursday' },
+  { key: 4, short: 'Fri', long: 'Friday' },
+  { key: 5, short: 'Sat', long: 'Saturday' },
+  { key: 6, short: 'Sun', long: 'Sunday' },
+] as const
+
+/** "Every day", "Mon · Wed · Fri", "Weekdays", "Weekends". */
+export function weekdaysLabel(days: number[] | null | undefined): string {
+  if (!days || days.length === 0 || days.length === 7) return 'Every day'
+  const sorted = [...new Set(days)].sort((a, b) => a - b)
+  if (sorted.join() === '0,1,2,3,4') return 'Weekdays'
+  if (sorted.join() === '5,6') return 'Weekends'
+  return sorted.map((d) => WEEKDAYS[d]?.short ?? String(d)).join(' · ')
 }
 
 // --- the dose while it is being edited -------------------------------------------------
@@ -141,24 +255,43 @@ export function countOf(s: string): number | null {
   return Number.isFinite(n) ? Math.round(n) : null
 }
 
+/** Kilograms from a field: a decimal to one place, or null when empty. */
+export function decimalOf(s: string): number | null {
+  const t = s.trim()
+  if (!t) return null
+  const n = Number(t)
+  return Number.isFinite(n) ? Math.round(n * 10) / 10 : null
+}
+
+/** A number back into a field, or the empty string. */
+export function fieldOf(n: number | null | undefined): string {
+  return n == null ? '' : String(n)
+}
+
+/** The dose while it is being edited: the fields as strings. */
+export interface DoseDraft {
+  sets: string
+  reps: string
+  hold: string
+  load: string
+  side: string
+  sideLabel: string
+}
+
 /** Mirrors `plans.dose_line` without the frequency — what the chip and the
- *  patient read: "3 sets × 10 reps · hold 5 s · Left". */
-export function doseText(
-  sets: string,
-  reps: string,
-  hold: string,
-  side: string,
-  sideLabel: string,
-): string {
-  const s = countOf(sets)
-  const r = countOf(reps)
-  const h = countOf(hold)
+ *  patient read: "3 sets × 10 reps · hold 5 s · 12 kg · Left". */
+export function doseText(d: DoseDraft): string {
+  const s = countOf(d.sets)
+  const r = countOf(d.reps)
+  const h = countOf(d.hold)
+  const kg = decimalOf(d.load)
   const parts: string[] = []
   if (s && r) parts.push(`${s} sets × ${r} reps`)
   else if (s) parts.push(`${s} sets`)
   else if (r) parts.push(`${r} reps`)
   if (h) parts.push(`hold ${h} s`)
-  if (side !== 'not_applicable' && sideLabel) parts.push(sideLabel)
+  if (kg) parts.push(kgText(kg))
+  if (d.side !== 'not_applicable' && d.sideLabel) parts.push(d.sideLabel)
   return parts.join(' · ')
 }
 

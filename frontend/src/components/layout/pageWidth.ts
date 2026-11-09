@@ -3,7 +3,8 @@
  *  the sky window's frame all use the page's own cap.
  *    worklist  1080px   ('/')
  *    patient   1240px   ('/patients/…', '/sports…' — the team boards)
- *    settings   960px   ('/settings…', '/integrations', '/exercise-…')
+ *    settings   960px   ('/settings…', '/integrations', '/exercise-…' —
+ *                        the review queue and the programs list among them)
  *    wide      --container-max ('/exercise-schedule', any other route)
  *    full      the whole viewport, a small gutter ('/demo/…' — the demo
  *              screen's schedule-and-phone layout; the bar keeps `wide`)
@@ -16,8 +17,8 @@ export function pageWidthFor(pathname: string): PageWidth {
   if (pathname.startsWith('/patients/')) return 'patient'
   // the week grid wants every column it can get
   if (pathname.startsWith('/exercise-schedule')) return 'wide'
-  // the plan editor is two columns, like the patient page
-  if (/^\/exercise-plans\/[^/]+/.test(pathname)) return 'patient'
+  // the plan and program editors are two columns, like the patient page
+  if (/^\/exercise-(plans|programs)\/[^/]+/.test(pathname)) return 'patient'
   if (pathname === '/sports' || pathname.startsWith('/sports/')) return 'patient'
   if (
     pathname.startsWith('/settings') ||
