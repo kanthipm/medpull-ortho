@@ -403,6 +403,38 @@ line). Two templates for `hirt`: "Patellar tendinopathy · phase 2" (Cole's
 pattern) and "Lumbar · return to lifting" (June's). `EXPECTED_SCHEDULE` stays
 true.
 
+### Backend notes (built 2026-11-08)
+
+What the backend adds beyond the words above, all additive:
+
+- `completion.awaiting_review` (bool): a clip with no review yet — what the
+  queue lists and the grid dots. `session` is non-null once any of its fields
+  is set (a start, or a completion that said `wearable_worn`). A review of a
+  day without a clip reads "About your <title>: <note>".
+- `POST /hep/schedule/copy-week` and `POST /hep/templates/{id}/apply` both
+  answer 201 `{ "assignments": [...], "skipped": n }` — `skipped` counts the
+  days left alone because they already had the exercise; an empty source week
+  is 422, copying a week onto itself 422. `GET /hep/templates/{id}` exists
+  too. Template items also carry `title`, `side_label` and `dose`; `PUT`
+  replaces what is sent and keeps the rest; the same exercise twice on one
+  weekday is refused.
+- `POST /hep/schedule/{id}/complete` (the room) also accepts `effort`,
+  `sets_done`, `reps_done`, `load_done_kg`. The review's `actor` must be a
+  care-team id; the generic `provider` signs as the patient's own therapist.
+- `load_week` sums tonnage: load × reps × sets, each as done when the patient
+  said (`load_done_kg`, `reps_done`, `sets_done`), else as prescribed.
+- `GET /mobile/exercises/program` also carries `today`. `/start` on a skipped
+  day puts it back to `assigned`. `complete` checks the requirements before
+  the clip is stored; `ended_at` before `started_at` is 422.
+- Seed: Cole's step-ups carry `load_done_kg` 16 from program day 8 (he went
+  heavier than the 10 on the sheet, so the board shows a load trend); each
+  done day's session follows the one before it, so `completed_at` moved a few
+  minutes from the first pass. The reviewed days are never the latest done
+  of their exercise, so `seed_hirt_media.py`'s clips land in the queue.
+  Templates: "Patellar tendinopathy · phase 2" runs 3 weeks (ct_gregg),
+  "Lumbar · return to lifting" 2 (ct_harris); `hirt.ensure_templates` is
+  called from `seed_core` and from `ensure_org`.
+
 ### Out of scope here
 
 Texted reminders at a time of day (a daily job and a per-patient setting; the

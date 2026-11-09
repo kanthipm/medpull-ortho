@@ -221,6 +221,9 @@ def seed_core(
             counts["checkins"] += written["checkins"]
             counts["observations"] += written["observations"]
             counts["exercise_assignments"] += hirt.write_schedule(db, spec.id, today)["assignments"]
+    # The clinic's programs, when the clinic is on this roster.
+    if any(h.id == hirt.HOSPITAL_ID for h in hospitals):
+        counts["exercise_templates"] = hirt.ensure_templates(db)
 
     # adherence tasks + last-14-day records
     n_records = 0

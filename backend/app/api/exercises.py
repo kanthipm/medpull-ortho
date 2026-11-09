@@ -1,6 +1,7 @@
 """The patient app's half of the exercise schedule, under
 ``/api/mobile/exercises``: today's exercises with the therapist's clip to
-follow, marking one done with a pain score and a clip of the attempt, or
+follow, the whole program by day, starting one as a session, marking it done
+with a pain score, the effort, what was done and a clip of the attempt, or
 skipping it with a reason.
 
 Authorised by the app session (``mobile.current_patient``) like the rest of
@@ -14,7 +15,7 @@ the clip where the conversation is.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
@@ -75,9 +76,25 @@ class ReturnClip(BaseModel):
 
 
 class CompleteBody(BaseModel):
+    """What the finish sheet sends. The session's own clock
+    (``started_at``/``ended_at``) is optional: without it the server keeps
+    the start it recorded at ``/start`` and closes the session now."""
+
     pain_after: int | None = Field(default=None, ge=0, le=10)
     note: str = Field(default="", max_length=schedule.NOTE_LIMIT)
     video: ReturnClip | None = None
+    effort: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
+    sets_done: int | None = Field(default=None, ge=0, le=999)
+    reps_done: int | None = Field(default=None, ge=0, le=999)
+    load_done_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
+    wearable_worn: bool | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+
+
+class StartBody(BaseModel):
+    pain_before: int | None = Field(default=None, ge=0, le=10)
+    wearable_worn: bool | None = None
 
 
 class SkipBody(BaseModel):
@@ -126,6 +143,42 @@ def today_exercises(
     return schedule.today_payload(db, patient, day or date.today())
 
 
+@router.get("/program")
+def program(
+    start: date | None = None,
+    days: int = Query(default=14, ge=1, le=schedule.MAX_PROGRAM_DAYS),
+    patient: Patient = Depends(current_patient),
+    db: Session = Depends(_ready),
+) -> dict:
+    """The whole program by day: a week back and a week ahead by default,
+    each day with its exercises and how it went (a past day's open row is
+    missed)."""
+    try:
+        return schedule.program_payload(db, patient, start=start, days=days, today=date.today())
+    except HepError as err:
+        raise _refused(err)
+
+
+@router.post("/{assignment_id}/start")
+def start_exercise(
+    assignment_id: int,
+    body: StartBody | None = None,
+    patient: Patient = Depends(current_patient),
+    db: Session = Depends(_ready),
+) -> dict:
+    """The patient starts the exercise: the session opens now with the pain
+    they are in and whether the wearable is on. Starting again moves the
+    start; a done day is a 409."""
+    body = body or StartBody()
+    row = _own(db, patient, assignment_id)
+    try:
+        row = schedule.start_assignment(db, row, pain_before=body.pain_before,
+                                        wearable_worn=body.wearable_worn)
+    except HepError as err:
+        raise _refused(err)
+    return {"assignment": schedule.AssignmentView(db, patient_app=True).render(row)}
+
+
 @router.post("/{assignment_id}/complete")
 def complete_exercise(
     assignment_id: int,
@@ -133,22 +186,27 @@ def complete_exercise(
     patient: Patient = Depends(current_patient),
     db: Session = Depends(_ready),
 ) -> dict:
-    """Mark a day done with the pain after it and, when the patient filmed
-    the attempt, the clip. The clip is settled first — confirmed from its
-    key as any thread file is (owned by this patient, there, within the
-    cap, what its type says), or taken as the row the direct upload left —
-    then one line goes on the thread with it, and the row records the rest.
-    A day already done is a 409 before anything is stored."""
+    """Mark a day done with the pain after it, how it felt, what was done
+    and, when the patient filmed the attempt, the clip. What the therapist
+    asked for is checked first — a clip she required, the wearable she
+    required — then the clip is settled: confirmed from its key as any
+    thread file is (owned by this patient, there, within the cap, what its
+    type says), or taken as the row the direct upload left. Then one line
+    goes on the thread with it, and the row records the rest, the session's
+    duration and heart rate included. A day already done is a 409 before
+    anything is stored."""
     body = body or CompleteBody()
     row = _own(db, patient, assignment_id)
+    worn = body.wearable_worn if body.wearable_worn is not None else row.wearable_worn
     try:
         schedule.ensure_open(row)
+        schedule.check_requirements(row, has_clip=body.video is not None, wearable_worn=worn)
     except HepError as err:
         raise _refused(err)
     attachment = _return_clip(db, patient, body.video) if body.video is not None else None
     exercise = db.get(Exercise, row.exercise_id)
     text = schedule.completion_line(exercise.title if exercise else "the exercise",
-                                    body.pain_after, body.note)
+                                    body.pain_after, body.note, effort=body.effort)
     message = Message(patient_id=patient.id, sender="patient", channel="app", text=text)
     db.add(message)
     db.flush()
@@ -162,6 +220,9 @@ def complete_exercise(
         row = schedule.complete_assignment(
             db, row, pain_after=body.pain_after, note=body.note, source="app",
             video_attachment_id=attachment.id if attachment else None,
+            effort=body.effort, sets_done=body.sets_done, reps_done=body.reps_done,
+            load_done_kg=body.load_done_kg, wearable_worn=body.wearable_worn,
+            started_at=body.started_at, ended_at=body.ended_at,
         )
     except HepError as err:
         db.rollback()

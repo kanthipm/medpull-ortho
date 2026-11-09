@@ -301,10 +301,11 @@ def _title(title: str) -> str:
 
 
 def dose_text(sets: int | None, reps: int | None, hold_seconds: int | None, side: str,
-              frequency: str | None = None) -> str:
+              frequency: str | None = None, load_kg: float | None = None) -> str:
     """The one-line prescription under an exercise ("3 sets × 10 reps · hold
     5 s · Twice a day · Left"). A calendar day has no frequency, so the
-    schedule leaves that part out."""
+    schedule leaves that part out; a lifter's day carries the load instead
+    ("3 sets × 10 reps · 12 kg · Left")."""
     parts = []
     if sets and reps:
         parts.append(f"{sets} sets × {reps} reps")
@@ -314,6 +315,8 @@ def dose_text(sets: int | None, reps: int | None, hold_seconds: int | None, side
         parts.append(f"{reps} reps")
     if hold_seconds:
         parts.append(f"hold {hold_seconds} s")
+    if load_kg:
+        parts.append(f"{load_kg:g} kg")
     if frequency:
         parts.append(FREQUENCY_LABELS.get(frequency, frequency))
     if SIDE_LABELS.get(side):

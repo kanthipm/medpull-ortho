@@ -370,6 +370,12 @@ class AssignmentCreate(BaseModel):
     reps: int | None = Field(default=None, ge=0, le=999)
     hold_seconds: int | None = Field(default=None, ge=0, le=999)
     side: str = "not_applicable"
+    # The lifter's dose beyond counts, and what the therapist asks for with
+    # the day (REQUIREMENTS: off | optional | required).
+    load_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
+    rpe_target: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
+    video_requirement: str = "optional"
+    wearable_requirement: str = "optional"
     clinician_instructions: str = Field(default="", max_length=schedule.TEXT_LIMIT)
     # A care-team id; empty means the patient's assigned provider.
     assigned_by: str | None = Field(default=None, max_length=60)
@@ -384,6 +390,10 @@ class AssignmentPatch(BaseModel):
     reps: int | None = Field(default=None, ge=0, le=999)
     hold_seconds: int | None = Field(default=None, ge=0, le=999)
     side: str | None = None
+    load_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
+    rpe_target: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
+    video_requirement: str | None = None
+    wearable_requirement: str | None = None
     clinician_instructions: str | None = Field(default=None, max_length=schedule.TEXT_LIMIT)
     scheduled_for: date | None = None
     assigned_by: str | None = Field(default=None, max_length=60)
@@ -394,6 +404,28 @@ class AssignmentPatch(BaseModel):
 class AssignmentComplete(BaseModel):
     pain_after: int | None = Field(default=None, ge=0, le=10)
     note: str = Field(default="", max_length=schedule.NOTE_LIMIT)
+    # What the patient told her in the room, when she has it.
+    effort: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
+    sets_done: int | None = Field(default=None, ge=0, le=999)
+    reps_done: int | None = Field(default=None, ge=0, le=999)
+    load_done_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
+    actor: str = Field(default="provider", max_length=60)
+
+
+class ReviewBody(BaseModel):
+    """The therapist's look at a done day. An empty note marks it reviewed
+    and says nothing to the patient."""
+
+    note: str = Field(default="", max_length=schedule.NOTE_LIMIT)
+    actor: str = Field(default="provider", max_length=60)
+
+
+class CopyWeekBody(BaseModel):
+    patient_id: str
+    from_start: date
+    to_start: date
+    # A care-team id; empty keeps whoever assigned each day being copied.
+    assigned_by: str | None = Field(default=None, max_length=60)
     actor: str = Field(default="provider", max_length=60)
 
 
@@ -434,10 +466,46 @@ def create_schedule(
             dates=body.dates, sets=body.sets, reps=body.reps, hold_seconds=body.hold_seconds,
             side=body.side, clinician_instructions=body.clinician_instructions,
             assigned_by=body.assigned_by, actor=body.actor, today=date.today(),
+            load_kg=body.load_kg, rpe_target=body.rpe_target,
+            video_requirement=body.video_requirement,
+            wearable_requirement=body.wearable_requirement,
         )
     except HepError as err:
         raise _schedule_error(err)
     return {"assignments": schedule.AssignmentView(db).render_all(rows)}
+
+
+@router.post("/schedule/copy-week", status_code=201)
+def copy_schedule_week(
+    body: CopyWeekBody, db: Session = Depends(_ready), clinic: str = Depends(_clinic),
+) -> dict:
+    """Last week again: every assignment of the seven days from
+    ``from_start`` on the same weekday from ``to_start``, dose, note and
+    requirements with it. A day that already has the exercise is skipped and
+    counted in ``skipped``."""
+    try:
+        rows, skipped = schedule.copy_week(
+            db, clinic, patient_id=body.patient_id, from_start=body.from_start,
+            to_start=body.to_start, assigned_by=body.assigned_by, actor=body.actor,
+            today=date.today(),
+        )
+    except HepError as err:
+        raise _schedule_error(err)
+    return {"assignments": schedule.AssignmentView(db).render_all(rows), "skipped": skipped}
+
+
+@router.get("/review")
+def review_queue(
+    days: int = Query(default=schedule.REVIEW_DAYS, ge=1, le=schedule.MAX_REVIEW_DAYS),
+    db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    """The clips waiting for the therapist: the clinic's done days with a
+    clip of the attempt and no review yet, newest completion first."""
+    try:
+        return schedule.review_queue_payload(db, clinic, days=days)
+    except HepError as err:
+        raise _schedule_error(err)
 
 
 @router.patch("/schedule/{assignment_id}")
@@ -481,8 +549,27 @@ def complete_schedule(
     try:
         row = schedule.complete_assignment(
             db, row, pain_after=body.pain_after, note=body.note, source="console",
-            actor=body.actor,
+            actor=body.actor, effort=body.effort, sets_done=body.sets_done,
+            reps_done=body.reps_done, load_done_kg=body.load_done_kg,
         )
+    except HepError as err:
+        raise _schedule_error(err)
+    return schedule.AssignmentView(db).render(row)
+
+
+@router.post("/schedule/{assignment_id}/review")
+def review_schedule(
+    assignment_id: int, body: ReviewBody | None = None, db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    """The therapist has looked at a done day. The row records who and
+    when; a note also goes to the patient as one line on the thread, under
+    her name, so they read it in Care. An open day → 409."""
+    body = body or ReviewBody()
+    row = _assignment_or_404(db, clinic, assignment_id)
+    _no_diagnostic(body.note)
+    try:
+        row, _message = schedule.review_assignment(db, row, note=body.note, actor=body.actor)
     except HepError as err:
         raise _schedule_error(err)
     return schedule.AssignmentView(db).render(row)
@@ -600,3 +687,142 @@ def read_clip_bytes(
     if not clips.readable_by(media, clinic):
         raise HTTPException(status_code=404, detail="Unknown clip")
     return clips.stream(media, poster=poster)
+
+
+# --- programs ------------------------------------------------------------------------
+
+from app.hep import templates as programs  # noqa: E402
+
+
+class TemplateItemBody(BaseModel):
+    """One exercise of a program: named by id or by catalog key, on its
+    weekdays (Monday is 0; empty means every day), with the dose and the
+    requirements an assignment carries."""
+
+    exercise_id: int | None = None
+    exercise_key: str | None = Field(default=None, max_length=80)
+    weekdays: list[int] | None = Field(default=None, max_length=7)
+    sets: int | None = Field(default=None, ge=0, le=999)
+    reps: int | None = Field(default=None, ge=0, le=999)
+    hold_seconds: int | None = Field(default=None, ge=0, le=999)
+    side: str = "not_applicable"
+    load_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
+    rpe_target: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
+    clinician_instructions: str = Field(default="", max_length=schedule.TEXT_LIMIT)
+    video_requirement: str = "optional"
+    wearable_requirement: str = "optional"
+
+
+class TemplateCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=programs.NAME_LIMIT)
+    description: str = Field(default="", max_length=programs.DESCRIPTION_LIMIT)
+    weeks: int = Field(default=2, ge=1, le=programs.MAX_WEEKS)
+    items: list[TemplateItemBody] = Field(min_length=1, max_length=programs.MAX_ITEMS)
+    actor: str = Field(default="provider", max_length=60)
+
+
+class TemplateUpdate(BaseModel):
+    """What is sent is replaced; what is left out stays."""
+
+    name: str | None = Field(default=None, min_length=2, max_length=programs.NAME_LIMIT)
+    description: str | None = Field(default=None, max_length=programs.DESCRIPTION_LIMIT)
+    weeks: int | None = Field(default=None, ge=1, le=programs.MAX_WEEKS)
+    items: list[TemplateItemBody] | None = Field(default=None, min_length=1,
+                                                 max_length=programs.MAX_ITEMS)
+    actor: str = Field(default="provider", max_length=60)
+
+
+class TemplateApply(BaseModel):
+    patient_id: str
+    start: date
+    # Defaults to the program's own length.
+    weeks: int | None = Field(default=None, ge=1, le=programs.MAX_WEEKS)
+    # A care-team id; empty means the patient's assigned provider.
+    assigned_by: str | None = Field(default=None, max_length=60)
+    actor: str = Field(default="provider", max_length=60)
+
+
+def _template_or_404(db: Session, clinic: str, template_id: int):
+    row = programs.get_template(db, clinic, template_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unknown program")
+    return row
+
+
+def _template_items(items: list[TemplateItemBody] | None) -> list[dict] | None:
+    if items is None:
+        return None
+    _no_diagnostic(*(i.clinician_instructions for i in items))
+    return [i.model_dump() for i in items]
+
+
+@router.get("/templates")
+def list_templates(db: Session = Depends(_ready), clinic: str = Depends(_clinic)) -> dict:
+    """The clinic's programs still in use, by name."""
+    return programs.templates_payload(db, clinic)
+
+
+@router.post("/templates", status_code=201)
+def create_template(
+    body: TemplateCreate, db: Session = Depends(_ready), clinic: str = Depends(_clinic),
+) -> dict:
+    try:
+        row = programs.create_template(
+            db, clinic, name=body.name, description=body.description, weeks=body.weeks,
+            items=_template_items(body.items), actor=body.actor,
+        )
+    except HepError as err:
+        raise _schedule_error(err)
+    return programs.template_payload(db, row)
+
+
+@router.get("/templates/{template_id}")
+def read_template(
+    template_id: int, db: Session = Depends(_ready), clinic: str = Depends(_clinic),
+) -> dict:
+    return programs.template_payload(db, _template_or_404(db, clinic, template_id))
+
+
+@router.put("/templates/{template_id}")
+def update_template(
+    template_id: int, body: TemplateUpdate, db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    row = _template_or_404(db, clinic, template_id)
+    try:
+        row = programs.update_template(
+            db, clinic, row, name=body.name, description=body.description, weeks=body.weeks,
+            items=_template_items(body.items), actor=body.actor,
+        )
+    except HepError as err:
+        raise _schedule_error(err)
+    return programs.template_payload(db, row)
+
+
+@router.delete("/templates/{template_id}")
+def delete_template(
+    template_id: int, actor: str = Query(default="provider", max_length=60),
+    db: Session = Depends(_ready), clinic: str = Depends(_clinic),
+) -> dict:
+    """Archives the program; the days it put on calendars stay."""
+    programs.archive_template(db, clinic, _template_or_404(db, clinic, template_id), actor=actor)
+    return {"ok": True}
+
+
+@router.post("/templates/{template_id}/apply", status_code=201)
+def apply_template(
+    template_id: int, body: TemplateApply, db: Session = Depends(_ready),
+    clinic: str = Depends(_clinic),
+) -> dict:
+    """Every item on its weekdays from ``start`` for ``weeks`` weeks, around
+    whatever the patient's calendar already holds (duplicates are skipped
+    and counted)."""
+    row = _template_or_404(db, clinic, template_id)
+    try:
+        rows, skipped = programs.apply_template(
+            db, clinic, row, patient_id=body.patient_id, start=body.start, weeks=body.weeks,
+            assigned_by=body.assigned_by, actor=body.actor, today=date.today(),
+        )
+    except HepError as err:
+        raise _schedule_error(err)
+    return {"assignments": schedule.AssignmentView(db).render_all(rows), "skipped": skipped}

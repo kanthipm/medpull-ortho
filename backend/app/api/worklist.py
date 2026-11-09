@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import ConsoleScope, console_scope
 from app.api.scope import scoped_clinic_patients
+from app.config import settings
 from app.database import get_db
 from app.llm.prose import humanize_codes
 from app.models.checkin import Checkin
@@ -81,6 +82,15 @@ def worklist(
 
     from app.llm.insights import briefing_is_cached, insight_is_cached
 
+    # The exercise schedule's line for every card in one query: how the
+    # seven days ending today went and how many clips wait for a look;
+    # nothing for a chart with no exercise on them.
+    exercises: dict[str, dict | None] = {}
+    if settings.hep_enabled:
+        from app.hep.schedule import week_summaries
+
+        exercises = week_summaries(db, [p.id for p in patients], datetime.now().date())
+
     rows = []
     stats = {"total": len(patients), "high": 0, "medium": 0, "missing": 0, "low": 0}
     pending = 0
@@ -142,6 +152,7 @@ def worklist(
                 },
                 "next_step": next_step,
                 "next_steps_open": next_steps_open,
+                "exercises": exercises.get(patient.id),
             }
         )
 
@@ -171,6 +182,7 @@ def worklist(
                 "trajectory": {"state": "unknown", "pct": None},
                 "next_step": None,
                 "next_steps_open": 0,
+                "exercises": exercises.get(patient.id),
             }
         )
 

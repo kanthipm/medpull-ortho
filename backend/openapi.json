@@ -238,6 +238,32 @@
             "title": "Actor",
             "type": "string"
           },
+          "effort": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "load_done_kg": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Done Kg"
+          },
           "note": {
             "default": "",
             "maxLength": 600,
@@ -256,6 +282,32 @@
               }
             ],
             "title": "Pain After"
+          },
+          "reps_done": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps Done"
+          },
+          "sets_done": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets Done"
           }
         },
         "title": "AssignmentComplete",
@@ -314,6 +366,19 @@
             ],
             "title": "Hold Seconds"
           },
+          "load_kg": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Kg"
+          },
           "patient_id": {
             "title": "Patient Id",
             "type": "string"
@@ -331,6 +396,19 @@
             ],
             "title": "Reps"
           },
+          "rpe_target": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe Target"
+          },
           "sets": {
             "anyOf": [
               {
@@ -347,6 +425,16 @@
           "side": {
             "default": "not_applicable",
             "title": "Side",
+            "type": "string"
+          },
+          "video_requirement": {
+            "default": "optional",
+            "title": "Video Requirement",
+            "type": "string"
+          },
+          "wearable_requirement": {
+            "default": "optional",
+            "title": "Wearable Requirement",
             "type": "string"
           }
         },
@@ -404,6 +492,19 @@
             ],
             "title": "Hold Seconds"
           },
+          "load_kg": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Kg"
+          },
           "reps": {
             "anyOf": [
               {
@@ -416,6 +517,19 @@
               }
             ],
             "title": "Reps"
+          },
+          "rpe_target": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe Target"
           },
           "scheduled_for": {
             "anyOf": [
@@ -465,6 +579,28 @@
               }
             ],
             "title": "Sort Order"
+          },
+          "video_requirement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Requirement"
+          },
+          "wearable_requirement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wearable Requirement"
           }
         },
         "title": "AssignmentPatch",
@@ -913,6 +1049,49 @@
           }
         },
         "title": "ContactBody",
+        "type": "object"
+      },
+      "CopyWeekBody": {
+        "properties": {
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          },
+          "assigned_by": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned By"
+          },
+          "from_start": {
+            "format": "date",
+            "title": "From Start",
+            "type": "string"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "to_start": {
+            "format": "date",
+            "title": "To Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "from_start",
+          "to_start"
+        ],
+        "title": "CopyWeekBody",
         "type": "object"
       },
       "CreatePatientBody": {
@@ -3101,6 +3280,25 @@
         "title": "ReturnClip",
         "type": "object"
       },
+      "ReviewBody": {
+        "description": "The therapist's look at a done day. An empty note marks it reviewed\nand says nothing to the patient.",
+        "properties": {
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 600,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "title": "ReviewBody",
+        "type": "object"
+      },
       "SearchBody": {
         "properties": {
           "date_of_birth": {
@@ -3435,6 +3633,36 @@
         "title": "StaffMessageBody",
         "type": "object"
       },
+      "StartBody": {
+        "properties": {
+          "pain_before": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pain Before"
+          },
+          "wearable_worn": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wearable Worn"
+          }
+        },
+        "title": "StartBody",
+        "type": "object"
+      },
       "StatusBody": {
         "properties": {
           "note": {
@@ -3495,81 +3723,185 @@
         "title": "SwitchBody",
         "type": "object"
       },
-      "TemplateCreate": {
+      "TemplateApply": {
         "properties": {
-          "clinical_target": {
-            "default": "",
-            "maxLength": 160,
-            "title": "Clinical Target",
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
             "type": "string"
           },
-          "feeds": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Feeds",
-            "type": "array"
-          },
-          "params": {
-            "additionalProperties": true,
-            "title": "Params",
-            "type": "object"
-          },
-          "pathways": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Pathways",
-            "type": "array"
-          },
-          "phase": {
-            "default": "ongoing",
-            "title": "Phase",
-            "type": "string"
-          },
-          "pinned": {
-            "default": false,
-            "title": "Pinned",
-            "type": "boolean"
-          },
-          "schedule": {
-            "default": "daily",
-            "title": "Schedule",
-            "type": "string"
-          },
-          "task_kind": {
+          "assigned_by": {
             "anyOf": [
               {
+                "maxLength": 60,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Task Kind"
+            "title": "Assigned By"
           },
-          "title": {
-            "maxLength": 90,
-            "minLength": 3,
-            "title": "Title",
+          "patient_id": {
+            "title": "Patient Id",
             "type": "string"
           },
-          "verify_kind": {
-            "default": "custom",
-            "title": "Verify Kind",
+          "start": {
+            "format": "date",
+            "title": "Start",
             "type": "string"
           },
-          "why": {
-            "default": "",
-            "maxLength": 160,
-            "title": "Why",
-            "type": "string"
+          "weeks": {
+            "anyOf": [
+              {
+                "maximum": 12.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weeks"
           }
         },
         "required": [
-          "title"
+          "patient_id",
+          "start"
         ],
-        "title": "TemplateCreate",
+        "title": "TemplateApply",
+        "type": "object"
+      },
+      "TemplateItemBody": {
+        "description": "One exercise of a program: named by id or by catalog key, on its\nweekdays (Monday is 0; empty means every day), with the dose and the\nrequirements an assignment carries.",
+        "properties": {
+          "clinician_instructions": {
+            "default": "",
+            "maxLength": 400,
+            "title": "Clinician Instructions",
+            "type": "string"
+          },
+          "exercise_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exercise Id"
+          },
+          "exercise_key": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exercise Key"
+          },
+          "hold_seconds": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Seconds"
+          },
+          "load_kg": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Kg"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "rpe_target": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe Target"
+          },
+          "sets": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets"
+          },
+          "side": {
+            "default": "not_applicable",
+            "title": "Side",
+            "type": "string"
+          },
+          "video_requirement": {
+            "default": "optional",
+            "title": "Video Requirement",
+            "type": "string"
+          },
+          "wearable_requirement": {
+            "default": "optional",
+            "title": "Wearable Requirement",
+            "type": "string"
+          },
+          "weekdays": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 7,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekdays"
+          }
+        },
+        "title": "TemplateItemBody",
         "type": "object"
       },
       "TemplatePatch": {
@@ -3683,6 +4015,73 @@
           }
         },
         "title": "TemplatePatch",
+        "type": "object"
+      },
+      "TemplateUpdate": {
+        "description": "What is sent is replaced; what is left out stays.",
+        "properties": {
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 600,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TemplateItemBody"
+                },
+                "maxItems": 40,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "weeks": {
+            "anyOf": [
+              {
+                "maximum": 12.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weeks"
+          }
+        },
+        "title": "TemplateUpdate",
         "type": "object"
       },
       "TestEntry": {
@@ -3920,7 +4319,46 @@
         "type": "object"
       },
       "app__api__exercises__CompleteBody": {
+        "description": "What the finish sheet sends. The session's own clock\n(``started_at``/``ended_at``) is optional: without it the server keeps\nthe start it recorded at ``/start`` and closes the session now.",
         "properties": {
+          "effort": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "load_done_kg": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Done Kg"
+          },
           "note": {
             "default": "",
             "maxLength": 600,
@@ -3940,6 +4378,44 @@
             ],
             "title": "Pain After"
           },
+          "reps_done": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps Done"
+          },
+          "sets_done": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets Done"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
           "video": {
             "anyOf": [
               {
@@ -3949,6 +4425,17 @@
                 "type": "null"
               }
             ]
+          },
+          "wearable_worn": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wearable Worn"
           }
         },
         "title": "CompleteBody",
@@ -4231,6 +4718,83 @@
         "title": "PlanItemBody",
         "type": "object"
       },
+      "app__api__plan__TemplateCreate": {
+        "properties": {
+          "clinical_target": {
+            "default": "",
+            "maxLength": 160,
+            "title": "Clinical Target",
+            "type": "string"
+          },
+          "feeds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Feeds",
+            "type": "array"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "pathways": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pathways",
+            "type": "array"
+          },
+          "phase": {
+            "default": "ongoing",
+            "title": "Phase",
+            "type": "string"
+          },
+          "pinned": {
+            "default": false,
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "schedule": {
+            "default": "daily",
+            "title": "Schedule",
+            "type": "string"
+          },
+          "task_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Kind"
+          },
+          "title": {
+            "maxLength": 90,
+            "minLength": 3,
+            "title": "Title",
+            "type": "string"
+          },
+          "verify_kind": {
+            "default": "custom",
+            "title": "Verify Kind",
+            "type": "string"
+          },
+          "why": {
+            "default": "",
+            "maxLength": 160,
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "TemplateCreate",
+        "type": "object"
+      },
       "app__hep__api__PlanItemBody": {
         "properties": {
           "clinician_instructions": {
@@ -4303,6 +4867,50 @@
           "exercise_id"
         ],
         "title": "PlanItemBody",
+        "type": "object"
+      },
+      "app__hep__api__TemplateCreate": {
+        "properties": {
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 600,
+            "title": "Description",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateItemBody"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 2,
+            "title": "Name",
+            "type": "string"
+          },
+          "weeks": {
+            "default": 2,
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Weeks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "items"
+        ],
+        "title": "TemplateCreate",
         "type": "object"
       },
       "app__personal__api__ProfilePatch": {
@@ -6582,6 +7190,70 @@
         ]
       }
     },
+    "/api/hep/review": {
+      "get": {
+        "description": "The clips waiting for the therapist: the clinic's done days with a\nclip of the attempt and no review yet, newest completion first.",
+        "operationId": "review_queue_api_hep_review_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Review Queue Api Hep Review Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Queue",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
     "/api/hep/schedule": {
       "get": {
         "description": "The week grid: the clinic's charts as rows, their assignments in the\nwindow, today marked. ``start`` defaults to the Monday of ``today``'s\nweek; ``today`` to the server date.",
@@ -6751,6 +7423,68 @@
           }
         },
         "summary": "Create Schedule",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/schedule/copy-week": {
+      "post": {
+        "description": "Last week again: every assignment of the seven days from\n``from_start`` on the same weekday from ``to_start``, dose, note and\nrequirements with it. A day that already has the exercise is skipped and\ncounted in ``skipped``.",
+        "operationId": "copy_schedule_week_api_hep_schedule_copy_week_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyWeekBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Copy Schedule Week Api Hep Schedule Copy Week Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Copy Schedule Week",
         "tags": [
           "hep"
         ]
@@ -6968,6 +7702,464 @@
           }
         },
         "summary": "Complete Schedule",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/schedule/{assignment_id}/review": {
+      "post": {
+        "description": "The therapist has looked at a done day. The row records who and\nwhen; a note also goes to the patient as one line on the thread, under\nher name, so they read it in Care. An open day → 409.",
+        "operationId": "review_schedule_api_hep_schedule__assignment_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ReviewBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Review Schedule Api Hep Schedule  Assignment Id  Review Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Schedule",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/templates": {
+      "get": {
+        "description": "The clinic's programs still in use, by name.",
+        "operationId": "list_templates_api_hep_templates_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Templates Api Hep Templates Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Templates",
+        "tags": [
+          "hep"
+        ]
+      },
+      "post": {
+        "operationId": "create_template_api_hep_templates_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__hep__api__TemplateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Template Api Hep Templates Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Template",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/templates/{template_id}": {
+      "delete": {
+        "description": "Archives the program; the days it put on calendars stay.",
+        "operationId": "delete_template_api_hep_templates__template_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "default": "provider",
+              "maxLength": 60,
+              "title": "Actor",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Template Api Hep Templates  Template Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Template",
+        "tags": [
+          "hep"
+        ]
+      },
+      "get": {
+        "operationId": "read_template_api_hep_templates__template_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Template Api Hep Templates  Template Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Template",
+        "tags": [
+          "hep"
+        ]
+      },
+      "put": {
+        "operationId": "update_template_api_hep_templates__template_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Template Api Hep Templates  Template Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Template",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/templates/{template_id}/apply": {
+      "post": {
+        "description": "Every item on its weekdays from ``start`` for ``weeks`` weeks, around\nwhatever the patient's calendar already holds (duplicates are skipped\nand counted).",
+        "operationId": "apply_template_api_hep_templates__template_id__apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateApply"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Apply Template Api Hep Templates  Template Id  Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Template",
         "tags": [
           "hep"
         ]
@@ -8189,9 +9381,90 @@
         ]
       }
     },
+    "/api/mobile/exercises/program": {
+      "get": {
+        "description": "The whole program by day: a week back and a week ahead by default,\neach day with its exercises and how it went (a past day's open row is\nmissed).",
+        "operationId": "program_api_mobile_exercises_program_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 35,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Program Api Mobile Exercises Program Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Program",
+        "tags": [
+          "exercises"
+        ]
+      }
+    },
     "/api/mobile/exercises/{assignment_id}/complete": {
       "post": {
-        "description": "Mark a day done with the pain after it and, when the patient filmed\nthe attempt, the clip. The clip is settled first — confirmed from its\nkey as any thread file is (owned by this patient, there, within the\ncap, what its type says), or taken as the row the direct upload left —\nthen one line goes on the thread with it, and the row records the rest.\nA day already done is a 409 before anything is stored.",
+        "description": "Mark a day done with the pain after it, how it felt, what was done\nand, when the patient filmed the attempt, the clip. What the therapist\nasked for is checked first — a clip she required, the wearable she\nrequired — then the clip is settled: confirmed from its key as any\nthread file is (owned by this patient, there, within the cap, what its\ntype says), or taken as the row the direct upload left. Then one line\ngoes on the thread with it, and the row records the rest, the session's\nduration and heart rate included. A day already done is a 409 before\nanything is stored.",
         "operationId": "complete_exercise_api_mobile_exercises__assignment_id__complete_post",
         "parameters": [
           {
@@ -8339,6 +9612,84 @@
           }
         },
         "summary": "Skip Exercise",
+        "tags": [
+          "exercises"
+        ]
+      }
+    },
+    "/api/mobile/exercises/{assignment_id}/start": {
+      "post": {
+        "description": "The patient starts the exercise: the session opens now with the pain\nthey are in and whether the wearable is on. Starting again moves the\nstart; a done day is a 409.",
+        "operationId": "start_exercise_api_mobile_exercises__assignment_id__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/StartBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Exercise Api Mobile Exercises  Assignment Id  Start Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Exercise",
         "tags": [
           "exercises"
         ]
@@ -16409,7 +17760,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TemplateCreate"
+                "$ref": "#/components/schemas/app__api__plan__TemplateCreate"
               }
             }
           },
