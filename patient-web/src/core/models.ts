@@ -439,6 +439,37 @@ export type ExerciseVideo = {
 /** What the patient sent back: the attachment view with its link. */
 export type ExerciseClip = ChatAttachment & { url?: string | null }
 
+/** What the therapist asks for with an exercise — a clip of the attempt,
+ *  the watch on: `off`, `optional` or `required`. */
+export type Requirement = 'off' | 'optional' | 'required'
+
+/** The server's default is "optional", and so is a row from a server
+ *  that does not send the setting yet. */
+export function requirementOf(raw: string | null | undefined): Requirement {
+  return raw === 'off' || raw === 'required' ? raw : 'optional'
+}
+
+/** The session around a completion (second pass): when it ran and for how
+ *  long, the pain before, whether the watch was on and what it saw. Null
+ *  until the patient starts the exercise. */
+export type ExerciseSession = {
+  startedAt: string | null
+  endedAt: string | null
+  durationS: number | null
+  painBefore: number | null
+  wearableWorn: boolean | null
+  hrAvg: number | null
+  hrMax: number | null
+}
+
+/** The therapist's look at a completion: when, who, what she said. */
+export type ExerciseReview = {
+  at: string | null
+  by: string | null
+  byName: string | null
+  note: string | null
+}
+
 export type ExerciseCompletion = {
   completedAt: string
   painAfter: number | null
@@ -446,6 +477,13 @@ export type ExerciseCompletion = {
   /** "app" (the patient) or "console" (the therapist logged it). */
   source: string
   video: ExerciseClip | null
+  /** How hard it was, 0–10 (`effortWord`). Second pass; absent before. */
+  effort?: number | null
+  setsDone?: number | null
+  repsDone?: number | null
+  loadDoneKg?: number | null
+  /** Null until the therapist has looked at it. */
+  review?: ExerciseReview | null
 }
 
 /** One exercise on one of this patient's days. */
@@ -470,7 +508,7 @@ export type ExerciseAssignment = {
   holdSeconds: number | null
   side: string
   sideLabel: string
-  /** "3 sets × 10 reps · Left", built by the server. */
+  /** "3 sets × 10 reps · 12 kg · Left", built by the server. */
   dose: string
   /** The therapist's note to the patient, in her words. */
   clinicianInstructions: string
@@ -483,13 +521,80 @@ export type ExerciseAssignment = {
   skipReason: string | null
   createdAt: string | null
   updatedAt: string | null
+  // The second pass (docs/dev/hep-schedule.md, "Second pass"): the lifter's
+  // dose, what the therapist asks for, and the session once it has begun.
+  // Optional so a first-pass server still reads.
+  loadKg?: number | null
+  /** The effort she is aiming for, 0–10. */
+  rpeTarget?: number | null
+  videoRequirement?: string | null
+  wearableRequirement?: string | null
+  session?: ExerciseSession | null
 }
 
 export const isOpenAssignment = (a: ExerciseAssignment) => a.status === 'assigned'
 export const isDoneAssignment = (a: ExerciseAssignment) => a.status === 'done'
 
+export const videoRequirement = (a: ExerciseAssignment): Requirement => requirementOf(a.videoRequirement)
+export const wearableRequirement = (a: ExerciseAssignment): Requirement => requirementOf(a.wearableRequirement)
+
+/** Done, with a clip the therapist has not looked at yet. */
+export function awaitingReview(a: ExerciseAssignment): boolean {
+  const c = a.completion
+  return isDoneAssignment(a) && !!c?.video && !c.video.withdrawn && !c.review
+}
+
+/** Whether a set is one timed hold (Wall Sits, 3 × 30 s) rather than a
+ *  count of reps: the session then times the hold and skips the rest
+ *  between sets. Reps with a hold on each ("10 reps, hold 5 s") count reps. */
+export function holdIsUnit(a: ExerciseAssignment): boolean {
+  return (a.holdSeconds ?? 0) > 0 && !((a.reps ?? 0) > 0)
+}
+
+/** The session's length in seconds: the server's figure, else the clock. */
+export function sessionSeconds(a: ExerciseAssignment): number | null {
+  const s = a.session
+  if (!s) return null
+  if (s.durationS != null) return s.durationS
+  const from = Dates.parse(s.startedAt)
+  const to = Dates.parse(s.endedAt)
+  if (!from || !to) return null
+  return Math.max(0, Math.round((to.getTime() - from.getTime()) / 1000))
+}
+
 /** One day of the week strip around the requested date. */
-export type ExerciseDay = { date: string; assigned: number; done: number }
+export type ExerciseDay = { date: string; assigned: number; done: number; skipped?: number }
+
+/** One day of the program: its exercises and the counts the dots draw.
+ *  `assigned` is every row on the day; `missed` the ones still to do once
+ *  the day has passed. */
+export type ProgramDay = {
+  date: string
+  items: ExerciseAssignment[]
+  assigned: number
+  done: number
+  skipped: number
+  missed: number
+}
+
+/** `GET /mobile/exercises/program`: the fourteen days around today. */
+export type ProgramResponse = {
+  start: string
+  days: ProgramDay[]
+  clinic: { id: string; name: string } | null
+}
+
+/** Whether there is a program to show: any exercise on any of the days. */
+export function hasProgram(p: ProgramResponse | null | undefined): p is ProgramResponse {
+  return !!p && p.days.some((d) => d.items.length > 0 || d.assigned > 0)
+}
+
+/** What the patient sends with "Start": the pain right now and whether the
+ *  watch is on. Either can be left unanswered. */
+export type ExerciseStartBody = {
+  painBefore: number | null
+  wearableWorn: boolean | null
+}
 
 export type ExercisesResponse = {
   date: string
@@ -509,12 +614,63 @@ export function hasExerciseSchedule(feed: ExercisesResponse | null): feed is Exe
   return feed.items.length > 0 || (feed.overdue?.length ?? 0) > 0 || feed.week.some((d) => d.assigned > 0)
 }
 
-/** What the patient sends with "Mark done": the clip is the staged upload
- *  (ticket + storage POST), confirmed by the server with the completion. */
+/** What the patient sends with "Mark done" or a session's "Finish": the
+ *  clip is the staged upload (ticket + storage POST), confirmed by the
+ *  server with the completion. The rest is the second pass: how hard it
+ *  was, what was done, and the session's clock — the phone's own. */
 export type ExerciseCompletionBody = {
   painAfter: number | null
   note: string
   video: StagedUpload | null
+  /** 0–10, in the words of `effortWord`. */
+  effort?: number | null
+  setsDone?: number | null
+  repsDone?: number | null
+  loadDoneKg?: number | null
+  wearableWorn?: boolean | null
+  /** ISO 8601 with the local offset (`Dates.iso`). Null when the exercise
+   *  was marked done without a session. */
+  startedAt?: string | null
+  endedAt?: string | null
+}
+
+/** How hard it was, in the words a lifter would use, from nothing to all
+ *  out. The therapist's `rpeTarget` is on the same ladder. */
+const effortWords = [
+  'Nothing', 'Very easy', 'Easy', 'Light', 'Some effort', 'Hard', 'Harder', 'Very hard', 'Really hard',
+  'Almost all out', 'All out',
+]
+export function effortWord(n: number): string {
+  return effortWords[Math.max(0, Math.min(10, Math.round(n)))]
+}
+
+/** "effort 7/10", beside the pain on a row or a sent line. */
+export const effortLabel = (n: number | null | undefined) => (n == null ? null : `effort ${n}/10`)
+
+/** "12 kg", with no trailing ".0". */
+export const loadLabel = (kg: number | null | undefined) =>
+  (kg == null ? null : `${Number.isInteger(kg) ? kg : kg.toFixed(1)} kg`)
+
+/** "11 min", "45 s": how long a session ran. */
+export function durationLabel(seconds: number | null | undefined): string | null {
+  if (seconds == null || seconds < 0) return null
+  if (seconds < 60) return `${Math.round(seconds)} s`
+  return `${Math.round(seconds / 60)} min`
+}
+
+/** "3 × 10 · 12 kg": what was done, from the completion when it says, else
+ *  the dose. Null when neither names a count. */
+export function doneLine(a: ExerciseAssignment): string | null {
+  const c = a.completion
+  const sets = c?.setsDone ?? a.sets
+  const reps = c?.repsDone ?? a.reps
+  const load = c?.loadDoneKg ?? a.loadKg
+  const parts: string[] = []
+  if (sets != null && reps != null) parts.push(`${sets} × ${reps}`)
+  else if (sets != null) parts.push(`${sets} ${sets === 1 ? 'set' : 'sets'}`)
+  const kg = loadLabel(load)
+  if (kg) parts.push(kg)
+  return parts.length ? parts.join(DOT) : null
 }
 
 /** A file that reached storage and is waiting to be claimed by the request
