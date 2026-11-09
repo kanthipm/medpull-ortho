@@ -575,7 +575,10 @@ def today_payload(db: Session, patient: Patient, day: date) -> dict[str, Any]:
     seven-day strip around it (how many were on each day, how many done),
     and whose schedule it is."""
     week_days = days_of(day - timedelta(days=3), 7)
-    rows = patient_rows(db, patient.id, week_days[0], week_days[-1] + timedelta(days=1))
+    # A week back, not three days: the strip is three each side, but an
+    # exercise put on an earlier day and never done still has to reach the
+    # phone, as "still to do from earlier this week".
+    rows = patient_rows(db, patient.id, day - timedelta(days=7), week_days[-1] + timedelta(days=1))
     view = AssignmentView(db, patient_app=True)
     week = []
     for d in week_days:
@@ -590,6 +593,8 @@ def today_payload(db: Session, patient: Patient, day: date) -> dict[str, Any]:
     return {
         "date": day.isoformat(),
         "items": view.render_all([r for r in rows if r.scheduled_for == day]),
+        "overdue": view.render_all([r for r in rows
+                                    if r.scheduled_for < day and r.status == "assigned"]),
         "week": week,
         "clinic": {"id": hospital.id, "name": hospital.name} if hospital else None,
     }

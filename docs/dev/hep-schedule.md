@@ -128,8 +128,11 @@ clinic so this is filled.
 ## Patient routes (`/api/mobile/exercises`, dependency `app.api.mobile.current_patient`)
 
 - `GET /mobile/exercises?date=YYYY-MM-DD` (default: server date) → `{ "date",
-  "items": [Assignment…] for that day (by sort_order, id), "week": [ { "date",
-  "assigned", "done" } for date−3…date+3 ], "clinic": { "id", "name" } }`. Videos
+  "items": [Assignment…] for that day (by sort_order, id), "overdue": [Assignment…]
+  still `assigned` from the seven days before it, "week": [ { "date",
+  "assigned", "done", "skipped" } for date−3…date+3 ], "clinic": { "id", "name" } }`.
+  The demo screen posts `{ type: "medpull:exercises-changed" }` into the phone
+  frame (same origin) after every schedule change; the app re-reads the day. Videos
   carry playable URLs (presigned on AWS; `/api/mobile/exercises/media/{id}/raw` on
   the laptop, which streams under the patient's session).
 - `POST /mobile/exercises/{assignment_id}/complete` `{ "pain_after": 0–10 | null,

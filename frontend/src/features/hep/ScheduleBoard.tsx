@@ -35,17 +35,23 @@ import {
 export default function ScheduleBoard({
   live = false,
   dense = false,
+  anchor = 'monday',
   aside,
 }: {
   live?: boolean
   dense?: boolean
+  /** Where the seven days begin: the Monday of this week (the schedule
+   *  page), or today itself (the demo screen, where the first column has to
+   *  be the day the phone is showing). */
+  anchor?: 'monday' | 'today'
   aside?: ReactNode
 }) {
   const today = todayIso()
-  const [start, setStart] = useState(() => mondayOf(today))
+  const home = anchor === 'today' ? today : mondayOf(today)
+  const [start, setStart] = useState(() => home)
   const schedule = useSchedule(start, 7, undefined, { live })
   const days = schedule.data?.days ?? weekDays(start)
-  const thisWeek = start === mondayOf(today)
+  const thisWeek = start === home
   const [assign, setAssign] = useState<{ patientId: string; date: string } | null>(null)
   const [openId, setOpenId] = useState<number | null>(null)
   const captionId = useId()
@@ -81,7 +87,7 @@ export default function ScheduleBoard({
             type="button"
             className="btn-plain btn-sm !px-3"
             disabled={thisWeek}
-            onClick={() => setStart(mondayOf(today))}
+            onClick={() => setStart(home)}
           >
             Today
           </button>

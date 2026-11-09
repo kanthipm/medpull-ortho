@@ -30,7 +30,7 @@ export function ExerciseDestination() {
   const location = useLocation()
   const back = useBack('/today')
   const from = (location.state as { from?: string } | null)?.from ?? 'Today'
-  const a = app.exercises?.items.find((x) => String(x.id) === id) ?? null
+  const a = [...(app.exercises?.items ?? []), ...(app.exercises?.overdue ?? [])].find((x) => String(x.id) === id) ?? null
   const [waited, setWaited] = useState(false)
 
   // The schedule keeps polling on this screen too: the therapist may log

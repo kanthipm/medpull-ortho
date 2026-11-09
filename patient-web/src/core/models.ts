@@ -494,6 +494,8 @@ export type ExerciseDay = { date: string; assigned: number; done: number }
 export type ExercisesResponse = {
   date: string
   items: ExerciseAssignment[]
+  /** Earlier days this week whose exercises are still to do. */
+  overdue?: ExerciseAssignment[]
   week: ExerciseDay[]
   clinic: { id: string; name: string } | null
 }
@@ -504,7 +506,7 @@ export type ExercisesResponse = {
  *  person knows nothing is missing. */
 export function hasExerciseSchedule(feed: ExercisesResponse | null): feed is ExercisesResponse {
   if (!feed) return false
-  return feed.items.length > 0 || feed.week.some((d) => d.assigned > 0)
+  return feed.items.length > 0 || (feed.overdue?.length ?? 0) > 0 || feed.week.some((d) => d.assigned > 0)
 }
 
 /** What the patient sends with "Mark done": the clip is the staged upload

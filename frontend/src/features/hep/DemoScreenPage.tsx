@@ -53,6 +53,18 @@ function DemoScreen() {
   const [error, setError] = useState<string | null>(null)
   const lifters = options.data?.patients ?? []
 
+  // An assignment saved on the left reaches the phone at once, not on the
+  // phone's next poll: the schedule hooks announce every change on the
+  // window, and the frame (same origin) is told to re-read its day.
+  useEffect(() => {
+    const tell = () => {
+      const frame = document.querySelector<HTMLIFrameElement>('iframe[title$="phone"]')
+      frame?.contentWindow?.postMessage({ type: 'medpull:exercises-changed' }, window.location.origin)
+    }
+    window.addEventListener('medpull:schedule-changed', tell)
+    return () => window.removeEventListener('medpull:schedule-changed', tell)
+  }, [])
+
   const signIn = (id: string) => {
     setPatientId(id)
     setError(null)
@@ -88,13 +100,13 @@ function DemoScreen() {
 
       <div className="mt-4 grid min-h-0 flex-1 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
         <section aria-label="Schedule" className="min-h-0 overflow-auto pr-1">
-          <ScheduleBoard live dense />
+          <ScheduleBoard live dense anchor="today" />
         </section>
 
         <aside aria-label="Lifter’s phone" className="flex min-h-0 flex-col">
           <div className="flex items-end gap-2">
             <label className="min-w-0 flex-1">
-              <span className={LABEL}>Lifter</span>
+              <span className={LABEL}>On the phone</span>
               <select
                 className="field cursor-pointer"
                 value={patientId}
@@ -185,8 +197,8 @@ function PhoneFrame({ frame, pending }: { frame: Frame | null; pending: boolean 
                   {pending ? 'Signing in…' : 'Choose a lifter to sign this phone in.'}
                 </p>
                 <p className="text-copy text-body">
-                  Their Today screen appears here; an exercise you add on the left shows up on it within
-                  seconds.
+                  Their Today screen appears here; an exercise you add on the left shows up on it as soon
+                  as you save it.
                 </p>
               </div>
             )}

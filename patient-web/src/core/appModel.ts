@@ -249,15 +249,26 @@ export class AppModel {
     this.exerciseWatchers++
     if (this.exerciseWatchers === 1) {
       document.addEventListener('visibilitychange', this.onExerciseVisibility)
+      window.addEventListener('message', this.onExerciseMessage)
       this.startExerciseTimer()
     }
     return () => {
       this.exerciseWatchers--
       if (this.exerciseWatchers === 0) {
         document.removeEventListener('visibilitychange', this.onExerciseVisibility)
+        window.removeEventListener('message', this.onExerciseMessage)
         this.stopExerciseTimer()
       }
     }
+  }
+
+  /** The demo screen's frame: the console, on the same origin, says the
+   *  schedule changed, so the day is re-read now rather than on the next
+   *  poll. A message from any other origin is ignored. */
+  private onExerciseMessage = (e: MessageEvent) => {
+    if (e.origin !== window.location.origin) return
+    const data = e.data as { type?: unknown } | null
+    if (data && data.type === 'medpull:exercises-changed') void this.refreshExercises(undefined, false)
   }
 
   private onExerciseVisibility = () => {

@@ -559,6 +559,8 @@ export function usePatientSchedule(
 function invalidateSchedule(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: ['hep', 'schedule'] })
   void qc.invalidateQueries({ queryKey: ['hep', 'patient-schedule'] })
+  // The demo screen listens and tells the phone frame to re-read its day.
+  window.dispatchEvent(new CustomEvent('medpull:schedule-changed'))
 }
 
 export function useCreateAssignments() {

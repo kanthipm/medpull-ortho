@@ -424,6 +424,17 @@ def test_the_patient_marks_a_day_done_with_pain_and_a_clip(client, db, tokens, l
         (TODAY + timedelta(days=i)).isoformat() for i in range(-3, 4)]
     assert day["week"][3] == {"date": TODAY.isoformat(), "assigned": 2, "done": 0, "skipped": 0}
     assert day["week"][4]["assigned"] == 1
+    # an exercise put on an earlier day and never done is not lost to the phone:
+    # it rides along as "still to do from earlier this week"
+    earlier = client.post("/api/hep/schedule", headers=hirt_console, json={
+        "patient_id": lifter.id, "exercise_id": day["items"][1]["exercise_id"],
+        "dates": [(TODAY - timedelta(days=2)).isoformat()], "assigned_by": "ct_gregg",
+    })
+    assert earlier.status_code == 201, earlier.text
+    day = client.get("/api/mobile/exercises", headers=session).json()
+    assert [i["title"] for i in day["items"]] == ["Heel Slides", "Wall Sits"]
+    assert [(i["title"], i["scheduled_for"], i["status"]) for i in day["overdue"]] == [
+        ("Wall Sits", (TODAY - timedelta(days=2)).isoformat(), "assigned")]
     assert client.get("/api/mobile/exercises", params={"date": TOMORROW.isoformat()},
                       headers=session).json()["items"][0]["id"] == today_rows[1]["id"]
 

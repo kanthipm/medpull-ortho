@@ -11,6 +11,7 @@ import { CardTitleRow, Chevron, Glyph, RowDivider } from '../../ui/rows'
 /** The card. Today decides whether to show it (`hasExerciseSchedule`). */
 export function ExercisesCard({ feed, onOpen }: { feed: ExercisesResponse; onOpen: (a: ExerciseAssignment) => void }) {
   const items = feed.items
+  const overdue = feed.overdue ?? []
   const done = items.filter(isDoneAssignment).length
   const open = items.filter(isOpenAssignment)
   const settled = items.filter((a) => !isOpenAssignment(a))
@@ -18,7 +19,7 @@ export function ExercisesCard({ feed, onOpen }: { feed: ExercisesResponse; onOpe
   return (
     <Card padding={0}>
       <CardTitleRow title="Today’s exercises" note={items.length === 0 ? null : `${done} of ${items.length} done`} />
-      {items.length === 0 ? (
+      {items.length === 0 && overdue.length === 0 ? (
         <div style={{ paddingBottom: 4 }}>
           <EmptyRow icon="figure.strengthtraining.traditional" title="Nothing today" detail={restDayLine(feed)} />
         </div>
@@ -32,11 +33,33 @@ export function ExercisesCard({ feed, onOpen }: { feed: ExercisesResponse; onOpe
               {i < ordered.length - 1 && <RowDivider />}
             </div>
           ))}
+          {overdue.length > 0 && (
+            <>
+              {ordered.length > 0 && <RowDivider />}
+              <div className="row" style={{ paddingTop: 10, paddingBottom: 2 }}>
+                <span className="t-label c-muted">Still to do from earlier this week</span>
+              </div>
+              {overdue.map((a, i) => (
+                <div key={a.id}>
+                  <button type="button" className="row-button" onClick={() => onOpen(a)}>
+                    <ExerciseRow a={a} dayLabel={dayName(a.scheduledFor)} />
+                  </button>
+                  {i < overdue.length - 1 && <RowDivider />}
+                </div>
+              ))}
+            </>
+          )}
           <div style={{ height: 4 }} />
         </>
       )}
     </Card>
   )
+}
+
+/** "Monday", for a row from an earlier day. */
+function dayName(iso: string): string {
+  const day = Dates.parse(iso)
+  return day ? day.toLocaleDateString(undefined, { weekday: 'long' }) : iso
 }
 
 /** "A rest day. Your next exercises are on Wednesday." */
@@ -53,7 +76,7 @@ function restDayLine(feed: ExercisesResponse): string {
 /** One exercise as a row: the glyph, the title, the dose with the state
  *  and a film badge when there is a clip to follow, then the therapist's
  *  note in her words. A chevron while it is to do; the state glyph after. */
-export function ExerciseRow({ a }: { a: ExerciseAssignment }) {
+export function ExerciseRow({ a, dayLabel }: { a: ExerciseAssignment; dayLabel?: string }) {
   const isDone = isDoneAssignment(a)
   const open = isOpenAssignment(a)
   let status: [string, string] | null = null
@@ -68,6 +91,7 @@ export function ExerciseRow({ a }: { a: ExerciseAssignment }) {
       <span className="row-main">
         <span className="row-title" style={isDone ? { textDecoration: 'line-through', textDecorationColor: 'rgb(var(--muted))' } : undefined}>{a.title}</span>
         <span className="t-label clamp-2">
+          {dayLabel && <><span className="c-body">{dayLabel}</span><span className="c-muted">{DOT}</span></>}
           <span className="c-muted">{a.dose}</span>
           {status && <><span className="c-muted">{DOT}</span><span className={status[1]}>{status[0]}</span></>}
           {a.video && <><span className="c-muted">{DOT}</span><span className="clip-badge"><Sym name="film" size={11} weight="medium" />Clip</span></>}
