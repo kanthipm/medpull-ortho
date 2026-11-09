@@ -110,6 +110,15 @@ Parameters:
       access token. deploy.sh writes it when CONSOLE_ACCESS_TOKEN is set;
       with the parameter absent every console route stays open (the public
       demo), and with it present the SPA asks for the token on /login.
+  AppTimezone:
+    Type: String
+    Default: ""
+    Description: >-
+      The functions' TZ (an IANA name such as America/Chicago). Empty keeps
+      Lambda's UTC. The app stores times without a zone and the apps read them
+      as local, so a stack whose clinics share one zone sets it; the demo stack
+      does (Houston, Tomball). Changing it on a stack shifts how its existing
+      rows read, so the real stack keeps UTC until its times carry a zone.
   DemoMode:
     Type: String
     Default: "false"
@@ -265,6 +274,7 @@ Parameters:
       stack's trail to its data events.
 
 Conditions:
+  HasTimezone: !Not [!Equals [!Ref AppTimezone, ""]]
   HasBudgetEmail: !Not [!Equals [!Ref BudgetAlertEmail, ""]]
   HasReservedConcurrency: !Not [!Equals [!Ref ApiReservedConcurrency, -1]]
   IsDemo: !Equals [!Ref DemoMode, "true"]
@@ -777,6 +787,7 @@ Resources:
           CONSOLE_ACCESS_TOKEN_PARAMETER: !Ref ConsoleAccessTokenParameter
           DEMO_MODE: !Ref DemoMode
           PERSONAL_PAYWALL: !Ref PersonalPaywall
+          TZ: !If [HasTimezone, !Ref AppTimezone, !Ref AWS::NoValue]
           ALLOW_MOCK_WEBHOOK: !Ref AllowMockWebhook
           SENDBLUE_VERIFIED_CONTACTS_ONLY: !Ref SendblueVerifiedContactsOnly
           SENDBLUE_FROM_NUMBER: !Ref SendblueFromNumber
@@ -843,6 +854,7 @@ Resources:
           CARE_TEAM_PHONES: !Ref CareTeamPhones
           # The seed refuses to run unless this is "true" (or it is forced).
           DEMO_MODE: !Ref DemoMode
+          TZ: !If [HasTimezone, !Ref AppTimezone, !Ref AWS::NoValue]
           OLLAMA_URL: ""
           WARM_CACHES_ON_STARTUP: "false"
           # The seed holds the write lock for its whole run, so the TTL has to
