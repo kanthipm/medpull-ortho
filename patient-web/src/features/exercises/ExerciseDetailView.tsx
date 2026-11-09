@@ -1,68 +1,101 @@
-/* One exercise on today's schedule (route `/today/exercises/:id`): the
+/* One exercise on the schedule (route `/today/exercises/:id`): the
    therapist's clip to follow, the steps, what to take care of, the dose and
-   her note, then "Mark done" — a sheet asking how much it hurt after, a
-   note, and a clip of the attempt — or "Can't do it today" with a reason
-   (docs/dev/hep-schedule.md, "Patient web UI"). */
+   her note, then **Start** — the session screen — with "Just mark it done"
+   under it for an exercise done away from the phone, and "Can't do it
+   today" with a reason. Done, it shows what went back — pain, effort, how
+   long — and what the therapist said about it (docs/dev/hep-schedule.md,
+   "Patient web UI" and "Second pass"). */
 
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { useLocation, useParams } from 'react-router-dom'
-import { messageFor, useApp } from '../../core/appModel'
-import { AttachmentPrep } from '../../core/attachments'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { messageFor, useApp, type AppModel } from '../../core/appModel'
 import {
-  Dates, DOT, isOpenAssignment, painLabel, sizeLabel, therapistShortName, typeset,
-  type AnswerValue, type ExerciseAssignment, type StagedUpload,
+  awaitingReview, Dates, doneLine, DOT, durationLabel, effortWord, isOpenAssignment, loadLabel, sessionSeconds,
+  therapistShortName, typeset, videoRequirement, wearableRequirement,
+  type ExerciseAssignment, type ExerciseReview, type Requirement,
 } from '../../core/models'
 import {
   Card, Chip, CloseButton, EmptyRow, ErrorBanner, Initials, InsetDivider, MPButton, NavBar, PrimaryButton, Screen,
-  SecondaryButton, Sheet, Spinner,
+  Sheet, Spinner,
 } from '../../ui/components'
 import { Sym } from '../../ui/icons'
 import { CardTitleRow, Glyph } from '../../ui/rows'
 import { useBack } from '../../ui/useBack'
-import { ScaleAnswer } from '../checkin/CheckinView'
 import { teamInitials } from '../today/TodayView'
+import { CompletionSheet } from './CompletionSheet'
 
 /** Where an exercise opens. The row comes from today's feed; a link to one
  *  that is not on it asks the server once, then says so. */
 export function ExerciseDestination() {
-  const app = useApp()
   const { id } = useParams()
   const location = useLocation()
   const back = useBack('/today')
   const from = (location.state as { from?: string } | null)?.from ?? 'Today'
-  const a = [...(app.exercises?.items ?? []), ...(app.exercises?.overdue ?? [])].find((x) => String(x.id) === id) ?? null
-  const [waited, setWaited] = useState(false)
-
-  // The schedule keeps polling on this screen too: the therapist may log
-  // it done from the room while the person reads it.
-  useEffect(() => app.watchExercises(), [app])
-  useEffect(() => {
-    if (a) return
-    void app.refreshExercises(undefined, false).then(() => setWaited(true))
-  }, [app, a])
-
+  const { a, waited } = useAssignment(id)
   const backItem = { label: from, onClick: back }
-  if (!a) {
-    return (
-      <Screen withTabBar nav={(s) => <NavBar title="Exercise" scrolled={s} back={backItem} />}>
-        <div className="content">
-          {waited
-            ? <Card padding={0}><EmptyRow icon="figure.strengthtraining.traditional" title="That exercise isn’t on today’s list" detail="It may have been moved to another day or taken off by your therapist." /></Card>
-            : <div className="hstack" style={{ justifyContent: 'center', color: 'rgb(var(--brand))', padding: 32 }}><Spinner /></div>}
-        </div>
-      </Screen>
-    )
-  }
+  if (!a) return <MissingExercise back={backItem} waited={waited} />
   return <ExerciseDetailView a={a} back={backItem} />
 }
 
+/** The row behind an id, from wherever this app holds it: today's list,
+ *  the still-to-do group, the program's days. The schedule keeps polling
+ *  on the screen too — the therapist may log it done from the room while
+ *  the person reads it. A row in none of them is asked for once; `waited`
+ *  says the asking is over. */
+export function useAssignment(id: string | undefined): { a: ExerciseAssignment | null; waited: boolean } {
+  const app = useApp()
+  const a = findAssignment(app, id)
+  const [waited, setWaited] = useState(false)
+  useEffect(() => app.watchExercises(), [app])
+  useEffect(() => {
+    if (a) return
+    let cancelled = false
+    const asks = [app.refreshExercises(undefined, false)]
+    if (!app.program) asks.push(app.refreshProgram(false))
+    void Promise.all(asks).then(() => { if (!cancelled) setWaited(true) })
+    return () => { cancelled = true }
+  }, [app, a])
+  return { a, waited }
+}
+
+function findAssignment(app: AppModel, id: string | undefined): ExerciseAssignment | null {
+  if (!id) return null
+  const n = Number(id)
+  const feed = app.exercises
+  const pools = [feed?.items ?? [], feed?.overdue ?? [], ...(app.program?.days.map((d) => d.items) ?? [])]
+  for (const pool of pools) {
+    const hit = pool.find((x) => x.id === n)
+    if (hit) return hit
+  }
+  return null
+}
+
+/** The screen while a row is looked for, and once it was not found. */
+export function MissingExercise({ back, waited, title = 'Exercise' }: {
+  back: { label: string; onClick: () => void }; waited: boolean; title?: string
+}) {
+  return (
+    <Screen withTabBar nav={(s) => <NavBar title={title} scrolled={s} back={back} />}>
+      <div className="content">
+        {waited
+          ? <Card padding={0}><EmptyRow icon="figure.strengthtraining.traditional" title="That exercise isn’t on your list" detail="It may have been moved to another day or taken off by your therapist." /></Card>
+          : <div className="hstack" style={{ justifyContent: 'center', color: 'rgb(var(--brand))', padding: 32 }}><Spinner /></div>}
+      </div>
+    </Screen>
+  )
+}
+
 export function ExerciseDetailView({ a, back }: { a: ExerciseAssignment; back: { label: string; onClick: () => void } }) {
+  const navigate = useNavigate()
   const [marking, setMarking] = useState(false)
   const [skipping, setSkipping] = useState(false)
   const [justSent, setJustSent] = useState(false)
   const open = isOpenAssignment(a)
   const therapist = therapistShortName(a.assignedByName)
   const isToday = a.scheduledFor === Dates.dayString(new Date())
+  const clipAsk = videoRequirement(a)
+  const watchAsk = wearableRequirement(a)
+  const start = () => navigate(`/today/exercises/${a.id}/session`, { state: { from: 'Exercise' } })
 
   return (
     <>
@@ -70,25 +103,46 @@ export function ExerciseDetailView({ a, back }: { a: ExerciseAssignment; back: {
         withTabBar
         nav={(s) => <NavBar title="Exercise" scrolled={s} back={back} />}
         bottom={open ? (
-          <div className="action-bar" role="toolbar">
-            <button type="button" className="btn-text" onClick={() => setSkipping(true)}>Can’t do it today</button>
-            <span className="spacer" />
-            <MPButton kind="filled" size="large" onClick={() => setMarking(true)} ariaLabel="Mark done">
-              <Sym name="checkmark" size={16} weight="semibold" />
-              <span>Mark done</span>
-            </MPButton>
+          <div className="action-bar stacked" role="toolbar">
+            <div className="action-row">
+              <button type="button" className="btn-text" onClick={() => setSkipping(true)}>Can’t do it today</button>
+              <span className="spacer" />
+              <MPButton kind="filled" size="large" onClick={start} ariaLabel="Start">
+                <Sym name="play.fill" size={16} weight="semibold" />
+                <span>Start</span>
+              </MPButton>
+            </div>
+            <div className="action-sub">
+              <button type="button" className="btn-text" onClick={() => setMarking(true)}>Just mark it done</button>
+            </div>
           </div>
         ) : undefined}
       >
-        <div className="content" style={{ gap: 20, padding: '12px 20px 120px' }}>
+        <div className="content" style={{ gap: 20, padding: `12px 20px ${open ? 160 : 40}px` }}>
           <div className="stack-8">
-            <span className="schedule-pill" style={{ alignSelf: 'flex-start' }}>{isToday ? 'Today' : Dates.monthDay(a.scheduledFor)}</span>
+            <div className="ask-pills">
+              <span className="schedule-pill">{isToday ? 'Today' : Dates.monthDay(a.scheduledFor)}</span>
+              {clipAsk === 'required' && (
+                <span className="schedule-pill"><Sym name="video.fill" size={11} weight="medium" />Clip asked for</span>
+              )}
+              {watchAsk === 'required' && (
+                <span className="schedule-pill"><Sym name="applewatch" size={11} weight="medium" />Watch on</span>
+              )}
+            </div>
             <h1 className="t-display-s c-ink" style={{ margin: 0 }}>{typeset(a.title)}</h1>
             <span className="t-copy-lg c-body">{a.dose}</span>
+            {a.rpeTarget != null && (
+              <span className="t-copy c-muted">Aim for effort {a.rpeTarget}/10{DOT}{effortWord(a.rpeTarget).toLowerCase()}</span>
+            )}
             {a.assignedByName && <span className="t-copy c-muted">From {a.assignedByName}</span>}
           </div>
 
           {!open && <OutcomeCard a={a} fresh={justSent} />}
+          {open && a.session?.startedAt && (
+            <span className="t-label c-muted px-4">
+              You started this {Dates.relative(a.session.startedAt)}. Start again and the clock begins afresh.
+            </span>
+          )}
 
           {a.video ? (
             <div className="stack-8">
@@ -139,20 +193,29 @@ export function ExerciseDetailView({ a, back }: { a: ExerciseAssignment; back: {
             <Fact label="Dose" value={a.dose} />
             {a.sideLabel && a.side !== 'not_applicable' && <><InsetDivider leading={16} /><Fact label="Side" value={a.sideLabel} /></>}
             {a.holdSeconds != null && <><InsetDivider leading={16} /><Fact label="Hold" value={`${a.holdSeconds} s`} /></>}
+            {a.loadKg != null && <><InsetDivider leading={16} /><Fact label="Load" value={loadLabel(a.loadKg) ?? ''} /></>}
+            {a.rpeTarget != null && <><InsetDivider leading={16} /><Fact label="Effort to aim for" value={`${a.rpeTarget}/10${DOT}${effortWord(a.rpeTarget).toLowerCase()}`} /></>}
             <InsetDivider leading={16} />
             <Fact label="Equipment" value={a.equipment || 'None needed'} />
+            {clipAsk !== 'off' && <><InsetDivider leading={16} /><Fact label="A clip of you doing it" value={askWords(clipAsk)} /></>}
+            {watchAsk !== 'off' && <><InsetDivider leading={16} /><Fact label="Your watch on" value={askWords(watchAsk)} /></>}
           </Card>
         </div>
       </Screen>
 
       <Sheet open={marking} onClose={() => setMarking(false)}>
-        <MarkDoneSheet a={a} onClose={() => setMarking(false)} onSent={() => { setMarking(false); setJustSent(true) }} />
+        <CompletionSheet a={a} session={null} onClose={() => setMarking(false)} onSent={() => { setMarking(false); setJustSent(true) }} />
       </Sheet>
       <Sheet open={skipping} onClose={() => setSkipping(false)}>
         <SkipSheet a={a} onClose={() => setSkipping(false)} onSkipped={() => setSkipping(false)} />
       </Sheet>
     </>
   )
+}
+
+/** "Asked for" or "If you like", for a facts row. */
+function askWords(r: Requirement): string {
+  return r === 'required' ? 'Asked for' : 'If you like'
 }
 
 /** A label and its value on one row of a card. */
@@ -166,11 +229,18 @@ function Fact({ label, value }: { label: string; value: string }) {
   )
 }
 
+/** A figure and its word, for the done card's row of three. */
+function Stat({ value, label }: { value: string; label: string }) {
+  return <div className="stat"><b className="figures">{value}</b><span>{label}</span></div>
+}
+
 // MARK: - What came back
 
-/** Done: "Sent to Dr. Gregg · pain 4/10", when, the note, the clip that
- *  went with it. Skipped: the reason. */
-function OutcomeCard({ a, fresh }: { a: ExerciseAssignment; fresh: boolean }) {
+/** Done: "Sent to Dr. Gregg", the pain (before → after when both are
+ *  known), the effort and how long it ran side by side, what was done, the
+ *  note, the clip that went with it, and the therapist's reply once she
+ *  has looked. Skipped: the reason. */
+export function OutcomeCard({ a, fresh }: { a: ExerciseAssignment; fresh: boolean }) {
   const therapist = therapistShortName(a.assignedByName)
   if (a.status === 'skipped') {
     return (
@@ -187,43 +257,86 @@ function OutcomeCard({ a, fresh }: { a: ExerciseAssignment; fresh: boolean }) {
     )
   }
   const c = a.completion
-  const pain = painLabel(c?.painAfter)
+  const s = a.session ?? null
   const byTherapist = c?.source === 'console'
-  const headline = byTherapist
-    ? `Logged by ${therapist}${pain ? `${DOT}${pain}` : ''}`
-    : `Sent to ${therapist}${pain ? `${DOT}${pain}` : ''}`
+  const review = c?.review ?? null
+  const seconds = sessionSeconds(a)
+  const painBefore = s?.painBefore ?? null
+  const painAfter = c?.painAfter ?? null
+  const painValue = painAfter == null ? '—' : painBefore != null ? `${painBefore} → ${painAfter}` : String(painAfter)
+  const effort = c?.effort ?? null
+  const facts: string[] = []
+  const did = doneLine(a)
+  if (did) facts.push(did)
+  if (s?.wearableWorn) facts.push('watch on')
+  if (s?.hrAvg != null) facts.push(`heart rate ${s.hrAvg} avg${s.hrMax != null ? `, ${s.hrMax} max` : ''}`)
+  const when = c?.completedAt ? Dates.relative(c.completedAt) : ''
+  const sub = review || byTherapist ? when : `${when}${when ? DOT : ''}They’ll see it with their next review.`
   return (
     <Card tint className={fresh ? 'fade-in' : undefined}>
       <div className="stack-12">
         <div className="hstack-top">
           <span className="c-risk-low" style={{ paddingTop: 1 }}><Sym name="checkmark.seal.fill" size={24} weight="semibold" /></span>
           <div className="stack-3 grow">
-            <span className="t-copy-lg-m c-ink">{headline}</span>
-            {c?.note && <span className="t-copy c-ink lh-2">“{typeset(c.note)}”</span>}
-            <span className="t-copy secondary">
-              {c?.completedAt ? `${Dates.relative(c.completedAt)}${byTherapist ? '' : `${DOT}They’ll see it with their next review.`}` : 'They’ll see it with their next review.'}
-            </span>
+            <span className="t-copy-lg-m c-ink">{byTherapist ? `Logged by ${therapist}` : `Sent to ${therapist}`}</span>
+            {sub && <span className="t-copy secondary">{sub}</span>}
           </div>
         </div>
+        <div className="outcome-stats">
+          <Stat value={painValue} label={painBefore != null ? 'pain, before → after' : 'pain, out of 10'} />
+          {effort != null && <Stat value={String(effort)} label={`effort${DOT}${effortWord(effort).toLowerCase()}`} />}
+          {seconds != null && seconds > 0 && <Stat value={durationLabel(seconds) ?? ''} label="on the clock" />}
+        </div>
+        {facts.length > 0 && <span className="t-label secondary">{facts.join(DOT)}</span>}
+        {c?.note && <span className="t-copy c-ink lh-2">“{typeset(c.note)}”</span>}
         {c?.video && !c.video.withdrawn && (
           <ClipPlayer url={c.video.url ?? null} attachmentId={c.video.id} poster={null} label="Your clip" />
         )}
+        {review ? (
+          <ReviewBox review={review} fallbackName={a.assignedByName} />
+        ) : awaitingReview(a) ? (
+          <span className="t-label secondary">{therapist} hasn’t looked at your clip yet.</span>
+        ) : null}
       </div>
     </Card>
+  )
+}
+
+/** What the therapist said about it, in her words, under her initials.
+ *  The same note reaches the Care thread. */
+function ReviewBox({ review, fallbackName }: { review: ExerciseReview; fallbackName: string }) {
+  const name = review.byName || fallbackName
+  return (
+    <div className="review-box">
+      <Initials text={teamInitials(name)} size={30} tone="low" style="soft" />
+      <div className="stack-3 grow">
+        <span className="t-label-m c-ink">
+          {therapistShortName(name)}
+          {review.at && <span className="c-muted">{DOT}{Dates.relative(review.at)}</span>}
+        </span>
+        {review.note
+          ? <span className="t-copy c-ink lh-2">{typeset(review.note)}</span>
+          : <span className="t-copy secondary">Has seen it. Nothing to change.</span>}
+      </div>
+    </div>
   )
 }
 
 // MARK: - The clip
 
 /** A clip in the hero's frame. A presigned link plays as it is; a link
- *  into this API (no object store) is fetched under the session first. */
-export function ClipPlayer({ url, poster, label, attachmentId }: {
-  url: string | null; poster: string | null; label: string; attachmentId?: number
+ *  into this API (no object store) is fetched under the session first.
+ *  `loop` is the session's way: playing on its own, muted, round and
+ *  round, with nothing to tap. */
+export function ClipPlayer({ url, poster, label, attachmentId, loop = false }: {
+  url: string | null; poster: string | null; label: string; attachmentId?: number; loop?: boolean
 }) {
   const { src, loading, failed } = useClipURL(url, attachmentId)
   return (
     <div className="clip-box">
-      {src && <video src={src} controls playsInline preload="metadata" poster={poster ?? undefined} aria-label={label} />}
+      {src && (loop
+        ? <video src={src} autoPlay muted loop playsInline preload="auto" poster={poster ?? undefined} aria-label={label} />
+        : <video src={src} controls playsInline preload="metadata" poster={poster ?? undefined} aria-label={label} />)}
       {!src && loading && <div className="clip-state"><Spinner /></div>}
       {!src && !loading && (
         <div className="clip-state">
@@ -262,148 +375,6 @@ function useClipURL(url: string | null, attachmentId?: number): { src: string | 
   if (!needsFetch) return { src: url, loading: false, failed: false }
   if (state.key !== key) return { src: null, loading: true, failed: false }
   return { src: state.src, loading: false, failed: state.failed }
-}
-
-// MARK: - Mark done
-
-type ClipState =
-  | { kind: 'none' }
-  | { kind: 'uploading'; name: string; size: number; fraction: number }
-  | { kind: 'ready'; name: string; size: number; staged: StagedUpload }
-  | { kind: 'failed'; name: string; message: string }
-
-/** The sheet behind "Mark done": how much it hurt after, a note, a clip of
- *  the attempt, Send. The clip uploads as soon as it is picked, so Send
- *  only has to name it. */
-function MarkDoneSheet({ a, onClose, onSent }: { a: ExerciseAssignment; onClose: () => void; onSent: () => void }) {
-  const app = useApp()
-  const [pain, setPain] = useState<AnswerValue | null>(null)
-  const [note, setNote] = useState('')
-  const [clip, setClip] = useState<ClipState>({ kind: 'none' })
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const input = useRef<HTMLInputElement | null>(null)
-  // A pick that was removed before it finished must not come back as ready.
-  const generation = useRef(0)
-  const therapist = therapistShortName(a.assignedByName)
-
-  const pick = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    const mine = ++generation.current
-    const ready = await AttachmentPrep.video(file)
-    if (!ready) {
-      const over = file.size > AttachmentPrep.maxMediaBytes
-      setClip({
-        kind: 'failed', name: file.name,
-        message: over
-          ? `That clip is over ${Math.floor(AttachmentPrep.maxMediaBytes / 1_048_576)} MB. Try a shorter one.`
-          : 'Use a video from your camera (MP4 or QuickTime).',
-      })
-      return
-    }
-    setClip({ kind: 'uploading', name: file.name, size: file.size, fraction: 0 })
-    try {
-      const staged = await app.api.stageUpload(ready.data, ready.contentType, ready.filename, (fraction) => {
-        if (generation.current === mine) setClip({ kind: 'uploading', name: file.name, size: file.size, fraction })
-      })
-      if (generation.current === mine) setClip({ kind: 'ready', name: file.name, size: file.size, staged })
-    } catch (err) {
-      if (generation.current === mine) setClip({ kind: 'failed', name: file.name, message: messageFor(err) ?? 'The upload did not go through.' })
-    }
-  }
-
-  const removeClip = () => {
-    generation.current++
-    setClip({ kind: 'none' })
-  }
-
-  const send = async () => {
-    setSending(true)
-    setError(null)
-    try {
-      await app.completeExercise(a, {
-        painAfter: typeof pain === 'number' ? pain : null,
-        note: note.trim(),
-        video: clip.kind === 'ready' ? clip.staged : null,
-      })
-      onSent()
-    } catch (e) {
-      setError(messageFor(e))
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const uploading = clip.kind === 'uploading'
-  const sendTitle = uploading ? `Uploading your clip${DOT}${Math.round(clip.fraction * 100)}%` : `Send to ${therapist}`
-
-  return (
-    <Screen
-      fogHeight={260}
-      nav={(s) => <NavBar title="Mark done" scrolled={s} trailing={<CloseButton onClick={onClose} label="Cancel" />} />}
-      bottom={
-        <div className="sheet-controls">
-          {error && <ErrorBanner text={error} />}
-          <PrimaryButton title={sendTitle} loading={sending} disabled={uploading} onClick={() => void send()} />
-        </div>
-      }
-    >
-      <div className="content" style={{ gap: 24, padding: '8px 20px 28px' }}>
-        <div className="stack-8">
-          <span className="schedule-pill" style={{ alignSelf: 'flex-start' }}>{a.title}</span>
-          <h1 className="t-display-s c-ink" style={{ margin: 0 }}>Nice work. How did it go?</h1>
-          <span className="t-copy c-muted">{therapist} sees your answers with the rest of your week.</span>
-        </div>
-
-        <div className="stack-10">
-          <span className="t-copy-lg-m c-ink">How’s the pain, now that you’ve done it?</span>
-          <ScaleAnswer value={pain} painting onChange={setPain} />
-        </div>
-
-        <div className="stack-10">
-          <span className="t-copy-lg-m c-ink">Anything to add?</span>
-          <textarea className="field" rows={3} placeholder="Optional — how it felt, what was hard" aria-label="A note for your therapist"
-            value={note} onChange={(e) => setNote(e.target.value)} />
-        </div>
-
-        <div className="stack-10">
-          <span className="t-copy-lg-m c-ink">Show {therapist} your form</span>
-          <input ref={input} type="file" className="attach-input" accept="video/mp4,video/quicktime" capture="environment"
-            aria-hidden="true" tabIndex={-1} onChange={(e) => void pick(e)} />
-          {clip.kind === 'none' && (
-            <SecondaryButton title="Record a clip of you doing it" icon="video.fill" onClick={() => input.current?.click()} />
-          )}
-          {clip.kind !== 'none' && (
-            <div className="upload-chip">
-              <span className={clip.kind === 'failed' ? 'c-risk-med' : 'c-brand-ink'}>
-                <Sym name={clip.kind === 'failed' ? 'video.slash' : 'film'} size={20} weight="regular" />
-              </span>
-              <div className="stack-6 grow">
-                <div className="hstack-6">
-                  <span className="t-copy-m c-ink ellipsis">{clip.name}</span>
-                  <span className="spacer" />
-                  {clip.kind === 'uploading' && <span className="t-label c-muted figures">{Math.round(clip.fraction * 100)}%</span>}
-                  {clip.kind === 'ready' && <span className="t-label c-muted">{sizeLabel(clip.size)}</span>}
-                </div>
-                {clip.kind === 'uploading' && <div className="progress-line"><i style={{ width: `${clip.fraction * 100}%` }} /></div>}
-                {clip.kind === 'ready' && <span className="t-label c-risk-low">Ready to send</span>}
-                {clip.kind === 'failed' && <span className="t-label c-risk-med">{clip.message}</span>}
-              </div>
-              <button type="button" className="remove" onClick={removeClip} aria-label="Remove the clip">
-                <Sym name="xmark.circle.fill" size={20} weight="regular" />
-              </button>
-            </div>
-          )}
-          {clip.kind === 'failed' && (
-            <MPButton kind="plain" onClick={() => input.current?.click()}>Try another clip</MPButton>
-          )}
-          <span className="t-label c-muted">A few seconds is plenty. It goes to your care team only.</span>
-        </div>
-      </div>
-    </Screen>
-  )
 }
 
 // MARK: - Can't do it today

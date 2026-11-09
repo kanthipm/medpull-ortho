@@ -29,6 +29,7 @@ const loadSignalDetail = () => import('./features/progress/SignalDetailView')
 const loadCareMetricDetail = () => import('./features/progress/CareMetricDetailView')
 const loadTasks = () => import('./features/tasks/TasksView')
 const loadExercise = () => import('./features/exercises/ExerciseDetailView')
+const loadSession = () => import('./features/exercises/ExerciseSessionView')
 const loadProgram = () => import('./features/exercises/ProgramView')
 
 const OnboardingFlow = lazy(() => loadOnboarding().then((m) => ({ default: m.OnboardingFlow })))
@@ -43,6 +44,7 @@ const CareMetricDetailRoute = lazy(() =>
 const TaskHistoryView = lazy(() => loadTasks().then((m) => ({ default: m.TaskHistoryView })))
 const TaskDestination = lazy(() => loadTasks().then((m) => ({ default: m.TaskDestination })))
 const ExerciseDestination = lazy(() => loadExercise().then((m) => ({ default: m.ExerciseDestination })))
+const ExerciseSessionDestination = lazy(() => loadSession().then((m) => ({ default: m.ExerciseSessionDestination })))
 const ProgramView = lazy(() => loadProgram().then((m) => ({ default: m.ProgramView })))
 
 function preloadTabs() {
@@ -53,6 +55,7 @@ function preloadTabs() {
   void loadCare()
   void loadTasks()
   void loadExercise()
+  void loadSession()
   void loadProgram()
   void loadConnections()
 }
@@ -136,6 +139,7 @@ function MainTabs() {
           <Route path="/today/tasks/:id" element={<TaskDestination />} />
           <Route path="/today/program" element={<ProgramView />} />
           <Route path="/today/exercises/:id" element={<ExerciseDestination />} />
+          <Route path="/today/exercises/:id/session" element={<ExerciseSessionDestination />} />
           <Route path="/progress" element={<ProgressTab />} />
           <Route path="/progress/signals/:key" element={<SignalDetailRoute root="/progress" />} />
           <Route path="/progress/metrics/:id" element={<CareMetricDetailRoute />} />

@@ -6,13 +6,13 @@ import type { LucideIcon, LucideProps } from 'lucide-react'
 import {
   Activity, Armchair, ArrowRight, ArrowUp, AudioLines, BadgeCheck, Bandage, BedDouble,
   BriefcaseMedical, Building2, Calendar, Camera, ChartLine, Check, ChevronDown, ChevronLeft,
-  ChevronRight, CircleArrowRight, CircleArrowUp, CircleCheck, CircleMinus, CircleX, Compass,
-  Droplet, Dumbbell, ExternalLink, Eye, EyeOff, File, FileText, Film, Flame, Footprints, Gauge,
+  ChevronRight, CircleArrowRight, CircleArrowUp, CircleCheck, CircleMinus, CircleX, Clock, Compass,
+  Droplet, Dumbbell, ExternalLink, Eye, EyeOff, File, FileText, Film, Flag, Flame, Footprints, Gauge,
   GitBranch, Heart, HeartPulse, IdCard, Image, ImageOff, Images, Link, ListChecks, ListOrdered, Mic,
   MessageCircle, MessageSquareText, MessagesSquare, Moon, Pause, Pencil, PersonStanding, Pill,
-  Play, Plus, RefreshCw, Repeat, RotateCcw, Ruler, Search, Sparkles, Square, Stethoscope,
+  Play, Plus, RefreshCw, Repeat, RotateCcw, Ruler, Search, SkipForward, Sparkles, Square, Stethoscope,
   Sun, Sunrise, Thermometer, Timer, TrendingUp, TriangleAlert, TriangleRight, Users, Video,
-  VideoOff, Watch, Weight, Wind, X, Smartphone, Lock, Settings, Hourglass, Circle,
+  VideoOff, Watch, Weight, Wind, X, Smartphone, Lock, Settings, Hourglass, Circle, Zap,
 } from 'lucide-react'
 
 const map: Record<string, LucideIcon> = {
@@ -111,6 +111,10 @@ const map: Record<string, LucideIcon> = {
   'lock.fill': Lock,
   gearshape: Settings,
   hourglass: Hourglass,
+  clock: Clock,
+  'bolt.fill': Zap,
+  'flag.checkered': Flag,
+  'forward.end.fill': SkipForward,
 }
 
 type Weight = 'regular' | 'medium' | 'semibold'
