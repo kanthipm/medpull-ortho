@@ -292,9 +292,11 @@ TUE_THU_SAT = (1, 3, 5)
 
 @dataclass(frozen=True)
 class ScheduledExercise:
-    """One exercise on a lifter's calendar: its dose, the therapist's words
-    to the patient, and the weekdays it falls on (Monday is 0; None is
-    every day)."""
+    """One exercise on a lifter's calendar: its dose (counts, hold, side,
+    the load in hand and the effort it should feel like), the therapist's
+    words to the patient, what she asks for with it (a clip of the attempt,
+    the wearable on: off | optional | required), and the weekdays it falls
+    on (Monday is 0; None is every day)."""
 
     key: str
     sets: int | None = None
@@ -303,14 +305,21 @@ class ScheduledExercise:
     side: str = "not_applicable"
     note: str = ""
     weekdays: tuple[int, ...] | None = None
+    load_kg: float | None = None
+    rpe_target: int | None = None
+    video_requirement: str = "optional"
+    wearable_requirement: str = "optional"
 
 
 SCHEDULE: dict[str, tuple[ScheduledExercise, ...]] = {
+    # Dr. Gregg wants to see Cole's loaded work and how hard he is pushing it.
     "hirt-cole": (
         ScheduledExercise("functional_step_ups", sets=3, reps=10, side="left",
-                          note="Slow on the way down.", weekdays=MON_WED_FRI),
+                          note="Slow on the way down.", weekdays=MON_WED_FRI, load_kg=10,
+                          rpe_target=7, video_requirement="required"),
         ScheduledExercise("functional_wall_sits", sets=3, hold_seconds=30,
-                          note="Knees over the ankles, not past the toes.", weekdays=MON_WED_FRI),
+                          note="Knees over the ankles, not past the toes.", weekdays=MON_WED_FRI,
+                          rpe_target=7, video_requirement="required"),
         ScheduledExercise("functional_mini_squats", sets=3, reps=12,
                           note="Only as deep as stays comfortable.", weekdays=MON_WED_FRI),
         ScheduledExercise("knee_terminal_extensions", sets=3, reps=15, side="left",
@@ -318,15 +327,18 @@ SCHEDULE: dict[str, tuple[ScheduledExercise, ...]] = {
         ScheduledExercise("knee_heel_slides", sets=2, reps=10, side="left",
                           note="Every day, after your warm-up."),
     ),
+    # Tessa's calf raises are done with the watch on, for the heart rate.
     "hirt-tessa": (
         ScheduledExercise("ankle_calf_raises", sets=3, reps=15, side="right",
-                          note="Slow on the way down — count to three."),
+                          note="Slow on the way down — count to three.",
+                          wearable_requirement="required"),
         ScheduledExercise("ankle_dorsiflexion_stretch", sets=3, hold_seconds=30, side="right",
                           note="Heel stays down."),
         ScheduledExercise("balance_single_leg_stance", sets=3, hold_seconds=30, side="right",
                           note="Fingertips on the counter if you need them.",
                           weekdays=TUE_THU_SAT),
     ),
+    # Devon and June: a clip and the wearable welcome, neither asked for.
     "hirt-devon": (
         ScheduledExercise("back_bird_dog", sets=3, reps=8,
                           note="Slow and level; nothing in the back should move."),
@@ -341,12 +353,13 @@ SCHEDULE: dict[str, tuple[ScheduledExercise, ...]] = {
         ScheduledExercise("functional_sit_to_stand", sets=3, reps=8,
                           note="Hinge from the hips, chest up."),
     ),
+    # Rafael's band work tells the wearable nothing, so it is not asked for.
     "hirt-rafael": (
         ScheduledExercise("shoulder_pendulum_swings", sets=2, reps=20, side="right",
                           note="Let the arm hang; small circles."),
         ScheduledExercise("shoulder_wall_slides", sets=3, reps=10, side="right"),
         ScheduledExercise("shoulder_band_external_rotation", sets=3, reps=12, side="right",
-                          note="Elbow tucked to your side."),
+                          note="Elbow tucked to your side.", wearable_requirement="off"),
         ScheduledExercise("shoulder_scapular_retractions", sets=3, reps=12,
                           note="Shoulders down and back, not up."),
     ),
@@ -361,12 +374,47 @@ PAIN_AFTER: dict[str, tuple[int, ...]] = {
     "hirt-june": (2, 2, 2, 1, 2, 1, 2, 1, 1, 2, 1, 1, 1, 1),
     "hirt-rafael": (3, 2, 3, 2, 2, 3, 2, 2, 3, 2, 2, 3, 2, 2),
 }
-# When each lifter marks a day done, local time; the rows of one day follow
-# a few minutes apart.
+# How hard it felt (RPE 0–10), by program day, for the days that were done.
+# Cole's climbs with his pain — the week he went back to his old leg day —
+# while the others sit where their therapist put them.
+EFFORT: dict[str, tuple[int, ...]] = {
+    "hirt-cole": (5, 5, 5, 5, 5, 5, 5, 5, 6, 7, 7, 7, 8, 8),
+    "hirt-tessa": (5, 5, 6, 5, 5, 5, 6, 6, 5, 5, 5, 6, 5, 6),
+    "hirt-devon": (6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6),
+    "hirt-june": (4, 4, 4, 4, 5, 5, 5, 4, 4, 5, 4, 4, 4, 5),
+    "hirt-rafael": (6, 6, 7, 6, 6, 7, 6, 6, 7, 6, 6, 7, 6, 6),
+}
+# The week Cole went back to his old leg day he loaded the step-ups heavier
+# than prescribed: 16 kg in hand against the 10 on the sheet, from program
+# day 8. That is the load trend the board shows under his name.
+COLE_HEAVY_FROM = 8
+COLE_HEAVY_KG = 16.0
+# Who wears a watch while training: Tessa, whose calf raises ask for it.
+WEARS_WATCH = frozenset({"hirt-tessa"})
+# When each lifter starts the day's exercises, local time. Each row's
+# session (8–14 minutes) follows the one before it with a minute between,
+# and the row is marked done the moment its session ends.
 DONE_AT: dict[str, time] = {
     "hirt-cole": time(18, 40), "hirt-tessa": time(7, 15), "hirt-devon": time(21, 10),
     "hirt-june": time(8, 30), "hirt-rafael": time(19, 20),
 }
+SESSION_MINUTES = (8, 14)
+
+
+def _session_minutes(program_day: int, order: int) -> int:
+    """How long a session ran, 8–14 minutes, varying by day and position
+    so the calendar does not read as a metronome."""
+    low, high = SESSION_MINUTES
+    return low + (program_day * 3 + order * 2) % (high - low + 1)
+
+
+def _load_done(patient_id: str, program_day: int, item: ScheduledExercise) -> float | None:
+    """The load the lifter reported: what was prescribed, except Cole's
+    heavy week on the step-ups."""
+    if (patient_id == "hirt-cole" and item.key == "functional_step_ups"
+            and program_day >= COLE_HEAVY_FROM):
+        return COLE_HEAVY_KG
+    return item.load_kg
 # What a lifter typed under a done day: (lifter, program day, exercise).
 DONE_NOTES: dict[tuple[str, int, str], str] = {
     ("hirt-cole", 11, "knee_heel_slides"): "Knee was stiff all morning.",
@@ -377,6 +425,31 @@ DONE_NOTES: dict[tuple[str, int, str], str] = {
 # Devon's two skips, both the same reason.
 DEVON_SKIPPED = frozenset({(11, "back_bird_dog"), (13, "back_cat_cow")})
 SKIP_REASON = "Long shift"
+
+
+@dataclass(frozen=True)
+class Review:
+    """A therapist's look at one done day: the exercise, which done day of
+    it counting back from the latest (0 is the latest), and her note. The
+    latest done day of an exercise is left alone where the media script
+    puts a return clip on it, so the review queue has something to show."""
+
+    patient_id: str
+    key: str
+    back: int
+    note: str
+
+
+REVIEWS: tuple[Review, ...] = (
+    Review("hirt-cole", "functional_step_ups", 1,
+           "Depth looks good. Slow the lowering a touch more — count to three on the way down."),
+    Review("hirt-cole", "functional_wall_sits", 0,
+           "Knees are tracking over the ankles now. Keep the hold honest at thirty."),
+    Review("hirt-june", "back_bird_dog", 1,
+           "Lovely and level. Reach a little longer through the heel next time."),
+)
+# How long after the lifter finished the therapist looked at it.
+REVIEW_DELAY = timedelta(hours=2, minutes=20)
 
 # What the past fourteen days read on a fresh fill, per lifter. Fourteen
 # days hold every weekday exactly twice, so these do not move with the
@@ -389,6 +462,23 @@ EXPECTED_SCHEDULE: dict[str, dict[str, int]] = {
     "hirt-june": {"done": 56, "skipped": 0, "missed": 0},
     "hirt-rafael": {"done": 48, "skipped": 0, "missed": 8},
 }
+# What each lifter's rows ask for, where it is not the default (optional,
+# optional): (video_requirement, wearable_requirement) by exercise. Pinned
+# by the tests, which also check that every other row is the default.
+EXPECTED_REQUIREMENTS: dict[str, dict[str, tuple[str, str]]] = {
+    "hirt-cole": {"functional_step_ups": ("required", "optional"),
+                  "functional_wall_sits": ("required", "optional")},
+    "hirt-tessa": {"ankle_calf_raises": ("optional", "required")},
+    "hirt-devon": {},
+    "hirt-june": {},
+    "hirt-rafael": {"shoulder_band_external_rotation": ("optional", "off")},
+}
+# (load_kg, rpe_target) where a row carries either; every other row has neither.
+EXPECTED_LOADS: dict[str, dict[str, tuple[float | None, int | None]]] = {
+    "hirt-cole": {"functional_step_ups": (10.0, 7), "functional_wall_sits": (None, 7)},
+}
+# How many done days each lifter's therapist has reviewed with a note.
+EXPECTED_REVIEWS: dict[str, int] = {"hirt-cole": 2, "hirt-june": 1}
 
 
 def _outcome(patient_id: str, program_day: int, key: str) -> tuple[str, str | None]:
@@ -433,8 +523,10 @@ def ensure_consent(db, patient_id: str) -> int:
 
 def write_schedule(db, patient_id: str, today: date) -> dict[str, int]:
     """One lifter's calendar, program day 0 through today + 7, with the past
-    days' outcomes. Needs the catalog for the exercise rows and upserts it
-    if a key is missing; replaces any schedule the lifter already has, so a
+    days' outcomes: each done day as a session (started, ended, how long,
+    pain before and after, effort, what was done), and the therapist's
+    reviews. Needs the catalog for the exercise rows and upserts it if a
+    key is missing; replaces any schedule the lifter already has, so a
     refill is clean. Returns row counts."""
     from sqlalchemy import delete, select
 
@@ -442,7 +534,8 @@ def write_schedule(db, patient_id: str, today: date) -> dict[str, int]:
     from app.hep.models import Exercise, ExerciseAssignment
 
     items = SCHEDULE.get(patient_id)
-    counts = {"assignments": 0, "done": 0, "skipped": 0, "consents": ensure_consent(db, patient_id)}
+    counts = {"assignments": 0, "done": 0, "skipped": 0, "reviews": 0,
+              "consents": ensure_consent(db, patient_id)}
     if not items:
         return counts
     spec = next(p for p in HIRT_PATIENTS if p.id == patient_id)
@@ -461,22 +554,33 @@ def write_schedule(db, patient_id: str, today: date) -> dict[str, int]:
     for offset in range(PROGRAM_DAYS + SCHEDULE_AHEAD + 1):
         day = start + timedelta(days=offset)
         order = 0
+        clock = datetime.combine(day, DONE_AT[patient_id])
         for item in items:
             if item.weekdays is not None and day.weekday() not in item.weekdays:
                 continue
             row = ExerciseAssignment(
                 hospital_id=HOSPITAL_ID, patient_id=patient_id, exercise_id=exercises[item.key].id,
                 scheduled_for=day, sort_order=order, sets=item.sets, reps=item.reps,
-                hold_seconds=item.hold_seconds, side=item.side, clinician_instructions=item.note,
-                assigned_by=spec.assigned_id, status="assigned", created_at=laid_out,
-                updated_at=laid_out,
+                hold_seconds=item.hold_seconds, side=item.side, load_kg=item.load_kg,
+                rpe_target=item.rpe_target, clinician_instructions=item.note,
+                assigned_by=spec.assigned_id, video_requirement=item.video_requirement,
+                wearable_requirement=item.wearable_requirement, status="assigned",
+                created_at=laid_out, updated_at=laid_out,
             )
             if day < today:
                 status, reason = _outcome(patient_id, offset, item.key)
                 if status == "done":
-                    at = datetime.combine(day, DONE_AT[patient_id]) + timedelta(minutes=4 * order)
-                    row.status, row.completed_at, row.updated_at = "done", at, at
+                    minutes = _session_minutes(offset, order)
+                    started, ended = clock, clock + timedelta(minutes=minutes)
+                    clock = ended + timedelta(minutes=1)
+                    row.status, row.completed_at, row.updated_at = "done", ended, ended
+                    row.started_at, row.ended_at, row.duration_s = started, ended, minutes * 60
                     row.pain_after = PAIN_AFTER[patient_id][offset]
+                    row.pain_before = max(row.pain_after - 1, 0)
+                    row.effort = EFFORT[patient_id][offset]
+                    row.sets_done, row.reps_done = item.sets, item.reps
+                    row.load_done_kg = _load_done(patient_id, offset, item)
+                    row.wearable_worn = True if patient_id in WEARS_WATCH else None
                     row.note = DONE_NOTES.get((patient_id, offset, item.key))
                     row.completion_source = "app"
                     counts["done"] += 1
@@ -488,12 +592,126 @@ def write_schedule(db, patient_id: str, today: date) -> dict[str, int]:
             order += 1
             counts["assignments"] += 1
     db.commit()
+    counts["reviews"] = write_reviews(db, patient_id)
     return counts
 
 
+def write_reviews(db, patient_id: str) -> int:
+    """The therapist's reviews of one lifter's done days (``REVIEWS``): the
+    review on the row, and her note as one line on the thread under her
+    name, the way the console's review writes it. A refill replaces the
+    lines an earlier fill wrote. Returns the number of reviews written."""
+    from sqlalchemy import delete, select
+
+    from app.hep.models import Exercise, ExerciseAssignment
+    from app.hep.schedule import review_line
+    from app.models.mobile import Message
+
+    specs = [r for r in REVIEWS if r.patient_id == patient_id]
+    if not specs:
+        return 0
+    db.execute(delete(Message).where(
+        Message.patient_id == patient_id, Message.sender == "care_team", Message.channel == "app",
+        Message.text.like("About your %"),
+    ))
+    reviewer = next(p for p in HIRT_PATIENTS if p.id == patient_id).assigned_id
+    written = 0
+    for spec in specs:
+        exercise = db.scalar(select(Exercise).where(Exercise.key == spec.key))
+        done = db.scalars(
+            select(ExerciseAssignment).where(
+                ExerciseAssignment.patient_id == patient_id,
+                ExerciseAssignment.exercise_id == exercise.id,
+                ExerciseAssignment.status == "done",
+            ).order_by(ExerciseAssignment.scheduled_for.desc())
+        ).all()
+        if len(done) <= spec.back:
+            continue
+        row = done[spec.back]
+        at = row.completed_at + REVIEW_DELAY
+        row.reviewed_at, row.reviewed_by, row.review_note = at, reviewer, spec.note
+        row.updated_at = at
+        db.add(Message(
+            patient_id=patient_id, sender="care_team", sender_id=reviewer, channel="app",
+            text=review_line(exercise.title, spec.note, has_clip=False), authored_by="care_team",
+            created_at=at, read_by_care_team_at=at, read_by_patient_at=at + timedelta(hours=1),
+        ))
+        written += 1
+    db.commit()
+    return written
+
+
+# --- programs ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ProgramTemplate:
+    """A program the clinic keeps: drawn from one lifter's schedule."""
+
+    name: str
+    description: str
+    weeks: int
+    pattern: str  # the lifter whose SCHEDULE entry it is made of
+    created_by: str
+
+
+TEMPLATES: tuple[ProgramTemplate, ...] = (
+    ProgramTemplate(
+        "Patellar tendinopathy · phase 2",
+        "Progressive loading for the knee: step-ups, wall sits, mini squats and terminal knee "
+        "extensions three days a week, heel slides every day. Clips of the step-ups and the "
+        "wall sits.",
+        3, "hirt-cole", "ct_gregg",
+    ),
+    ProgramTemplate(
+        "Lumbar · return to lifting",
+        "Back to hinging under load: pelvic tilts, bird dog, glute bridges and sit-to-stand "
+        "every day.",
+        2, "hirt-june", "ct_harris",
+    ),
+)
+
+
+def _template_items(items: tuple[ScheduledExercise, ...]) -> list[dict[str, Any]]:
+    return [{
+        "exercise_key": i.key,
+        "weekdays": list(i.weekdays) if i.weekdays is not None else None,
+        "sets": i.sets, "reps": i.reps, "hold_seconds": i.hold_seconds, "side": i.side,
+        "load_kg": i.load_kg, "rpe_target": i.rpe_target, "clinician_instructions": i.note,
+        "video_requirement": i.video_requirement, "wearable_requirement": i.wearable_requirement,
+    } for i in items]
+
+
+def ensure_templates(db) -> int:
+    """The clinic's two programs, written through the same code the console
+    uses so the items are exactly what it would have stored. A program the
+    clinic already has by that name is left as it is — a therapist's edits
+    survive a refill. Returns rows added."""
+    from sqlalchemy import select
+
+    from app.hep import templates as programs
+    from app.hep.catalog import ensure_catalog
+    from app.hep.models import Exercise
+
+    added = 0
+    for spec in TEMPLATES:
+        if programs.find_template(db, HOSPITAL_ID, spec.name) is not None:
+            continue
+        keys = {i.key for i in SCHEDULE[spec.pattern]}
+        if keys - set(db.scalars(select(Exercise.key).where(Exercise.key.in_(keys)))):
+            ensure_catalog(db)
+        programs.create_template(
+            db, HOSPITAL_ID, name=spec.name, description=spec.description, weeks=spec.weeks,
+            items=_template_items(SCHEDULE[spec.pattern]), actor=spec.created_by,
+        )
+        added += 1
+    return added
+
+
 def ensure_org(db) -> int:
-    """The hospital and its two therapists, for a database that predates
-    them (the deployed one, under demo_fill). Idempotent; returns rows added."""
+    """The hospital, its two therapists and its programs, for a database
+    that predates them (the deployed one, under demo_fill). Idempotent;
+    returns rows added."""
     from app.models import CareTeamMember, Hospital, NotificationPreference
     from app.models.enums import NotificationChannel
 
@@ -512,13 +730,14 @@ def ensure_org(db) -> int:
                 db.add(NotificationPreference(recipient_id=ct.id, channel=channel, enabled=enabled))
             added += 1
     db.commit()
-    return added
+    return added + ensure_templates(db)
 
 
 __all__ = [
     "HOSPITAL_ID", "TZ", "PROGRAM_DAYS", "QSET", "HIRT_HOSPITAL", "HIRT_CARE_TEAM",
     "HIRT_PATIENTS", "HIRT_IDS", "PATHWAYS", "PHONES", "MRNS", "CheckinDay", "HISTORY",
     "EXPECTED_TIERS", "write_history", "ensure_org",
-    "SCHEDULE_AHEAD", "ScheduledExercise", "SCHEDULE", "PAIN_AFTER", "EXPECTED_SCHEDULE",
-    "write_schedule",
+    "SCHEDULE_AHEAD", "ScheduledExercise", "SCHEDULE", "PAIN_AFTER", "EFFORT", "REVIEWS",
+    "EXPECTED_SCHEDULE", "EXPECTED_REQUIREMENTS", "EXPECTED_LOADS", "EXPECTED_REVIEWS",
+    "write_schedule", "write_reviews", "TEMPLATES", "ensure_templates",
 ]

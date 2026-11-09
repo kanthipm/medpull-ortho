@@ -253,7 +253,9 @@ def main() -> int:
             if message is None:
                 message = Message(
                     patient_id=patient_id, sender="patient", channel="app",
-                    text=completion_line(exercise.title, row.pain_after, row.note), created_at=at,
+                    text=completion_line(exercise.title, row.pain_after, row.note,
+                                         effort=row.effort),
+                    created_at=at,
                     read_by_care_team_at=at + timedelta(hours=1),
                 )
                 db.add(message)
