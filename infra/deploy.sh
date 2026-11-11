@@ -177,6 +177,14 @@ CALLER="$(aws_ sts get-caller-identity --query Arn --output text)"
 info "account $ACCOUNT_ID in $REGION"
 info "as      $CALLER"
 info "stack   $STACK_NAME ($([ "$DEMO_MODE" = true ] && echo 'the public demo' || echo 'the real app'); env file $ENV_FILE)"
+# The default .env may be absent on a first deploy from a fresh clone, but
+# never for a stack that already exists: its domain, demo switch and trail
+# all come from that file, and deploying without it would strip them. (The
+# file has gone missing twice, when a checkout of a stale branch that tracks
+# .env was switched back to main.)
+if [ ! -f "$ENV_FILE" ] && aws_ cloudformation describe-stacks --stack-name "$STACK_NAME" >/dev/null 2>&1; then
+  die "$ENV_FILE is missing but the stack $STACK_NAME exists — restore the env file before deploying (README, 'Custom domain')"
+fi
 case "$CALLER" in
   *":root") info "note: you are the account root user. AWS recommends an IAM"
             info "      user or role with AdministratorAccess for day-to-day work." ;;
