@@ -342,16 +342,31 @@ def _insight_key(
     ).hexdigest()
 
 
+def _reason_is_rule_written(analytics: dict[str, Any]) -> bool:
+    """Whether the worklist line is the engine's own sentence, with no model
+    call: a stable patient's status line, and a chart that is scored from
+    what the person reported (engine/risk.py ``score_reported``). That
+    chart's reasons are already whole sentences about one person ("Training
+    load 1.6× its recent average — too much, too soon", "Went quiet — no
+    check-in for 3 days"), the flag and the tile beside it quote the same
+    numbers, and a paraphrase can only drift from them: the model wrote "No
+    device data this week" about a clinic that has no devices."""
+    from app.engine.risk import REPORTED_CODES
+
+    risk = analytics.get("risk", {})
+    if risk.get("level") == "low":
+        return True
+    codes = [reason.get("code") for reason in risk.get("reasons", [])]
+    return bool(codes) and all(code in REPORTED_CODES for code in codes)
+
+
 def insight_is_cached(db: Session, kind: InsightKind, patient_id: str) -> bool:
     """Whether the next get_patient_insight for this key answers from the
     cache, i.e. costs no LLM call. The worklist reads this to spend its
     per-request LLM budget only where a call would actually happen."""
     assessment = _latest_assessment(db, patient_id)
     analytics = assessment.analytics
-    skip_llm = (
-        kind == InsightKind.WORKLIST_REASON
-        and analytics.get("risk", {}).get("level") == "low"
-    )
+    skip_llm = kind == InsightKind.WORKLIST_REASON and _reason_is_rule_written(analytics)
     provider = "fallback" if skip_llm else provider_name()
     if provider == "fallback":
         return True
@@ -382,10 +397,7 @@ def get_patient_insight(
     # LLM keeps the worklist fast on cold caches. A deliberate skip is keyed
     # as what it produces, so the row it writes is a cache hit next time
     # rather than a fallback row sitting under a key that expects an LLM.
-    skip_llm = (
-        kind == InsightKind.WORKLIST_REASON
-        and analytics.get("risk", {}).get("level") == "low"
-    )
+    skip_llm = kind == InsightKind.WORKLIST_REASON and _reason_is_rule_written(analytics)
     provider = "fallback" if skip_llm else provider_name()
     scope = _scope(assessment, transcript)
 
@@ -527,16 +539,23 @@ def get_daily_briefing(
         reason = get_patient_insight(
             db, InsightKind.WORKLIST_REASON, patient.id, allow_llm=False
         )
-        roster.append(
-            {
-                "name": patient.name,
-                "priority": str(assessment.risk_level),
-                "reason": reason.content.get("reason", ""),
-                "postop_day": assessment.analytics.get("postop_day"),
-                "procedure": patient.procedure_display,
-                "risk_score": float(assessment.risk_score or 0.0),
-            }
-        )
+        entry: dict[str, Any] = {
+            "name": patient.name,
+            "priority": str(assessment.risk_level),
+            "reason": reason.content.get("reason", ""),
+        }
+        day = assessment.analytics.get("postop_day")
+        if str(patient.procedure_type) == "NONE":
+            # Nobody operated on this person. Handed a "postop_day" and a
+            # "procedure", the model wrote "day 14 post patellar tendinopathy
+            # progressive loading" about a lifter on a clinic's program.
+            entry["day_of_program"] = day
+            entry["program"] = patient.procedure_display
+        else:
+            entry["postop_day"] = day
+            entry["procedure"] = patient.procedure_display
+        entry["risk_score"] = float(assessment.risk_score or 0.0)
+        roster.append(entry)
 
     # sort: high first for the prompt/template, and within a tier the way the
     # worklist orders its rows (score, then the roster order), so "start

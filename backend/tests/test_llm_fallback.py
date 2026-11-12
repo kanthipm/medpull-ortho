@@ -255,6 +255,36 @@ def test_an_accepted_answer_clears_the_rejection_streak(db, groq_configured, mon
     assert provider_mod._rejections.get("groq", 0) == 2
 
 
+def test_the_briefing_is_told_a_lifter_is_on_a_program_not_post_op(db, groq_configured, monkeypatch):
+    """Nobody operated on a lifter: the model is handed their day of the
+    program, not a post-op day and a procedure to write "day 14 post" about."""
+    import json
+
+    from app.models.patient import Patient
+
+    monkeypatch.setattr(insights_mod, "PROMPT_VERSION", "program-test")
+    seen: list[dict] = []
+
+    def fake(system, prompt, **kw):
+        seen.append(json.loads(prompt.split("Data:\n", 1)[1].split("\n\nProduce JSON", 1)[0]))
+        return {"briefing": "Start with the first name on the list this morning. " * 3}
+
+    monkeypatch.setattr(insights_mod, "complete_json", fake)
+    people = [db.get(Patient, "hirt-cole"), db.get(Patient, "aisha")]
+    mark = db.scalar(select(func.max(Insight.id))) or 0
+    try:
+        insights_mod.get_daily_briefing(db, patients=people)
+        by_name = {p["name"]: p for p in seen[-1]["patients"]}
+        lifter, operated = by_name[people[0].name], by_name[people[1].name]
+        assert lifter["program"] == people[0].procedure_display and "day_of_program" in lifter
+        assert "postop_day" not in lifter and "procedure" not in lifter
+        assert operated["procedure"] == people[1].procedure_display and "postop_day" in operated
+        assert "program" not in operated
+    finally:
+        db.execute(delete(Insight).where(Insight.id > mark))
+        db.commit()
+
+
 def test_warm_briefing_costs_no_per_patient_lookups(db, monkeypatch):
     """The briefing used to build its roster BEFORE consulting its own cache,
     so a cache hit still cost one insight lookup per patient."""

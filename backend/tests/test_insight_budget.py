@@ -55,6 +55,32 @@ def test_allow_llm_false_serves_fallback_without_filling_the_model_key(db, monke
         _clear(db, patient_id, kind)
 
 
+def test_a_chart_scored_from_reports_keeps_the_engines_own_sentence(db, monkeypatch):
+    """A lifter's worklist line is the reason the engine wrote, whatever the
+    tier: the model is not asked to paraphrase it."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(insights, "provider_name", lambda: "groq")
+
+    def analytics(level: str, *codes: str) -> dict:
+        return {"risk": {"level": level, "reasons": [{"code": c, "text": c} for c in codes]}}
+
+    rule = insights._reason_is_rule_written
+    assert rule(analytics("high", "LOAD_SPIKE", "PAIN_RISING"))
+    assert rule(analytics("medium", "WENT_QUIET"))
+    assert rule(analytics("medium", "PROGRAM_SLIPPING"))
+    assert rule(analytics("low"))
+    # A device finding, alone or beside a reported one, still goes to the model.
+    assert not rule(analytics("medium", "RHR_RISING"))
+    assert not rule(analytics("high", "LOAD_SPIKE", "TEMP_RISING"))
+    assert not rule(analytics("medium"))
+
+    quiet = SimpleNamespace(
+        analytics=analytics("medium", "WENT_QUIET"), input_hash="h", risk_level="medium")
+    monkeypatch.setattr(insights, "_latest_assessment", lambda db, pid: quiet)
+    assert insights.insight_is_cached(db, InsightKind.WORKLIST_REASON, "aisha") is True
+
+
 def test_low_tier_worklist_reason_never_needs_the_model(db, monkeypatch):
     """Stable patients' reasons are deliberate fallback text (see
     get_patient_insight), so the cache probe reports them as free."""

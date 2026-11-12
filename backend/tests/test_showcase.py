@@ -527,6 +527,25 @@ def test_a_lifters_chart_leads_with_six_tiles_that_have_data(api, db):
     assert not {"msg_exercise_nudge", "open_plan"} & {s["key"] for s in steps}
 
 
+def test_a_lifters_worklist_line_is_the_engines_own_sentence(db, monkeypatch):
+    """With a model configured, the three lifters who need a look still read
+    as the engine flagged them: no model call, the reason text itself."""
+    from app.llm import insights
+    from app.models.enums import InsightKind
+
+    monkeypatch.setattr(insights, "provider_name", lambda: "groq")
+    monkeypatch.setattr(insights, "complete_json",
+                        lambda *a, **kw: pytest.fail("a lifter's reason must not call the model"))
+    lines = {
+        pid: insights.get_patient_insight(db, InsightKind.WORKLIST_REASON, pid).content["reason"]
+        for pid in ("hirt-cole", "hirt-rafael", "hirt-devon")
+    }
+    assert lines["hirt-cole"].startswith("Training load 1.6× its recent average")
+    assert lines["hirt-rafael"] == "Went quiet — no check-in for 3 days"
+    assert lines["hirt-devon"].startswith("Program slipping")
+    assert all("device" not in line.lower() for line in lines.values())
+
+
 def test_every_clinic_personas_thread_reads_in_time_order(db):
     """The phone lists a thread by row id, so the fill leaves each persona's
     rows numbered in the order they are dated."""
