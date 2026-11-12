@@ -27,6 +27,9 @@ class HospitalSpec:
     state: str
     system: str | None = None
     timezone: str = "America/Chicago"
+    # The unit the clinic reads loads in on its exercise calendar ("lb" or
+    # "kg"); None leaves the default. Stored loads are kilograms either way.
+    load_unit: str | None = None
 
 
 @dataclass(frozen=True)

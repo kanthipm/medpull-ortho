@@ -278,6 +278,19 @@ def _exercise_days(db: Session, patient: Patient, since: date, today: date) -> t
     return out, unit
 
 
+# The lifter's check-in asks about their own training apart from the clinic's
+# program ("Training today: how hard was it?"). Those two columns say so, so a
+# day with no training beside a program that was done reads as what it is.
+_TRAINING_LABELS = {"rpe": "Training effort", "minutes": "Training min"}
+
+
+def _label(question: dict[str, Any]) -> str:
+    qid = question["id"]
+    if qid in _TRAINING_LABELS and "train" in str(question.get("prompt") or "").lower():
+        return _TRAINING_LABELS[qid]
+    return _LABELS.get(qid, qid.replace("_", " ").capitalize())
+
+
 def _questions(asked: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """The check-in columns this window needs: every question that was
     answered at least once, worded as it was asked, in the order the
@@ -286,7 +299,7 @@ def _questions(asked: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "id": question["id"],
-            "label": _LABELS.get(question["id"], question["id"].replace("_", " ").capitalize()),
+            "label": _label(question),
             "kind": question["kind"],
             "prompt": question["prompt"],
             "options": question.get("options") or (

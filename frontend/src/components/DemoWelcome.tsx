@@ -172,8 +172,7 @@ export default function DemoWelcome() {
             </button>
           </div>
           <p className="meta mt-4 sm:mt-5">
-            Every chart here runs on demo data. Monitoring signals for clinician review, not a
-            diagnosis.
+            This is a demo roster. Monitoring signals for clinician review, not a diagnosis.
           </p>
         </div>
       </div>

@@ -418,6 +418,46 @@ export interface AssignmentCompletion {
   /** Null until the therapist replies or marks it reviewed. A done row
    *  with a clip and no review is "awaiting review". */
   review: AssignmentReview | null
+  /** The server's one definition of "waits for a look", and why: a clip of
+   *  the attempt, or a session that went over the dose. */
+  awaiting_review?: boolean
+  review_reason?: ReviewReason | null
+  /** What was done against what was written, field by field, and the same
+   *  in one line ("35 lb done, 25 lb prescribed · effort 8, target 7"). The
+   *  line is in the clinic's own unit; the numbers stay kilograms. */
+  performed?: Performed
+  over?: boolean
+  under?: boolean
+  line?: string
+}
+
+export type ReviewReason = 'clip' | 'over'
+
+export interface DoneAgainst {
+  done: number | null
+  prescribed: number | null
+  delta: number | null
+}
+
+export interface Performed {
+  sets: DoneAgainst
+  reps: DoneAgainst
+  load_kg: DoneAgainst
+  effort: DoneAgainst
+}
+
+/** Where a row stands on its day, worked out by the server from its status
+ *  and the clinician's `today`: open and ahead, due today, started on the
+ *  phone, done, skipped, or open on a day that has passed. */
+export type AssignmentState = 'upcoming' | 'due' | 'in_progress' | 'done' | 'skipped' | 'missed'
+
+/** The clinic a calendar belongs to and the unit it reads loads in. Loads
+ *  are stored, sent and received in kilograms whatever this says. */
+export type LoadUnit = 'kg' | 'lb'
+export interface HepClinic {
+  id: string
+  name: string
+  load_unit: LoadUnit
 }
 
 /** The one shape both clients read. */
@@ -438,6 +478,9 @@ export interface Assignment {
   /** YYYY-MM-DD */
   scheduled_for: string
   sort_order: number
+  /** Set when the day was written by a repeat: its days are edited or
+   *  cleared together through `/api/hep/series/{id}`. */
+  series_id?: string | null
   sets: number | null
   reps: number | null
   hold_seconds: number | null
@@ -457,6 +500,8 @@ export interface Assignment {
   video_requirement: Requirement | string
   wearable_requirement: Requirement | string
   status: AssignmentStatus | string
+  /** Absent on a server from before the field; read `status` then. */
+  state?: AssignmentState | string
   video: AssignmentVideo | null
   /** Null until the patient presses Start on the phone. */
   session: AssignmentSession | null
@@ -482,6 +527,17 @@ export interface LoadWeek {
   this: number
   last: number
   change_pct: number | null
+  /** The week on the grid: what was lifted, what was written, and both
+   *  against the week before. Kilograms moved (load × reps × sets). */
+  week_start?: string
+  done_this_week?: number
+  done_last_week?: number
+  done_change_pct?: number | null
+  planned_last_week?: number
+  planned_this_week?: number
+  planned_next_week?: number
+  planned_change_pct?: number | null
+  planned_vs_last_done_pct?: number | null
 }
 
 export interface CareTeamMember {
@@ -509,8 +565,10 @@ export interface SchedulePatient extends SchedulePatientSummary {
    *  second pass. */
   adherence: Adherence | null
   load_week: LoadWeek | null
-  /** Done rows with a clip and no review. */
+  /** Done rows waiting for a look: a clip, or over the dose. */
   awaiting_review: number
+  /** Done days in the last seven that went over the dose. */
+  over_week?: number
 }
 
 /** GET /api/hep/schedule */
@@ -521,6 +579,9 @@ export interface ScheduleResponse {
   patients: SchedulePatient[]
   /** The clinic's therapists: the assigned providers of its charts. */
   care_team: CareTeamMember[]
+  /** Whose calendar this is and the unit it reads loads in. */
+  clinic?: HepClinic | null
+  to_review?: { count: number; days: number }
 }
 
 /** GET /api/hep/patients/{id}/schedule */
@@ -529,14 +590,55 @@ export interface PatientScheduleResponse {
   days: string[]
   today: string
   assignments: Assignment[]
+  clinic?: HepClinic | null
+}
+
+/** Repeat on these weekdays (Monday is 0) for this many weeks from `start`. */
+export interface RepeatBody {
+  weekdays: number[]
+  weeks: number
+  start: string
+}
+
+/** A day a write of many days left out, with the sentence why. */
+export interface SkippedDay {
+  date: string
+  exercise_id: number
+  title: string
+  reason: string
+  detail: string
+}
+
+/** What came of a text the console asked for. */
+export interface TextOutcome {
+  sent: boolean
+  status: string
+  detail: string | null
+  message_id: number | null
+  link: string
+}
+
+/** POST /api/hep/schedule answers with the rows it wrote. */
+export interface ScheduleCreateResult {
+  assignments: Assignment[]
+  series_id?: string | null
+  skipped?: number
+  skipped_days?: SkippedDay[]
+  /** Null when no text was asked for or none could go. */
+  text?: TextOutcome | null
 }
 
 export interface ScheduleCreateBody {
   patient_id: string
   exercise_id: number
   /** 1–31 dates within −60…+90 days of today; one already holding this
-   *  exercise is a 409 naming the date. */
-  dates: string[]
+   *  exercise is a 409 naming the date. Send these or `repeat`, not both. */
+  dates?: string[]
+  /** The days as a repeat: the server works them out and lands around what
+   *  is already there, listing what it left out. */
+  repeat?: RepeatBody
+  /** Also text the patient a link that opens the app on the first day. */
+  text_patient?: boolean
   sets?: number | null
   reps?: number | null
   hold_seconds?: number | null
@@ -579,6 +681,8 @@ export interface ReviewBody {
  *  name the queue prints. */
 export interface ReviewItem extends Assignment {
   patient_name: string
+  /** Why it is in the queue: a clip to watch, or a day over the dose. */
+  reason?: ReviewReason | null
 }
 
 /** POST /api/hep/schedule/copy-week — every assignment of the seven days
@@ -716,9 +820,13 @@ export function usePatientSchedule(
   })
 }
 
-function invalidateSchedule(qc: ReturnType<typeof useQueryClient>) {
+export function invalidateSchedule(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: ['hep', 'schedule'] })
   void qc.invalidateQueries({ queryKey: ['hep', 'patient-schedule'] })
+  // The month, the week in review and one exercise's history read the same rows.
+  void qc.invalidateQueries({ queryKey: ['hep', 'calendar'] })
+  void qc.invalidateQueries({ queryKey: ['hep', 'week'] })
+  void qc.invalidateQueries({ queryKey: ['hep', 'history'] })
   // A completion or a review moves the queue; the worklist's adherence
   // chip reads the same seven days.
   void qc.invalidateQueries({ queryKey: ['hep', 'review'] })
@@ -731,7 +839,7 @@ export function useCreateAssignments() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: ScheduleCreateBody) =>
-      fetchJson<{ assignments: Assignment[] }>('/api/hep/schedule', {
+      fetchJson<ScheduleCreateResult>('/api/hep/schedule', {
         method: 'POST',
         body: JSON.stringify(body),
       }),

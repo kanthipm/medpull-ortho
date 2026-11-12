@@ -645,7 +645,7 @@ def ensure_orgs(db, personas: list[Persona]) -> int:
     for h in (*HOSPITALS, *ORTHO_DEMO_HOSPITALS):
         if h.id in wanted and db.get(Hospital, h.id) is None:
             db.add(Hospital(id=h.id, name=h.name, system=h.system, city=h.city, state=h.state,
-                            timezone=h.timezone))
+                            timezone=h.timezone, load_unit=h.load_unit))
             added += 1
     for ct in CARE_TEAM:
         if db.get(CareTeamMember, ct.id) is None:

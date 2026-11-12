@@ -151,7 +151,7 @@ def seed_core(
 
     for h in hospitals:
         db.add(Hospital(id=h.id, name=h.name, system=h.system, city=h.city,
-                        state=h.state, timezone=h.timezone))
+                        state=h.state, timezone=h.timezone, load_unit=h.load_unit))
     counts["hospitals"] = len(hospitals)
 
     for ct in CARE_TEAM:

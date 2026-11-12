@@ -33,7 +33,7 @@ import { valueParts } from './valueParts'
  *
  *  Below the square, "Brought to your attention" is the engine's own
  *  judgement: anything outside the six it flagged or is watching, as a
- *  compact row that opens the metric in Full stats. The square never
+ *  compact row that opens the metric in the Data tab. The square never
  *  reshuffles for it.
  *
  *  Hue follows the metric's category, never its state: activity and function
@@ -41,10 +41,10 @@ import { valueParts } from './valueParts'
  *  clay. The state is the chip, in words, on the opaque caption. White text
  *  only sits in the dark top band of each gradient (7.1:1 or better).
  *
- *  Each tile is a button that opens Full stats on that metric's card. The
+ *  Each tile is a button that opens that metric's card in the Data tab. The
  *  "i" that explains the metric is a SIBLING placed over the tile's top-right
  *  corner — a button inside a button is invalid, and its popover must not
- *  open Full stats underneath itself.
+ *  follow the tile underneath itself.
  *
  *  A metric that is still collecting shows the days left as its big figure
  *  ("2 / more days") instead of a dash, and the caption says what has to
@@ -150,7 +150,7 @@ function HeadlineTile({
             ]}
           />
         </span>
-        <span className="sr-only">. Open in Full stats</span>
+        <span className="sr-only">. Open in the Data tab</span>
       </button>
       <span className="absolute right-3 top-3 z-[1]">
         <InfoTip entry={explainMetric(glossary, m.id)} onTile placement="bottom-end" />
@@ -165,7 +165,7 @@ const TITLE = 'Headline metrics'
 const WIDE_SLOTS = new Set([0, 5])
 
 /** The engine's picks outside the six: one compact row per metric, the
- *  state in words, the finding on one line, opening the card in Full stats. */
+ *  state in words, the finding on one line, opening the card in the Data tab. */
 function AttentionStrip({
   metrics,
   onOpen,
@@ -246,7 +246,7 @@ export default function HeadlineMetrics({
         <p className="text-copy text-secondary">
           {isError
             ? 'Care metrics aren’t available for this patient yet.'
-            : 'No headline metrics for this pathway yet. Full stats lists every metric and what it needs.'}
+            : 'No headline metrics for this pathway yet. The Data tab lists every metric and what it needs.'}
         </p>
       </SectionCard>
     )
@@ -259,7 +259,7 @@ export default function HeadlineMetrics({
           {TITLE}
         </h2>
         <button type="button" className="btn-plain btn-sm -mr-2" onClick={() => onOpen(tiles[0].id)}>
-          Full stats <ChevronRight aria-hidden size={14} />
+          All metrics <ChevronRight aria-hidden size={14} />
         </button>
       </div>
       <RefreshOverlay show={refreshing} />

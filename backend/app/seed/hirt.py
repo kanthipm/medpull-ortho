@@ -51,8 +51,9 @@ TZ = "America/Chicago"
 PROGRAM_DAYS = 14
 QSET = "checkin_lifter"
 
+# A Texas gym reads its bars in pounds.
 HIRT_HOSPITAL = HospitalSpec(
-    HOSPITAL_ID, "H.I.R.T. Physical Therapy", "Tomball", "TX", "Rise Gym", TZ,
+    HOSPITAL_ID, "H.I.R.T. Physical Therapy", "Tomball", "TX", "Rise Gym", TZ, load_unit="lb",
 )
 # Both physical therapists. Dr. Harris owns the clinic and evaluates every
 # lifter (the surgeon slot, which is what the drafts say "Dr. Harris" with);
@@ -167,7 +168,7 @@ COLE: list[CheckinDay] = [
     _day(_program_day(8), 3, rpe=7, minutes=65, note="Jumped back in with the guys on leg day."),
     _day(_program_day(9), 4, rpe=8, minutes=70),
     _day(_program_day(10), 4, rpe=8, minutes=75, sleep="rough"),
-    _day(_program_day(11), 5, minutes=0, note="Rest day. Knee was stiff all morning."),
+    _day(_program_day(11), 5, minutes=0, note="No gym today. Knee was stiff all morning."),
     _day(_program_day(12), 5, rpe=9, minutes=75, sleep="rough"),
     _day(_program_day(13), 6, rpe=8, minutes=80, swelling="yes", sleep="rough",
          note="Back on my old leg day all week. Knee's talking on the way down stairs and a bit puffy under the kneecap tonight."),
@@ -320,11 +321,16 @@ class ScheduledExercise:
     wearable_requirement: str = "optional"
 
 
+# The clinic reads loads in pounds, so the dumbbells are ones a Texas rack
+# holds: 25 lb in hand on the sheet (11.34 kg as stored), and the 35s Cole
+# picked up instead (15.88 kg) the week he went back to his old leg day.
+COLE_STEP_UP_KG = 11.34
+
 SCHEDULE: dict[str, tuple[ScheduledExercise, ...]] = {
     # Dr. Gregg wants to see Cole's loaded work and how hard he is pushing it.
     "hirt-cole": (
         ScheduledExercise("functional_step_ups", sets=3, reps=10, side="left",
-                          note="Slow on the way down.", weekdays=MON_WED_FRI, load_kg=10,
+                          note="Slow on the way down.", weekdays=MON_WED_FRI, load_kg=COLE_STEP_UP_KG,
                           rpe_target=7, video_requirement="required"),
         ScheduledExercise("functional_wall_sits", sets=3, hold_seconds=30,
                           note="Knees over the ankles, not past the toes.", weekdays=MON_WED_FRI,
@@ -394,10 +400,10 @@ EFFORT: dict[str, tuple[int, ...]] = {
     "hirt-rafael": (6, 6, 7, 6, 6, 7, 6, 6, 7, 6, 6, 7, 6, 6),
 }
 # The week Cole went back to his old leg day he loaded the step-ups heavier
-# than prescribed: 16 kg in hand against the 10 on the sheet, from program
+# than prescribed: 35 lb in hand against the 25 on the sheet, from program
 # day 8. That is the load trend the board shows under his name.
 COLE_HEAVY_FROM = 8
-COLE_HEAVY_KG = 16.0
+COLE_HEAVY_KG = 15.88
 # Who wears a watch while training: Tessa, whose calf raises ask for it.
 WEARS_WATCH = frozenset({"hirt-tessa"})
 # When each lifter starts the day's exercises, local time. Each row's
@@ -484,7 +490,7 @@ EXPECTED_REQUIREMENTS: dict[str, dict[str, tuple[str, str]]] = {
 }
 # (load_kg, rpe_target) where a row carries either; every other row has neither.
 EXPECTED_LOADS: dict[str, dict[str, tuple[float | None, int | None]]] = {
-    "hirt-cole": {"functional_step_ups": (10.0, 7), "functional_wall_sits": (None, 7)},
+    "hirt-cole": {"functional_step_ups": (COLE_STEP_UP_KG, 7), "functional_wall_sits": (None, 7)},
 }
 # How many done days each lifter's therapist has reviewed with a note.
 EXPECTED_REVIEWS: dict[str, int] = {"hirt-cole": 2, "hirt-june": 1}
@@ -791,11 +797,16 @@ def ensure_org(db) -> int:
     from app.models.enums import NotificationChannel
 
     added = 0
-    if db.get(Hospital, HIRT_HOSPITAL.id) is None:
-        h = HIRT_HOSPITAL
+    h = HIRT_HOSPITAL
+    row = db.get(Hospital, h.id)
+    if row is None:
         db.add(Hospital(id=h.id, name=h.name, system=h.system, city=h.city, state=h.state,
-                        timezone=h.timezone))
+                        timezone=h.timezone, load_unit=h.load_unit))
         added += 1
+    elif row.load_unit is None:
+        # A row from before the unit existed takes the clinic's own; one the
+        # clinic has set in Settings keeps what it chose.
+        row.load_unit = h.load_unit
     for ct in HIRT_CARE_TEAM:
         if db.get(CareTeamMember, ct.id) is None:
             db.add(CareTeamMember(id=ct.id, name=ct.name, role=ct.role))
@@ -812,7 +823,8 @@ __all__ = [
     "HOSPITAL_ID", "TZ", "PROGRAM_DAYS", "QSET", "HIRT_HOSPITAL", "HIRT_CARE_TEAM",
     "HIRT_PATIENTS", "HIRT_IDS", "PATHWAYS", "PHONES", "MRNS", "STORIES", "CheckinDay", "HISTORY",
     "EXPECTED_TIERS", "write_history", "ensure_org", "ensure_consent",
-    "SCHEDULE_AHEAD", "ScheduledExercise", "SCHEDULE", "PAIN_AFTER", "EFFORT", "REVIEWS",
+    "SCHEDULE_AHEAD", "ScheduledExercise", "SCHEDULE", "COLE_STEP_UP_KG", "COLE_HEAVY_KG",
+    "PAIN_AFTER", "EFFORT", "REVIEWS",
     "EXPECTED_SCHEDULE", "EXPECTED_REQUIREMENTS", "EXPECTED_LOADS", "EXPECTED_REVIEWS",
     "write_schedule", "write_reviews", "relink_return_clips", "TEMPLATES", "ensure_templates",
 ]

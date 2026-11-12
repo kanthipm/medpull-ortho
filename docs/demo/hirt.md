@@ -75,10 +75,10 @@ with how the knee feels today.* He edits or approves; nothing sends until he
 does. (On the demo roster the numbers are placeholders, so the text records
 as not delivered and the thread shows it; the draft and the approval are the
 point.) Then click Tessa Marlowe for the one-line progress view: the stats
-row under her summary reads **Load vs prior weeks** (held, within ±20%),
+row under her summary reads **Load vs recent average** (0.9×, held),
 **Pain, 7-day trend** (down, 3 → 2) and **Program** (7 of 7). Same three
-numbers for every lifter; Cole's read +354%, +2 (4 → 6) and 7 of 7 — he did
-the program and then some.
+numbers for every lifter; Cole's read 1.6× (the number his flag states),
++2 (4 → 6) and 7 of 7 — he did the program and then some.
 
 **4. Hand him the pen.** Rafael's next step is **Send a one-tap check-in**
 with the draft *Haven't heard from you in a few days — one tap: how's it

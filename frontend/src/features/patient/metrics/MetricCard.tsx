@@ -41,8 +41,8 @@ import { valueParts } from './valueParts'
    The "i" beside the name opens the metric's explanation (InfoTip).
    ════════════════════════════════════════════════════════════════════════ */
 
-/** Full stats tile for one care metric. `id="metric-M12"` is the anchor the
- *  headline tiles scroll to (Full stats rings it on arrival). */
+/** The card for one care metric. `id="metric-M12"` is the anchor the
+ *  headline tiles land on (the Data tab's care view rings it on arrival). */
 export default function MetricCard({ m }: { m: CareMetric }) {
   const nodata = m.status === 'nodata'
   const tile = careMetricTile(m)

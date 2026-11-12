@@ -68,7 +68,8 @@ def test_load_effort_and_requirements_ride_on_the_day(client, db, tokens, lifter
                   wearable_requirement="off")[0]
     assert row["load_kg"] == 12 and row["rpe_target"] == 7
     assert row["video_requirement"] == "required" and row["wearable_requirement"] == "off"
-    assert row["dose"] == "3 sets × 10 reps · 12 kg · Left"
+    # H.I.R.T. reads its loads in pounds: 12 kg as stored is 26.5 lb on the page
+    assert row["dose"] == "3 sets × 10 reps · 26.5 lb · Left"
     assert row["session"] is None and row["completion"] is None
     # the defaults: optional both ways, no load, and the dose reads as before
     plain = _assign(client, hirt_console, lifter.id, step_ups["id"], [TOMORROW], sets=3, reps=10)[0]
@@ -92,7 +93,7 @@ def test_load_effort_and_requirements_ride_on_the_day(client, db, tokens, lifter
     patched = client.patch(f"/api/hep/schedule/{row['id']}", headers=hirt_console,
                            json={"load_kg": 12.5, "wearable_requirement": "required"})
     assert patched.status_code == 200, patched.text
-    assert patched.json()["load_kg"] == 12.5 and patched.json()["dose"].endswith("12.5 kg · Left")
+    assert patched.json()["load_kg"] == 12.5 and patched.json()["dose"].endswith("27.6 lb · Left")
     assert patched.json()["wearable_requirement"] == "required"
     assert client.patch(f"/api/hep/schedule/{row['id']}", headers=hirt_console,
                         json={"video_requirement": "maybe"}).status_code == 422
@@ -341,7 +342,7 @@ def test_copy_week_carries_dose_note_and_requirements_and_skips_duplicates(clien
         + [(next_monday + timedelta(days=i)).isoformat() for i in (0, 2, 4)])
     step = next(r for r in rows if r["exercise_id"] == step_ups["id"])
     assert step["scheduled_for"] == next_monday.isoformat()  # the same weekday
-    assert step["dose"] == "3 sets × 10 reps · 10 kg · Left" and step["rpe_target"] == 7
+    assert step["dose"] == "3 sets × 10 reps · 22 lb · Left" and step["rpe_target"] == 7
     assert step["video_requirement"] == "required" and step["wearable_requirement"] == "optional"
     assert step["clinician_instructions"] == "Slow on the way down."
     assert step["assigned_by"] == "ct_gregg"  # whoever assigned the day being copied
@@ -398,7 +399,7 @@ def test_programs_are_the_clinics_own_and_apply_on_their_weekdays(client, db, to
     assert [TEMPLATE_ITEM_KEYS <= set(i) for i in template["items"]] == [True, True]
     first, second = template["items"]
     assert first["exercise_key"] == "functional_step_ups" and first["title"] == "Step-Ups"
-    assert first["weekdays"] == [0, 2, 4] and first["dose"] == "3 sets × 10 reps · 10 kg · Left"
+    assert first["weekdays"] == [0, 2, 4] and first["dose"] == "3 sets × 10 reps · 22 lb · Left"
     assert first["video_requirement"] == "required" and first["wearable_requirement"] == "optional"
     assert second["exercise_id"] and second["weekdays"] is None
     assert second["wearable_requirement"] == "off"
@@ -452,7 +453,7 @@ def test_programs_are_the_clinics_own_and_apply_on_their_weekdays(client, db, to
     assert len(rows) == 10 and applied.json()["skipped"] == 0
     steps = [r for r in rows if r["exercise_id"] == step_ups["id"]]
     assert [date.fromisoformat(r["scheduled_for"]).weekday() for r in steps] == [0, 2, 4]
-    assert steps[0]["dose"] == "3 sets × 10 reps · 10 kg · Left" and steps[0]["rpe_target"] == 7
+    assert steps[0]["dose"] == "3 sets × 10 reps · 22 lb · Left" and steps[0]["rpe_target"] == 7
     assert steps[0]["video_requirement"] == "required"
     assert steps[0]["clinician_instructions"] == "Slow on the way down."
     assert steps[0]["assigned_by"] == "ct_gregg"  # the patient's provider, by default
@@ -516,7 +517,7 @@ def test_the_program_counts_missed_days_and_the_cards_carry_the_week(client, db,
     body = program.json()
     assert body["start"] == (TODAY - timedelta(days=7)).isoformat() and len(body["days"]) == 14
     assert body["clinic"] == {"id": "hirt", "name": "H.I.R.T. Physical Therapy",
-                              "load_unit": "kg"}
+                              "load_unit": "lb"}
     by_date = {d["date"]: d for d in body["days"]}
     assert [d["date"] for d in body["days"]] == [
         (TODAY + timedelta(days=i)).isoformat() for i in range(-7, 7)]
@@ -644,8 +645,8 @@ def test_the_seed_carries_requirements_sessions_reviews_and_programs(client, db,
         key=lambda r: (r.scheduled_for, r.sort_order))]
     assert efforts[0] == 5 and efforts[-1] == 8 and efforts == sorted(efforts)
     step_ups = cole_rows("functional_step_ups")
-    assert [r.load_done_kg for r in step_ups][:3] == [10.0, 10.0, 10.0]
-    assert step_ups[-1].load_done_kg == hirt.COLE_HEAVY_KG and step_ups[-1].load_kg == 10.0
+    assert [r.load_done_kg for r in step_ups][:3] == [hirt.COLE_STEP_UP_KG] * 3
+    assert step_ups[-1].load_done_kg == hirt.COLE_HEAVY_KG and step_ups[-1].load_kg == hirt.COLE_STEP_UP_KG
     # the latest done step-ups is left for the media script's clip, so the queue has one
     assert step_ups[-1].reviewed_at is None and step_ups[-2].reviewed_at is not None
     assert cole_rows("functional_wall_sits")[-1].reviewed_at is not None
@@ -688,7 +689,7 @@ def test_the_seed_carries_requirements_sessions_reviews_and_programs(client, db,
             assert item["clinician_instructions"] == source.note and item["title"]
     knee = listed["Patellar tendinopathy · phase 2"]["items"][0]
     assert knee["title"] == "Step-Ups" and knee["video_requirement"] == "required"
-    assert knee["dose"] == "3 sets × 10 reps · 10 kg · Left"
+    assert knee["dose"] == "3 sets × 10 reps · 25 lb · Left"
     assert "Patellar tendinopathy · phase 2" not in {
         t["name"] for t in client.get("/api/hep/templates", headers=tokens["demo"])
         .json()["templates"]}

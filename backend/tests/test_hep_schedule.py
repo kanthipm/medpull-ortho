@@ -196,6 +196,44 @@ def test_the_grid_is_the_clinics_own_week(client, tokens):
     assert not {p["id"] for p in open_console["patients"]} & hirt.HIRT_IDS
 
 
+def test_a_console_on_every_clinic_acts_for_the_chart_it_names(client, tokens, lifter, ledger):
+    """No clinic picked ("All clinics"): a request about one chart or one row
+    acts for that chart's clinic, so a lifter's page shows and edits its own
+    exercises. A hospital's own console is not widened by it."""
+    # the chart in the path, and in the query
+    strip = client.get("/api/hep/patients/hirt-cole/schedule", params={"today": TODAY.isoformat()})
+    assert strip.status_code == 200 and strip.json()["patient"]["id"] == "hirt-cole"
+    assert strip.json()["assignments"]
+    assert client.get("/api/hep/patients/hirt-cole/plans").status_code == 200
+    one = client.get("/api/hep/schedule", params={"patient_id": "hirt-cole"}).json()
+    assert [p["id"] for p in one["patients"]] == ["hirt-cole"]
+
+    # the chart in the body: assigned from the shared library onto the lifter's own clinic
+    clams = _exercise(client, {}, "clamshell")
+    made = client.post("/api/hep/schedule", json={
+        "patient_id": lifter.id, "exercise_id": clams["id"], "dates": [TOMORROW.isoformat()],
+        "sets": 2, "reps": 10,
+    })
+    assert made.status_code == 201, made.text
+    row = made.json()["assignments"][0]
+    assert row["clinic_id"] == "hirt"
+
+    # the row in the path: changed and removed without a clinic picked
+    patched = client.patch(f"/api/hep/schedule/{row['id']}", json={"reps": 12})
+    assert patched.status_code == 200 and patched.json()["reps"] == 12
+    assert client.delete(f"/api/hep/schedule/{row['id']}").status_code == 200
+
+    # a chart that does not exist answers as before, and another hospital's
+    # own console still cannot reach a HIRT chart
+    assert client.get("/api/hep/patients/no-such-chart/schedule").status_code == 404
+    assert client.get("/api/hep/patients/hirt-cole/schedule",
+                      headers=tokens["demo"]).status_code == 404
+    refused = client.post("/api/hep/schedule", headers=tokens["demo"], json={
+        "patient_id": lifter.id, "exercise_id": clams["id"], "dates": [TOMORROW.isoformat()],
+    })
+    assert refused.status_code == 404
+
+
 def test_assign_patch_move_and_remove_scoped_by_clinic(client, db, tokens, lifter):
     hirt_console, other = tokens["hirt"], tokens["demo"]
     clams = _exercise(client, hirt_console, "clamshell")
@@ -433,7 +471,7 @@ def test_the_patient_marks_a_day_done_with_pain_and_a_clip(client, db, tokens, l
     day = client.get("/api/mobile/exercises", headers=session).json()
     assert day["date"] == TODAY.isoformat()
     assert day["clinic"] == {"id": "hirt", "name": "H.I.R.T. Physical Therapy",
-                             "load_unit": "kg"}
+                             "load_unit": "lb"}
     assert [i["title"] for i in day["items"]] == ["Heel Slides", "Wall Sits"]
     assert all("clinic_id" not in i and i["patient_id"] == lifter.id for i in day["items"])
     assert day["items"][0]["dose"] == "2 sets × 10 reps · Left"

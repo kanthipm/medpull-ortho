@@ -243,6 +243,10 @@ def test_worklist_carries_the_five_with_their_tiers(client):
 def test_the_progress_line_reads_load_pain_and_program(client):
     cole = client.get("/api/patients/hirt-cole").json()["progress"]
     assert cole["load_vs_prior_pct"] > 50 and round(cole["load_ratio"], 1) == 1.6
+    # The page prints the ratio, so it is the number the reason states.
+    assert cole["load_provisional"] is False
+    reason = client.get("/api/patients/hirt-cole").json()["risk"]["reasons"][0]["text"]
+    assert f"{cole['load_ratio']:.1f}×" in reason
     assert cole["pain"]["latest"] == 6 and cole["pain"]["delta"] >= 2
     assert cole["program"] == {"done": 7.0, "of": 7, "rate_3d": 1.0}
     tessa = client.get("/api/patients/hirt-tessa").json()["progress"]

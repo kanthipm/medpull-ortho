@@ -21,6 +21,7 @@ from app.engine.dataload import load_daily_series, source_rank
 from app.models.enums import MetricType as M
 from app.models.observation import Observation
 from app.models.patient import Patient
+from app.seed import hirt
 from app.tasks.service import QUESTION_SETS, transcript
 
 ACTING = "X-MedPull-Clinic"
@@ -279,8 +280,11 @@ def test_the_reported_grid_is_a_row_per_day_with_checkins_and_exercises(client, 
     ex = last_night["exercises"]
     assert ex["assigned"] == ex["done"] == 5 and ex["over"] >= 1
     step_ups = next(i for i in ex["items"] if i["title"] == "Step-Ups")
-    assert step_ups["load_kg"] == 10 and step_ups["load_done_kg"] == 16 and step_ups["over"]
-    assert step_ups["line"].startswith("16 kg done, 10 kg prescribed")
+    assert step_ups["load_kg"] == hirt.COLE_STEP_UP_KG
+    assert step_ups["load_done_kg"] == hirt.COLE_HEAVY_KG and step_ups["over"]
+    # the clinic reads loads in pounds; the rows keep kilograms
+    assert body["load_unit"] == "lb"
+    assert step_ups["line"].startswith("35 lb done, 25 lb prescribed")
     assert body["summary"]["pain"]["latest"]["value"] == 6
     assert body["summary"]["checkin_days"] == 14 - 1  # every evening but today's
     assert commits == []
@@ -321,7 +325,7 @@ def test_exports_are_plain_csv_files(client, commits):
     grid = client.get("/api/patients/hirt-cole/data/export?kind=reported&days=14")
     lines = list(csv.DictReader(io.StringIO(grid.text)))
     assert len(lines) == 14 and lines[1]["pain"] == "6" and lines[1]["training_load_au"] == "640.0"
-    assert "Step-Ups: 16 kg done, 10 kg prescribed" in lines[1]["done_against_prescribed"]
+    assert "Step-Ups: 35 lb done, 25 lb prescribed" in lines[1]["done_against_prescribed"]
 
     series = client.get("/api/patients/linda/data/export?kind=series&metric=steps,resting_hr")
     daily = list(csv.DictReader(io.StringIO(series.text)))

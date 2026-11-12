@@ -127,6 +127,13 @@ export default function MessageComposerModal({
             `Saved to ${first}'s app thread — not reachable by text yet. Ask them to text MedPull once and texts will go through.`,
             'info',
           )
+        else if (r.reason === 'opted_out')
+          // Their choice, not a fault: they replied STOP. The message is in
+          // the app; texts resume when they reply START.
+          toast(
+            `Saved to ${first}'s app thread — ${first} has turned texts off (replied STOP). Texts resume when they reply START.`,
+            'info',
+          )
         else toast(`Saved to ${first}'s app thread — no phone on file to text`, 'info')
         if (saveAs && saveTitle.trim()) {
           createTemplate.mutate(

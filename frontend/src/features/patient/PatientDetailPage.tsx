@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useCareMetrics } from '../../api/care'
 import { explainSection, useExplain } from '../../api/explain'
 import { usePatientDelivery } from '../../api/plan'
@@ -23,11 +23,12 @@ import ActionBar from './ActionBar'
 import CheckinHistory from './CheckinHistory'
 import ContactCard from './ContactCard'
 import DotLine from './DotLine'
-import FullStats from './metrics/FullStats'
 import HeadlineMetrics from './metrics/HeadlineMetrics'
 import MessagesSection from './plan/MessagesSection'
 import NextSteps from './plan/NextSteps'
 import TasksSection from './plan/TasksSection'
+import DataLinks from '../data/DataLinks'
+import { dataPath } from '../data/dataFormat'
 import ExercisesThisWeek from '../hep/ExercisesThisWeek'
 import PlanSection from '../hep/PlanSection'
 import RecoveryTimeline from './RecoveryTimeline'
@@ -63,7 +64,8 @@ import WearableConnectionCard from './WearableConnectionCard'
  *               contents` so every card is a direct flex child and `order-*`
  *               interleaves them in reading priority (metrics right after
  *               the next steps, not after the message thread).
- *   Full stats  spans the width under the grid: its metric cards need room.
+ *   All data    a row of links under the grid into this chart's page on the
+ *               Data tab, where the readings, signals and every care metric live.
  */
 
 const ANCHOR = 'scroll-mt-[calc(var(--bar-height)+var(--bar-inset)+16px)]'
@@ -136,28 +138,36 @@ function Stats({
 }
 
 /** The recovery-card stats for a chart followed by check-ins that carry
- *  training (a lifter, no wearable): load against the prior weeks, pain
+ *  training (a lifter, no wearable): load against its recent average, pain
  *  this week, program done. The numbers come with the record
  *  (`PatientDetail.progress`, engine/reported.py); nothing is derived here
- *  beyond wording and tone. Every tinted figure carries a word. */
+ *  beyond wording and tone. The load figure is the same ratio the risk
+ *  reason and the load tile state, and its words follow the engine's own
+ *  lines (1.3 and 1.5, engine/risk.py), so the card cannot say one thing
+ *  while the flag says another. Every tinted figure carries a word. */
 function progressStats(progress: ReportedProgress) {
   const items: Parameters<typeof Stats>[0]['items'] = []
-  const load = progress.load_vs_prior_pct
+  const ratio = progress.load_ratio
+  const early = progress.load_provisional === true
+  const jumped = ratio != null && ratio >= 1.5 && !early
+  const up = ratio != null && ratio >= 1.3
   items.push({
     key: 'load',
-    label: 'Load vs prior weeks',
-    value: load == null ? '—' : load === 0 ? '0%' : signedPct(load),
-    tone: load == null ? undefined : load >= 50 ? 'high' : load >= 30 || load <= -40 ? 'med' : 'low',
+    label: 'Load vs recent average',
+    value: ratio == null ? '—' : `${ratio.toFixed(1)}×`,
+    tone: ratio == null ? undefined : jumped ? 'high' : up ? 'med' : ratio >= 0.8 ? 'low' : undefined,
     hint:
-      load == null
+      ratio == null
         ? 'building'
-        : load >= 50
+        : jumped
           ? 'Jumped'
-          : load >= 30
-            ? 'Up'
-            : load <= -40
-              ? 'Dropped'
-              : 'Held',
+          : up
+            ? early
+              ? 'Early read'
+              : 'Up'
+            : ratio >= 0.8
+              ? 'Held'
+              : 'Dropped',
   })
   const pain = progress.pain
   const delta = pain?.delta ?? null
@@ -201,20 +211,18 @@ export default function PatientDetailPage() {
   const recompute = useRecompute(id)
   const toast = useToast()
   const [minHold, setMinHold] = useState(false)
-  // The care-metrics query is shared by the header's pathway line, the
-  // headline tiles and Full stats — one request, one cache entry. It waits
-  // for the record: the overview read behind `usePatient` seeds this cache
-  // (and the plan's below), so neither hook ever fetches on page open.
+  // The care-metrics query is shared by the header's pathway line and the
+  // headline tiles — one request, one cache entry. It waits for the record:
+  // the overview read behind `usePatient` seeds this cache (and the plan's
+  // below), so neither hook ever fetches on page open.
   const care = useCareMetrics(id, p != null)
-  // Full stats is controlled from here so a headline tile can open it on
-  // its own metric's card; the focus clears once the card has been scrolled to.
-  const [fullStatsOpen, setFullStatsOpen] = useState(false)
-  const [focusMetricId, setFocusMetricId] = useState<string | null>(null)
-  const openMetric = useCallback((metricId: string) => {
-    setFullStatsOpen(true)
-    setFocusMetricId(metricId)
-  }, [])
-  const clearFocus = useCallback(() => setFocusMetricId(null), [])
+  // A headline tile opens its metric's card in the Data tab's explorer for
+  // this chart, which scrolls to it.
+  const navigate = useNavigate()
+  const openMetric = useCallback(
+    (metricId: string) => navigate(dataPath(id, 'care', metricId)),
+    [navigate, id],
+  )
   // Whether a text can reach this patient — the builder's "Text the plan"
   // checkbox and the composer's button label read it.
   const delivery = usePatientDelivery(id, p, p != null)
@@ -425,7 +433,7 @@ export default function PatientDetailPage() {
               <Stats
                 items={
                   // A lifter followed by text alone reads progress in the
-                  // clinic's own terms: load vs prior weeks, pain this week,
+                  // clinic's own terms: load vs its recent average, pain this week,
                   // program done. Every other chart keeps its row.
                   p.progress
                     ? progressStats(p.progress)
@@ -530,15 +538,8 @@ export default function PatientDetailPage() {
         </div>
       </div>
 
-      <div className={`rise mt-stack ${ANCHOR}`} id="full-stats" style={{ '--rise-delay': '495ms' } as CSSProperties}>
-        <FullStats
-          patientId={p.id}
-          refreshing={refreshing}
-          open={fullStatsOpen}
-          onOpenChange={setFullStatsOpen}
-          focusMetricId={focusMetricId}
-          onFocusHandled={clearFocus}
-        />
+      <div className={`rise mt-stack ${ANCHOR}`} id="all-data" style={{ '--rise-delay': '495ms' } as CSSProperties}>
+        <DataLinks patientId={p.id} />
       </div>
 
       <GuardrailFootnote className="mt-8" />

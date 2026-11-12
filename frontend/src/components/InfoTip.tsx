@@ -15,7 +15,7 @@ import { Popover } from './Menu'
  *
  *  Never nested inside another button: the headline tiles place it as a
  *  sibling positioned over the tile, and the click stops here so the tile
- *  does not open Full stats underneath the popover. */
+ *  does not follow the tile underneath the popover. */
 export default function InfoTip({
   entry,
   className = '',

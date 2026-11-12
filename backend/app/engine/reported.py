@@ -162,9 +162,12 @@ def reported_signals(
 
 def reported_progress(analytics: dict[str, Any]) -> dict[str, Any] | None:
     """The three numbers the patient page shows for a chart followed by
-    check-ins — load vs prior weeks, pain this week, program done — or None
-    for a patient with no reported training on file, whose row stays as it
-    was."""
+    check-ins — load against its recent average, pain this week, program
+    done — or None for a patient with no reported training on file, whose
+    row stays as it was. The page's load figure is ``load_ratio``, the same
+    number the risk reason and M1 state, so the three cannot disagree;
+    ``load_provisional`` says it is still an early read. The week-on-week
+    percent travels with it for a reader who wants the plain comparison."""
     reported = analytics.get("reported") if isinstance(analytics, dict) else None
     if not isinstance(reported, dict):
         return None
@@ -187,6 +190,7 @@ def reported_progress(analytics: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "load_vs_prior_pct": reported.get("load_vs_prior_pct"),
         "load_ratio": reported.get("load_ratio"),
+        "load_provisional": bool(reported.get("load_provisional")),
         "load_week_mean": reported.get("load_week_mean"),
         "load_prior_mean": reported.get("load_prior_mean"),
         "pain": pain,

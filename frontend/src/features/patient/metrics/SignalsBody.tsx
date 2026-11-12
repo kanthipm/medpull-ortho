@@ -18,7 +18,7 @@ import { signalTile } from './metricTiles'
 import { EarlyReadChip, ReadinessValue } from './Readiness'
 import { readinessLine, showsCountdown } from './readinessText'
 
-/** The Signals tab of Full stats: trajectory, multi-signal deviation, the
+/** The body of the Data tab's Signals view: trajectory, multi-signal deviation, the
  *  wearable trends and adherence. Its data comes from the lazy
  *  `usePatientMetrics` query the tab owns.
  *

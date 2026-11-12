@@ -45,7 +45,16 @@ export interface WorklistExercises {
 
 export interface WorklistResponse {
   as_of: string
-  stats: { total: number; high: number; medium: number; missing: number; low: number }
+  stats: {
+    total: number
+    high: number
+    medium: number
+    missing: number
+    low: number
+    /** Demo stack only: how many of `total` the showcase wrote. The rest are
+     *  the team's own accounts. Absent everywhere else. */
+    generated?: number
+  }
   briefing: { text: string; generated_at: string; provider: string }
   patients: WorklistPatient[]
   /** Narratives on this page still rules-based with a model version to
@@ -118,8 +127,12 @@ export interface PatientDetail {
 export interface ReportedProgress {
   /** This week's mean daily training load against the weeks before, signed percent. */
   load_vs_prior_pct: number | null
-  /** The acute:chronic ratio the M1 tile shows. */
+  /** The acute:chronic ratio the M1 tile shows and the risk reason states;
+   *  the chart's load figure. */
   load_ratio: number | null
+  /** The ratio is an early read (under ten days of history): never called a
+   *  jump. Absent on an API from before the field. */
+  load_provisional?: boolean
   load_week_mean: number | null
   load_prior_mean: number | null
   pain: { latest: number; prior_mean: number | null; delta: number | null } | null
@@ -461,10 +474,11 @@ export interface MessagePatientResult {
   status: 'sent_sms' | 'stored_sms_failed' | 'stored_app_only'
   /**
    * Why nothing went by text, when nothing did: no number on file, a number
-   * that has not texted MedPull yet (stored for the app, not a failure), or
-   * a real provider error. Absent from an older server.
+   * that has not texted MedPull yet (stored for the app, not a failure), a
+   * person who replied STOP (their choice: nothing is texted until they
+   * reply START), or a real provider error. Absent from an older server.
    */
-  reason?: 'no_phone' | 'not_reachable_yet' | 'provider_error' | null
+  reason?: 'no_phone' | 'not_reachable_yet' | 'opted_out' | 'provider_error' | null
   detail: string
   /** How many of the files went with the text as picture messages. Absent
    *  from an older server. */

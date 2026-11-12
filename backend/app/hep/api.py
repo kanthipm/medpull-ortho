@@ -41,12 +41,74 @@ def _ready(db: Session = Depends(get_db)) -> Session:
     return db
 
 
-def _clinic(db: Session = Depends(_ready), scope: ConsoleScope = Depends(console_scope)) -> str:
+async def _named_in_body(request: Request) -> str | None:
+    """The ``patient_id`` a JSON request names in its body, if it names one.
+    The framework has already read the body by the time a dependency runs,
+    so this reads the cached copy and takes nothing from the route."""
+    if request.method not in ("POST", "PUT", "PATCH"):
+        return None
+    if "application/json" not in request.headers.get("content-type", ""):
+        return None
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 - a body the route will refuse on its own
+        return None
+    value = body.get("patient_id") if isinstance(body, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
+def _clinic_named(request: Request, db: Session, body_patient: str | None) -> str | None:
+    """The clinic of the chart or row a request is about: the patient in its
+    path, query or body, else the assignment, plan, series or program its
+    path names. None when it names none of them, or one that does not
+    exist (the route then answers as it always did)."""
+    from app.hep.models import ExerciseAssignment, ExercisePlan, ExerciseTemplate
+
+    path = request.path_params
+    patient_id = path.get("patient_id") or request.query_params.get("patient_id") or body_patient
+    if patient_id:
+        patient = db.get(Patient, str(patient_id))
+        return patient.hospital_id if patient is not None else None
+
+    def _row(model, key: str):
+        raw = path.get(key)
+        if raw is None:
+            return None
+        try:
+            return db.get(model, int(raw))
+        except (TypeError, ValueError):
+            return None
+
+    for model, key in ((ExerciseAssignment, "assignment_id"), (ExercisePlan, "plan_id"),
+                       (ExerciseTemplate, "template_id")):
+        row = _row(model, key)
+        if row is not None:
+            return row.hospital_id
+    series = path.get("series_id")
+    if series:
+        from sqlalchemy import select
+
+        return db.scalar(
+            select(ExerciseAssignment.hospital_id)
+            .where(ExerciseAssignment.series_id == str(series)).limit(1)
+        )
+    return None
+
+
+def _clinic(
+    request: Request,
+    db: Session = Depends(_ready),
+    scope: ConsoleScope = Depends(console_scope),
+    body_patient: str | None = Depends(_named_in_body),
+) -> str:
     """The clinic this request's library and plans belong to. A hospital
     credential acts for its own hospital and no other; the staff token (or an
     open console) for the clinic picked in the workspace menu
-    (``scope.acting_hospital_id``, from X-MedPull-Clinic), else for
-    ``HEP_CLINIC_ID``, else the first active hospital (service.clinic_id).
+    (``scope.acting_hospital_id``, from X-MedPull-Clinic). A staff console
+    looking at every clinic has picked none: there a request acts for the
+    clinic of the chart or row it names (``_clinic_named``), so a chart
+    opened from "All clinics" shows and edits its own exercises, and
+    otherwise for ``HEP_CLINIC_ID``, else the default (service.clinic_id).
     A sports credential has no clinic to act for."""
     if scope.kind == "hospital" and scope.org_id:
         return scope.org_id
@@ -54,6 +116,9 @@ def _clinic(db: Session = Depends(_ready), scope: ConsoleScope = Depends(console
         return scope.acting_hospital_id
     if not scope.clinic:
         raise HTTPException(status_code=403, detail="This console has no clinic to act for")
+    named = _clinic_named(request, db, body_patient)
+    if named:
+        return named
     try:
         return clinic_id(db)
     except HepError as e:

@@ -241,7 +241,7 @@ export default function WorklistPage() {
         </div>
       ) : (
         <div className="mt-4 space-y-8" aria-labelledby={patientsHeadingId} role="region">
-          <DemoBand demo={demo} count={shown}>
+          <DemoBand demo={demo} count={shown} generated={data.stats.generated} total={data.stats.total}>
             {groups.map(({ tier, patients }, gi) => {
               const first = gi === 0
               return (
@@ -563,16 +563,31 @@ function StartWith({ patient: p }: { patient: WorklistRowWithStep }) {
 }
 
 /** On the demo stack, one quiet caption over the tier cards answering
- *  "whose numbers am I looking at": nobody's. The real app renders the
- *  groups bare. Plain words rather than a risk-coloured badge, because it is
- *  an aid for the room and discloses nothing about any patient. */
+ *  "whose numbers am I looking at". The server counts the charts the
+ *  showcase wrote (`stats.generated`): when that is all of them the caption
+ *  says so, and when the stack also holds the team's own accounts it says
+ *  how many of each, so it never claims more than is true. The real app
+ *  renders the groups bare. Plain words rather than a risk-coloured badge,
+ *  because it is an aid for the room and discloses nothing about anyone. */
+function demoCaption(generated: number | undefined, total: number): string {
+  if (generated == null) return 'Demo roster'
+  if (generated >= total) return 'Demo roster · every chart is generated'
+  const own = total - generated
+  return `Demo roster · ${generated} generated, ${own} of the team’s own`
+}
+
 function DemoBand({
   demo,
   count,
+  generated,
+  total,
   children,
 }: {
   demo: boolean
   count: number
+  /** Charts the showcase wrote, out of `total` on the whole roster. */
+  generated?: number
+  total: number
   children: ReactNode
 }) {
   const id = useId()
@@ -583,7 +598,7 @@ function DemoBand({
         id={id}
         className="flex items-baseline gap-2 px-1 pb-2 text-label font-medium uppercase tracking-label text-secondary"
       >
-        Demo roster · every chart is generated
+        {demoCaption(generated, total)}
         <span className="tabular-nums normal-case tracking-normal">
           <span className="sr-only">, </span>
           {count}

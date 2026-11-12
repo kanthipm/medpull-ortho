@@ -14,6 +14,8 @@ from app.hep.models import BODY_REGIONS, CATEGORIES, AuditEvent, Exercise
 from app.llm.insights import BANNED
 
 _LEDGER_MODELS = (AuditEvent, Exercise)
+# The hospital the test chart "steve" belongs to; "linda" is another's.
+STEVE_CLINIC = "hosp_demo"
 
 
 @pytest.fixture(scope="module")
@@ -380,8 +382,10 @@ def test_plan_rejects_bad_input(client, catalog, plan_ledger):
     assert post(items=[{"exercise_id": heel["id"], "sets": 1000}]).status_code == 422
     assert post(items=[{"exercise_id": heel["id"],
                         "clinician_instructions": "We detected weakness"}]).status_code == 422
-    # a patient of another hospital is unknown to this clinic
-    assert client.post("/api/hep/plans", json={"patient_id": "linda", "items": []}).status_code == 422
+    # a patient of another hospital is unknown to the clinic being acted for
+    acting = {"X-MedPull-Clinic": STEVE_CLINIC}
+    assert client.post("/api/hep/plans", headers=acting,
+                       json={"patient_id": "linda", "items": []}).status_code == 422
     # an archived custom exercise cannot be added
     custom = client.post("/api/hep/exercises/custom", json={
         "title": "Towel scrunches", "body_region": "ankle", "category": "strengthening"}).json()
@@ -395,7 +399,10 @@ def test_plan_rejects_bad_input(client, catalog, plan_ledger):
     assert client.post(f"/api/hep/plans/{nobody['id']}/publish", json={"version": 1}).status_code == 422
     assert client.get("/api/hep/plans/999999").status_code == 404
     assert client.get("/api/hep/plans?status=nope").status_code == 400
-    assert client.get("/api/hep/patients/linda/plans").status_code == 404
+    assert client.get("/api/hep/patients/linda/plans", headers=acting).status_code == 404
+    # with no clinic picked the console is on every clinic, and a request
+    # about one chart acts for that chart's own clinic
+    assert client.get("/api/hep/patients/linda/plans").status_code == 200
 
 
 def test_plan_options_list_the_clinics_patients(client, catalog):

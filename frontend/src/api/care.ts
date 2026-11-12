@@ -108,7 +108,7 @@ export interface CareMetric {
   feeds_from_tasks: string[]
   drivers: MetricDriver[]
   /** False when the metric is not meaningful on this patient's pathway —
-   *  the Full stats view folds those into a collapsed tail. */
+   *  the care view folds those into a collapsed tail. */
   applicable: boolean
   domains: string[]
   /** Null when the metric is not time-gated at all. */

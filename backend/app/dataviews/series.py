@@ -297,7 +297,14 @@ def _nights(db: Session, patient: Patient, since: date, today: date) -> list[dic
             efficiency = float(efficiency) / 100.0 if efficiency > 1 else float(efficiency)
         elif duration and stages["awake"] is not None:
             # No figure from the source: time asleep over the time recorded.
-            efficiency = (duration - stages["awake"]) / duration
+            # A source either counts the time awake inside the night's total
+            # (the stages then sum to it) or reports the total as time asleep
+            # with the time awake beside it; the stages say which.
+            asleep = sum(v for name, v in stages.items() if name != "awake" and v is not None)
+            if asleep and abs(asleep - duration) <= 0.03 * duration:
+                efficiency = duration / (duration + stages["awake"])
+            else:
+                efficiency = (duration - stages["awake"]) / duration
         else:
             efficiency = None
         source_row = stage_row if stage_row is not None else (durations[0] if durations else None)

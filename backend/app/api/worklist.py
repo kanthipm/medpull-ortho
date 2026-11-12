@@ -93,6 +93,14 @@ def worklist(
 
     rows = []
     stats = {"total": len(patients), "high": 0, "medium": 0, "missing": 0, "low": 0}
+    if settings.demo_mode:
+        # On a demo stack the roster's caption says whose numbers these are.
+        # A demo stack can hold the team's own accounts beside the charts
+        # the showcase wrote, so the caption counts instead of claiming
+        # every chart is generated.
+        from app.seed import showcase
+
+        stats["generated"] = sum(1 for patient in patients if showcase.persona(patient.id) is not None)
     pending = 0
     for patient, assessment in scored:
         analytics = assessment.analytics
