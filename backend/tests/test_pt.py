@@ -75,7 +75,12 @@ def console(seeded_db):
 def lifter(db):
     """A throwaway chart on the H.I.R.T. roster; everything it grows is
     removed afterwards, the clinic's settings and red-flag entries too."""
-    marks = {model: (db.scalar(select(func.max(model.id))) or 0) for model in _LEDGER}
+    marks = {model: (db.scalar(select(func.max(model.id))) or 0)
+             for model in (*_LEDGER, Protocol, RedFlagText)}
+    # What the clinics themselves keep is put back as it was: the seed gives
+    # H.I.R.T. settings and example protocols of its own.
+    kept = {row.hospital_id: dict(row.data or {})
+            for row in db.scalars(select(ClinicSetting)).all()}
     patient = Patient(
         id=PID, name="Noa Lindqvist", initials="NL", age=31, sex="F",
         procedure_type=ProcedureType.NONE, procedure_display=hirt.PATHWAYS["hirt-cole"],
@@ -91,15 +96,23 @@ def lifter(db):
     for model in _PT_PATIENT:
         db.execute(delete(model).where(model.patient_id == PID))
     db.execute(delete(PatientSetting).where(PatientSetting.patient_id == PID))
-    db.execute(delete(ClinicSetting).where(ClinicSetting.hospital_id.in_(["hirt", "hosp_demo"])))
-    db.execute(delete(RedFlagText).where(RedFlagText.hospital_id.in_(["hirt", "hosp_demo"])))
-    db.execute(delete(Protocol).where(Protocol.hospital_id == "hirt"))
+    db.execute(delete(ClinicSetting))
+    for hospital_id, data in kept.items():
+        db.add(ClinicSetting(hospital_id=hospital_id, data=data))
     db.execute(delete(ExerciseAssignment).where(ExerciseAssignment.patient_id == PID))
     db.execute(delete(AdherenceRecord).where(AdherenceRecord.patient_id == PID))
     for model, mark in marks.items():
         db.execute(delete(model).where(model.id > mark))
     db.commit()
     _forget_patient(db, PID)
+
+
+@pytest.fixture()
+def untouched(db, lifter):
+    """H.I.R.T. as a clinic that has changed none of its settings (the seed
+    turns two asks on for the demo; ``lifter`` puts them back afterwards)."""
+    db.execute(delete(ClinicSetting).where(ClinicSetting.hospital_id == "hirt"))
+    db.commit()
 
 
 @pytest.fixture()
@@ -164,7 +177,7 @@ def _assign(client, console, exercise_id: int, days: list[date], *, expect: int 
 # --- settings and the rules page -------------------------------------------------------------
 
 
-def test_a_clinic_reads_the_defaults_until_it_changes_one(client, console, lifter, db):
+def test_a_clinic_reads_the_defaults_until_it_changes_one(client, console, lifter, untouched, db):
     body = client.get("/api/pt/settings", headers=console["hirt"]).json()
     assert body["settings"] == pt_settings.DEFAULTS and body["clinic"] == "hirt"
     assert db.get(ClinicSetting, "hirt") is None  # reading writes nothing
@@ -399,7 +412,7 @@ def test_a_phase_moves_on_when_a_clinician_says_so(client, console, lifter, db):
             {"name": "Isotonic loading", "goal": "Build it back.", "criteria": ["Step-ups pain-free"]},
             {"name": "Energy storage", "goal": "", "criteria": []},
         ]}, expect=201)["protocols"]
-    protocol = made[0]
+    protocol = next(p for p in made if p["name"] == "Patellar tendon, in season")
     chart = _post(client, console, f"/patients/{PID}/phases", {"protocol_id": protocol["id"]},
                   method="put")
     phases = chart["phases"]
@@ -584,10 +597,10 @@ def test_visits_and_rest_days_sit_on_the_calendar_and_on_the_phone(client, conso
     assert mark.status_code == 201, mark.text
     grid = client.get("/api/hep/schedule", headers=console["hirt"],
                       params={"start": TODAY.isoformat(), "days": 7}).json()
-    assert [(v["patient_id"], v["on"], v["at"]) for v in grid["visits"]] == [
-        (PID, friday.isoformat(), "14:30")]
-    assert [(m["patient_id"], m["day"], m["note"]) for m in grid["marks"]] == [
-        (PID, TODAY.isoformat(), "Deload.")]
+    assert [(v["on"], v["at"]) for v in grid["visits"] if v["patient_id"] == PID] == [
+        (friday.isoformat(), "14:30")]
+    assert [(m["day"], m["note"]) for m in grid["marks"] if m["patient_id"] == PID] == [
+        (TODAY.isoformat(), "Deload.")]
     month = client.get("/api/hep/calendar", headers=console["hirt"]).json()
     assert "visits" in month and "marks" in month
 
@@ -831,7 +844,8 @@ def test_a_red_flag_is_answered_in_the_clinics_words_and_never_by_the_assistant(
 # --- the morning run ---------------------------------------------------------------------------
 
 
-def test_the_morning_run_asks_what_the_settings_say_and_asks_once(client, console, db, lifter):
+def test_the_morning_run_asks_what_the_settings_say_and_asks_once(client, console, db, lifter,
+                                                                  untouched):
     from app.pt import service as between
 
     steps = _exercise(client, console, "Step-Ups")
