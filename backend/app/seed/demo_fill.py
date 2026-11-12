@@ -592,6 +592,11 @@ PER_PATIENT_TABLES = [
     # The exercise calendar (app/hep): one row per patient, exercise and day,
     # so a refill has to clear the old one before writing today's.
     "exercise_assignments",
+    # The between-visits record (app/pt), written again by hirt_between.write.
+    "pt_pain_areas", "pt_morning_checks", "pt_function_ratings", "pt_function_goals",
+    "pt_week_checkins", "pt_patient_phases", "pt_test_results", "pt_handoffs",
+    "pt_clip_comments", "pt_outcome_schedules", "pt_outcome_scores", "pt_clinic_visits",
+    "pt_calendar_marks", "pt_flag_events", "pt_patient_settings",
 ]
 # The device and the aggregator link, dropped only for the charts written
 # from nothing each time. App sessions are in neither list: a refill never
@@ -746,6 +751,12 @@ def write_persona(db, persona: Persona, today: date) -> dict[str, int]:
         counts["observations"] += written["observations"]
         counts["exercise_assignments"] = hirt.write_schedule(db, spec.id, today)["assignments"]
         counts["return_clips"] = hirt.relink_return_clips(db, spec.id)
+        # What the clinic keeps beyond the calendar (app/pt): areas, visits,
+        # phases, goals, mornings after, tests, scores, the trainer's page.
+        from app.seed import hirt_between
+
+        hirt_between.ensure_clinic(db)
+        hirt_between.write(db, spec.id, today)
     for days_ago, hour, lines in persona.conversations:
         checkin = Checkin(
             patient_id=spec.id,

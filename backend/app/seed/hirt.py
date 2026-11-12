@@ -330,6 +330,9 @@ class ScheduledExercise:
     weekdays: tuple[int, ...] | None = None
     load_kg: float | None = None
     rpe_target: int | None = None
+    # The ceilings: the load not to go past, the effort to stop at.
+    load_max_kg: float | None = None
+    rpe_max: int | None = None
     video_requirement: str = "optional"
     wearable_requirement: str = "optional"
 
@@ -338,13 +341,17 @@ class ScheduledExercise:
 # holds: 25 lb in hand on the sheet (11.34 kg as stored), and the 35s Cole
 # picked up instead (15.88 kg) the week he went back to his old leg day.
 COLE_STEP_UP_KG = 11.34
+# What Dr. Gregg wrote as the ceiling on them: 30 lb in hand, stop at RPE 8.
+# The 35s he picked up went past both.
+COLE_STEP_UP_MAX_KG = 13.61
 
 SCHEDULE: dict[str, tuple[ScheduledExercise, ...]] = {
     # Dr. Gregg wants to see Cole's loaded work and how hard he is pushing it.
     "hirt-cole": (
         ScheduledExercise("functional_step_ups", sets=3, reps=10, side="left",
                           note="Slow on the way down.", weekdays=MON_WED_FRI, load_kg=COLE_STEP_UP_KG,
-                          rpe_target=7, video_requirement="required"),
+                          rpe_target=7, load_max_kg=COLE_STEP_UP_MAX_KG, rpe_max=8,
+                          video_requirement="required"),
         ScheduledExercise("functional_wall_sits", sets=3, hold_seconds=30,
                           note="Knees over the ankles, not past the toes.", weekdays=MON_WED_FRI,
                           rpe_target=7, video_requirement="required"),
@@ -598,7 +605,8 @@ def write_schedule(db, patient_id: str, today: date) -> dict[str, int]:
                 hospital_id=HOSPITAL_ID, patient_id=patient_id, exercise_id=exercises[item.key].id,
                 scheduled_for=day, sort_order=order, sets=item.sets, reps=item.reps,
                 hold_seconds=item.hold_seconds, side=item.side, load_kg=item.load_kg,
-                rpe_target=item.rpe_target, clinician_instructions=item.note,
+                rpe_target=item.rpe_target, load_max_kg=item.load_max_kg, rpe_max=item.rpe_max,
+                clinician_instructions=item.note,
                 assigned_by=spec.assigned_id, video_requirement=item.video_requirement,
                 wearable_requirement=item.wearable_requirement, status="assigned",
                 created_at=laid_out, updated_at=laid_out,
@@ -771,7 +779,8 @@ def _template_items(items: tuple[ScheduledExercise, ...]) -> list[dict[str, Any]
         "exercise_key": i.key,
         "weekdays": list(i.weekdays) if i.weekdays is not None else None,
         "sets": i.sets, "reps": i.reps, "hold_seconds": i.hold_seconds, "side": i.side,
-        "load_kg": i.load_kg, "rpe_target": i.rpe_target, "clinician_instructions": i.note,
+        "load_kg": i.load_kg, "rpe_target": i.rpe_target,
+        "load_max_kg": i.load_max_kg, "rpe_max": i.rpe_max, "clinician_instructions": i.note,
         "video_requirement": i.video_requirement, "wearable_requirement": i.wearable_requirement,
     } for i in items]
 
