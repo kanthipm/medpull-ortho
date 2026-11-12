@@ -122,6 +122,24 @@ CARE_TEAM_PHONES="${CARE_TEAM_PHONES:-$(dotenv_value CARE_TEAM_PHONES)}"
 # association file and the same JSON is uploaded beside the SPA, so
 # https://<host>/t/<token> opens in the app. Blank: links open the web page.
 IOS_TEAM_ID="${IOS_TEAM_ID:-$(dotenv_value IOS_TEAM_ID)}"
+# Other iPhone apps the association file names (the demo app on the demo
+# stack: "TEAMID.com.medpull.demo"), and the demo app's own URL scheme.
+IOS_LINK_APP_IDS="${IOS_LINK_APP_IDS-$(dotenv_value IOS_LINK_APP_IDS)}"
+# The paths those apps open instead of Safari (the default is the task link
+# and the texted link; a stack that names only the demo app keeps to /a/*).
+IOS_LINK_PATHS="${IOS_LINK_PATHS:-$(dotenv_value IOS_LINK_PATHS)}"
+IOS_LINK_PATHS="${IOS_LINK_PATHS:-/t/*,/a/*}"
+DEMO_APP_SCHEME="${DEMO_APP_SCHEME:-$(dotenv_value DEMO_APP_SCHEME)}"
+DEMO_APP_SCHEME="${DEMO_APP_SCHEME:-medpulldemo}"
+# The morning exercise text. It reaches real phones: off unless asked for.
+EXERCISE_REMINDERS="${EXERCISE_REMINDERS:-$(dotenv_value EXERCISE_REMINDERS)}"
+EXERCISE_REMINDERS="${EXERCISE_REMINDERS:-false}"
+case "$EXERCISE_REMINDERS" in true|false) ;; *) echo "EXERCISE_REMINDERS must be true or false" >&2; exit 1 ;; esac
+EXERCISE_REMINDER_HOUR="${EXERCISE_REMINDER_HOUR:-$(dotenv_value EXERCISE_REMINDER_HOUR)}"
+EXERCISE_REMINDER_HOUR="${EXERCISE_REMINDER_HOUR:-8}"
+# When the showcase's morning fill runs on a demo stack (UTC).
+SHOWCASE_DAILY_CRON="${SHOWCASE_DAILY_CRON:-$(dotenv_value SHOWCASE_DAILY_CRON)}"
+SHOWCASE_DAILY_CRON="${SHOWCASE_DAILY_CRON:-cron(30 10 * * ? *)}"
 # The Android app's signing-certificate fingerprint(s): same idea, assetlinks.json.
 ANDROID_CERT_SHA256="${ANDROID_CERT_SHA256:-$(dotenv_value ANDROID_CERT_SHA256)}"
 # Custom domain. Both or neither: the template ignores one without the other.
@@ -406,6 +424,12 @@ PARAMS=(
   "SendblueFromNumber=$SENDBLUE_FROM_NUMBER"
   "CareTeamPhones=$CARE_TEAM_PHONES"
   "IosTeamId=$IOS_TEAM_ID"
+  "IosLinkAppIds=$IOS_LINK_APP_IDS"
+  "IosLinkPaths=$IOS_LINK_PATHS"
+  "DemoAppScheme=$DEMO_APP_SCHEME"
+  "ExerciseReminders=$EXERCISE_REMINDERS"
+  "ExerciseReminderHour=$EXERCISE_REMINDER_HOUR"
+  "ShowcaseDailyCron=$SHOWCASE_DAILY_CRON"
   "AndroidCertSha256=$ANDROID_CERT_SHA256"
   "ApiReservedConcurrency=$RESERVED"
   # Passed even when empty so clearing them in .env removes the alias.
@@ -504,12 +528,17 @@ log "Building and uploading the frontend"
     printf '%s' "$2" | aws_ s3 cp - "s3://$DATA_BUCKET/$1" --only-show-errors \
       --cache-control "no-cache" --content-type "application/json"
   }
-  if [ -n "$IOS_TEAM_ID" ]; then
-    AASA="$(cd "$ROOT/backend" && IOS_TEAM_ID="$IOS_TEAM_ID" uv run python -c \
+  # The association file names the patient app (IOS_TEAM_ID) and any other
+  # app listed in IOS_LINK_APP_IDS (the demo app); either is enough to
+  # publish it. CloudFront serves this copy, so it has to say what the API's
+  # own route would.
+  if [ -n "$IOS_TEAM_ID" ] || [ -n "$IOS_LINK_APP_IDS" ]; then
+    AASA="$(cd "$ROOT/backend" && IOS_TEAM_ID="$IOS_TEAM_ID" IOS_LINK_APP_IDS="$IOS_LINK_APP_IDS" \
+      IOS_LINK_PATHS="$IOS_LINK_PATHS" uv run python -c \
       'import json; from app.api.applinks import association; print(json.dumps(association()))')"
     put_json web/.well-known/apple-app-site-association "$AASA"
     put_json web/apple-app-site-association "$AASA"
-    info "uploaded apple-app-site-association for team $IOS_TEAM_ID"
+    info "uploaded apple-app-site-association (${IOS_TEAM_ID:+patient app, team $IOS_TEAM_ID}${IOS_TEAM_ID:+${IOS_LINK_APP_IDS:+; }}${IOS_LINK_APP_IDS:+also $IOS_LINK_APP_IDS})"
   else
     info "IOS_TEAM_ID not set — task links open the web page on iPhone, not the app"
   fi

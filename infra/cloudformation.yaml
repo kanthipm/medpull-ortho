@@ -102,6 +102,52 @@ Parameters:
       comma-separated, as the Play Console prints them. Set, the API serves
       assetlinks.json and deploy.sh uploads it beside the SPA so task links
       open in the Android app. Blank serves nothing.
+  IosLinkAppIds:
+    Type: String
+    Default: ""
+    Description: >-
+      Other iPhone apps the app-site-association file names beside the patient
+      app: full app ids, comma separated ("TEAMID.com.medpull.demo"). The demo
+      stack lists the demo app, so a texted https://<host>/a/<token> link
+      opens it.
+  IosLinkPaths:
+    Type: String
+    Default: "/t/*,/a/*"
+    Description: >-
+      The paths the association file hands to the apps it names, comma
+      separated: the task link (/t/*) and the links a text carries (/a/*). A
+      stack that names only the demo app keeps to "/a/*", the one it opens.
+  DemoAppScheme:
+    Type: String
+    Default: medpulldemo
+    Description: >-
+      The demo iPhone app's own URL scheme. On a demo stack the link page's
+      "Open in the app" button uses it, so the demo app never contends with
+      the patient app for medpull:// on a phone that has both.
+  ExerciseReminders:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      "true" texts each lifter today's exercise plan every morning, at
+      ExerciseReminderHour in the functions' TZ. It reaches real phones, so
+      it is off unless a deployment asks for it; the console's "Text today's
+      plan" works either way.
+  ExerciseReminderHour:
+    Type: Number
+    Default: 8
+    MinValue: 0
+    MaxValue: 23
+    Description: The local hour of the morning exercise text.
+  ShowcaseDailyCron:
+    Type: String
+    Default: "cron(30 10 * * ? *)"
+    Description: >-
+      When the showcase is re-anchored to the new day on a demo stack (UTC):
+      every generated persona of all three versions rewritten around today,
+      keeping their sessions, any real phone a presenter bound, and every row
+      the showcase did not write. The default is 10:30 UTC, 4:30am or 5:30am
+      US Central, before the sports and personal morning runs.
   ConsoleAccessTokenParameter:
     Type: String
     Default: /recovery-copilot/console-access-token
@@ -285,6 +331,7 @@ Conditions:
   HasBudgetEmail: !Not [!Equals [!Ref BudgetAlertEmail, ""]]
   HasReservedConcurrency: !Not [!Equals [!Ref ApiReservedConcurrency, -1]]
   IsDemo: !Equals [!Ref DemoMode, "true"]
+  RemindersOn: !Equals [!Ref ExerciseReminders, "true"]
   HasTrail: !Not [!Equals [!Ref TrailBucketName, ""]]
   TrailManagement: !Equals [!Ref TrailManagementEvents, "true"]
   # Both halves or neither: an alias without a certificate is rejected by
@@ -801,6 +848,11 @@ Resources:
           SENDBLUE_FROM_NUMBER: !Ref SendblueFromNumber
           CARE_TEAM_PHONES: !Ref CareTeamPhones
           IOS_TEAM_ID: !Ref IosTeamId
+          IOS_LINK_APP_IDS: !Ref IosLinkAppIds
+          IOS_LINK_PATHS: !Ref IosLinkPaths
+          DEMO_APP_SCHEME: !Ref DemoAppScheme
+          EXERCISE_REMINDERS: !Ref ExerciseReminders
+          EXERCISE_REMINDER_HOUR: !Ref ExerciseReminderHour
           ANDROID_CERT_SHA256: !Ref AndroidCertSha256
           # Patient check-in links carry this host. Behind CloudFront the
           # request's own base URL is the Function URL, which the origin
@@ -863,6 +915,17 @@ Resources:
           # The seed refuses to run unless this is "true" (or it is forced).
           DEMO_MODE: !Ref DemoMode
           TZ: !If [HasTimezone, !Ref AppTimezone, !Ref AWS::NoValue]
+          # The showcase's morning fill runs here (it takes minutes). It
+          # writes the Personal members' consent records, which belong in
+          # the personal bucket like any subscriber's files, and the lifters'
+          # calendar, which reads the clinic's own settings.
+          PERSONAL_S3_BUCKET: !Ref PersonalDataBucket
+          HEP_CLINIC_ID: !Ref HepClinicId
+          DEMO_APP_SCHEME: !Ref DemoAppScheme
+          CHECKIN_BASE_URL: !If
+            - HasCustomDomain
+            - !Sub "https://${CustomDomainName}"
+            - !Ref PublicBaseUrl
           OLLAMA_URL: ""
           WARM_CACHES_ON_STARTUP: "false"
           # The seed holds the write lock for its whole run, so the TTL has to
@@ -924,6 +987,57 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt SportsDailyRule.Arn
+
+  # The showcase's morning fill, on a demo stack only: {"action":
+  # "showcase_fill"} on the seed function, which has the time for it. The
+  # fill touches only the rows it wrote; the handler refuses off a demo stack
+  # before it takes the lock.
+  ShowcaseDailyRule:
+    Type: AWS::Events::Rule
+    Condition: IsDemo
+    Properties:
+      Name: !Sub "${AWS::StackName}-showcase-daily"
+      Description: "MedPull showcase re-anchored to today (generated personas of all three versions). Facet: shared"
+      ScheduleExpression: !Ref ShowcaseDailyCron
+      State: ENABLED
+      Targets:
+        - Id: seed
+          Arn: !GetAtt SeedFunction.Arn
+          Input: '{"action": "showcase_fill"}'
+
+  ShowcaseDailyPermission:
+    Type: AWS::Lambda::Permission
+    Condition: IsDemo
+    Properties:
+      FunctionName: !Ref SeedFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ShowcaseDailyRule.Arn
+
+  # The morning exercise text, only where a deployment asked for it. Hourly:
+  # the run itself checks the local hour and returns before it takes the lock
+  # at every other one, so the schedule does not have to know the time zone.
+  ExerciseRemindersRule:
+    Type: AWS::Events::Rule
+    Condition: RemindersOn
+    Properties:
+      Name: !Sub "${AWS::StackName}-exercise-reminders"
+      Description: "MedPull morning exercise text (today's plan, to lifters who can be texted). Facet: clinic"
+      ScheduleExpression: "cron(0 * * * ? *)"
+      State: ENABLED
+      Targets:
+        - Id: api
+          Arn: !GetAtt ApiFunction.Arn
+          Input: '{"action": "exercise_reminders"}'
+
+  ExerciseRemindersPermission:
+    Type: AWS::Lambda::Permission
+    Condition: RemindersOn
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ExerciseRemindersRule.Arn
 
   ApiFunctionUrl:
     Type: AWS::Lambda::Url
