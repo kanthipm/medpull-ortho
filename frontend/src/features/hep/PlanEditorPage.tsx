@@ -20,6 +20,7 @@ import { useToast } from '../../components/Toast'
 import { relativeTime } from '../../lib/format'
 import { diagnosticWarning } from './hepCopy'
 import LibraryPicker from './LibraryPicker'
+import { CALENDAR } from './paths'
 import {
   doseLine,
   editable,
@@ -41,7 +42,7 @@ interface Draft {
   items: EditorItem[]
 }
 
-/** `/exercise-plans/new` and `/exercise-plans/:id` — build a home exercise
+/** `/calendar/plans/new` and `/calendar/plans/:id` — build a home exercise
  *  plan: pick exercises from the library on the left, dose them in the tray
  *  on the right, save as a draft, preview what the patient will read, then
  *  publish. Publishing freezes the wording; the confirmation reports the
@@ -62,7 +63,7 @@ export default function PlanEditorPage() {
   }
   if (planId != null && (plan.isError || !plan.data)) {
     return (
-      <EmptyState title="This plan couldn’t be opened." action={<Link to="/exercise-plans" className="btn-tinted">Back to plans</Link>}>
+      <EmptyState title="This plan couldn’t be opened." action={<Link to={CALENDAR.plans} className="btn-tinted">Back to plans</Link>}>
         It may have been removed, or the link is wrong.
       </EmptyState>
     )
@@ -176,7 +177,7 @@ function Editor({ plan, options }: { plan: Plan | null; options: HepOptions }) {
           if (then) then(p)
           else {
             toast('Draft saved', 'success')
-            navigate(`/exercise-plans/${p.id}`, { replace: true })
+            navigate(CALENDAR.plan(p.id), { replace: true })
           }
         },
         onError,
@@ -192,7 +193,7 @@ function Editor({ plan, options }: { plan: Plan | null; options: HepOptions }) {
           onSuccess: (r) => {
             setConfirming(false)
             setResult(r)
-            if (!plan) navigate(`/exercise-plans/${p.id}`, { replace: true })
+            if (!plan) navigate(CALENDAR.plan(p.id), { replace: true })
           },
           onError: (e) => {
             setConfirming(false)
@@ -215,7 +216,7 @@ function Editor({ plan, options }: { plan: Plan | null; options: HepOptions }) {
   return (
     <div className="pb-28">
       <header data-hero className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
-        <Link to="/exercise-plans" className="btn-plain-muted btn-sm -ml-2">
+        <Link to={CALENDAR.plans} className="btn-plain-muted btn-sm -ml-2">
           <ChevronLeft size={16} /> Plans
         </Link>
         <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -322,7 +323,7 @@ function Editor({ plan, options }: { plan: Plan | null; options: HepOptions }) {
             {plan && plan.status === 'draft' && (
               <button type="button" className="btn-gray btn-sm" disabled={saving}
                 onClick={() => archive.mutate({ id: plan.id, actor: draft.assigned_by }, {
-                  onSuccess: () => { toast('Draft archived', 'info'); navigate('/exercise-plans') },
+                  onSuccess: () => { toast('Draft archived', 'info'); navigate(CALENDAR.plans) },
                   onError,
                 })}>
                 Archive

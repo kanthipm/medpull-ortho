@@ -4,11 +4,12 @@ import { Link } from 'react-router-dom'
 import { useConsoleSession, useIsDemo } from '../../api/queries'
 import { SettingsHero } from '../settings/Switch'
 import ExercisesNav from './ExercisesNav'
+import { CALENDAR } from './paths'
 import ScheduleBoard from './ScheduleBoard'
 
-/** `/exercise-schedule` — the clinic's week: every patient's exercises by
+/** `/calendar` — the clinic's week: every patient's exercises by
  *  day, what they did and how it felt, and the therapist's own clip behind
- *  each one. The first tab of Exercises; the demo-screen link shows on the
+ *  each one. The Calendar tab's landing page; the demo-screen link shows on the
  *  demo stack only. */
 export default function SchedulePage() {
   const demo = useIsDemo()
@@ -20,7 +21,7 @@ export default function SchedulePage() {
       <SettingsHero
         nav={<ExercisesNav />}
         icon={<CalendarDays />}
-        title="Exercise schedule"
+        title="Calendar"
         decor={[<CalendarDays key="c" />, <Dumbbell key="d" />, <Film key="f" />]}
       >
         {clinic ? `${clinic}’s week` : 'The week'} on one grid: each patient’s exercises by day,
@@ -31,7 +32,7 @@ export default function SchedulePage() {
         <ScheduleBoard
           aside={
             demo ? (
-              <Link to="/demo/hirt" className="btn-plain btn-sm">
+              <Link to={CALENDAR.demoScreen} className="btn-plain btn-sm">
                 <MonitorSmartphone size={14} aria-hidden /> Open the demo screen
               </Link>
             ) : undefined

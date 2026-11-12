@@ -1,4 +1,3 @@
-import { ChevronLeft } from 'lucide-react'
 import type { CSSProperties, ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTeamDashboard, type TeamDashboard, type TeamSummary } from '../../api/sports'
@@ -17,7 +16,12 @@ import StaffCard from './StaffCard'
 import TeamLoadChart from './TeamLoadChart'
 import { DASH, fmt, longDateOf, words } from './sportsFormat'
 
-/* Layout. AppShell caps the page at the patient width (1240px) and adds the
+/* `/sports/teams/:teamId` — the Sports version's Board tab. Which team is a
+ * choice made in the workspace menu (the bar's right), so the page has no
+ * way back to a list of teams: the bar's Board · Calendar · Data are this
+ * team's.
+ *
+ * Layout. AppShell caps the page at the patient width (1240px) and adds the
  * gutter. The head sits in the sky window (`data-hero`): the org badge, the
  * team name at the display step and the facts line on the left; the roster
  * gradient tile on the right at >= 1024px. The briefing floats over the
@@ -59,21 +63,19 @@ export default function TeamDashboardPage() {
     return (
       <div className="pb-4 pt-8">
         <header data-hero className="pt-3">
-          <Link to="/sports" className="btn-plain btn-sm -ml-3">
-            <ChevronLeft aria-hidden size={16} /> Teams
-          </Link>
-          <h1 className="display-title mt-4 text-section text-ink">Team</h1>
+          <p className="micro">Sports</p>
+          <h1 className="display-title mt-2 text-section text-ink">Team board</h1>
         </header>
         <EmptyState
           className="mt-10"
           title="This team couldn’t be loaded"
           action={
             <Link to="/sports" className="btn-tinted">
-              <ChevronLeft aria-hidden size={16} /> Back to teams
+              Open a team
             </Link>
           }
         >
-          Check the link, or pick the team from the list again.
+          Check the link, or pick a team from the menu at the top right.
         </EmptyState>
       </div>
     )
@@ -88,11 +90,8 @@ export default function TeamDashboardPage() {
         style={{ '--rise-delay': '0ms' } as CSSProperties}
       >
         <div className="min-w-0 lg:max-w-[min(640px,58%)] lg:flex-1">
-          <Link to="/sports" className="btn-plain btn-sm -ml-3">
-            <ChevronLeft aria-hidden size={16} /> Teams
-          </Link>
           {org && (
-            <div className="mt-4">
+            <div>
               <span
                 className="badge-ring max-w-full"
                 style={

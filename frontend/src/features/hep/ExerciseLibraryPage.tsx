@@ -20,7 +20,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'custom', label: 'My exercises' },
 ]
 
-/** `/exercise-library` — the exercises a clinic prescribes from. The
+/** `/calendar/library` — the exercises a clinic prescribes from. The
  *  standard set is shared and read-only; "My exercises" are the clinic's
  *  own. Search covers names and synonyms; filters are body region and
  *  category. Each row previews what the patient will read. */
