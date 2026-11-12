@@ -38,7 +38,7 @@ ASSIGNMENT_KEYS = {
     "body_region_label", "category", "category_label", "steps", "equipment", "precautions",
     "scheduled_for", "sort_order", "sets", "reps", "hold_seconds", "side", "side_label", "dose",
     "clinician_instructions", "assigned_by", "assigned_by_name", "status", "video", "completion",
-    "skip_reason", "created_at", "updated_at",
+    "skip_reason", "created_at", "updated_at", "state", "series_id",
 }
 
 _LEDGER = (ExerciseAssignment, ExerciseMedia, AuditEvent, Attachment, Message, Notification)
@@ -414,7 +414,8 @@ def test_the_patient_marks_a_day_done_with_pain_and_a_clip(client, db, tokens, l
 
     day = client.get("/api/mobile/exercises", headers=session).json()
     assert day["date"] == TODAY.isoformat()
-    assert day["clinic"] == {"id": "hirt", "name": "H.I.R.T. Physical Therapy"}
+    assert day["clinic"] == {"id": "hirt", "name": "H.I.R.T. Physical Therapy",
+                             "load_unit": "kg"}
     assert [i["title"] for i in day["items"]] == ["Heel Slides", "Wall Sits"]
     assert all("clinic_id" not in i and i["patient_id"] == lifter.id for i in day["items"])
     assert day["items"][0]["dose"] == "2 sets × 10 reps · Left"

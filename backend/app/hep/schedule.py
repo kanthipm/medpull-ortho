@@ -17,13 +17,27 @@ duration and the heart rate from the wearable's samples inside the window;
 she reviews the clip with a note that lands on the thread. A week can be
 copied to the next, and a program (``templates.py``) applied from a date.
 
+The third pass is the calendar grown for a clinic whose lifters tend to do
+more than was written. Every row says where it stands today (``state_of``:
+upcoming, due, in progress, done, skipped, missed); a done row says what was
+done against what was prescribed (``done_against_prescribed``), and one that
+went over the dose waits for the therapist's look even without a clip
+(``review_reason``, the one definition of "to review"). An exercise can
+repeat on weekdays for some weeks as a series that is re-dosed or cleared
+from a day on; a row can be duplicated onto other days; a completion the
+console logged can be undone. Loads stay in kilograms; a clinic that works
+in pounds reads the server's own strings in pounds (``service.load_text``).
+
 The console and the patient app read the same ``Assignment`` payload
 (``AssignmentView``); the patient's copy drops the clinic id and points its
-media URLs at the route the patient's session can reach.
+media URLs at the route the patient's session can reach. The wider reads —
+a lifter's week in review, a month at a glance, one exercise over time —
+are in ``calendar_reads.py``.
 """
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -46,7 +60,11 @@ from app.hep.service import (
     PATIENT_MEDIA_ROUTE,
     HepError,
     audit,
+    clinic_care_team,
     clinic_clips,
+    clinic_payload,
+    load_text,
+    load_unit_of,
     media_payload,
     resolve_clip,
     visible_to,
@@ -63,31 +81,48 @@ from app.personal.scope import is_clinic
 # logging what was done last visit) and three months ahead (a training block).
 PAST_DAYS = 60
 FUTURE_DAYS = 90
-# One POST puts one exercise on at most a month of days.
-MAX_DATES = 31
+# One POST puts one exercise on at most twelve weeks of days.
+MAX_DATES = 84
+# A repeat runs at most twelve weeks; the reach above still bounds it.
+MAX_REPEAT_WEEKS = 12
 # The widest grid a read may ask for.
 MAX_WINDOW_DAYS = 28
+# The widest month the compact calendar may ask for: six weeks of rows.
+MAX_CALENDAR_DAYS = 42
 # The widest calendar the patient's program may ask for.
-MAX_PROGRAM_DAYS = 35
+MAX_PROGRAM_DAYS = 42
 WEEK = 7
 TEXT_LIMIT = 400
 NOTE_LIMIT = 600
 # The heaviest load a day may carry, in kilograms; RPE and pain run 0–10.
 LOAD_MAX = 500.0
 SCALE_MAX = 10
-# How far back the review queue looks by default, and at most.
+# How far back "to review" looks by default, and at most.
 REVIEW_DAYS = 14
 MAX_REVIEW_DAYS = 90
-COMPLETION_SOURCES = ("app", "console")
+# Who logged a day done: the patient in the app, the therapist in the room,
+# or the patient by text.
+COMPLETION_SOURCES = ("app", "console", "sms")
 # What a done day keeps: its counts, side, load and target effort.
 DOSE_FIELDS = ("sets", "reps", "hold_seconds", "side", "load_kg", "rpe_target")
 REQUIREMENT_FIELDS = ("video_requirement", "wearable_requirement")
 EDITABLE = DOSE_FIELDS + REQUIREMENT_FIELDS + (
     "clinician_instructions", "scheduled_for", "assigned_by", "sort_order",
 )
-# Therapists who belong in a clinic's "assigned by" list before they carry a
-# patient of their own: the demo clinic's two.
-HOUSE_CARE_TEAM: dict[str, tuple[str, ...]] = {"hirt": ("ct_harris", "ct_gregg")}
+# What an edit of a whole series may change: everything but each row's own
+# day and position.
+SERIES_EDITABLE = DOSE_FIELDS + REQUIREMENT_FIELDS + ("clinician_instructions", "assigned_by")
+# Where a row stands on the day it is read.
+STATES = ("upcoming", "due", "in_progress", "done", "skipped", "missed")
+# Reported effort this far above the target counts as more than was written,
+# this far below as less. One point either way is how people rate.
+EFFORT_MARGIN = 2
+# Why a done day waits for the therapist.
+REVIEW_REASONS = ("clip", "over")
+# Why a write of many days left one out.
+SKIP_ALREADY_THERE = "already_there"
+SKIP_OUT_OF_REACH = "out_of_reach"
+SKIP_REASONS = (SKIP_ALREADY_THERE, SKIP_OUT_OF_REACH)
 
 
 class ScheduleConflict(HepError):
@@ -120,12 +155,31 @@ def check_window(days: int) -> int:
     return days
 
 
+def in_reach(day: date, today: date) -> bool:
+    return today - timedelta(days=PAST_DAYS) <= day <= today + timedelta(days=FUTURE_DAYS)
+
+
+def reach_text() -> str:
+    return f"the schedule runs {PAST_DAYS} days back and {FUTURE_DAYS} days ahead of today"
+
+
 def _in_reach(day: date, today: date) -> None:
-    if not today - timedelta(days=PAST_DAYS) <= day <= today + timedelta(days=FUTURE_DAYS):
-        raise HepError(
-            f"{day.isoformat()} is out of reach: the schedule runs {PAST_DAYS} days back "
-            f"and {FUTURE_DAYS} days ahead of today"
-        )
+    if not in_reach(day, today):
+        raise HepError(f"{day.isoformat()} is out of reach: {reach_text()}")
+
+
+def state_of(row: ExerciseAssignment, today: date) -> str:
+    """Where a row stands on ``today``: done and skipped are what they are;
+    an open row started today is in progress, one whose day has passed is
+    missed, one on today is due, and the rest are upcoming. Missed is never
+    stored: the same row is due again the moment its day is moved."""
+    if row.status in ("done", "skipped"):
+        return row.status
+    if row.started_at is not None and row.started_at.date() == today:
+        return "in_progress"
+    if row.scheduled_for < today:
+        return "missed"
+    return "due" if row.scheduled_for == today else "upcoming"
 
 
 # --- reads ------------------------------------------------------------------------
@@ -173,6 +227,16 @@ def patient_rows(db: Session, patient_id: str, start: date, end: date) -> list[E
     ).all()
 
 
+def series_rows(db: Session, clinic: str, series_id: str) -> list[ExerciseAssignment]:
+    """Every day one repeat wrote for this clinic, oldest first."""
+    return db.scalars(
+        select(ExerciseAssignment).where(
+            ExerciseAssignment.hospital_id == clinic,
+            ExerciseAssignment.series_id == series_id,
+        ).order_by(ExerciseAssignment.scheduled_for, ExerciseAssignment.id)
+    ).all()
+
+
 def schedule_patients(db: Session, clinic: str) -> list[Patient]:
     """The grid's rows: the clinic's clinic charts, by name."""
     rows = db.scalars(
@@ -191,6 +255,13 @@ def _exercise_for(db: Session, clinic: str, exercise_id: int) -> Exercise:
     if e.status == "archived":
         raise HepError(f"{e.title} is archived and cannot be scheduled")
     return e
+
+
+def _patient_for(db: Session, clinic: str, patient_id: str) -> Patient:
+    try:
+        return clinic_patient(db, clinic, patient_id)
+    except HepError as e:
+        raise UnknownRow(str(e))
 
 
 def _member(db: Session, member_id: str | None, fallback: str | None) -> str:
@@ -257,6 +328,22 @@ def _requirement(value: str | None, name: str) -> str:
     return value
 
 
+def _weekdays(value: Any) -> list[int] | None:
+    """``[0..6]`` with Monday 0, in order and once each, or None for every
+    day."""
+    if value is None:
+        return None
+    try:
+        days = sorted({int(d) for d in value})
+    except (TypeError, ValueError):
+        raise HepError("Weekdays are numbers from 0 (Monday) to 6 (Sunday)")
+    if not days:
+        raise HepError("Pick at least one weekday, or leave weekdays empty for every day")
+    if any(d < 0 or d > 6 for d in days):
+        raise HepError("Weekdays are numbers from 0 (Monday) to 6 (Sunday)")
+    return days
+
+
 def _local(moment: datetime | None) -> datetime | None:
     """A phone's timestamp in the clock the rows keep: an aware instant is
     brought into the server's zone and stripped, a naive one is trusted."""
@@ -291,6 +378,27 @@ def _next_positions(db: Session, patient_id: str, days: list[date]) -> dict[date
     return {day: int(top or 0) + 1 for day, top in rows}
 
 
+def dose_fields(
+    *, sets: Any, reps: Any, hold_seconds: Any, side: str | None, load_kg: Any, rpe_target: Any,
+    video_requirement: str | None, wearable_requirement: str | None, clinician_instructions: str,
+) -> dict[str, Any]:
+    """A dose, its requirements and its note, checked the way every write
+    checks them, in the shape a row carries (and a placement copies)."""
+    return {
+        "side": _side(side), "sets": _count(sets, "Sets"), "reps": _count(reps, "Reps"),
+        "hold_seconds": _count(hold_seconds, "Hold"), "load_kg": _load(load_kg),
+        "rpe_target": _scale(rpe_target, "Target effort"),
+        "video_requirement": _requirement(video_requirement, "The clip requirement"),
+        "wearable_requirement": _requirement(wearable_requirement, "The wearable requirement"),
+        "clinician_instructions": _text(clinician_instructions),
+    }
+
+
+def _taken_text(exercise: Exercise | None, days: list[date]) -> str:
+    title = exercise.title if exercise else "That exercise"
+    return f"{title} is already on {', '.join(d.isoformat() for d in days)}"
+
+
 # --- writes -----------------------------------------------------------------------
 
 
@@ -305,10 +413,7 @@ def create_assignments(
     All or nothing: a day that already has the exercise refuses the whole
     request, naming the day, so a half-written week never has to be undone
     by hand."""
-    try:
-        patient = clinic_patient(db, clinic, patient_id)
-    except HepError as e:
-        raise UnknownRow(str(e))
+    patient = _patient_for(db, clinic, patient_id)
     exercise = _exercise_for(db, clinic, exercise_id)
     days = sorted(set(dates))
     if not days:
@@ -317,29 +422,23 @@ def create_assignments(
         raise HepError(f"One assignment covers at most {MAX_DATES} days")
     for day in days:
         _in_reach(day, today)
-    side = _side(side)
-    sets, reps = _count(sets, "Sets"), _count(reps, "Reps")
-    hold = _count(hold_seconds, "Hold")
-    load, rpe = _load(load_kg), _scale(rpe_target, "Target effort")
-    video = _requirement(video_requirement, "The clip requirement")
-    wearable = _requirement(wearable_requirement, "The wearable requirement")
-    note = _text(clinician_instructions)
+    fields = dose_fields(
+        sets=sets, reps=reps, hold_seconds=hold_seconds, side=side, load_kg=load_kg,
+        rpe_target=rpe_target, video_requirement=video_requirement,
+        wearable_requirement=wearable_requirement, clinician_instructions=clinician_instructions,
+    )
     member = _member(db, assigned_by, patient.assigned_provider_id)
     taken = _taken(db, patient.id, exercise.id, days)
     if taken:
-        raise ScheduleConflict(
-            f"{exercise.title} is already on {', '.join(d.isoformat() for d in taken)}"
-        )
+        raise ScheduleConflict(_taken_text(exercise, taken))
     positions = _next_positions(db, patient.id, days)
     now = datetime.now()
     rows = []
     for day in days:
         row = ExerciseAssignment(
             hospital_id=clinic, patient_id=patient.id, exercise_id=exercise.id,
-            scheduled_for=day, sort_order=positions.get(day, 0), sets=sets, reps=reps,
-            hold_seconds=hold, side=side, load_kg=load, rpe_target=rpe,
-            clinician_instructions=note, assigned_by=member, video_requirement=video,
-            wearable_requirement=wearable, status="assigned", created_at=now, updated_at=now,
+            scheduled_for=day, sort_order=positions.get(day, 0), assigned_by=member,
+            status="assigned", created_at=now, updated_at=now, **fields,
         )
         db.add(row)
         rows.append(row)
@@ -350,6 +449,87 @@ def create_assignments(
     })
     db.commit()
     return rows
+
+
+def repeat_days(start: date, weekdays: list[int], weeks: int) -> list[date]:
+    """The days a repeat lands on: each of ``weekdays`` (Monday 0) in the
+    ``weeks`` seven-day blocks from ``start``, which need not be a Monday."""
+    return [d for d in days_of(start, WEEK * weeks) if d.weekday() in weekdays]
+
+
+def create_series(
+    db: Session, clinic: str, *, patient_id: str, exercise_id: int, start: date,
+    weekdays: Any, weeks: Any, sets: Any, reps: Any, hold_seconds: Any, side: str | None,
+    clinician_instructions: str, assigned_by: str | None, actor: str, today: date,
+    load_kg: Any = None, rpe_target: Any = None, video_requirement: str | None = None,
+    wearable_requirement: str | None = None,
+) -> tuple[list[ExerciseAssignment], list["Skip"], str | None]:
+    """One exercise, at one dose, on its weekdays for some weeks from
+    ``start``: Step-Ups on Monday, Wednesday and Friday for four weeks.
+    The rows share a ``series_id`` so the run can be re-dosed or cleared
+    from a day on. Unlike a list of dates this lands around what is there:
+    a day that already carries the exercise, or lies outside the schedule's
+    reach, is left out and reported. Returns the rows, what was left out,
+    and the series id (none when nothing was written)."""
+    patient = _patient_for(db, clinic, patient_id)
+    exercise = _exercise_for(db, clinic, exercise_id)
+    on = _weekdays(weekdays)
+    if on is None:
+        raise HepError("Pick at least one weekday to repeat on")
+    try:
+        weeks = int(weeks)
+    except (TypeError, ValueError):
+        raise HepError("Weeks must be a whole number")
+    if not 1 <= weeks <= MAX_REPEAT_WEEKS:
+        raise HepError(f"A repeat runs between 1 and {MAX_REPEAT_WEEKS} weeks")
+    fields = dose_fields(
+        sets=sets, reps=reps, hold_seconds=hold_seconds, side=side, load_kg=load_kg,
+        rpe_target=rpe_target, video_requirement=video_requirement,
+        wearable_requirement=wearable_requirement, clinician_instructions=clinician_instructions,
+    )
+    member = _member(db, assigned_by, patient.assigned_provider_id)
+    series_id = secrets.token_hex(8)
+    placements = [Placement(exercise=exercise, day=day, assigned_by=member, fields=fields)
+                  for day in repeat_days(start, on, weeks)]
+    rows, skips = place_rows(
+        db, clinic, patient, placements, actor=actor, today=today, action="assignment.repeat",
+        detail={"series_id": series_id, "exercise_id": exercise.id, "start": start.isoformat(),
+                "weekdays": on, "weeks": weeks},
+        series_id=series_id,
+    )
+    return rows, skips, series_id if rows else None
+
+
+def _clean_patch(db: Session, patch: dict[str, Any], touched: set[str]) -> dict[str, Any]:
+    """The dose, requirement, note and author fields a patch touches, each
+    checked, as a row is then set to them. Everything is checked before
+    anything is written, so one bad field leaves a row (or a whole series)
+    as it was. An empty ``assigned_by`` keeps whoever each row already
+    names."""
+    clean: dict[str, Any] = {}
+    if "sets" in touched:
+        clean["sets"] = _count(patch["sets"], "Sets")
+    if "reps" in touched:
+        clean["reps"] = _count(patch["reps"], "Reps")
+    if "hold_seconds" in touched:
+        clean["hold_seconds"] = _count(patch["hold_seconds"], "Hold")
+    if "side" in touched:
+        clean["side"] = _side(patch["side"])
+    if "load_kg" in touched:
+        clean["load_kg"] = _load(patch["load_kg"])
+    if "rpe_target" in touched:
+        clean["rpe_target"] = _scale(patch["rpe_target"], "Target effort")
+    if "video_requirement" in touched:
+        clean["video_requirement"] = _requirement(patch["video_requirement"],
+                                                  "The clip requirement")
+    if "wearable_requirement" in touched:
+        clean["wearable_requirement"] = _requirement(patch["wearable_requirement"],
+                                                     "The wearable requirement")
+    if "clinician_instructions" in touched:
+        clean["clinician_instructions"] = _text(patch["clinician_instructions"])
+    if "assigned_by" in touched and (patch["assigned_by"] or "").strip():
+        clean["assigned_by"] = _member(db, patch["assigned_by"], None)
+    return clean
 
 
 def update_assignment(
@@ -365,6 +545,12 @@ def update_assignment(
     if row.status == "done" and touched & (set(DOSE_FIELDS) | {"scheduled_for"}):
         raise ScheduleConflict("That day is done; its dose and date stay as they were. "
                                "Add a new day instead")
+    clean = _clean_patch(db, patch, touched)
+    order = None
+    if "sort_order" in touched:
+        order = patch["sort_order"]
+        if order is None or int(order) < 0:
+            raise HepError("Position must be zero or more")
     if "scheduled_for" in touched:
         day = patch["scheduled_for"]
         if day is None:
@@ -372,44 +558,115 @@ def update_assignment(
         _in_reach(day, today)
         if day != row.scheduled_for:
             if _taken(db, row.patient_id, row.exercise_id, [day], exclude_id=row.id):
-                exercise = db.get(Exercise, row.exercise_id)
-                raise ScheduleConflict(
-                    f"{exercise.title if exercise else 'That exercise'} is already on "
-                    f"{day.isoformat()}"
-                )
+                raise ScheduleConflict(_taken_text(db.get(Exercise, row.exercise_id), [day]))
             row.scheduled_for = day
             row.sort_order = _next_positions(db, row.patient_id, [day]).get(day, 0)
-    if "sets" in touched:
-        row.sets = _count(patch["sets"], "Sets")
-    if "reps" in touched:
-        row.reps = _count(patch["reps"], "Reps")
-    if "hold_seconds" in touched:
-        row.hold_seconds = _count(patch["hold_seconds"], "Hold")
-    if "side" in touched:
-        row.side = _side(patch["side"])
-    if "load_kg" in touched:
-        row.load_kg = _load(patch["load_kg"])
-    if "rpe_target" in touched:
-        row.rpe_target = _scale(patch["rpe_target"], "Target effort")
-    if "video_requirement" in touched:
-        row.video_requirement = _requirement(patch["video_requirement"], "The clip requirement")
-    if "wearable_requirement" in touched:
-        row.wearable_requirement = _requirement(patch["wearable_requirement"],
-                                                "The wearable requirement")
-    if "clinician_instructions" in touched:
-        row.clinician_instructions = _text(patch["clinician_instructions"])
-    if "assigned_by" in touched:
-        row.assigned_by = _member(db, patch["assigned_by"], row.assigned_by)
-    if "sort_order" in touched:
-        order = patch["sort_order"]
-        if order is None or int(order) < 0:
-            raise HepError("Position must be zero or more")
+    for name, value in clean.items():
+        setattr(row, name, value)
+    if order is not None:
         row.sort_order = int(order)
     row.updated_at = datetime.now()
     audit(db, clinic, actor, "assignment.update", "assignment", row.id,
           {"fields": sorted(touched)})
     db.commit()
     return row
+
+
+def _open_from(rows: list[ExerciseAssignment], from_day: date) -> list[ExerciseAssignment]:
+    """A series' rows an edit may still touch: assigned, on ``from_day`` or
+    later. Done and skipped days are the record and stay."""
+    return [r for r in rows if r.status == "assigned" and r.scheduled_for >= from_day]
+
+
+def update_series(
+    db: Session, clinic: str, series_id: str, patch: dict[str, Any], *, from_day: date,
+    actor: str,
+) -> list[ExerciseAssignment]:
+    """Re-dose or re-word "this and the following": the patch goes onto
+    every still-open row of the series from ``from_day`` on. Days already
+    done or skipped, and open days before it, keep what they had. Returns
+    the rows changed."""
+    rows = series_rows(db, clinic, series_id)
+    if not rows:
+        raise UnknownRow(f"Unknown series: {series_id}")
+    touched = {k for k in patch if k in SERIES_EDITABLE}
+    if not touched:
+        raise HepError("Nothing to change")
+    clean = _clean_patch(db, patch, touched)
+    changed = _open_from(rows, from_day)
+    if not changed:
+        return []
+    now = datetime.now()
+    for row in changed:
+        for name, value in clean.items():
+            setattr(row, name, value)
+        row.updated_at = now
+    audit(db, clinic, actor, "series.update", "series", series_id, {
+        "ids": [r.id for r in changed], "from": from_day.isoformat(), "fields": sorted(touched),
+    })
+    db.commit()
+    return changed
+
+
+def delete_series(db: Session, clinic: str, series_id: str, *, from_day: date,
+                  actor: str) -> tuple[int, int]:
+    """Clear "this and the following": remove the series' still-open rows
+    from ``from_day`` on. Returns how many went and how many of the series
+    remain (the done, the skipped, the earlier)."""
+    rows = series_rows(db, clinic, series_id)
+    if not rows:
+        raise UnknownRow(f"Unknown series: {series_id}")
+    gone = _open_from(rows, from_day)
+    if not gone:
+        return 0, len(rows)
+    audit(db, clinic, actor, "series.delete", "series", series_id, {
+        "ids": [r.id for r in gone], "from": from_day.isoformat(),
+        "patient_id": gone[0].patient_id, "exercise_id": gone[0].exercise_id,
+    })
+    for row in gone:
+        db.delete(row)
+    db.commit()
+    return len(gone), len(rows) - len(gone)
+
+
+def duplicate_assignment(
+    db: Session, clinic: str, row: ExerciseAssignment, dates: list[date], *, actor: str,
+    today: date,
+) -> list[ExerciseAssignment]:
+    """The same exercise at the same dose, note and requirements on other
+    days: what dragging a chip with the copy key does. The copies are open
+    days of their own, signed by whoever assigned the one copied, and not
+    part of its series. All or nothing, like an assignment made by hand: a
+    day that already carries the exercise refuses the request, naming it."""
+    exercise = _exercise_for(db, clinic, row.exercise_id)
+    days = sorted(set(dates))
+    if not days:
+        raise HepError("Pick at least one day")
+    if len(days) > MAX_DATES:
+        raise HepError(f"One copy covers at most {MAX_DATES} days")
+    for day in days:
+        _in_reach(day, today)
+    taken = _taken(db, row.patient_id, row.exercise_id, days)
+    if taken:
+        raise ScheduleConflict(_taken_text(exercise, taken))
+    positions = _next_positions(db, row.patient_id, days)
+    now = datetime.now()
+    copies = []
+    for day in days:
+        copy = ExerciseAssignment(
+            hospital_id=clinic, patient_id=row.patient_id, exercise_id=row.exercise_id,
+            scheduled_for=day, sort_order=positions.get(day, 0), assigned_by=row.assigned_by,
+            status="assigned", created_at=now, updated_at=now, **placement_fields(row),
+        )
+        db.add(copy)
+        copies.append(copy)
+    db.flush()
+    audit(db, clinic, actor, "assignment.duplicate", "assignment", row.id, {
+        "ids": [c.id for c in copies], "patient_id": row.patient_id,
+        "exercise_id": row.exercise_id, "dates": [d.isoformat() for d in days],
+    })
+    db.commit()
+    return copies
 
 
 def delete_assignment(db: Session, clinic: str, row: ExerciseAssignment, *, actor: str) -> None:
@@ -526,6 +783,30 @@ def complete_assignment(
     return row
 
 
+def reopen_assignment(db: Session, clinic: str, row: ExerciseAssignment, *,
+                      actor: str) -> ExerciseAssignment:
+    """Undo a day the console logged done: the row is open again, as if she
+    had not logged it, and a review of it goes with it. A day the patient
+    logged from the app (or by text) is their record and is not undone
+    here. A session the patient had started on the phone keeps its start."""
+    if row.status != "done":
+        raise ScheduleConflict("That day is not marked done; there is nothing to undo")
+    if row.completion_source != "console":
+        raise ScheduleConflict("That day was logged by the patient; their record stays "
+                               "as they sent it")
+    row.status = "assigned"
+    row.completed_at = row.pain_after = row.effort = None
+    row.sets_done = row.reps_done = row.load_done_kg = None
+    row.note = row.completion_source = None
+    row.ended_at = row.duration_s = row.hr_avg = row.hr_max = None
+    row.reviewed_at = row.reviewed_by = row.review_note = None
+    row.updated_at = datetime.now()
+    audit(db, clinic, actor, "assignment.reopen", "assignment", row.id,
+          {"patient_id": row.patient_id})
+    db.commit()
+    return row
+
+
 def skip_assignment(db: Session, row: ExerciseAssignment, *, reason: str) -> ExerciseAssignment:
     ensure_open(row)
     row.status = "skipped"
@@ -587,22 +868,118 @@ def review_assignment(
     return row, message
 
 
-def review_queue(db: Session, clinic: str, *, days: int,
-                 now: datetime | None = None) -> list[ExerciseAssignment]:
-    """What is waiting for the therapist: the clinic's done days with a
-    clip and no review, finished in the last ``days``, newest first."""
+# --- done against prescribed --------------------------------------------------------
+
+
+def _against(done: Any, prescribed: Any) -> dict[str, Any]:
+    """One part of a dose as it was done and as it was written. ``delta``
+    is done minus prescribed, and nothing when either is unknown."""
+    delta = None
+    if done is not None and prescribed is not None:
+        delta = round(done - prescribed, 2)
+        delta = int(delta) if delta == int(delta) else delta
+    return {"done": done, "prescribed": prescribed, "delta": delta}
+
+
+def _counted(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def done_against_prescribed(row: ExerciseAssignment, unit: str = "kg") -> dict[str, Any]:
+    """What a done day did against what was written, with no opinion on it.
+
+    ``performed`` sets each of sets, reps, load and effort beside its dose
+    (effort beside the target RPE). ``over`` is true when the lifter did
+    more than was written: more sets, more reps, a heavier load, or an
+    effort ``EFFORT_MARGIN`` or more above the target. ``under`` is the same
+    the other way. A load reported where none was written counts as heavier;
+    a part nobody reported is not compared. ``line`` says the differences in
+    a sentence ("16 kg done, 10 kg prescribed"), "Done as prescribed" when
+    what was reported matches, and nothing when nothing was reported.
+    """
+    sets = _against(row.sets_done, row.sets)
+    reps = _against(row.reps_done, row.reps)
+    load = _against(row.load_done_kg, row.load_kg)
+    if row.load_done_kg is not None and row.load_kg is None:
+        load["delta"] = _against(row.load_done_kg, 0)["delta"]
+    effort = _against(row.effort, row.rpe_target)
+    counted = [p["delta"] for p in (sets, reps, load) if p["delta"] is not None]
+    felt = effort["delta"]
+    parts: list[str] = []
+    if sets["delta"]:
+        parts.append(f"{_counted(row.sets_done, 'set')} done, {row.sets} prescribed")
+    if reps["delta"]:
+        parts.append(f"{_counted(row.reps_done, 'rep')} done, {row.reps} prescribed")
+    if load["delta"]:
+        written = (f"{load_text(row.load_kg, unit)} prescribed" if row.load_kg is not None
+                   else "no load prescribed")
+        parts.append(f"{load_text(row.load_done_kg, unit)} done, {written}")
+    if felt:
+        parts.append(f"effort {row.effort}, target {row.rpe_target}")
+    if parts:
+        line = " · ".join(parts)
+    elif counted or felt is not None:
+        line = "Done as prescribed"
+    else:
+        line = None
+    return {
+        "performed": {"sets": sets, "reps": reps, "load_kg": load, "effort": effort},
+        "over": any(d > 0 for d in counted) or (felt is not None and felt >= EFFORT_MARGIN),
+        "under": any(d < 0 for d in counted) or (felt is not None and felt <= -EFFORT_MARGIN),
+        "line": line,
+    }
+
+
+def went_over(row: ExerciseAssignment) -> bool:
+    """A done day on which the lifter did more than was written."""
+    return row.status == "done" and done_against_prescribed(row)["over"]
+
+
+# --- to review ----------------------------------------------------------------------
+
+
+def review_reason(row: ExerciseAssignment) -> str | None:
+    """Why a row waits for the therapist, or nothing when it does not. The
+    one definition of "to review", used by the queue, its count, the grid's
+    and the worklist's numbers and each row's own flag: a done day nobody
+    has reviewed that carries a clip of the attempt (``clip``) or, without
+    one, went over the dose (``over``)."""
+    if row.status != "done" or row.reviewed_at is not None:
+        return None
+    if row.video_attachment_id is not None:
+        return "clip"
+    return "over" if went_over(row) else None
+
+
+def to_review(
+    db: Session, *, clinic: str | None = None, patient_ids: list[str] | None = None,
+    days: int = REVIEW_DAYS, now: datetime | None = None,
+) -> list[ExerciseAssignment]:
+    """The rows waiting for the therapist (``review_reason``) among those
+    finished in the last ``days``, newest first: a clinic's, or the given
+    patients'. One query, however many rows."""
     if not 1 <= days <= MAX_REVIEW_DAYS:
         raise HepError(f"Look back between 1 and {MAX_REVIEW_DAYS} days")
-    since = (now or datetime.now()) - timedelta(days=days)
-    return db.scalars(
-        select(ExerciseAssignment).where(
-            ExerciseAssignment.hospital_id == clinic,
-            ExerciseAssignment.status == "done",
-            ExerciseAssignment.video_attachment_id.is_not(None),
-            ExerciseAssignment.reviewed_at.is_(None),
-            ExerciseAssignment.completed_at >= since,
-        ).order_by(ExerciseAssignment.completed_at.desc(), ExerciseAssignment.id.desc())
-    ).all()
+    if patient_ids is not None and not patient_ids:
+        return []
+    q = select(ExerciseAssignment).where(
+        ExerciseAssignment.status == "done",
+        ExerciseAssignment.reviewed_at.is_(None),
+        ExerciseAssignment.completed_at >= (now or datetime.now()) - timedelta(days=days),
+    )
+    if clinic is not None:
+        q = q.where(ExerciseAssignment.hospital_id == clinic)
+    if patient_ids is not None:
+        q = q.where(ExerciseAssignment.patient_id.in_(patient_ids))
+    rows = db.scalars(q.order_by(ExerciseAssignment.completed_at.desc(),
+                                 ExerciseAssignment.id.desc())).all()
+    return [r for r in rows if review_reason(r) is not None]
+
+
+def review_queue(db: Session, clinic: str, *, days: int,
+                 now: datetime | None = None) -> list[ExerciseAssignment]:
+    """What is waiting for the therapist at this clinic, newest first."""
+    return to_review(db, clinic=clinic, days=days, now=now)
 
 
 # --- placing many days at once --------------------------------------------------------
@@ -611,12 +988,21 @@ def review_queue(db: Session, clinic: str, *, days: int,
 @dataclass
 class Placement:
     """One row to put on a patient's day, with the fields it carries; what
-    a copied week and an applied program are made of."""
+    a copied week, a repeat and an applied program are made of."""
 
     exercise: Exercise
     day: date
     assigned_by: str
     fields: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Skip:
+    """A day a write of many days left out, and why (``SKIP_REASONS``)."""
+
+    exercise: Exercise
+    day: date
+    reason: str
 
 
 def placement_fields(row: ExerciseAssignment) -> dict[str, Any]:
@@ -632,28 +1018,34 @@ def placement_fields(row: ExerciseAssignment) -> dict[str, Any]:
 
 def place_rows(
     db: Session, clinic: str, patient: Patient, placements: list[Placement], *, actor: str,
-    today: date, action: str, detail: dict[str, Any],
-) -> tuple[list[ExerciseAssignment], int]:
+    today: date, action: str, detail: dict[str, Any], series_id: str | None = None,
+) -> tuple[list[ExerciseAssignment], list[Skip]]:
     """Write many days in one go, each after whatever its day already holds.
     A day that already carries the exercise is skipped, not refused: a copy
-    or a program lands around what the therapist put there by hand. Returns
-    the rows written and how many were skipped."""
-    days = sorted({p.day for p in placements})
-    for day in days:
-        _in_reach(day, today)
+    or a program lands around what the therapist put there by hand. A day
+    outside the schedule's reach is skipped too, so a twelve-week program
+    started next month places what fits. Only a request with no day in
+    reach at all is refused. Returns the rows written and what was left
+    out, in the order asked."""
+    reachable = sorted({p.day for p in placements if in_reach(p.day, today)})
+    if placements and not reachable:
+        raise HepError(f"None of those days is in reach: {reach_text()}")
     taken = set(db.execute(
         select(ExerciseAssignment.exercise_id, ExerciseAssignment.scheduled_for).where(
             ExerciseAssignment.patient_id == patient.id,
-            ExerciseAssignment.scheduled_for.in_(days),
+            ExerciseAssignment.scheduled_for.in_(reachable),
         )
     ).all())
-    positions = _next_positions(db, patient.id, days)
+    positions = _next_positions(db, patient.id, reachable)
     now = datetime.now()
     rows: list[ExerciseAssignment] = []
-    skipped = 0
+    skips: list[Skip] = []
     for p in placements:
+        if not in_reach(p.day, today):
+            skips.append(Skip(p.exercise, p.day, SKIP_OUT_OF_REACH))
+            continue
         if (p.exercise.id, p.day) in taken:
-            skipped += 1
+            skips.append(Skip(p.exercise, p.day, SKIP_ALREADY_THERE))
             continue
         taken.add((p.exercise.id, p.day))
         order = positions.get(p.day, 0)
@@ -661,31 +1053,50 @@ def place_rows(
         row = ExerciseAssignment(
             hospital_id=clinic, patient_id=patient.id, exercise_id=p.exercise.id,
             scheduled_for=p.day, sort_order=order, assigned_by=p.assigned_by, status="assigned",
-            created_at=now, updated_at=now, **p.fields,
+            series_id=series_id, created_at=now, updated_at=now, **p.fields,
         )
         db.add(row)
         rows.append(row)
     db.flush()
     if rows:
         audit(db, clinic, actor, action, "assignment", rows[0].id, {
-            **detail, "patient_id": patient.id, "ids": [r.id for r in rows], "skipped": skipped,
+            **detail, "patient_id": patient.id, "ids": [r.id for r in rows],
+            "skipped": len(skips),
         })
     db.commit()
-    return rows, skipped
+    return rows, skips
+
+
+def skipped_payload(skips: list[Skip]) -> dict[str, Any]:
+    """What a write of many days left out, as its response says it: how
+    many, how many for each reason, and each day with a sentence."""
+    def sentence(skip: Skip) -> str:
+        if skip.reason == SKIP_OUT_OF_REACH:
+            return f"{skip.day.isoformat()} is out of reach: {reach_text()}"
+        return _taken_text(skip.exercise, [skip.day])
+
+    return {
+        "skipped": len(skips),
+        "skipped_reasons": {reason: sum(s.reason == reason for s in skips)
+                            for reason in SKIP_REASONS},
+        "skipped_days": [
+            {"date": s.day.isoformat(), "exercise_id": s.exercise.id, "title": s.exercise.title,
+             "reason": s.reason, "detail": sentence(s)}
+            for s in skips
+        ],
+    }
 
 
 def copy_week(
     db: Session, clinic: str, *, patient_id: str, from_start: date, to_start: date,
     assigned_by: str | None, actor: str, today: date,
-) -> tuple[list[ExerciseAssignment], int]:
+) -> tuple[list[ExerciseAssignment], list[Skip]]:
     """Every assignment of the seven days from ``from_start`` on the same
     weekday from ``to_start``, dose, note and requirements with it; a day
-    that already has the exercise is skipped. The rows are assigned by the
-    member named, else by whoever assigned the day being copied."""
-    try:
-        patient = clinic_patient(db, clinic, patient_id)
-    except HepError as e:
-        raise UnknownRow(str(e))
+    that already has the exercise, or lies out of reach, is skipped. The
+    rows are assigned by the member named, else by whoever assigned the day
+    being copied."""
+    patient = _patient_for(db, clinic, patient_id)
     if from_start == to_start:
         raise HepError("Pick a different week to copy to")
     source = [r for r in patient_rows(db, patient.id, from_start, from_start + timedelta(days=WEEK))
@@ -711,21 +1122,25 @@ def copy_week(
 
 class AssignmentView:
     """Renders assignment payloads for one request, sharing the lookups the
-    rows have in common — exercises, the clinic's clips, members, the
-    patients' return clips — so a week of a clinic's grid costs a handful of
-    queries rather than one per chip. ``patient_app`` drops the clinic id
-    and points media at the route the patient's session can reach."""
+    rows have in common — exercises, the clinic's clips and unit, members,
+    the patients' return clips — so a week of a clinic's grid costs a
+    handful of queries rather than one per chip. ``today`` is the day each
+    row's ``state`` is read on (the server's unless the request said).
+    ``patient_app`` drops the clinic id and points media at the route the
+    patient's session can reach."""
 
-    def __init__(self, db: Session, *, patient_app: bool = False):
+    def __init__(self, db: Session, *, patient_app: bool = False, today: date | None = None):
         self.db = db
         self.patient_app = patient_app
+        self.today = today or date.today()
         self.route = PATIENT_MEDIA_ROUTE if patient_app else CONSOLE_MEDIA_ROUTE
         self._exercises: dict[int, Exercise | None] = {}
         self._clips: dict[str, dict[int, ExerciseMedia]] = {}
         self._members: dict[str, CareTeamMember | None] = {}
         self._attachments: dict[int, Attachment | None] = {}
+        self._units: dict[str, str] = {}
 
-    def _exercise(self, exercise_id: int) -> Exercise | None:
+    def exercise(self, exercise_id: int) -> Exercise | None:
         if exercise_id not in self._exercises:
             self._exercises[exercise_id] = self.db.get(Exercise, exercise_id)
         return self._exercises[exercise_id]
@@ -734,6 +1149,12 @@ class AssignmentView:
         if clinic not in self._clips:
             self._clips[clinic] = clinic_clips(self.db, clinic)
         return resolve_clip(self.db, clinic, exercise, self._clips[clinic])
+
+    def unit(self, clinic: str) -> str:
+        """The unit this clinic reads loads in, for the strings built here."""
+        if clinic not in self._units:
+            self._units[clinic] = load_unit_of(self.db.get(Hospital, clinic))
+        return self._units[clinic]
 
     def member_name(self, member_id: str | None) -> str | None:
         if not member_id:
@@ -753,6 +1174,10 @@ class AssignmentView:
             return None
         return media_payload(clip, route=self.route,
                              uploaded_by_name=self.member_name(clip.uploaded_by))
+
+    def dose(self, row: ExerciseAssignment) -> str:
+        return dose_text(row.sets, row.reps, row.hold_seconds, row.side, load_kg=row.load_kg,
+                         load_unit=self.unit(row.hospital_id))
 
     @staticmethod
     def session(row: ExerciseAssignment) -> dict[str, Any] | None:
@@ -787,6 +1212,7 @@ class AssignmentView:
         from app.api.attachments import attachment_view
 
         attachment = self._attachment(row.video_attachment_id) if row.video_attachment_id else None
+        reason = review_reason(row)
         return {
             "completed_at": row.completed_at.isoformat() if row.completed_at else None,
             "pain_after": row.pain_after,
@@ -798,12 +1224,15 @@ class AssignmentView:
             "reps_done": row.reps_done,
             "load_done_kg": row.load_done_kg,
             "review": self.review(row),
-            # A clip nobody has looked at yet: what the review queue lists.
-            "awaiting_review": attachment is not None and row.reviewed_at is None,
+            # Waiting for the therapist's look, and why: a clip nobody has
+            # looked at yet, or a day that went over the dose.
+            "awaiting_review": reason is not None,
+            "review_reason": reason,
+            **done_against_prescribed(row, self.unit(row.hospital_id)),
         }
 
     def render(self, row: ExerciseAssignment) -> dict[str, Any]:
-        e = self._exercise(row.exercise_id)
+        e = self.exercise(row.exercise_id)
         clip = self._clip(row.hospital_id, e) if e else None
         payload = {
             "id": row.id,
@@ -821,16 +1250,18 @@ class AssignmentView:
             "precautions": (e.precautions or "") if e else "",
             "scheduled_for": row.scheduled_for.isoformat(),
             "sort_order": row.sort_order,
+            "series_id": row.series_id,
             "sets": row.sets, "reps": row.reps, "hold_seconds": row.hold_seconds,
             "side": row.side, "side_label": SIDE_LABELS.get(row.side, ""),
             "load_kg": row.load_kg, "rpe_target": row.rpe_target,
-            "dose": dose_text(row.sets, row.reps, row.hold_seconds, row.side, load_kg=row.load_kg),
+            "dose": self.dose(row),
             "clinician_instructions": row.clinician_instructions or "",
             "assigned_by": row.assigned_by,
             "assigned_by_name": self.member_name(row.assigned_by),
             "video_requirement": row.video_requirement or "optional",
             "wearable_requirement": row.wearable_requirement or "optional",
             "status": row.status,
+            "state": state_of(row, self.today),
             "video": self.video(clip),
             "session": self.session(row),
             "completion": self.completion(row),
@@ -844,6 +1275,39 @@ class AssignmentView:
 
     def render_all(self, rows: list[ExerciseAssignment]) -> list[dict[str, Any]]:
         return [self.render(r) for r in rows]
+
+    def compact(self, row: ExerciseAssignment) -> dict[str, Any]:
+        """A row as a month view draws it: what it is, where it stands and
+        how it went, with no steps, no clip URLs and nothing to presign."""
+        e = self.exercise(row.exercise_id)
+        reason = review_reason(row)
+        compared = (done_against_prescribed(row, self.unit(row.hospital_id))
+                    if row.status == "done" else None)
+        return {
+            "id": row.id,
+            "patient_id": row.patient_id,
+            "exercise_id": row.exercise_id,
+            "title": e.title if e else "",
+            "scheduled_for": row.scheduled_for.isoformat(),
+            "sort_order": row.sort_order,
+            "series_id": row.series_id,
+            "status": row.status,
+            "state": state_of(row, self.today),
+            "dose": self.dose(row),
+            "load_kg": row.load_kg,
+            "rpe_target": row.rpe_target,
+            "video_requirement": row.video_requirement or "optional",
+            "pain_after": row.pain_after,
+            "effort": row.effort,
+            "over": bool(compared and compared["over"]),
+            "under": bool(compared and compared["under"]),
+            "line": compared["line"] if compared else None,
+            "awaiting_review": reason is not None,
+            "review_reason": reason,
+            # The lifter's own clip of the attempt, not her demonstration.
+            "has_clip": row.video_attachment_id is not None,
+            "reviewed": row.reviewed_at is not None,
+        }
 
 
 def pathway_of(patient: Patient) -> str:
@@ -872,40 +1336,67 @@ def tonnage(row: ExerciseAssignment) -> float:
     return float(load) * int(reps) * int(sets or 1)
 
 
+def planned_tonnage(row: ExerciseAssignment) -> float:
+    """What a day was written to move, in kilograms: the prescribed load ×
+    reps × sets, whatever came of the day."""
+    if not row.load_kg or not row.reps:
+        return 0.0
+    return float(row.load_kg) * int(row.reps) * int(row.sets or 1)
+
+
+def done_load(rows: list[ExerciseAssignment]) -> float:
+    return round(sum(tonnage(r) for r in rows if r.status == "done"), 1)
+
+
+def planned_load(rows: list[ExerciseAssignment]) -> float:
+    return round(sum(planned_tonnage(r) for r in rows), 1)
+
+
 def _pct(part: int, whole: int) -> int | None:
     return round(100 * part / whole) if whole else None
+
+
+def change_pct(now: float, before: float) -> int | None:
+    """How far ``now`` is from ``before``, as a whole percentage of
+    ``before``; nothing when there is no ``before`` to stand on."""
+    return round(100 * (now - before) / before) if before else None
 
 
 class WeekStats:
     """The numbers under a patient's name on the grid and the worklist: how
     the seven days ending today went, what they lifted against the week
-    before, and how many clips wait for a look. Two queries for a whole
-    clinic, however many rows it has."""
+    before, what is written for this calendar week and the next, and how
+    many done days wait for a look. Two queries for a whole clinic, however
+    many rows it has."""
 
     def __init__(self, db: Session, patient_ids: list[str], today: date):
         self.today = today
+        self.monday = week_start(today)
         self.rows: dict[str, list[ExerciseAssignment]] = {pid: [] for pid in patient_ids}
         self.waiting: dict[str, int] = {}
         if not patient_ids:
             return
+        # From the start of the seven days before the seven ending today
+        # (never later than last week's Monday) through next week's Sunday.
         for row in db.scalars(select(ExerciseAssignment).where(
                 ExerciseAssignment.patient_id.in_(patient_ids),
                 ExerciseAssignment.scheduled_for >= today - timedelta(days=2 * WEEK - 1),
-                ExerciseAssignment.scheduled_for <= today)):
+                ExerciseAssignment.scheduled_for < self.monday + timedelta(days=2 * WEEK))):
             self.rows.setdefault(row.patient_id, []).append(row)
-        self.waiting = dict(db.execute(
-            select(ExerciseAssignment.patient_id, func.count(ExerciseAssignment.id)).where(
-                ExerciseAssignment.patient_id.in_(patient_ids),
-                ExerciseAssignment.status == "done",
-                ExerciseAssignment.video_attachment_id.is_not(None),
-                ExerciseAssignment.reviewed_at.is_(None),
-            ).group_by(ExerciseAssignment.patient_id)
-        ).all())
+        for row in to_review(db, patient_ids=patient_ids):
+            self.waiting[row.patient_id] = self.waiting.get(row.patient_id, 0) + 1
 
     def _week(self, patient_id: str, weeks_back: int) -> list[ExerciseAssignment]:
         end = self.today - timedelta(days=WEEK * weeks_back)
         start = end - timedelta(days=WEEK - 1)
         return [r for r in self.rows.get(patient_id, []) if start <= r.scheduled_for <= end]
+
+    def _calendar_week(self, patient_id: str, offset: int) -> list[ExerciseAssignment]:
+        """The rows of a Monday-to-Sunday week: this one (0), the one before
+        (−1) or the one after (1)."""
+        start = self.monday + timedelta(days=WEEK * offset)
+        end = start + timedelta(days=WEEK)
+        return [r for r in self.rows.get(patient_id, []) if start <= r.scheduled_for < end]
 
     def adherence(self, patient_id: str) -> dict[str, Any]:
         week = self._week(patient_id, 0)
@@ -918,12 +1409,35 @@ class WeekStats:
             "pct": _pct(done, len(week)),
         }
 
+    def over_week(self, patient_id: str) -> int:
+        """How many of the seven days' done rows went over the dose."""
+        return sum(went_over(r) for r in self._week(patient_id, 0))
+
     def load_week(self, patient_id: str) -> dict[str, Any]:
-        this = round(sum(tonnage(r) for r in self._week(patient_id, 0) if r.status == "done"), 1)
-        last = round(sum(tonnage(r) for r in self._week(patient_id, 1) if r.status == "done"), 1)
+        """Tonnage in the lifter's own terms. ``this``/``last`` are the seven
+        days ending today and the seven before, as done. The rest is by
+        calendar week: what was done this week and last, what is written
+        (every row at its prescribed dose, whatever came of it) for last
+        week, this week and next, and plain changes between them. No ratio
+        and no line drawn: the therapist reads the numbers."""
+        this = done_load(self._week(patient_id, 0))
+        last = done_load(self._week(patient_id, 1))
+        before, current, coming = (self._calendar_week(patient_id, n) for n in (-1, 0, 1))
+        done_this, done_last = done_load(current), done_load(before)
+        planned_this, planned_next = planned_load(current), planned_load(coming)
         return {
-            "this": this, "last": last,
-            "change_pct": round(100 * (this - last) / last) if last else None,
+            "this": this, "last": last, "change_pct": change_pct(this, last),
+            "week_start": self.monday.isoformat(),
+            "done_this_week": done_this,
+            "done_last_week": done_last,
+            "done_change_pct": change_pct(done_this, done_last),
+            "planned_last_week": planned_load(before),
+            "planned_this_week": planned_this,
+            "planned_next_week": planned_next,
+            # Next week as written against this week as written.
+            "planned_change_pct": change_pct(planned_next, planned_this),
+            # This week as written against what was actually done last week.
+            "planned_vs_last_done_pct": change_pct(planned_this, done_last),
         }
 
     def awaiting_review(self, patient_id: str) -> int:
@@ -931,15 +1445,17 @@ class WeekStats:
 
     def worklist(self, patient_id: str) -> dict[str, Any] | None:
         """The worklist card's line, or nothing for a chart with no exercise
-        on the seven days ending today."""
+        on the seven days ending today and nothing waiting for a look."""
         week = self._week(patient_id, 0)
-        if not week:
+        waiting = self.awaiting_review(patient_id)
+        if not week and not waiting:
             return None
         done = sum(r.status == "done" for r in week)
         return {
             "assigned": len(week), "done": done, "pct": _pct(done, len(week)),
-            "awaiting_review": sum(r.status == "done" and r.video_attachment_id is not None
-                                   and r.reviewed_at is None for r in week),
+            "awaiting_review": waiting,
+            "over": sum(went_over(r) for r in week),
+            "missed": sum(r.status == "assigned" and r.scheduled_for < self.today for r in week),
         }
 
 
@@ -964,23 +1480,12 @@ def patient_card(db: Session, patient: Patient, view: AssignmentView,
         "adherence": stats.adherence(patient.id),
         "load_week": stats.load_week(patient.id),
         "awaiting_review": stats.awaiting_review(patient.id),
+        "over_week": stats.over_week(patient.id),
     }
 
 
-def care_team_payload(db: Session, clinic: str, patients: list[Patient],
-                      rows: list[ExerciseAssignment]) -> list[dict[str, Any]]:
-    """Who can be named as having assigned a day: the therapists carrying
-    these patients, anyone already named on a row in view, and the house
-    list for a clinic that has one. In practice, the clinic's therapists."""
-    ids = {p.assigned_provider_id for p in patients if p.assigned_provider_id}
-    ids |= {r.assigned_by for r in rows if r.assigned_by}
-    ids |= set(HOUSE_CARE_TEAM.get(clinic, ()))
-    if not ids:
-        return []
-    members = db.scalars(
-        select(CareTeamMember).where(CareTeamMember.id.in_(ids)).order_by(CareTeamMember.name)
-    ).all()
-    return [{"id": m.id, "name": m.name, "role": str(m.role)} for m in members]
+def to_review_payload(count: int) -> dict[str, Any]:
+    return {"count": count, "days": REVIEW_DAYS}
 
 
 def schedule_payload(db: Session, clinic: str, *, start: date | None, days: int, today: date,
@@ -997,7 +1502,7 @@ def schedule_payload(db: Session, clinic: str, *, start: date | None, days: int,
     end = start + timedelta(days=days)
     rows = clinic_rows(db, clinic, start, end,
                        [p.id for p in patients] if patient_id is not None else None)
-    view = AssignmentView(db)
+    view = AssignmentView(db, today=today)
     stats = WeekStats(db, [p.id for p in patients], today)
     by_patient: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -1006,11 +1511,14 @@ def schedule_payload(db: Session, clinic: str, *, start: date | None, days: int,
         "start": start.isoformat(),
         "days": [d.isoformat() for d in days_of(start, days)],
         "today": today.isoformat(),
+        "clinic": clinic_payload(db, clinic),
         "patients": [
             {**patient_card(db, p, view, stats), "assignments": by_patient.get(p.id, [])}
             for p in patients
         ],
-        "care_team": care_team_payload(db, clinic, patients, rows),
+        "care_team": clinic_care_team(db, clinic),
+        # The same count the review queue lists, for the charts in view.
+        "to_review": to_review_payload(sum(stats.awaiting_review(p.id) for p in patients)),
     }
 
 
@@ -1021,40 +1529,71 @@ def patient_schedule_payload(db: Session, clinic: str, patient: Patient, *, star
     start = start or week_start(today)
     rows = [r for r in patient_rows(db, patient.id, start, start + timedelta(days=days))
             if r.hospital_id == clinic]
-    view = AssignmentView(db)
+    view = AssignmentView(db, today=today)
     return {
         "patient": patient_card(db, patient, view, WeekStats(db, [patient.id], today)),
         "start": start.isoformat(),
         "days": [d.isoformat() for d in days_of(start, days)],
         "today": today.isoformat(),
+        "clinic": clinic_payload(db, clinic),
         "assignments": view.render_all(rows),
     }
 
 
 def review_queue_payload(db: Session, clinic: str, *, days: int) -> dict[str, Any]:
-    """The clips waiting for a look, newest first, each saying whose it is."""
+    """What waits for a look, newest first, each row saying whose it is and
+    why it is here (``reason``: a clip, or over the dose)."""
     rows = review_queue(db, clinic, days=days)
     names = dict(db.execute(select(Patient.id, Patient.name).where(
         Patient.id.in_({r.patient_id for r in rows}))).all()) if rows else {}
     view = AssignmentView(db)
-    return {"items": [{**view.render(r), "patient_name": names.get(r.patient_id)} for r in rows]}
+    return {
+        "items": [{**view.render(r), "patient_name": names.get(r.patient_id),
+                   "reason": review_reason(r)} for r in rows],
+        "count": len(rows),
+        "days": days,
+    }
+
+
+def review_count_payload(db: Session, clinic: str, *, days: int) -> dict[str, Any]:
+    """How many rows wait for a look, and for which reason: the number
+    beside Review in the navigation. One query."""
+    reasons = [review_reason(r) for r in review_queue(db, clinic, days=days)]
+    return {
+        "count": len(reasons),
+        "days": days,
+        "by_reason": {reason: reasons.count(reason) for reason in REVIEW_REASONS},
+    }
 
 
 def _clinic_of(db: Session, patient: Patient) -> dict[str, Any] | None:
-    hospital = db.get(Hospital, patient.hospital_id) if patient.hospital_id else None
-    return {"id": hospital.id, "name": hospital.name} if hospital else None
+    return clinic_payload(db, patient.hospital_id)
 
 
-def today_payload(db: Session, patient: Patient, day: date) -> dict[str, Any]:
+def assignment_payload(db: Session, patient: Patient, row: ExerciseAssignment,
+                       today: date) -> dict[str, Any]:
+    """One of the patient's own days by id, however old: what a texted
+    link opens."""
+    return {
+        "assignment": AssignmentView(db, patient_app=True, today=today).render(row),
+        "today": today.isoformat(),
+        "clinic": _clinic_of(db, patient),
+    }
+
+
+def today_payload(db: Session, patient: Patient, day: date,
+                  today: date | None = None) -> dict[str, Any]:
     """What the patient's Today shows: the day's exercises in order, a
     seven-day strip around it (how many were on each day, how many done),
-    and whose schedule it is."""
+    and whose schedule it is. ``day`` is the day asked for; ``today`` (the
+    server's unless given) is the day each row's state is read on."""
+    today = today or date.today()
     week_days = days_of(day - timedelta(days=3), 7)
     # A week back, not three days: the strip is three each side, but an
     # exercise put on an earlier day and never done still has to reach the
     # phone, as "still to do from earlier this week".
     rows = patient_rows(db, patient.id, day - timedelta(days=7), week_days[-1] + timedelta(days=1))
-    view = AssignmentView(db, patient_app=True)
+    view = AssignmentView(db, patient_app=True, today=today)
     week = []
     for d in week_days:
         on_day = [r for r in rows if r.scheduled_for == d]
@@ -1066,6 +1605,7 @@ def today_payload(db: Session, patient: Patient, day: date) -> dict[str, Any]:
         })
     return {
         "date": day.isoformat(),
+        "today": today.isoformat(),
         "items": view.render_all([r for r in rows if r.scheduled_for == day]),
         "overdue": view.render_all([r for r in rows
                                     if r.scheduled_for < day and r.status == "assigned"]),
@@ -1083,7 +1623,7 @@ def program_payload(db: Session, patient: Patient, *, start: date | None, days: 
         raise HepError(f"Show between 1 and {MAX_PROGRAM_DAYS} days")
     start = start or today - timedelta(days=WEEK)
     rows = patient_rows(db, patient.id, start, start + timedelta(days=days))
-    view = AssignmentView(db, patient_app=True)
+    view = AssignmentView(db, patient_app=True, today=today)
     out = []
     for d in days_of(start, days):
         on_day = [r for r in rows if r.scheduled_for == d]

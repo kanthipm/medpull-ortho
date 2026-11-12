@@ -251,6 +251,11 @@ class ExerciseAssignment(Base):
     )
     scheduled_for: Mapped[date] = mapped_column(Date, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # Shared by the days one "repeat on these weekdays for N weeks" wrote, so
+    # the therapist can re-dose or clear "this and the following" in one go.
+    # Empty on a day placed by hand, copied, duplicated or applied from a
+    # program.
+    series_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hold_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -19,7 +19,15 @@ from app.hep.models import (
     ExercisePlan,
     PlanExercise,
 )
-from app.hep.service import HepError, audit, exercise_payload, media_payload, visible_to
+from app.hep.service import (
+    HepError,
+    audit,
+    clinic_care_team,
+    exercise_payload,
+    load_text,
+    media_payload,
+    visible_to,
+)
 from app.models.mobile import PatientSession
 from app.models.patient import CareTeamMember, Patient
 from app.personal.scope import is_clinic
@@ -301,11 +309,13 @@ def _title(title: str) -> str:
 
 
 def dose_text(sets: int | None, reps: int | None, hold_seconds: int | None, side: str,
-              frequency: str | None = None, load_kg: float | None = None) -> str:
+              frequency: str | None = None, load_kg: float | None = None,
+              load_unit: str = "kg") -> str:
     """The one-line prescription under an exercise ("3 sets × 10 reps · hold
     5 s · Twice a day · Left"). A calendar day has no frequency, so the
     schedule leaves that part out; a lifter's day carries the load instead
-    ("3 sets × 10 reps · 12 kg · Left")."""
+    ("3 sets × 10 reps · 12 kg · Left"), in pounds where the clinic works
+    in pounds."""
     parts = []
     if sets and reps:
         parts.append(f"{sets} sets × {reps} reps")
@@ -316,7 +326,7 @@ def dose_text(sets: int | None, reps: int | None, hold_seconds: int | None, side
     if hold_seconds:
         parts.append(f"hold {hold_seconds} s")
     if load_kg:
-        parts.append(f"{load_kg:g} kg")
+        parts.append(load_text(load_kg, load_unit))
     if frequency:
         parts.append(FREQUENCY_LABELS.get(frequency, frequency))
     if SIDE_LABELS.get(side):
@@ -391,12 +401,12 @@ def options_payload(db: Session, clinic: str) -> dict[str, Any]:
     patients = db.scalars(
         select(Patient).where(Patient.hospital_id == clinic).order_by(Patient.name)
     ).all()
-    members = db.scalars(select(CareTeamMember).order_by(CareTeamMember.name)).all()
     return {
         "frequencies": [{"key": k, "label": FREQUENCY_LABELS[k]} for k in FREQUENCIES],
         "sides": [{"key": k, "label": SIDE_LABELS[k] or "Not applicable"} for k in SIDES],
         "patients": [{"id": p.id, "name": p.name, "has_phone": bool(p.phone)}
                      for p in patients if is_clinic(p)],
-        "care_team": [{"id": m.id, "name": m.name, "role": str(m.role)} for m in members],
+        # The acting clinic's own people, never another clinic's staff.
+        "care_team": clinic_care_team(db, clinic),
         "max_items": MAX_ITEMS,
     }

@@ -107,7 +107,9 @@ def test_load_effort_and_requirements_ride_on_the_day(client, db, tokens, lifter
     assert COMPLETION_KEYS <= set(completion)
     assert completion["effort"] == 6 and completion["sets_done"] == 3
     assert completion["reps_done"] == 8 and completion["load_done_kg"] == 10
-    assert completion["review"] is None and completion["awaiting_review"] is False
+    # no clip, but a load where none was written: it waits for a look as over the dose
+    assert completion["review"] is None and completion["video"] is None
+    assert completion["awaiting_review"] is True and completion["review_reason"] == "over"
     assert done["session"] is None  # nobody started it from a phone
     # a done day keeps its load and target like the rest of its dose; its requirements may change
     assert client.patch(f"/api/hep/schedule/{plain['id']}", headers=hirt_console,
@@ -238,15 +240,17 @@ def test_the_review_lands_on_the_thread_and_leaves_the_queue(client, db, tokens,
         "pain_after": 5, "effort": 8, "video": {"attachment_id": attachment_id}}).status_code == 200
     _log_done(client, hirt_console, plain["id"], pain_after=2)
 
-    # the queue: done days with a clip and no review, newest first, the clinic's own
+    # the queue: done days nobody has reviewed with a clip (or over the dose: the
+    # seeded lifters' own, covered in test_hep_calendar), newest first, the clinic's own
     queue = client.get("/api/hep/review", headers=hirt_console)
     assert queue.status_code == 200, queue.text
     items = queue.json()["items"]
     assert [i["id"] for i in items][:1] == [filmed["id"]]
     assert items[0]["patient_name"] == lifter.name and items[0]["patient_id"] == lifter.id
-    assert items[0]["completion"]["awaiting_review"] is True
-    assert all(i["completion"]["video"] and i["completion"]["review"] is None for i in items)
-    assert plain["id"] not in {i["id"] for i in items}  # no clip, nothing to look at
+    assert items[0]["completion"]["awaiting_review"] is True and items[0]["reason"] == "clip"
+    assert all(i["completion"]["review"] is None for i in items)
+    assert all(bool(i["completion"]["video"]) == (i["reason"] == "clip") for i in items)
+    assert plain["id"] not in {i["id"] for i in items}  # no clip, as prescribed: nothing to look at
     assert client.get("/api/hep/review?days=0", headers=hirt_console).status_code == 422
     assert client.get("/api/hep/review?days=91", headers=hirt_console).status_code == 422
     theirs = client.get("/api/hep/review", headers=other).json()["items"]
@@ -346,7 +350,14 @@ def test_copy_week_carries_dose_note_and_requirements_and_skips_duplicates(clien
     assert slide["sort_order"] == 1 and step["sort_order"] == 0  # the week's order, kept
     # again: every day already has its exercise, so nothing is written and nothing refused
     again = copy()
-    assert again.status_code == 201 and again.json() == {"assignments": [], "skipped": 10}
+    assert again.status_code == 201 and again.json()["assignments"] == []
+    assert again.json()["skipped"] == 10
+    assert again.json()["skipped_reasons"] == {"already_there": 10, "out_of_reach": 0}
+    left_out = again.json()["skipped_days"]
+    assert len(left_out) == 10 and {s["reason"] for s in left_out} == {"already_there"}
+    assert {"date": next_monday.isoformat(), "exercise_id": step_ups["id"], "title": "Step-Ups",
+            "reason": "already_there",
+            "detail": f"Step-Ups is already on {next_monday.isoformat()}"} in left_out
     # a named assigner signs every copied day
     third = copy(to_start=(MONDAY + timedelta(days=14)).isoformat(), assigned_by="ct_harris")
     assert third.status_code == 201 and {r["assigned_by"] for r in third.json()["assignments"]} == {
@@ -406,7 +417,7 @@ def test_programs_are_the_clinics_own_and_apply_on_their_weekdays(client, db, to
     refused(422, items=[{"exercise_id": step_ups["id"],
                          "clinician_instructions": "This will detect a tear"}])
     refused(422, items=[])
-    refused(422, weeks=13)
+    refused(422, weeks=27)  # half a year is the longest a program runs
     refused(422, name="K")
 
     # the list is the clinic's own; another clinic sees none of it and cannot reach it
@@ -454,8 +465,8 @@ def test_programs_are_the_clinics_own_and_apply_on_their_weekdays(client, db, to
     assert len(again.json()["assignments"]) == 10  # the second week only
     assert {r["assigned_by"] for r in again.json()["assignments"]} == {"ct_harris"}
     assert client.post(f"/api/hep/templates/{template['id']}/apply", headers=hirt_console, json={
-        "patient_id": lifter.id, "start": (TODAY + timedelta(days=85)).isoformat(),
-        "weeks": 2}).status_code == 422  # out of reach
+        "patient_id": lifter.id, "start": (TODAY + timedelta(days=91)).isoformat(),
+        "weeks": 2}).status_code == 422  # no day of it is in reach
     assert client.post(f"/api/hep/templates/{template['id']}/apply", headers=hirt_console, json={
         "patient_id": "reyes", "start": MONDAY.isoformat()}).status_code == 404
     db.expire_all()
@@ -504,7 +515,8 @@ def test_the_program_counts_missed_days_and_the_cards_carry_the_week(client, db,
     assert program.status_code == 200, program.text
     body = program.json()
     assert body["start"] == (TODAY - timedelta(days=7)).isoformat() and len(body["days"]) == 14
-    assert body["clinic"] == {"id": "hirt", "name": "H.I.R.T. Physical Therapy"}
+    assert body["clinic"] == {"id": "hirt", "name": "H.I.R.T. Physical Therapy",
+                              "load_unit": "kg"}
     by_date = {d["date"]: d for d in body["days"]}
     assert [d["date"] for d in body["days"]] == [
         (TODAY + timedelta(days=i)).isoformat() for i in range(-7, 7)]
@@ -521,7 +533,9 @@ def test_the_program_counts_missed_days_and_the_cards_carry_the_week(client, db,
                       params={"start": last_week.isoformat(), "days": 35}).json()
     assert wide["days"][0]["date"] == last_week.isoformat() and wide["days"][0]["done"] == 1
     assert len(wide["days"]) == 35
-    assert client.get("/api/mobile/exercises/program?days=36", headers=session).status_code == 422
+    six_weeks = client.get("/api/mobile/exercises/program?days=42", headers=session)
+    assert six_weeks.status_code == 200 and len(six_weeks.json()["days"]) == 42  # a month view
+    assert client.get("/api/mobile/exercises/program?days=43", headers=session).status_code == 422
     assert client.get("/api/mobile/exercises/program?days=0", headers=session).status_code == 422
     assert client.get("/api/mobile/exercises/program").status_code == 401
 
@@ -529,8 +543,10 @@ def test_the_program_counts_missed_days_and_the_cards_carry_the_week(client, db,
     card = client.get("/api/hep/schedule", params={"today": TODAY.isoformat(), "patient_id": lifter.id},
                       headers=hirt_console).json()["patients"][0]
     assert card["adherence"] == {"assigned": 4, "done": 1, "skipped": 0, "missed": 2, "pct": 25}
-    assert card["load_week"] == {"this": 360.0, "last": 300.0, "change_pct": 20}
-    assert card["awaiting_review"] == 0
+    rolling = {k: card["load_week"][k] for k in ("this", "last", "change_pct")}
+    assert rolling == {"this": 360.0, "last": 300.0, "change_pct": 20}
+    # yesterday's 12 kg against the 10 written is over the dose: one day waits for a look
+    assert card["awaiting_review"] == 1 and card["over_week"] == 1
     strip = client.get(f"/api/hep/patients/{lifter.id}/schedule",
                        params={"today": TODAY.isoformat()}, headers=hirt_console).json()["patient"]
     assert strip["adherence"] == card["adherence"] and strip["load_week"] == card["load_week"]
@@ -542,17 +558,21 @@ def test_the_program_counts_missed_days_and_the_cards_carry_the_week(client, db,
     assert cole["adherence"]["missed"] == 0 and 0 < cole["adherence"]["pct"] < 100
     assert cole["load_week"]["last"] > 0 and cole["load_week"]["this"] >= 0
     devon = next(p for p in grid["patients"] if p["id"] == "hirt-devon")
-    assert devon["adherence"]["missed"] > 0 and devon["load_week"] == {
-        "this": 0, "last": 0, "change_pct": None}
+    assert devon["adherence"]["missed"] > 0
+    assert {devon["load_week"][k] for k in ("this", "last", "change_pct")} == {0, None}
 
     # the worklist's line: the seven days ending today, nothing for a chart without exercises
     rows = {p["id"]: p for p in client.get("/api/worklist", headers=hirt_console).json()["patients"]}
     assert rows[lifter.id]["exercises"] == {"assigned": 4, "done": 1, "pct": 25,
-                                            "awaiting_review": 0}
+                                            "awaiting_review": 1, "over": 1, "missed": 2}
     for pid in hirt.HIRT_IDS:
         line = rows[pid]["exercises"]
-        assert line and set(line) == {"assigned", "done", "pct", "awaiting_review"}, pid
-        assert line["assigned"] >= line["done"] >= 0 and line["awaiting_review"] == 0
+        assert line and set(line) == {"assigned", "done", "pct", "awaiting_review", "over",
+                                      "missed"}, pid
+        assert line["assigned"] >= line["done"] >= 0
+        # the same number the grid shows under the name
+        card_of = next(p for p in grid["patients"] if p["id"] == pid)
+        assert line["awaiting_review"] == card_of["awaiting_review"], pid
     everyone = {p["id"]: p for p in client.get("/api/worklist").json()["patients"]}
     assert everyone["robert"]["exercises"] is None  # a demo-hospital chart, no schedule
     assert everyone["hirt-cole"]["exercises"]["done"] > 0
@@ -638,7 +658,11 @@ def test_the_seed_carries_requirements_sessions_reviews_and_programs(client, db,
                       headers=tokens["hirt"]).json()
     cole = next(p for p in grid["patients"] if p["id"] == "hirt-cole")
     assert cole["load_week"]["last"] > 0
-    assert cole["awaiting_review"] == 0  # the suite has no object store, so no clips yet
+    # the suite has no object store, so no clips yet: what waits for a look under his
+    # name is the step-ups he did heavier than the sheet and she has not reviewed
+    heavy_unreviewed = [r for r in step_ups if r.load_done_kg == hirt.COLE_HEAVY_KG
+                        and r.reviewed_at is None]
+    assert cole["awaiting_review"] == len(heavy_unreviewed) > 0
     # the console's thread shows the therapist's lines to Cole, under her name
     thread = client.get("/api/patients/hirt-cole/messages", headers=tokens["hirt"])
     assert thread.status_code == 200, thread.text

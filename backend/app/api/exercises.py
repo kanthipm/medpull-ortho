@@ -1,6 +1,7 @@
 """The patient app's half of the exercise schedule, under
 ``/api/mobile/exercises``: today's exercises with the therapist's clip to
-follow, the whole program by day, starting one as a session, marking it done
+follow, the whole program by day, one day by its id (what a texted link
+opens), one exercise over time, starting one as a session, marking it done
 with a pain score, the effort, what was done and a clip of the attempt, or
 skipping it with a reason.
 
@@ -24,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.api.mobile import current_patient
 from app.config import settings
 from app.database import get_db
-from app.hep import ensure_ready
+from app.hep import calendar_reads, ensure_ready
 from app.hep import media as clips
 from app.hep import schedule
 from app.hep.models import Exercise, ExerciseMedia
@@ -134,27 +135,72 @@ def _return_clip(db: Session, patient: Patient, clip: ReturnClip) -> Attachment:
 @router.get("")
 def today_exercises(
     day: date | None = Query(default=None, alias="date"),
+    today: date | None = None,
     patient: Patient = Depends(current_patient),
     db: Session = Depends(_ready),
 ) -> dict:
     """The day's exercises in order, a seven-day strip around it, and whose
     schedule it is. Clip URLs are playable as given: presigned on AWS, this
-    API's own stream under the session on a laptop."""
-    return schedule.today_payload(db, patient, day or date.today())
+    API's own stream under the session on a laptop. ``date`` is the day
+    asked for; ``today`` is the phone's own day, which each row's ``state``
+    is read on (the server's when left out)."""
+    today = today or date.today()
+    return schedule.today_payload(db, patient, day or today, today)
 
 
 @router.get("/program")
 def program(
     start: date | None = None,
     days: int = Query(default=14, ge=1, le=schedule.MAX_PROGRAM_DAYS),
+    today: date | None = None,
     patient: Patient = Depends(current_patient),
     db: Session = Depends(_ready),
 ) -> dict:
     """The whole program by day: a week back and a week ahead by default,
-    each day with its exercises and how it went (a past day's open row is
-    missed)."""
+    up to six weeks for a month view, each day with its exercises and how
+    it went (a past day's open row is missed)."""
     try:
-        return schedule.program_payload(db, patient, start=start, days=days, today=date.today())
+        return schedule.program_payload(db, patient, start=start, days=days,
+                                        today=today or date.today())
+    except HepError as err:
+        raise _refused(err)
+
+
+@router.get("/{assignment_id}")
+def one_exercise(
+    assignment_id: int,
+    today: date | None = None,
+    patient: Patient = Depends(current_patient),
+    db: Session = Depends(_ready),
+) -> dict:
+    """One of the patient's own days by id, however long ago it was: what a
+    texted link opens, where the program's window may no longer reach."""
+    row = _own(db, patient, assignment_id)
+    return schedule.assignment_payload(db, patient, row, today or date.today())
+
+
+@router.get("/{assignment_id}/history")
+def exercise_history(
+    assignment_id: int,
+    days: int = Query(default=calendar_reads.HISTORY_DAYS, ge=1,
+                      le=calendar_reads.MAX_HISTORY_DAYS),
+    ahead: int = Query(default=0, ge=0, le=schedule.FUTURE_DAYS),
+    today: date | None = None,
+    patient: Patient = Depends(current_patient),
+    db: Session = Depends(_ready),
+) -> dict:
+    """This day's exercise over time, for the patient who does it: every
+    day it was on their calendar, as written and as done, oldest first,
+    with the run in a few numbers."""
+    row = _own(db, patient, assignment_id)
+    exercise = db.get(Exercise, row.exercise_id)
+    if exercise is None:
+        raise HTTPException(status_code=404, detail="Unknown exercise")
+    try:
+        return calendar_reads.history_payload(
+            db, patient, exercise, days=days, ahead=ahead, today=today or date.today(),
+            patient_app=True,
+        )
     except HepError as err:
         raise _refused(err)
 

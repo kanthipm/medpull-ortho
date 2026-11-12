@@ -19,14 +19,27 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.hep import schedule
-from app.hep.models import Exercise, ExerciseTemplate
+from app.hep.models import Exercise, ExerciseAssignment, ExerciseTemplate
 from app.hep.plans import SIDE_LABELS, _count, clinic_patient, dose_text
-from app.hep.service import HepError, audit, visible_to
-from app.hep.schedule import Placement, UnknownRow, _load, _member, _requirement, _scale, _side
+from app.hep.service import HepError, audit, load_unit_of, visible_to
+from app.hep.schedule import (
+    Placement,
+    Skip,
+    UnknownRow,
+    _load,
+    _member,
+    _requirement,
+    _scale,
+    _side,
+    _weekdays,
+)
+from app.models.hospital import Hospital
 
 NAME_LIMIT = 80
 DESCRIPTION_LIMIT = 600
-MAX_WEEKS = 12
+# Half a year: as long as the console lets a program be. Applying one still
+# places only the days inside the schedule's reach.
+MAX_WEEKS = 26
 MAX_ITEMS = 40
 WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 # What one item carries, in the order the payload lists it.
@@ -91,22 +104,6 @@ def _weeks(weeks: Any, fallback: int | None = None) -> int:
     if not 1 <= n <= MAX_WEEKS:
         raise HepError(f"A program runs between 1 and {MAX_WEEKS} weeks")
     return n
-
-
-def _weekdays(value: Any) -> list[int] | None:
-    """``[0..6]`` with Monday 0, in order and once each, or None for every
-    day."""
-    if value is None:
-        return None
-    try:
-        days = sorted({int(d) for d in value})
-    except (TypeError, ValueError):
-        raise HepError("Weekdays are numbers from 0 (Monday) to 6 (Sunday)")
-    if not days:
-        raise HepError("Pick at least one weekday, or leave weekdays empty for every day")
-    if any(d < 0 or d > 6 for d in days):
-        raise HepError("Weekdays are numbers from 0 (Monday) to 6 (Sunday)")
-    return days
 
 
 def _resolve_exercise(db: Session, clinic: str, item: dict[str, Any]) -> Exercise:
@@ -213,10 +210,11 @@ def archive_template(db: Session, clinic: str, row: ExerciseTemplate, *, actor: 
 def apply_template(
     db: Session, clinic: str, row: ExerciseTemplate, *, patient_id: str, start: date,
     weeks: Any, assigned_by: str | None, actor: str, today: date,
-):
+) -> tuple[list[ExerciseAssignment], list[Skip]]:
     """Every item on its weekdays from ``start`` for ``weeks`` weeks (the
     program's own count unless told otherwise), skipping days that already
-    carry the exercise. Returns the rows written and how many were skipped."""
+    carry the exercise and days past the schedule's reach. Returns the rows
+    written and what was left out."""
     try:
         patient = clinic_patient(db, clinic, patient_id)
     except HepError as e:
@@ -250,7 +248,8 @@ def apply_template(
 # --- payloads -----------------------------------------------------------------------
 
 
-def item_payload(item: dict[str, Any], exercise: Exercise | None) -> dict[str, Any]:
+def item_payload(item: dict[str, Any], exercise: Exercise | None,
+                 load_unit: str = "kg") -> dict[str, Any]:
     side = item.get("side") or "not_applicable"
     return {
         "exercise_id": item.get("exercise_id"),
@@ -261,7 +260,7 @@ def item_payload(item: dict[str, Any], exercise: Exercise | None) -> dict[str, A
         "side": side, "side_label": SIDE_LABELS.get(side, ""),
         "load_kg": item.get("load_kg"), "rpe_target": item.get("rpe_target"),
         "dose": dose_text(item.get("sets"), item.get("reps"), item.get("hold_seconds"), side,
-                          load_kg=item.get("load_kg")),
+                          load_kg=item.get("load_kg"), load_unit=load_unit),
         "clinician_instructions": item.get("clinician_instructions") or "",
         "video_requirement": item.get("video_requirement") or "optional",
         "wearable_requirement": item.get("wearable_requirement") or "optional",
@@ -273,10 +272,12 @@ def template_payload(db: Session, row: ExerciseTemplate,
     ids = {int(item["exercise_id"]) for item in row.items if item.get("exercise_id") is not None}
     if exercises is None:
         exercises = {e.id: e for e in db.scalars(select(Exercise).where(Exercise.id.in_(ids)))}
+    # The dose line reads in the clinic's unit, like the calendar's.
+    unit = load_unit_of(db.get(Hospital, row.hospital_id))
     return {
         "id": row.id, "clinic_id": row.hospital_id, "name": row.name,
         "description": row.description or "", "weeks": row.weeks,
-        "items": [item_payload(item, exercises.get(int(item["exercise_id"])))
+        "items": [item_payload(item, exercises.get(int(item["exercise_id"])), unit)
                   for item in row.items],
         "created_by": row.created_by,
         "created_at": row.created_at.isoformat() if row.created_at else None,

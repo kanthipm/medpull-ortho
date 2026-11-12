@@ -22,3 +22,6 @@ class Hospital(Base):
     timezone: Mapped[str] = mapped_column(String, default="America/Chicago")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     access_token: Mapped[str | None] = mapped_column(String, nullable=True)  # dashboard login token
+    # How the clinic reads a load on the exercise calendar: "kg" or "lb"
+    # (empty reads as kg). Storage stays in kilograms; this is display only.
+    load_unit: Mapped[str | None] = mapped_column(String, nullable=True)
