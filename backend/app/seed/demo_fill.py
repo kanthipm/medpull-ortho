@@ -1,27 +1,38 @@
-"""Fill a LIVE database with demo data for every patient except the real ones.
+"""The clinic half of the showcase: fill a LIVE database with the clinic
+personas, anchored to today.
 
     uv run python -m app.seed.demo_fill --db /path/to/recovery.db [--warm]
                                         [--no-persona-phones]
 
-Unlike ``app.seed.seed`` this never drops the schema and never touches the
-protected patients (Steve's two records and the Guest slot): their
-observations, wearable links, sessions and messages stay byte-for-byte.
+``fill(db, today)`` is the callable; the command line above is a thin
+wrapper round it, and ``app.seed.showcase.fill_showcase`` calls it beside
+the sports and Personal fills. Unlike ``app.seed.seed`` it never drops the
+schema, and it writes only the charts it authors (``build_roster``): a row
+with any other id — a real person who enrolled, an onboarding attempt
+somebody abandoned, an athlete, a subscriber — is never read, changed or
+deleted, whatever it does or does not carry.
 
 What it does, anchored to today:
 
-* the legacy ortho roster (linda, robert, ... elena) keeps its ids, hospitals
-  and scenarios but has every derived row regenerated so surgery dates,
+* the ortho roster (linda, robert, ... elena) keeps its ids, hospitals and
+  scenarios and has every derived row regenerated, so surgery dates,
   observations, check-ins and adherence run up to today instead of stopping
-  on the day the database was first seeded;
-* the throwaway onboarding rows in the demo hospital ("Steve Test",
-  "Debug Test", "iOS Test", ...) are removed and replaced by named demo
-  patients with a device, a scenario, tasks, check-ins and a message thread;
-* the H.I.R.T. Physical Therapy roster (app/seed/hirt.py) — a second demo
-  org: five lifters followed by text check-in alone, no wearable — is created
-  or refreshed with its fourteen days of check-ins re-anchored to today, and
-  its hospital and two therapists are added to a database that predates them;
-* the risk engine is re-run for every patient it touched, and with ``--warm``
+  on the day the database was last filled;
+* the demo hospital's roster — the two charts the shipped seed starts it
+  with (reyes, medha) and the named patients written here — is rewritten
+  with a device, a scenario, tasks, check-ins and a message thread;
+* the H.I.R.T. Physical Therapy roster (app/seed/hirt.py): five lifters
+  followed by text check-in alone, no wearable, with fourteen days of
+  check-ins and their exercise calendar re-anchored to today;
+* every hospital and care-team row those charts point at is added to a
+  database that predates it;
+* the risk engine is re-run for every chart it touched, and with ``--warm``
   the Groq insight caches are filled so the first console load is instant.
+
+What a refill keeps on a persona: its app sessions (a phone signed in as
+Cole yesterday is still signed in this morning), a phone number that is not
+a 555 placeholder (a presenter bound their own through ``/api/demo/phone``),
+its consent, and the clips a lifter sent back.
 
 Deterministic: the same numpy streams as the seed, so re-running produces
 the same numbers for the same day.
@@ -33,12 +44,17 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import logging
 import os
+import re
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time as dtime, timedelta
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def _bind_database(db_path: str) -> None:
@@ -53,9 +69,21 @@ def _bind_database(db_path: str) -> None:
 # Roster
 # --------------------------------------------------------------------------
 
+# Ids that belong to real people on a database this has been run against. No
+# persona may ever be given one: ``fill`` refuses a roster that names any.
 PROTECTED = frozenset({"steve", "steve-test-8de9", "guest"})
 DEMO_HOSPITAL = "hosp_demo"
 TZ = "America/Chicago"
+
+# Every persona is written with a number on the 555 exchange, which no phone
+# can have. Anything else on a persona's chart was put there by a presenter
+# (``/api/demo/phone``) so the demo's texts reach a real phone, and a refill
+# leaves it alone.
+_PLACEHOLDER_PHONE = re.compile(r"^\+1\d{3}555\d{4}$")
+
+
+def is_placeholder_phone(phone: str | None) -> bool:
+    return bool(phone) and _PLACEHOLDER_PHONE.match(phone) is not None
 
 
 @dataclass(frozen=True)
@@ -87,16 +115,22 @@ class Persona:
     # A chart followed by text check-in alone (no device, no generated
     # observations): the fourteen days of answers app.seed.hirt writes.
     reported_history: bool = False
+    # What today's read on this chart is, in a few words: the line the
+    # persona list shows under the name (app/seed/showcase.py).
+    story: str = ""
 
 
-def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Persona]]:
-    """(legacy roster to refresh, new demo-hospital roster, the HIRT lifters)."""
+def build_roster() -> tuple[list[Persona], list[Persona], list[Persona]]:
+    """Every chart the clinic fill authors, in three lists: the ortho roster
+    across its four hospitals, the demo hospital's roster, the HIRT lifters.
+    Nothing in it depends on the day: dates are offsets ``write_persona``
+    resolves against today."""
     from app.models.enums import ProcedureType as PT
     from app.models.enums import SourceProvider as SP
     from app.seed import adherence as adh
     from app.seed.adherence import TaskSpec
     from app.seed.conversations import CONVERSATIONS
-    from app.seed.patients import _spec
+    from app.seed.patients import ORTHO_DEMO_PATIENTS, PATIENTS, _spec
     from app.seed.scenarios import SCENARIOS, Ramp, ScenarioSpec
     from app.models.enums import MetricType as M
 
@@ -105,30 +139,22 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
     PTH = "ct_wooley"
 
     # --- the ortho roster the production database already carries ----------
-    legacy_specs = [
-        _spec("linda", "Linda Park", 58, "F", PT.ROTATOR_CUFF, "Rotator Cuff Repair",
-              10, SP.FITBIT, "Fitbit Charge 6", 0, "hosp_methodist"),
-        _spec("robert", "Robert Hale", 66, "M", PT.LUMBAR, "Lumbar Decompression",
-              6, SP.OURA, "Oura Ring Gen4", 1, "hosp_hermann"),
-        _spec("sofia", "Sofia Marino", 47, "F", PT.ANKLE, "Ankle Fracture ORIF",
-              21, SP.OURA, "Oura Ring Gen4", 1, "hosp_stlukes"),
-        _spec("aisha", "Aisha Bello", 71, "F", PT.THA, "Total Hip Replacement (THA)",
-              15, SP.APPLE, "Apple Watch SE 3", 2, "hosp_methodist"),
-        _spec("priya", "Priya Nair", 64, "F", PT.THA, "Total Hip Replacement (THA)",
-              9, SP.WITHINGS, "Withings ScanWatch 2", 2, "hosp_utsw"),
-        _spec("grace", "Grace Kim", 69, "F", PT.THA, "Total Hip Replacement (THA)",
-              3, SP.WHOOP, "WHOOP 5.0", 2, "hosp_hermann"),
-        _spec("david", "David Osei", 24, "M", PT.ACL, "ACL Reconstruction",
-              34, SP.APPLE, "Apple Watch Ultra 3", 0, "hosp_stlukes"),
-        _spec("james", "James Whitfield", 70, "M", PT.TKA, "Total Knee Replacement (TKA)",
-              40, SP.FITBIT, "Fitbit Sense 3", 2, "hosp_utsw"),
-        _spec("elena", "Elena Ruiz", 33, "F", PT.MENISCUS, "Meniscus Repair",
-              19, SP.APPLE, "Apple Watch Series 10", 0, "hosp_methodist"),
-    ]
+    legacy_specs = ORTHO_DEMO_PATIENTS
     legacy_phones = {
         "linda": "+17135550111", "robert": "+17135550112", "sofia": "+17135550113",
         "aisha": "+17135550114", "priya": "+12145550115", "grace": "+17135550116",
         "david": "+17135550117", "james": "+12145550118", "elena": "+17135550119",
+    }
+    legacy_stories = {
+        "linda": "Shoulder keeping her up: short nights for a week",
+        "robert": "Steps sliding a little every day since surgery",
+        "sofia": "Behind the expected curve at three weeks",
+        "aisha": "Walking has levelled off since day 8",
+        "priya": "Watch off most days: too little data to read",
+        "grace": "Early days, and as expected",
+        "david": "On plan at five weeks, asking to jog",
+        "james": "Ahead of the expected curve at six weeks",
+        "elena": "Ahead of the expected curve",
     }
     legacy_messages = {
         "linda": [
@@ -156,7 +182,7 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
         ],
         "david": [
             MessageSpec(1, 17, "patient", "PT says my range is ahead of schedule. Can I start jogging?"),
-            MessageSpec(1, 17, "care_team", "Great news, but no running until Dr. Chen clears you at the six-week visit. Straight-line cycling is fine.", PTH),
+            MessageSpec(1, 17, "care_team", "Great news, but no running before your six-week visit with Dr. Chen. Straight-line cycling is fine.", PTH),
         ],
     }
     legacy: list[Persona] = []
@@ -170,16 +196,37 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
             adherence_rate=adh.RATES.get(spec.id, 0.85),
             conversations=CONVERSATIONS.get(spec.id, []),
             messages=legacy_messages.get(spec.id, []),
+            story=legacy_stories[spec.id],
         ))
 
     # --- the demo hospital roster --------------------------------------------
+    #
+    # It opens with the two charts the shipped seed starts the hospital with
+    # (app/seed/patients.py), written from the seed's own specs so a
+    # database built by the seed and then filled reads the same as one that
+    # was only ever filled: Marcus Reyes with his scenario, tasks and
+    # check-ins re-anchored, and Medha Rao as the blank chart she is — no
+    # device, nothing reported yet, which is what a new patient looks like.
+    shipped = {spec.id: spec for spec in PATIENTS}
     general = "General care"
     new: list[Persona] = [
+        Persona(
+            spec=shipped["reyes"], scenario=SCENARIOS["reyes"],
+            phone="+17135550120", mrn="DM100873",
+            tasks=adh.TASKS["reyes"], adherence_rate=adh.RATES.get("reyes", 0.85),
+            conversations=CONVERSATIONS.get("reyes", []),
+            story="Resting heart rate and skin temperature up, walking down",
+        ),
+        Persona(
+            spec=shipped["medha"], scenario=ScenarioSpec(),
+            phone="+17135550110", mrn="DM100911",
+            story="New chart: no device connected yet",
+        ),
         Persona(
             spec=_spec("ana", "Ana Lee", 52, "F", PT.TKA, "Total Knee Replacement (TKA)",
                        5, SP.APPLE, "Apple Watch Series 9", 1, DEMO_HOSPITAL),
             scenario=ScenarioSpec(),
-            phone="+17135550121", mrn="DM204117",
+            phone="+17135550121", mrn="DM204117", story="Home and on plan",
             tasks=[
                 TaskSpec("Ankle pumps every hour while awake", "Prevents blood clots", "self-report"),
                 TaskSpec("Three short walks spread across the day", "Gentle, frequent movement helps the knee heal", "step data"),
@@ -215,6 +262,7 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
                 Ramp(M.HRV_RMSSD, 14, 22, mult_to=0.82),
             )),
             phone="+17135550122", mrn="DM318452", care_pathway="general_recovery",
+            story="Short nights for a week, resting heart rate up",
             tasks=[
                 TaskSpec("Walk 20 minutes daily", "Keeps the heart and lungs conditioned", "step data"),
                 TaskSpec("Log blood pressure each morning", "Lets the team see how the new dose is working", "self-report"),
@@ -245,6 +293,7 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
                        30, SP.OURA, "Oura Ring Gen4", 0, DEMO_HOSPITAL),
             scenario=ScenarioSpec(),
             phone="+17135550123", mrn="DM427790", care_pathway="general_recovery",
+            story="Steady: back to her full walks",
             tasks=[
                 TaskSpec("Walk 30 minutes, 5 days a week", "Builds back endurance after the pneumonia", "step data"),
                 TaskSpec("Breathing exercises, 2x daily", "Keeps the lungs clear", "self-report"),
@@ -272,6 +321,7 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
                        12, SP.APPLE, "Apple Watch SE 3", 2, DEMO_HOSPITAL),
             scenario=ScenarioSpec(track=0.84),
             phone="+17135550124", mrn="DM511263",
+            story="Walking less than planned, staying indoors",
             tasks=[
                 TaskSpec("Walk to the mailbox and back, twice daily", "Builds hip endurance", "step data"),
                 TaskSpec("Hip abduction exercises, 2x daily", "Strengthens the muscles that steady the hip", "self-report"),
@@ -305,6 +355,7 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
                 ramps=(Ramp(M.STEPS, 8, 16, mult_to=0.62),),
             ),
             phone="+17135550125", mrn="DM633908", care_pathway="general_recovery",
+            story="Steps down a third, ankles puffy by evening",
             tasks=[
                 TaskSpec("Weigh in every morning", "Catches fluid build-up early", "self-report"),
                 TaskSpec("Walk 10 minutes, 3x daily", "Keeps the legs strong and the heart conditioned", "step data"),
@@ -336,10 +387,11 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
                        20, SP.GARMIN, "Garmin Forerunner 265", 0, DEMO_HOSPITAL),
             scenario=ScenarioSpec(track=1.06),
             phone="+17135550126", mrn="DM745120",
+            story="On plan at three weeks, asking to run",
             tasks=[
                 TaskSpec("PT program, 3 sessions weekly", "Graft-safe strength progression", "PT attendance"),
                 TaskSpec("Stationary bike, 15 minutes daily", "Restores range without loading the graft", "self-report"),
-                TaskSpec("No running or pivoting", "Protects the graft until cleared", "self-report"),
+                TaskSpec("No running or pivoting", "Protects the graft while it heals", "self-report"),
             ],
             adherence_rate=0.94,
             conversations=[
@@ -352,7 +404,7 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
                 (0, 17, [
                     (C, "Hi Kevin, weekly check-in. Anything new?"),
                     (P, "Nope. Walking normally, itching to run."),
-                    (C, "Hold that thought until the surgeon clears you."),
+                    (C, "Hold that thought until your surgeon says go."),
                 ]),
             ],
             messages=[
@@ -365,6 +417,7 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
                        4, SP.APPLE, "Apple Watch Series 10", 0, DEMO_HOSPITAL),
             scenario=ScenarioSpec(),
             phone="+17135550127", mrn="DM858341", care_pathway="general_recovery",
+            story="First week home, signals coming in",
             tasks=[
                 TaskSpec("Wear the watch day and night", "Lets your care team see your recovery", "device sync"),
                 TaskSpec("Walk 15 minutes daily", "Rebuilds stamina after the hospital stay", "step data"),
@@ -406,6 +459,7 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
                 Ramp(M.WALKING_SPEED, 5, 9, mult_to=0.75),
             )),
             phone="+17135550128", mrn="DM962574",
+            story="Warm, red knee and a temperature of 100.9",
             tasks=[
                 TaskSpec("Walk 10 minutes, twice daily", "Restores knee motion and circulation", "step data"),
                 TaskSpec("Quad sets, 3 sets of 10", "Rebuilds the thigh strength that guards the joint", "self-report"),
@@ -451,6 +505,7 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
                 ),
             ),
             phone="+17135550129", mrn="DM071685",
+            story="Stopped walking after a near-fall",
             tasks=[
                 TaskSpec("Walk 15 minutes, twice daily", "Keeps the hip loading evenly as strength returns", "step data"),
                 TaskSpec("Hip abduction exercises, 2x daily", "Strengthens the muscles that steady the hip", "self-report"),
@@ -517,7 +572,7 @@ def _build_roster(today: date) -> tuple[list[Persona], list[Persona], list[Perso
         Persona(
             spec=spec, scenario=ScenarioSpec(), phone=hirt.PHONES[spec.id], mrn=hirt.MRNS[spec.id],
             care_pathway=spec.care_pathway, messages=hirt_messages.get(spec.id, []),
-            reported_history=True,
+            reported_history=True, story=hirt.STORIES[spec.id],
         )
         for spec in hirt.HIRT_PATIENTS
     ]
@@ -538,36 +593,10 @@ PER_PATIENT_TABLES = [
     # so a refill has to clear the old one before writing today's.
     "exercise_assignments",
 ]
-IDENTITY_TABLES = ["patient_sessions", "wearable_connections", "devices"]
-
-
-def real_enrollments(db) -> set[str]:
-    """Patients with history of their own, which this script must never delete.
-
-    Deliberately computed here rather than borrowed from ``app.seed.seed``:
-    that module's guard answers a different question ("would a reseed fail to
-    rebuild this row?"), and it counts every id outside the shipped roster —
-    which is every leftover this sweep exists to remove. What matters here is
-    narrower and more stable: did a real person ever use this record? A phone
-    number, an app session, a linked wearable or a single observation all say
-    yes. A chart created by an abandoned onboarding attempt has none of them.
-    """
-    from sqlalchemy import select
-
-    from app.models import Device, Observation, Patient
-    from app.models.connection import WearableConnection
-    from app.models.mobile import Message, PatientSession
-
-    ids = set(db.scalars(select(Patient.id).where(Patient.phone.is_not(None))).all())
-    for column in (
-        PatientSession.patient_id,
-        WearableConnection.patient_id,
-        Observation.patient_id,
-        Message.patient_id,
-        Device.patient_id,
-    ):
-        ids |= set(db.scalars(select(column).distinct()).all())
-    return ids
+# The device and the aggregator link, dropped only for the charts written
+# from nothing each time. App sessions are in neither list: a refill never
+# signs a phone out of a persona.
+DEVICE_TABLES = ["wearable_connections", "devices"]
 
 
 def _existing_tables(db) -> set[str]:
@@ -576,9 +605,10 @@ def _existing_tables(db) -> set[str]:
     return set(db.execute(text("select name from sqlite_master where type='table'")).scalars())
 
 
-def purge_patient(db, patient_id: str, *, identity: bool, tables: set[str]) -> None:
-    """Delete everything derived for one patient. ``identity`` also drops the
-    device, sessions and aggregator link (only for rows being deleted)."""
+def purge_patient(db, patient_id: str, *, devices: bool, tables: set[str]) -> None:
+    """Delete everything derived for one persona, ahead of writing it again.
+    ``devices`` also drops the device and the aggregator link. The chart
+    itself, its app sessions and its consent stay."""
     from sqlalchemy import text
 
     if "checkin_messages" in tables:
@@ -586,9 +616,47 @@ def purge_patient(db, patient_id: str, *, identity: bool, tables: set[str]) -> N
             "delete from checkin_messages where checkin_id in "
             "(select id from checkins where patient_id = :pid)"
         ), {"pid": patient_id})
-    for table in PER_PATIENT_TABLES + (IDENTITY_TABLES if identity else []):
+    if "attachments" in tables:
+        # The thread is about to be rewritten, and SQLite hands a deleted
+        # row's id to the next insert: a file left pointing at a line that is
+        # gone would turn up under whichever new line took its number. Files
+        # come off their lines here; the lifters' return clips go back on the
+        # calendar afterwards (hirt.relink_return_clips).
+        db.execute(text("update attachments set message_id = null where patient_id = :pid"),
+                   {"pid": patient_id})
+    for table in PER_PATIENT_TABLES + (DEVICE_TABLES if devices else []):
         if table in tables:
             db.execute(text(f"delete from {table} where patient_id = :pid"), {"pid": patient_id})
+
+
+def ensure_orgs(db, personas: list[Persona]) -> int:
+    """Every hospital and care-team row the roster points at, for a database
+    that predates one of them. Without its hospital a chart is moved to the
+    demo hospital at the next start (``app/main.py`` gives a chart whose
+    hospital is unknown the first seeded one), and the next fill would move
+    it back. Idempotent; returns rows added."""
+    from app.models import CareTeamMember, Hospital, NotificationPreference
+    from app.models.enums import NotificationChannel
+    from app.seed import hirt
+    from app.seed.patients import CARE_TEAM, HOSPITALS, ORTHO_DEMO_HOSPITALS
+
+    added = hirt.ensure_org(db)
+    wanted = {p.spec.hospital_id for p in personas}
+    for h in (*HOSPITALS, *ORTHO_DEMO_HOSPITALS):
+        if h.id in wanted and db.get(Hospital, h.id) is None:
+            db.add(Hospital(id=h.id, name=h.name, system=h.system, city=h.city, state=h.state,
+                            timezone=h.timezone))
+            added += 1
+    for ct in CARE_TEAM:
+        if db.get(CareTeamMember, ct.id) is None:
+            db.add(CareTeamMember(id=ct.id, name=ct.name, role=ct.role))
+            for channel, enabled in ((NotificationChannel.IN_APP, True),
+                                     (NotificationChannel.SMS, False),
+                                     (NotificationChannel.EMAIL, False)):
+                db.add(NotificationPreference(recipient_id=ct.id, channel=channel, enabled=enabled))
+            added += 1
+    db.commit()
+    return added
 
 
 def _dob(today: date, age: int, patient_id: str) -> date:
@@ -599,7 +667,10 @@ def _dob(today: date, age: int, patient_id: str) -> date:
         return date(today.year - age, today.month, 28) - timedelta(days=offset + 1)
 
 
-def write_persona(db, persona: Persona, today: date, *, create: bool) -> dict[str, int]:
+def write_persona(db, persona: Persona, today: date) -> dict[str, int]:
+    """Write one persona's chart and everything on it, anchored to
+    ``today``; the chart row is created when the database has none. Call
+    after ``purge_patient``. Returns row counts."""
     from app.connectors.ingest import ingest_observations
     from app.models import (
         AdherenceRecord, AdherenceTask, Checkin, CheckinMessage, Device, Patient,
@@ -614,8 +685,6 @@ def write_persona(db, persona: Persona, today: date, *, create: bool) -> dict[st
 
     patient = db.get(Patient, spec.id)
     if patient is None:
-        if not create:
-            raise RuntimeError(f"{spec.id} missing from the roster")
         patient = Patient(id=spec.id, created_at=datetime.combine(surgery, dtime(9, 0)))
         db.add(patient)
     patient.name = spec.name
@@ -637,7 +706,11 @@ def write_persona(db, persona: Persona, today: date, *, create: bool) -> dict[st
     # never be, so a console message or task dispatch to a persona is recorded
     # as a failed delivery and shows a badge in the thread. Pass
     # --no-persona-phones to clear them for a take that needs a clean thread.
-    patient.phone = None if persona.suppress_phone else persona.phone
+    #
+    # A number that is not a placeholder is a presenter's own, bound through
+    # /api/demo/phone so the demo's texts reach a real phone. It stays.
+    if patient.phone is None or is_placeholder_phone(patient.phone):
+        patient.phone = None if persona.suppress_phone else persona.phone
     patient.date_of_birth = _dob(today, spec.age, spec.id)
     patient.mrn = persona.mrn
     patient.care_pathway = persona.care_pathway
@@ -672,6 +745,7 @@ def write_persona(db, persona: Persona, today: date, *, create: bool) -> dict[st
         n += written["checkins"]
         counts["observations"] += written["observations"]
         counts["exercise_assignments"] = hirt.write_schedule(db, spec.id, today)["assignments"]
+        counts["return_clips"] = hirt.relink_return_clips(db, spec.id)
     for days_ago, hour, lines in persona.conversations:
         checkin = Checkin(
             patient_id=spec.id,
@@ -727,19 +801,28 @@ def write_persona(db, persona: Persona, today: date, *, create: bool) -> dict[st
     return counts
 
 
-def refresh_briefing_and_engine(db, patient_ids: list[str]) -> None:
+def refresh_briefing_and_engine(
+    db, patient_ids: list[str], say: Callable[[str], None] = logger.info
+) -> dict[str, str]:
+    """Drop the roster briefing (it was written about the old roster) and
+    re-run the engine for each chart. Returns the tier each one reads."""
     from sqlalchemy import text
 
     from app.engine.pipeline import run_patient
 
     db.execute(text("delete from insights where patient_id is null"))
     db.commit()
+    tiers: dict[str, str] = {}
     for pid in patient_ids:
         assessment = run_patient(db, pid)
-        print(f"  engine: {pid:8s} {assessment.risk_level:12s} score={assessment.risk_score:.2f}")
+        tiers[pid] = str(assessment.risk_level)
+        say(f"  engine: {pid:12s} {assessment.risk_level:12s} score={assessment.risk_score:.2f}")
+    return tiers
 
 
-def warm_insights(db, patient_ids: list[str], pause: float) -> None:
+def warm_insights(
+    db, patient_ids: list[str], pause: float, say: Callable[[str], None] = logger.info
+) -> None:
     from app.llm.insights import get_daily_briefing, get_patient_insight
     from app.models.enums import InsightKind
 
@@ -748,11 +831,85 @@ def warm_insights(db, patient_ids: list[str], pause: float) -> None:
     for pid in patient_ids:
         for kind in kinds:
             row = get_patient_insight(db, kind, pid)
-            print(f"  insight: {pid:8s} {kind:18s} via {row.llm_provider}")
+            say(f"  insight: {pid:12s} {kind:18s} via {row.llm_provider}")
             if row.llm_provider != "fallback":
                 time.sleep(pause)
     briefing = get_daily_briefing(db)
-    print(f"  briefing via {briefing.llm_provider}")
+    say(f"  briefing via {briefing.llm_provider}")
+
+
+def roster_ids() -> list[str]:
+    """The id of every chart the clinic fill authors, in the order it writes them."""
+    legacy, new, lifters = build_roster()
+    return [p.spec.id for p in (*legacy, *new, *lifters)]
+
+
+def fill(
+    db,
+    today: date,
+    *,
+    suppress_phones: bool = False,
+    warm: bool = False,
+    pause: float = 2.0,
+    say: Callable[[str], None] = logger.info,
+) -> dict:
+    """Write every clinic persona, anchored to ``today``, and re-run the
+    engine for each. Idempotent: a second run on the same day leaves the same
+    rows. Only the roster's own ids are touched (see the module docstring
+    for what is kept on them); an id that is on the roster but belongs to a
+    row that is not a clinic chart is skipped and reported.
+
+    ``suppress_phones`` leaves the personas without a placeholder number,
+    ``warm`` fills the model's insight caches afterwards (``pause`` seconds
+    apart), and ``say`` receives one progress line per step.
+
+    Returns ``{"personas": [...ids written], "skipped": {id: why}, "tiers":
+    {id: tier}, "orgs_added": n, "counts": {table: rows written}}``.
+    """
+    from app.models import Patient
+    from app.personal.scope import is_clinic
+
+    legacy, new, lifters = build_roster()
+    if suppress_phones:
+        legacy, new, lifters = (
+            [replace(p, suppress_phone=True) for p in group] for group in (legacy, new, lifters)
+        )
+        say("demo patients will be left without a phone number")
+    # The ortho roster keeps its device and aggregator link across a refill;
+    # the demo hospital's personas and the lifters are written from nothing.
+    plan = [(p, False) for p in legacy] + [(p, True) for p in (*new, *lifters)]
+    claimed = PROTECTED & {p.spec.id for p, _ in plan}
+    if claimed:
+        raise RuntimeError(f"the roster names a protected id: {', '.join(sorted(claimed))}")
+
+    tables = _existing_tables(db)
+    added = ensure_orgs(db, [p for p, _ in plan])
+    if added:
+        say(f"added {added} hospital, care-team or program row(s) this database lacked")
+
+    written: list[str] = []
+    skipped: dict[str, str] = {}
+    totals: dict[str, int] = {}
+    for persona, devices in plan:
+        pid = persona.spec.id
+        existing = db.get(Patient, pid)
+        if existing is not None and not is_clinic(existing):
+            skipped[pid] = f"the row with this id is a {existing.account_kind} account"
+            say(f"  skipped   {pid:12s} {skipped[pid]}")
+            continue
+        purge_patient(db, pid, devices=devices, tables=tables)
+        db.commit()
+        counts = write_persona(db, persona, today)
+        written.append(pid)
+        for table, n in counts.items():
+            totals[table] = totals.get(table, 0) + n
+        say(f"  {'wrote' if existing is None else 'refreshed':9s} {pid:12s} {counts}")
+
+    tiers = refresh_briefing_and_engine(db, written, say)
+    if warm:
+        warm_insights(db, written, pause, say)
+    return {"personas": written, "skipped": skipped, "tiers": tiers, "orgs_added": added,
+            "counts": totals}
 
 
 def main() -> None:
@@ -770,82 +927,19 @@ def main() -> None:
     _bind_database(args.db)
 
     import app.models  # noqa: F401 — register every table
-    from sqlalchemy import select
 
     from app.database import SessionLocal, ensure_schema
-    from app.models import Patient
 
     ensure_schema()
-    today = date.today()
-    legacy, new, lifters = _build_roster(today)
-    if args.no_persona_phones:
-        legacy = [replace(p, suppress_phone=True) for p in legacy]
-        new = [replace(p, suppress_phone=True) for p in new]
-        lifters = [replace(p, suppress_phone=True) for p in lifters]
-        print("demo patients will be left without a phone number")
-    touched: list[str] = []
-
     db = SessionLocal()
     try:
         if args.warm_only:
-            ids = [p.spec.id for p in legacy + new + lifters]
-            refresh_briefing_and_engine(db, ids)
-            warm_insights(db, ids, args.pause)
-            print("Done.")
-            return
-        tables = _existing_tables(db)
-        # The HIRT org itself: a database filled before it existed has no
-        # row for the hospital or its therapists, and every lifter below
-        # points at them.
-        from app.seed import hirt
-
-        added = hirt.ensure_org(db)
-        if added:
-            print(f"added the {hirt.HIRT_HOSPITAL.name} org ({added} row(s))")
-        roster = {p.id: p for p in db.scalars(select(Patient)).all()}
-        protected = sorted(pid for pid in roster if pid in PROTECTED)
-        print(f"protected (untouched): {', '.join(protected)}")
-
-        legacy_ids = {p.spec.id for p in legacy}
-        # The demo-hospital personas and the lifters are both authored here:
-        # purged with their identity rows and rewritten in full.
-        new = new + lifters
-        new_ids = {p.spec.id for p in new}
-        demo_ids = legacy_ids | new_ids
-        # A patient this script did not author, carrying a phone number or an
-        # app session, is a real person who enrolled since the last run — the
-        # thing a re-run on the morning of a demo must never delete. Only
-        # history-free leftovers are swept.
-        live = {pid for pid in real_enrollments(db) if pid not in demo_ids}
-        keep = PROTECTED | live
-        junk = sorted(pid for pid in roster if pid not in keep and pid not in demo_ids)
-        if live - PROTECTED:
-            print(f"keeping live non-demo patient(s): {', '.join(sorted(live - PROTECTED))}")
-        for pid in junk:
-            purge_patient(db, pid, identity=True, tables=tables)
-            db.delete(roster[pid])
-        db.commit()
-        print(f"removed {len(junk)} throwaway patient(s): {', '.join(junk) or '-'}")
-
-        for persona in legacy:
-            if persona.spec.id not in roster:
-                print(f"  legacy {persona.spec.id} not in this database — creating")
-            purge_patient(db, persona.spec.id, identity=False, tables=tables)
-            db.commit()
-            counts = write_persona(db, persona, today, create=True)
-            touched.append(persona.spec.id)
-            print(f"  refreshed {persona.spec.id:8s} {counts}")
-
-        for persona in new:
-            purge_patient(db, persona.spec.id, identity=True, tables=tables)
-            db.commit()
-            counts = write_persona(db, persona, today, create=True)
-            touched.append(persona.spec.id)
-            print(f"  created   {persona.spec.id:8s} {counts}")
-
-        refresh_briefing_and_engine(db, touched)
-        if args.warm:
-            warm_insights(db, touched, args.pause)
+            ids = roster_ids()
+            refresh_briefing_and_engine(db, ids, print)
+            warm_insights(db, ids, args.pause, print)
+        else:
+            fill(db, date.today(), suppress_phones=args.no_persona_phones, warm=args.warm,
+                 pause=args.pause, say=print)
         print("Done.")
     finally:
         db.close()

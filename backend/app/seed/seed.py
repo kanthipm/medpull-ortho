@@ -5,6 +5,12 @@
 --reset drops and recreates the schema first. After seeding raw data the
 engine pipeline and insight caches are warmed so the first page load is
 instant.
+
+With ``DEMO_MODE=true`` the same command ends with the showcase fill
+(``app.seed.showcase.fill_showcase``), which leaves a complete demo of all
+three versions: every clinic persona across its hospitals, the sports
+rosters and the Personal members. Without it the result is the shipped
+roster alone, as before.
 """
 
 import argparse
@@ -306,12 +312,25 @@ def run_seed(reset: bool = False) -> dict[str, int]:
         counts = seed_core(db, today)
         for k, v in counts.items():
             print(f"  {k}: {v}")
-        # MedPull Sports: the Rice basketball demo roster and two individual
-        # athletes, beside the clinic roster. Never on a clinician's worklist.
-        from app.sports.seed import seed_sports
+        if settings.demo_mode:
+            # On a demo stack the seed is only the ground: the showcase fill
+            # (app/seed/showcase.py) writes all three versions over it — the
+            # full clinic roster across its hospitals, the sports rosters,
+            # the Personal members — so this one command leaves a complete
+            # demo, the same one the morning fill keeps current.
+            from app.seed.showcase import fill_showcase
 
-        for k, v in seed_sports(db, today).items():
-            print(f"  sports {k}: {v}")
+            report = fill_showcase(db, today)
+            print(f"  showcase: {report['personas']} personas, filled for {report['filled_on']}")
+            for pid, tier in report["clinic"]["tiers"].items():
+                print(f"    {pid:12s} {tier}")
+        else:
+            # MedPull Sports: the Rice basketball demo roster and two individual
+            # athletes, beside the clinic roster. Never on a clinician's worklist.
+            from app.sports.seed import seed_sports
+
+            for k, v in seed_sports(db, today).items():
+                print(f"  sports {k}: {v}")
         try:
             warm_engine_and_insights(db)
         except ImportError as e:

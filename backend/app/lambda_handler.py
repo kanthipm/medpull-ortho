@@ -236,6 +236,37 @@ def _sports_daily(event: dict) -> dict:
     return {"ok": True, "uploaded": uploaded, "counts": counts, "refilled": refilled, "failed": failed}
 
 
+def _showcase_fill(event: dict) -> dict:
+    """The showcase's morning run (app/seed/showcase.py), on the demo stack's
+    EventBridge schedule or by hand: every demo org is anchored to today —
+    the clinic personas and the H.I.R.T. lifters, the sports rosters, the
+    Personal members — keeping each persona's app sessions and any real
+    phone number a presenter bound. Refused off the demo stack before the
+    lock is taken, so the real app's database is never held or uploaded;
+    ``{"action": "showcase_fill", "force": true}`` is the operator's
+    override. Runs for minutes, not seconds: invoke it on the seed function."""
+    from app.database import SessionLocal
+    from app.seed.showcase import fill_showcase, refusal
+
+    force = bool(event.get("force"))
+    refused = refusal(force)
+    if refused is not None:
+        logger.warning("Showcase fill refused: %s", refused)
+        return {"ok": False, "error": refused}
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        ensure_schema()
+        db = SessionLocal()
+        try:
+            report = fill_showcase(db, force=force)
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False)
+    logger.info("Showcase filled for %s: %s personas (uploaded=%s)",
+                report["filled_on"], report["personas"], uploaded)
+    return {"ok": True, "uploaded": uploaded, **report}
+
+
 def _comp(event: dict) -> dict:
     """An operator's complimentary grant for one personal space, named by
     its email login or its patient id (a space opened by phone number has
@@ -291,6 +322,8 @@ def handler(event, context):
             return _sports_daily(event)
         if action == "personal_daily":
             return _personal_daily(event)
+        if action == "showcase_fill":
+            return _showcase_fill(event)
         return {"ok": False, "error": f"Unknown action: {action}"}
 
     if not _origin_is_cloudfront(event):

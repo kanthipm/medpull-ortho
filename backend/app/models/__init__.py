@@ -31,6 +31,7 @@ from app.models.personal import (
     PersonalLog,
     PersonalProfile,
 )
+from app.models.showcase import ShowcaseState
 from app.models.sports import (
     SportsEvent,
     SportsInjury,
@@ -86,6 +87,7 @@ __all__ = [
     "PersonalCredential",
     "PersonalLog",
     "PersonalProfile",
+    "ShowcaseState",
     "SportsEvent",
     "SportsInjury",
     "SportsOrg",

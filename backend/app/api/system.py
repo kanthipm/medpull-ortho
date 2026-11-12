@@ -6,8 +6,20 @@ from app.config import settings
 from app.database import engine
 from app.llm.provider import model_name, provider_name
 from app.notifications import sendblue
+from app.seed.showcase import filled_on
 
 router = APIRouter(tags=["system"])
+
+
+def _showcase_filled_on() -> str | None:
+    """The day the showcase was last filled, read without a session so the
+    health check stays a plain read. None when it never was — or when this
+    database predates the table, which is the same answer."""
+    try:
+        with engine.connect() as conn:
+            return filled_on(conn)
+    except Exception:
+        return None
 
 
 @router.get("/health")
@@ -34,4 +46,8 @@ def health() -> dict:
         # to be one Sendblue issued to the account. `config_fault` carries the
         # provider's own words once a send in this process has hit that.
         "sms": sendblue.status(),
+        # The day the demo orgs were last anchored to (app/seed/showcase.py),
+        # so a console or a phone can tell a current demo from an aged one.
+        # Null on a database the fill never ran against.
+        "showcase": {"filled_on": _showcase_filled_on()},
     }

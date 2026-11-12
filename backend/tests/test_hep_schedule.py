@@ -106,8 +106,20 @@ def _assign(client, headers, patient_id: str, exercise_id: int, dates: list[date
 
 
 def _patient_session(client, monkeypatch, headers, patient_id: str) -> dict:
-    """The demo screen's way in: a patient session minted by the console."""
+    """An app session as the chart. For a persona the showcase wrote this is
+    the demo screen's own way in, a session minted by the console; that route
+    signs in as nobody else, so a throwaway chart gets its session from the
+    function the route itself calls."""
+    from app.seed import showcase
+
     monkeypatch.setattr(settings, "demo_mode", True)
+    if showcase.persona(patient_id) is None:
+        from app.api.mobile import _issue_session
+        from app.database import SessionLocal
+
+        with SessionLocal() as db:
+            token = _issue_session(db, db.get(Patient, patient_id), "demo screen", None)
+        return {"Authorization": f"Bearer {token}"}
     resp = client.post("/api/demo/patient-session", json={"patient_id": patient_id},
                        headers=headers)
     assert resp.status_code == 200, resp.text
@@ -403,12 +415,18 @@ def test_the_patient_marks_a_day_done_with_pain_and_a_clip(client, db, tokens, l
                          sets=2, reps=10, side="left", clinician_instructions="After your warm-up.")
     sit = _assign(client, hirt_console, lifter.id, sits["id"], [TODAY], sets=3, hold_seconds=30)[0]
 
-    # the demo session route exists on the demo stack only, and inside the console's scope
-    assert client.post("/api/demo/patient-session", json={"patient_id": lifter.id},
+    # the demo session route exists on the demo stack only, inside the console's
+    # scope, and for a person the showcase wrote: never for any other chart
+    assert client.post("/api/demo/patient-session", json={"patient_id": "hirt-june"},
                        headers=hirt_console).status_code == 404
     monkeypatch.setattr(settings, "demo_mode", True)
-    assert client.post("/api/demo/patient-session", json={"patient_id": lifter.id},
+    assert client.post("/api/demo/patient-session", json={"patient_id": "hirt-june"},
                        headers=tokens["demo"]).status_code == 404
+    assert client.post("/api/demo/patient-session", json={"patient_id": lifter.id},
+                       headers=hirt_console).status_code == 404
+    as_june = client.post("/api/demo/patient-session", json={"patient_id": "hirt-june"},
+                          headers=hirt_console)
+    assert as_june.status_code == 200 and as_june.json()["patient"]["id"] == "hirt-june"
     session = _patient_session(client, monkeypatch, hirt_console, lifter.id)
     assert client.get("/api/mobile/me", headers=session).json()["patient"]["id"] == lifter.id
 

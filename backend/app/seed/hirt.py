@@ -99,6 +99,15 @@ MRNS = {
     "hirt-cole": "RG-0412", "hirt-tessa": "RG-0418", "hirt-devon": "RG-0397",
     "hirt-june": "RG-0403", "hirt-rafael": "RG-0431",
 }
+# The morning read on each lifter in a few words, for the persona list
+# (app/seed/showcase.py). The same five stories as the histories below.
+STORIES = {
+    "hirt-cole": "Load spike, pain rising",
+    "hirt-tessa": "Load held, pain easing",
+    "hirt-devon": "Still lifting, the back program slipping",
+    "hirt-june": "Steady",
+    "hirt-rafael": "Went quiet three days ago",
+}
 
 
 @dataclass(frozen=True)
@@ -499,23 +508,31 @@ def _outcome(patient_id: str, program_day: int, key: str) -> tuple[str, str | No
     return "done", None
 
 
-def ensure_consent(db, patient_id: str) -> int:
-    """The lifters enrolled by text and accepted the beta terms in the room.
-    Without a row the app stops at the consent screen the first time a
-    phone — or the demo screen's frame — opens as them. Idempotent; returns
-    the number of rows added (0 or 1)."""
+def ensure_consent(db, patient_id: str, *, device_name: str = "enrolled by text") -> int:
+    """The beta consent on file for a fictional person, at the version the
+    app asks for today. The lifters enrolled by text and accepted the terms
+    in the room; every other persona of the showcase gets the same row
+    (app/seed/showcase.py), because without one the app stops at the consent
+    screen the first time a phone — or the demo screen's frame — opens as
+    them. A row at an older version counts as none: the app would ask again.
+    Written straight to the table, never through ``auth.record_consent``,
+    which also files a copy in the members' archive. Idempotent; returns the
+    number of rows added (0 or 1)."""
     from app.models.patient import Patient
     from app.models.personal import Consent
     from app.personal import auth
 
     patient = db.get(Patient, patient_id)
-    if patient is None or auth.current_consent(db, patient) is not None:
+    if patient is None:
+        return 0
+    current = auth.current_consent(db, patient)
+    if current is not None and current.version == auth.CONSENT_VERSION:
         return 0
     db.add(Consent(
         patient_id=patient_id, kind=auth.CONSENT_KIND, version=auth.CONSENT_VERSION,
         text_sha256=auth.consent_hash(),
         scopes={"data_storage": True, "ai_processing": True, "research_use": True, "beta_ack": True},
-        signature=patient.name, device_name="enrolled by text",
+        signature=patient.name, device_name=device_name,
     ))
     db.flush()
     return 1
@@ -641,6 +658,64 @@ def write_reviews(db, patient_id: str) -> int:
     return written
 
 
+def relink_return_clips(db, patient_id: str) -> int:
+    """Put a lifter's return clips back on the calendar after a refill.
+
+    A refill rewrites the calendar and the thread, which leaves each clip a
+    lifter sent back (scripts/seed_hirt_media.py makes them, named
+    ``<lifter>-<exercise>-day-<n>.mp4``) as a stored file nothing points at.
+    The bytes are still in the object store, so this is rows only: the
+    newest such clip of each exercise goes on the latest done day of that
+    exercise, with the line a completion from the app writes on the thread
+    beside it. ``REVIEWS`` leaves that day unreviewed, so the review queue
+    has a clip waiting. A database the media script never ran against has
+    no such files and nothing happens. Returns the number of clips put back.
+    """
+    from sqlalchemy import select
+
+    from app.hep.models import Exercise, ExerciseAssignment
+    from app.hep.schedule import completion_line
+    from app.models.attachment import Attachment
+    from app.models.mobile import Message
+
+    relinked = 0
+    for item in SCHEDULE.get(patient_id, ()):
+        prefix = f"{patient_id}-{item.key.replace('_', '-')}-day-"
+        clip = db.scalar(
+            select(Attachment).where(
+                Attachment.patient_id == patient_id,
+                Attachment.filename.startswith(prefix, autoescape=True),
+                Attachment.deleted_at.is_(None), Attachment.confirmed_at.is_not(None),
+            ).order_by(Attachment.id.desc()).limit(1)
+        )
+        if clip is None:
+            continue
+        exercise = db.scalar(select(Exercise).where(Exercise.key == item.key))
+        row = db.scalar(
+            select(ExerciseAssignment).where(
+                ExerciseAssignment.patient_id == patient_id,
+                ExerciseAssignment.exercise_id == exercise.id,
+                ExerciseAssignment.status == "done",
+            ).order_by(ExerciseAssignment.scheduled_for.desc(), ExerciseAssignment.id.desc())
+            .limit(1)
+        )
+        if row is None or row.video_attachment_id is not None:
+            continue
+        at = row.completed_at
+        message = Message(
+            patient_id=patient_id, sender="patient", channel="app",
+            text=completion_line(exercise.title, row.pain_after, row.note, effort=row.effort),
+            created_at=at, read_by_care_team_at=at + timedelta(hours=1),
+        )
+        db.add(message)
+        db.flush()
+        clip.message_id = message.id
+        row.video_attachment_id = clip.id
+        relinked += 1
+    db.commit()
+    return relinked
+
+
 # --- programs ---------------------------------------------------------------------
 
 
@@ -735,9 +810,9 @@ def ensure_org(db) -> int:
 
 __all__ = [
     "HOSPITAL_ID", "TZ", "PROGRAM_DAYS", "QSET", "HIRT_HOSPITAL", "HIRT_CARE_TEAM",
-    "HIRT_PATIENTS", "HIRT_IDS", "PATHWAYS", "PHONES", "MRNS", "CheckinDay", "HISTORY",
-    "EXPECTED_TIERS", "write_history", "ensure_org",
+    "HIRT_PATIENTS", "HIRT_IDS", "PATHWAYS", "PHONES", "MRNS", "STORIES", "CheckinDay", "HISTORY",
+    "EXPECTED_TIERS", "write_history", "ensure_org", "ensure_consent",
     "SCHEDULE_AHEAD", "ScheduledExercise", "SCHEDULE", "PAIN_AFTER", "EFFORT", "REVIEWS",
     "EXPECTED_SCHEDULE", "EXPECTED_REQUIREMENTS", "EXPECTED_LOADS", "EXPECTED_REVIEWS",
-    "write_schedule", "write_reviews", "TEMPLATES", "ensure_templates",
+    "write_schedule", "write_reviews", "relink_return_clips", "TEMPLATES", "ensure_templates",
 ]

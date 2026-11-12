@@ -1,15 +1,18 @@
 #!/usr/bin/env python
-"""Run app.seed.demo_fill against the DEPLOYED database, safely.
+"""Run the showcase fill against the DEPLOYED demo database, safely.
 
     uv run python scripts/push_demo_fill.py --bucket <s3 bucket> --dry-run
     uv run python scripts/push_demo_fill.py --bucket <s3 bucket>
     uv run python scripts/push_demo_fill.py --local /path/to/copy.db
 
-demo_fill rebuilds the demo roster anchored to today, which is what a
-filmed demo needs the morning it is filmed: surgery dates, observations,
-check-ins and adherence all run up to the current date instead of stopping
-on the day the database was last filled, so the risk tiers come back to
-life instead of every patient ageing into MISSING_DATA.
+``app.seed.showcase.fill_showcase`` anchors every demo org to today: the
+clinic personas and the H.I.R.T. lifters, the sports rosters and the
+Personal members. Surgery dates, observations, check-ins, the exercise
+calendar and the athletes' streams all run up to the current date instead
+of stopping on the day the database was last filled, so the tiers and the
+readiness scores come back to life instead of every chart ageing into
+MISSING_DATA. On the demo stack the same fill runs each morning as the
+Lambda action ``showcase_fill``; this script is the same thing by hand.
 
 It takes the same S3 write lock the API takes, hydrates a fresh copy,
 fills it, and persists unconditionally — the pattern scripts/admin_db.py
@@ -19,10 +22,17 @@ either lose to a concurrent request or silently undo one.
 Before a real run it copies the current object to
 ``db/backups/recovery-<utc timestamp>.db`` server-side and prints the key.
 
-What it never touches: the protected charts (``app.seed.demo_fill.PROTECTED``
-— Steve's record and the Guest slot) and any patient who has since enrolled
-with a phone or an app session. demo_fill enforces that itself; this script
-only carries it to S3.
+What it never touches: any chart the showcase does not author. The fill
+writes its own personas by id and nothing else, so a real person who
+enrolled, the protected charts (``app.seed.demo_fill.PROTECTED``) and an
+onboarding attempt somebody abandoned are all left exactly as they are. On
+the personas themselves it keeps app sessions and any phone number that is
+not a 555 placeholder (a presenter's own, bound through ``/api/demo/phone``).
+
+The fill is for the demo stack, and this laptop cannot ask a bucket which
+stack it belongs to. So a bucket whose name does not say ``demo`` is
+refused unless ``--force`` is given; ``--local`` fills whatever file it is
+handed.
 
 ``--dry-run`` hydrates, fills a local copy and uploads nothing, printing
 where the filled copy landed so the tiers can be checked before committing.
@@ -63,6 +73,8 @@ def main() -> int:
     ap.add_argument("--db-key", default="db/recovery.db")
     ap.add_argument("--dry-run", action="store_true",
                     help="hydrate and fill a local copy; upload nothing")
+    ap.add_argument("--force", action="store_true",
+                    help="fill a bucket whose name does not say it is the demo stack's")
     ap.add_argument("--warm", action="store_true",
                     help="fill the Groq insight caches after the fill (slow, rate-limited)")
     ap.add_argument("--pause", type=float, default=12.0,
@@ -72,8 +84,17 @@ def main() -> int:
                     help="leave the demo patients without a phone number")
     args = ap.parse_args()
 
+    if args.bucket and "demo" not in args.bucket.lower() and not args.force:
+        print(
+            f"refusing: {args.bucket} does not look like the demo stack's bucket (no 'demo' in "
+            "its name), and the showcase fill rewrites every persona's chart. Pass --force if "
+            "this really is a demo database.",
+            file=sys.stderr,
+        )
+        return 2
+
     # Environment before any app import: app.database binds its engine at
-    # import time, and demo_fill must write to the file we hydrated.
+    # import time, and the fill must write to the file we are holding.
     os.environ["WARM_CACHES_ON_STARTUP"] = "false"
     for key in ("JUNCTION_API_KEY", "JUNCTION_WEBHOOK_SECRET", "SENDBLUE_API_KEY",
                 "SENDBLUE_API_SECRET", "SENDBLUE_WEBHOOK_SECRET", "CARE_TEAM_PHONES"):
@@ -86,35 +107,47 @@ def main() -> int:
         os.environ["OLLAMA_URL"] = ""
 
     if args.local:
-        db_path = Path(args.local).resolve()
+        db_path = Path(args.local).expanduser().resolve()
         if not db_path.exists():
             print(f"no such file: {db_path}", file=sys.stderr)
             return 2
+        # No S3 in this process: the file on disk is the database.
+        os.environ["S3_BUCKET"] = ""
     else:
         workdir = tempfile.mkdtemp(prefix="medpull-demofill-")
         db_path = Path(workdir) / "recovery.db"
         os.environ["S3_BUCKET"] = args.bucket
         os.environ["S3_DB_KEY"] = args.db_key
-        os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
-        # A full fill regenerates every demo patient and re-runs the engine
-        # for each: minutes, not the API's seconds.
+        # A full fill regenerates every persona and re-runs the engine for
+        # each: minutes, not the API's seconds.
         os.environ["LOCK_TTL_SECONDS"] = "900"
         os.environ["LOCK_ACQUIRE_TIMEOUT_SECONDS"] = "60"
+    os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
 
-    def fill() -> None:
-        """demo_fill's own CLI, pointed at the file we are holding."""
-        from app.seed import demo_fill
+    def fill() -> dict:
+        """The showcase fill on the file we are holding. Forced: which stack
+        this is was settled above, and this process's own DEMO_MODE says
+        nothing about the bucket's."""
+        import app.models  # noqa: F401 — register every table
+        from app.database import SessionLocal, ensure_schema
+        from app.seed.showcase import fill_showcase
 
-        argv = ["demo_fill", "--db", str(db_path), "--pause", str(args.pause)]
-        if args.warm:
-            argv.append("--warm")
-        if args.no_persona_phones:
-            argv.append("--no-persona-phones")
-        saved, sys.argv = sys.argv, argv
-        try:
-            demo_fill.main()
-        finally:
-            sys.argv = saved
+        ensure_schema()
+        with SessionLocal() as db:
+            report = fill_showcase(
+                db, force=True, suppress_phones=args.no_persona_phones, warm=args.warm,
+                pause=args.pause, say=print,
+            )
+        print(
+            f"\n{len(report['clinic']['personas'])} clinic personas, "
+            f"{report['sports'].get('athletes', 0)} athletes, {len(report['personal'])} members; "
+            f"put back {report['kept']['sessions']} session(s) and {report['kept']['phones']} "
+            f"bound phone(s) the refill would have dropped; {report['consents']} consent "
+            "row(s) added"
+        )
+        if report["clinic"]["skipped"]:
+            print(f"skipped: {report['clinic']['skipped']}")
+        return report
 
     if args.local:
         fill()

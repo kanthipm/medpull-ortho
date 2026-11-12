@@ -31,7 +31,7 @@ import json
 import os
 import sys
 import tempfile
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parent.parent
@@ -223,10 +223,10 @@ def main() -> int:
             # recorded failure. They are on the charts because a chart with no
             # number on file reads as incomplete; the operator drives SMS
             # through their own verified number instead.
-            from app.seed.demo_fill import _build_roster
+            from app.seed.demo_fill import build_roster, is_placeholder_phone
 
-            legacy, new_personas = _build_roster(date.today())
-            intended = {p.spec.id: p.phone for p in (*legacy, *new_personas)}
+            legacy, new_personas, lifters = build_roster()
+            intended = {p.spec.id: p.phone for p in (*legacy, *new_personas, *lifters)}
             applied, skipped = [], []
             for patient_id, phone in sorted(intended.items()):
                 patient = db.get(Patient, patient_id)
@@ -234,6 +234,12 @@ def main() -> int:
                     skipped.append({"patient": patient_id, "why": "no such record"})
                     continue
                 if patient.phone == phone:
+                    continue
+                if patient.phone and not is_placeholder_phone(patient.phone):
+                    # A presenter's own number, bound through /api/demo/phone
+                    # so the demo's texts reach a real phone. It stays, as it
+                    # does across a refill.
+                    skipped.append({"patient": patient_id, "why": "a real number is bound"})
                     continue
                 holder = db.scalar(select(Patient).where(
                     Patient.phone == phone, Patient.id != patient_id))
