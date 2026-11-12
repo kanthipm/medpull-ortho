@@ -23,6 +23,7 @@ import { CardTitleRow, Glyph } from '../../ui/rows'
 import { useBack } from '../../ui/useBack'
 import { teamInitials } from '../today/TodayView'
 import { CompletionSheet } from './CompletionSheet'
+import { CeilingNote } from './ExercisesSection'
 
 /** Where an exercise opens. The row comes from today's feed; a link to one
  *  that is not on it asks the server once, then says so. */
@@ -135,6 +136,7 @@ export function ExerciseDetailView({ a, back }: { a: ExerciseAssignment; back: {
             {a.rpeTarget != null && (
               <span className="t-copy c-muted">Aim for effort {a.rpeTarget}/10{DOT}{effortWord(a.rpeTarget).toLowerCase()}</span>
             )}
+            <CeilingNote a={a} />
             {a.assignedByName && <span className="t-copy c-muted">From {a.assignedByName}</span>}
           </div>
 

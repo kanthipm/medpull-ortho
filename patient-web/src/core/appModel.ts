@@ -13,7 +13,7 @@ import type {
   AgentResponse, Answers, ChatMessage, ConsentAcceptance, ExerciseAssignment, ExerciseCompletionBody,
   ExercisesResponse, ExerciseStartBody, LinkTarget, LoadUnit, Me, PatientMetricsResponse, PortfolioMetric,
   ProgramDay,
-  ProgramResponse, ProgressDay, RecoveryTask, TasksResponse, WearableSummary,
+  ProgramResponse, ProgramSummary, ProgressDay, RecoveryTask, TasksResponse, WearableSummary,
 } from './models'
 import { Dates, isPersonalProfile } from './models'
 
@@ -43,6 +43,10 @@ export class AppModel {
   /** The fourteen days around today (the Program screen); read when that
    *  screen opens, then kept fresh beside the day while it is showing. */
   program: ProgramResponse | null = null
+  /** The person's program between visits (docs/dev/pt.md): the phase,
+   *  their goals, the trainer's page. Null until the first answer, which is
+   *  also what a server without the route leaves. */
+  programSummary: ProgramSummary | null = null
   messages: ChatMessage[] = []
   progress: ProgressDay[] = []
   portfolio: PortfolioMetric[] = []
@@ -171,6 +175,8 @@ export class AppModel {
     this.tasks = { open: [], recent: [] }
     this.exercises = null
     this.program = null
+    this.programSummary = null
+    this.summaryMissing = false
     this.messages = []
     this.progress = []
     this.portfolio = []
@@ -207,7 +213,10 @@ export class AppModel {
     // and the first to be throttled. The banner means what it says: nothing
     // got through. The six are independent, so they go out together — the
     // tabs fill in at once rather than one feed after another — and each
-    // still records its own outcome. `refresh` never rejects.
+    // still records its own outcome. `refresh` never rejects. The program
+    // summary goes out beside them and stays out of the banner's count: a
+    // server without it is not a server that cannot be reached.
+    void this.refreshProgramSummary()
     const outcomes: Outcome[] = await Promise.all([
       this.refresh(false, async () => { this.me = await this.api.me(); this.notify() }),
       this.refresh(false, async () => { this.tasks = await this.api.tasks(); this.notify() }),
@@ -282,6 +291,28 @@ export class AppModel {
   private exerciseWatchers = 0
   private exerciseTimer: number | null = null
 
+  /** The program between visits: the phase, the goals, the trainer's page.
+   *  Never surfaced, so a failure leaves Today as it was; a server without
+   *  the route (404) is not asked again this session. One call at a time. */
+  refreshProgramSummary(): Promise<Outcome> {
+    if (this.summaryMissing) return Promise.resolve('failed')
+    if (this.summaryInFlight) return this.summaryInFlight
+    const run = this.refresh(false, async () => {
+      try {
+        this.programSummary = await this.api.programSummary()
+      } catch (e) {
+        if (e instanceof APIError && e.status === 404) this.summaryMissing = true
+        throw e
+      }
+      this.notify()
+    }).finally(() => { this.summaryInFlight = null })
+    this.summaryInFlight = run
+    return run
+  }
+
+  private summaryInFlight: Promise<Outcome> | null = null
+  private summaryMissing = false
+
   /** The program around today: a week back and the six days ahead, from
    *  the phone's own day. One call at a time, like the day's feed. */
   refreshProgram(surface = true): Promise<Outcome> {
@@ -332,11 +363,13 @@ export class AppModel {
     }
   }
 
-  /** One tick of the schedule's poll: the day, and the program while a
-   *  screen is showing it. */
+  /** One tick of the schedule's poll: the day, the program while a screen
+   *  is showing it, and the program's summary, so a phase the therapist
+   *  moves lands on Today the way a new exercise does. */
   private pollExercises(): void {
     void this.refreshExercises(undefined, false)
     if (this.programWatchers > 0) void this.refreshProgram(false)
+    void this.refreshProgramSummary()
   }
 
   /** The demo screen's frame: the console, on the same origin, says the

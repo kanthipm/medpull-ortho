@@ -8,11 +8,25 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../../core/appModel'
-import { Dates, DOT, hasProgram, isOpenAssignment, type ExerciseAssignment, type ProgramDay } from '../../core/models'
+import {
+  Dates, DOT, hasProgram, isOpenAssignment, typeset, visitLabel,
+  type ClinicVisit, type ExerciseAssignment, type ProgramDay, type ProgramResponse, type RestDay,
+} from '../../core/models'
 import { Card, cx, EmptyRow, ErrorBanner, NavBar, Screen, SecondaryButton, Spinner } from '../../ui/components'
 import { CardTitleRow, RowDivider } from '../../ui/rows'
 import { useBack } from '../../ui/useBack'
-import { ExerciseRow } from './ExercisesSection'
+import { CardLine, ExerciseRow, RestDayLine } from './ExercisesSection'
+
+/** What the clinic marked on a day beside its exercises: the visits there
+ *  and the rest day it set (docs/dev/pt.md). */
+type DayMarks = { visits: ClinicVisit[]; rest: RestDay | null }
+
+function marksFor(program: ProgramResponse | null, date: string): DayMarks {
+  return {
+    visits: (program?.visits ?? []).filter((v) => v.on === date),
+    rest: (program?.restDays ?? []).find((r) => r.day === date) ?? null,
+  }
+}
 
 export function ProgramView() {
   const app = useApp()
@@ -61,9 +75,9 @@ export function ProgramView() {
         <Card padding={0}>
           <div className="day-strip" role="group" aria-label="The days of your program">
             {past.length > 0 && <span className="week-label">The last {past.length} days</span>}
-            {past.map((d) => <DayCell key={d.date} d={d} today={today} selected={d.date === selected} onSelect={() => setSelected(d.date)} />)}
+            {past.map((d) => <DayCell key={d.date} d={d} marks={marksFor(program, d.date)} today={today} selected={d.date === selected} onSelect={() => setSelected(d.date)} />)}
             {ahead.length > 0 && <span className="week-label">From today</span>}
-            {ahead.map((d) => <DayCell key={d.date} d={d} today={today} selected={d.date === selected} onSelect={() => setSelected(d.date)} />)}
+            {ahead.map((d) => <DayCell key={d.date} d={d} marks={marksFor(program, d.date)} today={today} selected={d.date === selected} onSelect={() => setSelected(d.date)} />)}
           </div>
           <div className="dot-legend" aria-hidden="true">
             <span><i className="done" />done</span>
@@ -71,7 +85,7 @@ export function ProgramView() {
             <span><i className="missed" />missed</span>
           </div>
         </Card>
-        <DayCard day={day} date={selected} today={today} onOpen={open} />
+        <DayCard day={day} marks={marksFor(program, selected)} date={selected} today={today} onOpen={open} />
       </>
     )
   }
@@ -86,24 +100,41 @@ export function ProgramView() {
 }
 
 /** One day of the strip: the weekday, the date, a dot for each exercise
- *  in its state. Today is ringed; the chosen day is filled. */
-function DayCell({ d, today, selected, onSelect }: { d: ProgramDay; today: string; selected: boolean; onSelect: () => void }) {
+ *  in its state, and a word under them when the clinic marked the day — a
+ *  visit, a test day, a rest day. Today is ringed; the chosen day is
+ *  filled. The whole marker ("Test day 9:30 AM") is on the day's card. */
+function DayCell({ d, marks, today, selected, onSelect }: {
+  d: ProgramDay; marks: DayMarks; today: string; selected: boolean; onSelect: () => void
+}) {
   const date = Dates.parse(d.date)
   const past = d.date < today
   const isToday = d.date === today
   const dots = dotsFor(d, past)
   const longDay = date ? date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) : d.date
-  const spoken = d.assigned === 0
-    ? `${longDay}, a rest day`
-    : `${longDay}, ${d.assigned} ${d.assigned === 1 ? 'exercise' : 'exercises'}, ${d.done} done${d.missed > 0 ? `, ${d.missed} missed` : ''}`
+  const said = [longDay]
+  if (d.assigned === 0) said.push(marks.visits.length > 0 && !marks.rest ? 'no exercises' : 'a rest day')
+  else {
+    said.push(`${d.assigned} ${d.assigned === 1 ? 'exercise' : 'exercises'}`, `${d.done} done`)
+    if (d.missed > 0) said.push(`${d.missed} missed`)
+    if (marks.rest) said.push('a rest day')
+  }
+  for (const v of marks.visits) said.push(visitLabel(v))
+  const spoken = said.join(', ')
+  const tag = marks.visits.length > 0 ? visitTag(marks.visits[0]) : marks.rest ? 'Rest' : null
   return (
     <button type="button" className={cx('day-cell', past && 'past', isToday && 'today')} aria-pressed={selected}
       aria-label={isToday ? `Today, ${spoken}` : spoken} onClick={onSelect}>
       <span className="wd">{date ? date.toLocaleDateString(undefined, { weekday: 'narrow' }) : ''}</span>
       <span className="num">{date ? date.getDate() : ''}</span>
       <span className="day-dots">{dots.map((c, i) => <i key={i} className={c || undefined} />)}</span>
+      {tag && <span className={cx('day-tag', marks.visits.length === 0 && 'rest')}>{tag}</span>}
     </button>
   )
+}
+
+/** A visit in the width of a day's column: "Visit", "Test", "Eval". */
+function visitTag(v: ClinicVisit): string {
+  return v.kind === 'test_day' ? 'Test' : v.kind === 'evaluation' ? 'Eval' : 'Visit'
 }
 
 /** A dot's class per exercise: done, skipped, missed (still to do and the
@@ -123,19 +154,32 @@ function dotsFor(d: ProgramDay, past: boolean): string[] {
 /** The chosen day's exercises. Today's open rows open the exercise; past
  *  rows show what happened and still open, so a done one can be looked at
  *  and one still to do can be caught up; the days ahead are a preview. */
-function DayCard({ day, date, today, onOpen }: { day: ProgramDay | null; date: string; today: string; onOpen: (a: ExerciseAssignment) => void }) {
+function DayCard({ day, marks, date, today, onOpen }: {
+  day: ProgramDay | null; marks: DayMarks; date: string; today: string; onOpen: (a: ExerciseAssignment) => void
+}) {
   const past = date < today
   const future = date > today
   const items = day?.items ?? []
   const ordered = date === today ? [...items.filter(isOpenAssignment), ...items.filter((a) => !isOpenAssignment(a))] : items
   const context = past ? 'past' : future ? 'future' : 'today'
+  const empty = ordered.length === 0
+  const rest = marks.rest
   return (
     <Card padding={0}>
       <CardTitleRow title={dayTitle(date, today)} note={dayNote(day, date, past, future)} />
-      {ordered.length === 0 ? (
+      {marks.visits.map((v, i) => (
+        <CardLine key={i} symbol="calendar" underTitle><b>{v.kindLabel || 'Visit'}</b>{Dates.clockTime(v.at) ? ` ${Dates.clockTime(v.at)}` : ''}</CardLine>
+      ))}
+      {rest && !empty && <RestDayLine note={rest.note} underTitle />}
+      {empty ? (
         <div style={{ paddingBottom: 4 }}>
-          <EmptyRow icon="figure.strengthtraining.traditional" title={future ? 'Nothing planned yet' : 'A rest day'}
-            detail={future ? 'Your therapist may still add to this day.' : past ? 'Nothing was scheduled.' : 'Nothing scheduled today.'} />
+          {rest ? (
+            <EmptyRow icon="moon.fill" title="Rest day" detail={typeset((rest.note ?? '').trim()) || 'Your therapist set this day aside for rest.'} />
+          ) : (
+            <EmptyRow icon="figure.strengthtraining.traditional"
+              title={future ? 'Nothing planned yet' : marks.visits.length > 0 ? 'No exercises' : 'A rest day'}
+              detail={future ? 'Your therapist may still add to this day.' : past ? 'Nothing was scheduled.' : 'Nothing scheduled today.'} />
+          )}
         </div>
       ) : (
         <>

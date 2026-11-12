@@ -10,7 +10,8 @@ import type {
   ExerciseCompletionBody, ExercisesResponse, ExerciseStartBody, GaitUpload, GaitUploadResponse,
   Hospital, LinkInfo, LinkResponse, LinkSession, Me, MessagesResponse, MotionUpload, MotionUploadResponse,
   OKResponse,
-  PatientMetricsResponse, PortfolioResponse, Procedure, ProgramResponse, ProgressResponse, RangeOfMotionUpload,
+  PatientMetricsResponse, PortfolioResponse, Procedure, ProgramResponse, ProgramSummary, ProgressResponse,
+  RangeOfMotionUpload,
   RangeOfMotionResponse, SentMessageResponse, SixMinuteWalkUpload, SixMinuteWalkResponse,
   StagedUpload, TasksResponse, VerificationStatus, WearablesResponse, Answers,
 } from './models'
@@ -236,6 +237,12 @@ export class APIClient {
     if (start) query.start = start
     if (days) query.days = String(days)
     return this.get('/api/mobile/exercises/program', query, signal)
+  }
+
+  /** The person's own read of their program between visits: the phase,
+   *  their goals with the ratings, the trainer's page (docs/dev/pt.md). */
+  programSummary(signal?: AbortSignal): Promise<ProgramSummary> {
+    return this.get('/api/mobile/pt', {}, signal)
   }
 
   /** "Start": the pain right now and whether the watch is on. The row

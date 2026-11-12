@@ -484,6 +484,8 @@ export type ExerciseCompletion = {
   loadDoneKg?: number | null
   /** Null until the therapist has looked at it. */
   review?: ExerciseReview | null
+  /** What was done went past the therapist's ceiling (docs/dev/pt.md). */
+  pastCeiling?: boolean | null
 }
 
 /** One exercise on one of this patient's days. */
@@ -530,10 +532,24 @@ export type ExerciseAssignment = {
   videoRequirement?: string | null
   wearableRequirement?: string | null
   session?: ExerciseSession | null
+  // Between visits (docs/dev/pt.md): the dose's ceiling. Optional so a
+  // server without the module still reads.
+  /** The most load she allows, in kilograms like `loadKg`. */
+  loadMaxKg?: number | null
+  /** The effort to stop at, 0–10. */
+  rpeMax?: number | null
+  /** The ceiling as a sentence in the clinic's unit — "Stop at RPE 8 · do
+   *  not exceed 30 lb" — or "" when the therapist wrote none. */
+  ceiling?: string | null
 }
 
 export const isOpenAssignment = (a: ExerciseAssignment) => a.status === 'assigned'
 export const isDoneAssignment = (a: ExerciseAssignment) => a.status === 'done'
+
+/** The therapist's ceiling on a dose, in her words; null when she wrote none. */
+export function ceilingOf(a: ExerciseAssignment): string | null {
+  return (a.ceiling ?? '').trim() || null
+}
 
 export const videoRequirement = (a: ExerciseAssignment): Requirement => requirementOf(a.videoRequirement)
 export const wearableRequirement = (a: ExerciseAssignment): Requirement => requirementOf(a.wearableRequirement)
@@ -583,15 +599,51 @@ export type ProgramDay = {
 export type LoadUnit = 'kg' | 'lb'
 export type ExerciseClinic = { id: string; name: string; loadUnit?: LoadUnit | null }
 
+/** A visit at the clinic (docs/dev/pt.md). `at` is "HH:mm" on the clinic's
+ *  clock, or null for a day with no time; `kind` is `visit`, `evaluation`
+ *  or `test_day`, worded by the server in `kindLabel`. */
+export type ClinicVisit = {
+  /** "yyyy-MM-dd". */
+  on: string
+  at: string | null
+  kind: string
+  kindLabel: string
+}
+
+/** A rest day the clinic set on purpose, with its note or "". */
+export type RestDay = { day: string; note: string }
+
 export type ProgramResponse = {
   start: string
   days: ProgramDay[]
   clinic: ExerciseClinic | null
+  /** The window's clinic visits and rest days; absent from a server
+   *  without the between-visits module. */
+  visits?: ClinicVisit[] | null
+  restDays?: RestDay[] | null
 }
 
-/** Whether there is a program to show: any exercise on any of the days. */
+/** Whether there is a program to show: any exercise on any of the days, or
+ *  a visit or a rest day marked on one. */
 export function hasProgram(p: ProgramResponse | null | undefined): p is ProgramResponse {
-  return !!p && p.days.some((d) => d.items.length > 0 || d.assigned > 0)
+  if (!p) return false
+  return p.days.some((d) => d.items.length > 0 || d.assigned > 0)
+    || (p.visits?.length ?? 0) > 0 || (p.restDays?.length ?? 0) > 0
+}
+
+/** "Visit 9:30 AM", "Test day 9:30 AM": a visit as a day's marker. */
+export function visitLabel(v: ClinicVisit): string {
+  const time = Dates.clockTime(v.at)
+  const label = v.kindLabel || 'Visit'
+  return time ? `${label} ${time}` : label
+}
+
+/** "Test day · Sat, Nov 14 · 9:30 AM", after the words "Next visit". A
+ *  plain visit does not say "visit" twice; today and tomorrow are named. */
+export function nextVisitDetail(v: ClinicVisit): string {
+  const n = Dates.daysAgo(v.on)
+  const day = n === 0 ? 'Today' : n === -1 ? 'Tomorrow' : `${Dates.shortDay(v.on)}, ${Dates.monthDay(v.on)}`
+  return [v.kind === 'visit' ? null : v.kindLabel, day, Dates.clockTime(v.at)].filter((p): p is string => !!p).join(DOT)
 }
 
 /** What the patient sends with "Start": the pain right now and whether the
@@ -608,15 +660,71 @@ export type ExercisesResponse = {
   overdue?: ExerciseAssignment[]
   week: ExerciseDay[]
   clinic: ExerciseClinic | null
+  /** Today is a rest day the clinic set on purpose (docs/dev/pt.md). */
+  restDay?: { note: string } | null
+  /** The next visit at the clinic, from today on. */
+  nextVisit?: ClinicVisit | null
 }
 
 /** Whether Today shows the schedule at all: a patient with no schedule
  *  never sees an empty card, and neither does one whose server has no
  *  schedule yet. A rest day inside a scheduled week does show, so the
- *  person knows nothing is missing. */
+ *  person knows nothing is missing; so does a day the clinic marked as
+ *  rest, or a visit ahead, with no exercise around it. */
 export function hasExerciseSchedule(feed: ExercisesResponse | null): feed is ExercisesResponse {
   if (!feed) return false
   return feed.items.length > 0 || (feed.overdue?.length ?? 0) > 0 || feed.week.some((d) => d.assigned > 0)
+    || !!feed.restDay || !!feed.nextVisit
+}
+
+// MARK: - Between visits (docs/dev/pt.md, "What the phone gets")
+
+/** Where the person is in the clinic's protocol: "Phase 2 of 4". */
+export type ProgramPhase = { name: string; goal: string; number: number; count: number }
+
+/** One of the person's own goals, rated 0–10: the first rating and the
+ *  latest, null until it has been rated. */
+export type FunctionGoal = {
+  id: number
+  text: string
+  first: number | null
+  latest: number | null
+  ratings?: { on: string; score: number; source: string }[]
+}
+
+/** Sharing training limits with a trainer: asked (`awaiting`) or agreed
+ *  (`active`). */
+export type TrainerHandoff = { trainerName: string; status: string }
+
+/** `GET /mobile/pt`: the person's own read of their program. A record with
+ *  no program answers the same shape, empty. */
+export type ProgramSummary = {
+  nextVisit?: ClinicVisit | null
+  restDay?: { note: string } | null
+  phase?: ProgramPhase | null
+  goals?: FunctionGoal[] | null
+  handoff?: TrainerHandoff | null
+}
+
+/** The one line about the trainer, or null for a state with nothing to say. */
+export function handoffLine(h: TrainerHandoff | null | undefined): string | null {
+  if (!h) return null
+  const trainer = h.trainerName?.trim() || 'your trainer'
+  if (h.status === 'active') return `Your training limits are shared with ${trainer}.`
+  if (h.status === 'awaiting') return `Your therapist asked to share your training limits with ${trainer}. Answer it in your tasks.`
+  return null
+}
+
+/** Whether there is anything of the program to show: a phase, a goal, or
+ *  a line about the trainer. */
+export function hasProgramSummary(p: ProgramSummary | null | undefined): p is ProgramSummary {
+  return !!p && (!!p.phase || (p.goals?.length ?? 0) > 0 || handoffLine(p.handoff) != null)
+}
+
+/** "6", or "4 → 6" when the first rating was different; null before any. */
+export function goalRating(g: FunctionGoal): string | null {
+  if (g.latest == null) return null
+  return g.first != null && g.first !== g.latest ? `${g.first} → ${g.latest}` : String(g.latest)
 }
 
 /** What the patient sends with "Mark done" or a session's "Finish": the
@@ -1029,6 +1137,13 @@ export const Dates = {
   monthDay(raw: string): string {
     const d = Dates.parse(raw)
     return d ? monthDayOf(d) : raw
+  },
+
+  /** "09:30" -> "9:30 AM" in the reader's locale; "" when there is no time. */
+  clockTime(raw: string | null | undefined): string {
+    const m = /^(\d{1,2}):(\d{2})/.exec(raw ?? '')
+    if (!m) return ''
+    return new Date(2000, 0, 1, Number(m[1]), Number(m[2])).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
   },
 
   /** Whole days from a server day to today (0 = today), or null. */

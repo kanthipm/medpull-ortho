@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { useNavigate } from 'react-router-dom'
 import { messageFor, useApp } from '../../core/appModel'
 import {
-  Dates, DOT, hasExerciseSchedule, isOpenTask, isRecovery, scheduleLabel, toneForLevel, typeset,
+  Dates, DOT, hasExerciseSchedule, hasProgramSummary, isOpenTask, isRecovery, scheduleLabel, toneForLevel, typeset,
   type CareTeamMember, type Me, type RecoveryTask,
 } from '../../core/models'
 import {
@@ -17,7 +17,7 @@ import {
 import { Sym } from '../../ui/icons'
 import { CardTitleRow, Chevron, Glyph, ListRow, RowDivider, StateLabel } from '../../ui/rows'
 import { RecoveryCurveArt } from '../../ui/tileArt'
-import { ExercisesCard } from '../exercises/ExercisesSection'
+import { ExercisesCard, ProgramSummaryCard } from '../exercises/ExercisesSection'
 import { flowTitle, measureFlows, measureStatus } from '../progress/progressModel'
 import { ProfileView } from '../profile/ProfileView'
 
@@ -64,6 +64,12 @@ export function TodayView() {
 
   const open = app.tasks.open
   const done = doneToday
+  // "Your program" (docs/dev/pt.md) sits under the day's exercises when
+  // there is a phase, a goal or a trainer to speak of, and then carries the
+  // way to the calendar that the exercises card otherwise ends with.
+  const schedule = hasExerciseSchedule(app.exercises)
+  const summary = hasProgramSummary(app.programSummary) ? app.programSummary : null
+  const toProgram = () => navigate('/today/program', { state: { from: 'Today' } })
 
   return (
     <>
@@ -102,12 +108,18 @@ export function TodayView() {
               <ExercisesCard
                 feed={app.exercises}
                 onOpen={(a) => navigate(`/today/exercises/${a.id}`, { state: { from: 'Today' } })}
-                onProgram={() => navigate('/today/program', { state: { from: 'Today' } })}
+                onProgram={toProgram}
+                programRow={!summary}
               />
             </Rise>
           )}
+          {summary && (
+            <Rise index={3} id="program">
+              <ProgramSummaryCard summary={summary} onCalendar={schedule ? toProgram : undefined} />
+            </Rise>
+          )}
 
-          <Rise index={3} id="plan">
+          <Rise index={4} id="plan">
             <Card padding={0}>
               <CardTitleRow
                 title="Today’s plan"
@@ -171,8 +183,8 @@ export function TodayView() {
             </Card>
           </Rise>
 
-          <Rise index={4} id="measure"><MeasureRow onClick={() => navigate('/measure')} /></Rise>
-          <Rise index={5} id="care"><CareRow onClick={() => navigate('/care')} /></Rise>
+          <Rise index={5} id="measure"><MeasureRow onClick={() => navigate('/measure')} /></Rise>
+          <Rise index={6} id="care"><CareRow onClick={() => navigate('/care')} /></Rise>
           {quickError && <ErrorBanner text={quickError} />}
           {app.lastError && <ErrorBanner text={app.lastError} />}
           <span className="footnote">Monitoring signals for your care team — not a diagnosis.</span>

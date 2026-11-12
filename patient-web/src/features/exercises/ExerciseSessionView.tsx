@@ -24,6 +24,7 @@ import { useBack } from '../../ui/useBack'
 import { ScaleAnswer } from '../checkin/CheckinView'
 import { EffortScale } from './CompletionSheet'
 import { ClipPlayer, MissingExercise, OutcomeCard, useAssignment } from './ExerciseDetailView'
+import { CeilingNote } from './ExercisesSection'
 
 /** The rest between sets of a counted exercise. The dose carries no rest
  *  of its own; a minute is what a loading programme usually asks. */
@@ -249,6 +250,7 @@ function StartStage({ a, strip, painBefore, onPain, onLeave, onStarted }: {
       {a.rpeTarget != null && (
         <span className="t-copy c-muted">Aim for effort {a.rpeTarget}/10{DOT}{effortWord(a.rpeTarget).toLowerCase()}</span>
       )}
+      <CeilingNote a={a} />
       {a.clinicianInstructions && (
         <Card tint>
           <div className="stack-3">
@@ -472,6 +474,7 @@ function ExerciseStage({ a, strip, startedAt, onLeave, onDone }: {
             ))}
           </div>
           <span className="t-copy-lg c-ink">{line}</span>
+          <CeilingNote a={a} />
           {a.clinicianInstructions && <span className="t-copy secondary">“{typeset(a.clinicianInstructions)}”</span>}
         </div>
       </Card>

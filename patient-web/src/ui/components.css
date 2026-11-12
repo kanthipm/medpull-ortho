@@ -1233,6 +1233,34 @@ button.round-btn:active:not(:disabled), .press-88:active { transform: scale(0.88
 .ask-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .ask-pills .schedule-pill { display: inline-flex; align-items: center; gap: 5px; }
 
+/* Between visits (docs/dev/pt.md). One quiet line in a card of rows — a
+   rest day, the next visit, the line about a trainer: a small mark where a
+   row's glyph sits, then the words. */
+.card-line { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; font-size: var(--s-copy); letter-spacing: -0.06px; line-height: 1.35; color: rgb(var(--body)); }
+.card-line.under-title { padding-top: 0; padding-bottom: 6px; }
+.card-line .mark { flex-shrink: 0; display: grid; place-items: center; width: 32px; height: 19px; color: rgb(var(--brand-ink)); }
+.card-line b { font-weight: 500; color: rgb(var(--ink)); }
+/* The therapist's ceiling on a dose: her limit, in her words, beside the
+   dose. Ink on the sage tint — a note to keep in view, never a warning. */
+.ceiling-note {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 100%;
+  padding: 9px 14px 10px;
+  border-radius: var(--r-control);
+  background: rgb(var(--brand-tint));
+}
+.on-tint .ceiling-note { background: rgb(var(--panel) / 0.75); box-shadow: inset 0 0 0 1px rgb(var(--line)); }
+/* "Your program": the phase with a pip per phase, then the person's goals,
+   each with where they put it out of ten. */
+.program-phase { display: flex; flex-direction: column; gap: 8px; padding: 2px 16px 14px; }
+.goal-head { display: flex; align-items: baseline; padding: 12px 16px 2px; font-size: var(--s-label); font-weight: 500; color: rgb(var(--muted)); }
+.card-title-row + .goal-head { padding-top: 2px; }
+.goal-list { margin: 0; padding: 0 0 6px; list-style: none; }
+.goal-row { display: flex; align-items: baseline; gap: 16px; padding: 7px 16px; }
+
 /* The program's fourteen days: two rows of seven, each day a column of
    weekday, date and one dot per exercise. Today ringed, the chosen day
    filled; a rest day has no dots. */
@@ -1272,6 +1300,9 @@ button.round-btn:active:not(:disabled), .press-88:active { transform: scale(0.88
 .day-dots i.done { background: rgb(var(--brand)); }
 .day-dots i.missed { background: rgb(var(--risk-med)); }
 .day-dots i.skipped { background: none; box-shadow: inset 0 0 0 1.2px rgb(var(--line-strong) / 0.8); }
+/* A day's mark under its dots: a visit at the clinic, a rest day it set. */
+.day-tag { max-width: 100%; overflow: hidden; white-space: nowrap; font-size: var(--s-axis); font-weight: 500; line-height: 1.2; color: rgb(var(--brand-ink)); }
+.day-tag.rest { color: rgb(var(--muted)); }
 .dot-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0 16px 12px; font-size: var(--s-label); color: rgb(var(--muted)); }
 .dot-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .dot-legend i { width: 6px; height: 6px; border-radius: 50%; background: rgb(var(--line-strong) / 0.5); }
