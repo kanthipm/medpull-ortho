@@ -91,6 +91,13 @@ words: no styling that reads as an error, and nothing when it is empty.
 
 A subscriber's or an athlete's space answers the same shape, empty.
 
+`next_visit` is the same four keys on both routes (`service.phone_visit`).
+The clinic's note on a visit and who booked it stay on the console.
+
+A rest day is a mark, not a lock: a day can be marked and still carry an
+exercise (the demo's Sundays keep Cole's heel slides, and the mark's note
+says so). The apps show both.
+
 **Asks** arrive in `GET /api/mobile/tasks` like any task, kind `custom`,
 with their own `questions` (the kinds the apps already render: `scale`,
 `yes_no`, `choice`, `number`, `text`). Nothing to build.
@@ -151,6 +158,23 @@ entry of `GET /api/hep/week` carries `between_visits`
 the clinic's exercise count; `POST /api/hep/schedule/check` says which days
 would, without writing.
 
+## The console's screens (`frontend/src/features/pt`, `frontend/src/api/pt.ts`)
+
+| Where | File | What |
+| --- | --- | --- |
+| Chart → Program | `ProgramCard.tsx`, `ProgramFunction.tsx`, `ProgramTests.tsx`, `ProgramTrainer.tsx` | phases and criteria, visits, areas, mornings, the week's word; goals and ratings; tests and outcome measures; the trainer handoff |
+| `/calendar/questions` | `QuestionsPage.tsx` | typed questions in two piles, moved or marked done |
+| `/calendar/rules` | `RulesPage.tsx` | flag thresholds, red-flag entries and approval, triage words, exercise count, what is asked by itself, outcome thresholds, protocols |
+| `/h/:token` | `HandoffPage.tsx` | the trainer's page: public, outside the shell, no console header sent |
+| Schedule grid, Month | `hep/ScheduleBoard.tsx`, `hep/MonthBoard.tsx` | visit and rest-day marks; the moon on an empty day |
+| `+` on a day | `hep/AssignDialog.tsx` | ceilings, "Also for", the exercise-count check before the write |
+| A day, opened | `hep/AssignmentDialog.tsx`, `pt/ClipNotes.tsx` | ceilings, "Went past your ceiling", comments pinned to a moment, a voice note, earlier clips |
+| Week | `hep/WeekReviewPage.tsx` | the "Between visits" facts on each card |
+| Chart thread | `patient/plan/MessagesSection.tsx` | how a typed line was sorted |
+
+A voice note is recorded as `audio/mp4` (the container the attachment store
+keeps); a browser that cannot record that is offered a file picker.
+
 ## What goes out by itself
 
 Nothing, unless the deployment has the morning text on
@@ -185,7 +209,9 @@ clinic gives its own copy and the total is entered.
 their existing stories and adds no check-in, so the pitched tiers do not
 move. The two protocols and the trainer ("Mara Ellis") are examples and are
 named as examples where a clinician reads them. The red-flag entries start
-as drafts with a blank the clinic must fill.
+as drafts with a blank the clinic must fill. Cole's trainer page is live
+(a fresh link each fill); June's is waiting on her, and the ask is an open
+task in her app. Cole's Sundays are rest days.
 
 ## Tests
 

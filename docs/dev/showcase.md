@@ -137,7 +137,11 @@ app on the same origin clears `medpull.`).
   marks, done against prescribed, planned load against last week, one
   exercise's history, a week review per lifter with next week's draft,
   pounds or kilograms, and a text to the lifter that opens the app. Sub-nav:
-  Schedule · Week · Review · Programs · Library · Plans.
+  Schedule · Week · Review · Questions · Programs · Library · Plans · Rules.
+  Questions and Rules, the Program card on a chart, the visit and rest-day
+  marks on the grid, the ceilings on a dose and the trainer's page at
+  `/h/<token>` are the between-visits record (`backend/app/pt`,
+  `frontend/src/features/pt`; contract in `docs/dev/pt.md`).
 - **Data** — tiered: sources and coverage → raw readings → daily signals
   against the person's baseline → what MedPull computes itself (gait,
   stairs, six-minute walk, range of motion, stress; reported load, pain and

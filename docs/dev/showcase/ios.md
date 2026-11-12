@@ -320,6 +320,7 @@ ordinary stored settings given as arguments.
 | `-MP_EX_AUTO <seconds>` | every stage takes its own primary action after that long: one launch walks the session through the real calls, with the sample clip |
 | `-MP_EX_FILL 1`, `-MP_EX_SEND 1`, `-MP_EX_SKIP <reason>` | answer the completion sheet; press Send; pick a skip reason |
 | `-MP_EX_SCROLL middle\|bottom`, `-MP_CAL_DAY <yyyy-MM-dd, or days ahead of today>` | what a screenshot shows (a day behind today needs its date: `-2` would be read as the next argument's name) |
+| `-MP_REST_DAY <note>\|1` | debug builds only: reads today as a rest day the clinic set (`1` for no note), for a screenshot on a day the server has none on |
 
 The shared screens' own arguments (`-MP_SCROLL`, `-MP_OPEN`, …) work as in
 the real app.

@@ -282,3 +282,62 @@ Still true, and still the rules of the room: nothing here sets a dose,
 scores a movement, or says a lifter is cleared. "Over the dose" describes a
 session; the therapist decides what it means.
 
+## Between visits (added 2026-11-12, second pass)
+
+The record a PT clinic keeps beyond the calendar, built from the sixteen
+features on the list (`docs/dev/pt.md` has where each lives). In the order
+it is worth showing, about four minutes:
+
+1. **Cole's chart → Program.** One card: the phase he is in (*Phase 2 of 4,
+   Isotonic loading*, from the example tendon protocol) with the criteria
+   Dr. Gregg ticks before she moves it; the next visit (*Test day, Sat,
+   9:30*); the area the evaluation named (left knee); the mornings after his
+   loaded sessions (*not settled* on two of the last four); his own word on the
+   week. **Function** is his goals in his words, rated 0 to 10 over time.
+   **Tests** is left beside right, and his outcome measure against a
+   published threshold with its source printed next to it. **Trainer** is
+   the page for his coach.
+2. **The trainer's page.** Press the link on the Trainer tab: what Mara
+   Ellis (an example trainer) opens on a gym floor. Limits, the phase by
+   name, this week's doses with their ceilings, what to send back. Nothing
+   from the record. It exists because Cole said yes in his app; June's is
+   still waiting on her answer, and the ask is in her tasks.
+3. **A ceiling on a dose.** Calendar → Cole's Friday Step-Ups: *Stop at RPE
+   8 · do not exceed 30 lb*. On his phone it sits under the dose through
+   every set. Wednesday's reads **Went past your ceiling** (the 35s).
+4. **The grid.** Saturday carries *Test day 9:30 AM*; Sunday is a *Rest
+   day*. An empty day ahead has a moon beside its `+` to mark one. The `+`
+   has **Ceilings**, **Also for** (the same exercise, dose and days for
+   other lifters in one save), and asks before a day goes past the clinic's
+   exercise count.
+5. **Week.** Each card now ends with *Between visits*: their word on the
+   week, the mornings after, the phase, the next visit.
+6. **Questions** (Calendar → Questions). What lifters typed, sorted by the
+   clinic's own word list into *today* and *the weekly block*. Nothing is
+   answered for the clinic; a question can be moved or marked done.
+7. **Rules** (Calendar → Rules). Every flag as a sentence with the clinic's
+   own numbers and how often it fired. The red-flag list: five entries,
+   each a **draft** with a blank for the clinic's phone number; until a
+   named clinician approves the words, a matching message gets one fixed
+   line and the assistant stays silent. The word list, the exercise count,
+   what is asked by itself, each outcome measure's threshold and where it
+   was published, and the protocols (both labelled *example*).
+8. **A clip, looked at closely.** A done day with a clip: pin a comment to
+   the moment the clip is paused on, or press **Say it instead** and it
+   goes to the lifter's thread as a voice note. *Earlier clips* plays the
+   same exercise from an earlier day under it.
+
+Rules of the room for this part, on top of the ones above:
+
+- The two protocols and the trainer are **examples** and say so on screen.
+  Do not present them as H.I.R.T.'s own.
+- A threshold is a published starting point, shown with its source. Do not
+  say a lifter "passed" or is "ready".
+- The red-flag texts are drafts. The clinic writes and approves its own.
+- The morning-after check, the Friday word and a due outcome measure go out
+  by themselves only when the morning text is on, and it is **off** on this
+  deployment. Each can be asked by hand from the chart, which is what to
+  show.
+- QuickDASH and ACL-RSI carry no threshold; ODI and the other licensed
+  questionnaires are entered as a total from the clinic's own copy.
+
