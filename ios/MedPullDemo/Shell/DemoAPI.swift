@@ -319,7 +319,7 @@ struct DemoPhoneState: Decodable, Equatable {
 
 /// Where a link lands. `refId` is the assignment id for `exercise` and the
 /// task id for `task` / `checkin`; the rest carry none.
-struct AppLinkTarget: Decodable, Equatable {
+struct AppLinkTarget: Codable, Hashable {
     let kind: String
     let refId: String?
     let day: String?

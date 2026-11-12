@@ -73,7 +73,7 @@ Core files:
 | `Features/Profile/ProfileView.swift` | `Profile/ProfileView.swift` | the avatar at the top right of Today opens the presenter's sheet |
 | `Features/Profile/ConnectionsView.swift`, `Features/Sports/SportsDevicesView.swift` | `Profile/SimulatedDevices.swift` | they say the person's devices are simulated and list, read-only, what the server reports as connected |
 
-Five edits were made under `ios/MedPull/` so both targets can compile the
+Seven edits were made under `ios/MedPull/` so both targets can compile the
 same files. Each is inert for the real app:
 
 - `UI/BrandFlow.swift`: `BrandFlow` moved out of
@@ -90,8 +90,16 @@ same files. Each is inert for the real app:
   the Measure screen asks for the height, as it already does when Health has
   none.
 - `Features/Today/TodayView.swift`: two `#if DEMO_APP` blocks, the exercise
-  card between the hero and the plan (`TodayExercises()`) and the modifier
+  card under the greeting, above the hero (`TodayExercises()`), and the modifier
   that reads the day and pushes the exercise screen (`.todayExercisesHost()`).
+- `Core/Models.swift`: `MessageAction` has one more property, `target`,
+  inside `#if DEMO_APP`: where a texted line's link opens, as the server sends
+  it (`action.target`, the shape a redeemed link answers with).
+- `Features/Care/Conversation.swift`: one `#if DEMO_APP` block in the bubble.
+  A line a text carried with a link gets a button with the link's label
+  (`ThreadPlaceButton`, in `ios/MedPullDemo/Shell`), which calls
+  `DemoShell.go(to:)`, the navigator a tapped link uses. The real app has no
+  such navigator and draws these lines as words, as before.
 
 `DEMO_APP` is defined only in the `MedPullDemo` target's build settings, so
 for `MedPull` every one of those blocks compiles to nothing. `make ios-build`

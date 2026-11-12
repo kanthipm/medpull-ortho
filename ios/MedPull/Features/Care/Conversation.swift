@@ -49,6 +49,13 @@ struct Bubble: View {
             if let taskId = message.action?.opensTask, let label = message.action?.label {
                 actionButton(label, taskId: taskId)
             }
+            #if DEMO_APP
+            // A line a text carried with a link: the same place, one tap
+            // away, for the person reading it here instead of in Messages.
+            if let action = message.action, action.opensTask == nil, let target = action.target {
+                ThreadPlaceButton(label: action.label, target: target)
+            }
+            #endif
             HStack(spacing: 4) {
                 Text(who)
                 if message.fromClinician && !app.isPersonal && !app.isSports {

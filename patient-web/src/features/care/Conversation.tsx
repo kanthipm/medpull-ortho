@@ -4,11 +4,11 @@
 
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useApp } from '../../core/appModel'
+import { linkRoute, useApp } from '../../core/appModel'
 import { attachmentCache, audioClips, AudioClipPlayer, useObservable } from '../../core/attachments'
 import {
   attachmentDisplayName, attachmentNoun, Dates, DOT, DOT_LEAD, filesOf, fromClinician, isAudio, isImage, isVideo, isWithdrawn,
-  opensTask, sizeLabel, type ChatAttachment, type ChatMessage,
+  opensPlace, opensTask, sizeLabel, type ChatAttachment, type ChatMessage,
 } from '../../core/models'
 import { cx, MPButton, Spinner } from '../../ui/components'
 import { Sym } from '../../ui/icons'
@@ -25,6 +25,10 @@ export function Bubble({ message }: { message: ChatMessage }) {
   else if (message.sender === 'copilot') who = message.channel === 'sms' ? `MedPull${DOT}text` : 'MedPull'
   else who = message.channel === 'sms' ? `You${DOT}by text` : message.channel === 'voice' ? `You${DOT}by voice` : 'You'
   const taskId = opensTask(message.action)
+  // A line a text carried with a link: the same place, one tap away, for
+  // the person reading it here instead of in Messages.
+  const place = opensPlace(message.action)
+  const placeRoute = place ? linkRoute(place) : null
   return (
     <div className={cx('bubble-line', mine ? 'mine' : 'theirs')}>
       {message.text.trim() && (
@@ -34,6 +38,14 @@ export function Bubble({ message }: { message: ChatMessage }) {
       {taskId != null && message.action?.label && (
         <div style={{ paddingTop: 2 }}>
           <MPButton kind="filled" onClick={() => { app.setPendingTaskId(taskId); navigate('/today'); void app.refreshTasks() }}>
+            <Sym name="arrow.right.circle.fill" size={16} weight="semibold" />
+            <span>{message.action.label}</span>
+          </MPButton>
+        </div>
+      )}
+      {placeRoute && message.action?.label && (
+        <div style={{ paddingTop: 2 }}>
+          <MPButton kind="filled" onClick={() => navigate(placeRoute)}>
             <Sym name="arrow.right.circle.fill" size={16} weight="semibold" />
             <span>{message.action.label}</span>
           </MPButton>

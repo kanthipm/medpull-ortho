@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Today's exercises on a clinic person's Today screen, between the recovery
-/// hero and the plan: the day's exercises in order, then what is still open
-/// from earlier in the week, with the count beside the title. The shared
+/// Today's exercises on a clinic person's Today screen, under the greeting
+/// and above the recovery hero: the day's exercises in order, then what is
+/// still open from earlier in the week, with the count beside the title. The shared
 /// `TodayView` places this view there in the demo target only
 /// (`#if DEMO_APP` in ios/MedPull/Features/Today/TodayView.swift).
 ///

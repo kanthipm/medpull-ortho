@@ -248,7 +248,11 @@ assignment id), `program`, `task` / `checkin` (ref = task id), `thread`,
   (`EXERCISE_REMINDERS`, Lambda action `exercise_reminders`).
 
 Each writes a thread line (`Message`, channel `sms`, an `action_kind` the
-apps can render as a button) and returns
+apps can render as a button: `action` on the line carries `kind`
+(`open_<link kind>`), `label`, `url` and `target`, the `{"kind", "ref_id",
+"day"}` a redeemed link answers with; the patient web app and the demo
+iPhone app draw the button from `target`, so it opens the place without
+redeeming the link again) and returns
 `{"sent", "status", "detail", "message_id", "link"}` or None. None of them
 raises into its caller.
 

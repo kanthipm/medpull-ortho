@@ -38,12 +38,15 @@ struct TodayView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header.mpRise(0)
-                    if let me = app.me { RecoveryHero(me: me) { app.selectedTab = .progress }.mpRise(1) }
                     #if DEMO_APP
-                    // The demo app's exercises for today sit between the hero
-                    // and the plan (ios/MedPullDemo/Exercises).
+                    // The demo app's exercises for today lead the screen: for a
+                    // person on a clinic's program they are the day, and most
+                    // of those people wear no watch for the hero to read. The
+                    // card draws nothing for a person with no calendar
+                    // (ios/MedPullDemo/Exercises).
                     TodayExercises().id("exercises")
                     #endif
+                    if let me = app.me { RecoveryHero(me: me) { app.selectedTab = .progress }.mpRise(1) }
                     planCard.mpRise(2).id("plan")
                     measureRow.mpRise(3).id("measure")
                     careRow.mpRise(4).id("care")

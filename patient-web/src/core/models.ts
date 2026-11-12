@@ -720,9 +720,19 @@ export const painLabel = (n: number | null | undefined) => (n == null ? null : `
 
 // MARK: - Thread
 
-export type MessageAction = { kind: string; taskId: number | null; label: string }
+export type MessageAction = {
+  kind: string
+  taskId: number | null
+  label: string
+  /** Where the button opens, in the shape a redeemed link answers with: on
+   *  a line a text carried with a link (`open_exercise`, `open_program`, …). */
+  target?: LinkTarget | null
+}
 export const opensTask = (a: MessageAction | null | undefined) =>
   a && a.kind === 'open_task' ? a.taskId : null
+/** The place a texted line's link opens, for a line that is not a task's. */
+export const opensPlace = (a: MessageAction | null | undefined): LinkTarget | null =>
+  a && a.kind !== 'open_task' && a.target ? a.target : null
 
 export type ChatAttachment = {
   id: number

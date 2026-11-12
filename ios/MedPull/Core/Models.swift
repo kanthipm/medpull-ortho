@@ -528,6 +528,13 @@ struct MessageAction: Codable, Hashable {
     let kind: String
     let taskId: Int?
     let label: String
+    #if DEMO_APP
+    /// Where the button opens, on a line a text carried with a link
+    /// (`open_exercise`, `open_program`, …), in the shape a redeemed link
+    /// answers with. Read by the demo app only, whose navigator takes it
+    /// (ios/MedPullDemo/Shell/ThreadPlaceButton.swift).
+    var target: AppLinkTarget? = nil
+    #endif
 
     var opensTask: Int? { kind == "open_task" ? taskId : nil }
 }
