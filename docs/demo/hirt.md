@@ -175,6 +175,12 @@ which clears what the walkthrough did to today's exercises and nothing else.
   shows (`care/load.py` `load_windows`), so the flag and the tile agree.
 - `backend/app/plan/messages.py`, `plan/next_steps.py`, `llm/draft.py` — the
   drafts: hold the load, one-tap check-in, ask about the pain, program nudge.
+- `backend/app/llm/insights.py` `_reason_is_rule_written` — the line under a
+  lifter's name on the worklist is the engine's own sentence (the reason
+  text above), never the model's paraphrase of it, so the three rows read
+  the same on every fill. The briefing paragraph above the list and the
+  summary on a chart are written by the model and vary between fills: read
+  them before the room.
 - `backend/app/api/patients.py` `progress` — the three numbers on the
   console's stats row (`frontend/src/features/patient/PatientDetailPage.tsx`).
 - `backend/app/engine/care/pathways.py` `TRAINING` — the six tiles a lifter's
