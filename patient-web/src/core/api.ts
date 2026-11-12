@@ -8,7 +8,8 @@ import type {
   AgentResponse, AppleSession, Candidate, ChatAttachment, ChatMessage, CompleteResponse,
   ConsentAcceptance, ConsentDocument, ConsentStatus, EnrollResponse, ExerciseAssignment,
   ExerciseCompletionBody, ExercisesResponse, ExerciseStartBody, GaitUpload, GaitUploadResponse,
-  Hospital, LinkResponse, Me, MessagesResponse, MotionUpload, MotionUploadResponse, OKResponse,
+  Hospital, LinkInfo, LinkResponse, LinkSession, Me, MessagesResponse, MotionUpload, MotionUploadResponse,
+  OKResponse,
   PatientMetricsResponse, PortfolioResponse, Procedure, ProgramResponse, ProgressResponse, RangeOfMotionUpload,
   RangeOfMotionResponse, SentMessageResponse, SixMinuteWalkUpload, SixMinuteWalkResponse,
   StagedUpload, TasksResponse, VerificationStatus, WearablesResponse, Answers,
@@ -357,6 +358,20 @@ export class APIClient {
     return this.post('/api/mobile/tests/range-of-motion', upload)
   }
   async signOut(): Promise<void> { await this.post<OKResponse>('/api/mobile/signout') }
+
+  // MARK: texted links
+
+  /** Redeem a texted link. On the demo stack, for a demo persona, the
+   *  answer carries a session as the person it was texted to; everywhere
+   *  else it is a 403 and the link only names a place. */
+  redeemLink(token: string): Promise<LinkSession> {
+    return this.post<LinkSession>(`/api/links/${encodeURIComponent(token)}/session`, { deviceName: deviceName() })
+  }
+
+  /** Where a link leads, without redeeming it. */
+  readLink(token: string): Promise<LinkInfo> {
+    return this.get<LinkInfo>(`/api/links/${encodeURIComponent(token)}`)
+  }
 
   // MARK: - Consent
 

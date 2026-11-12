@@ -9,8 +9,8 @@ import { useRef, useState, type ChangeEvent } from 'react'
 import { messageFor, useApp } from '../../core/appModel'
 import { AttachmentPrep } from '../../core/attachments'
 import {
-  Dates, DOT, durationLabel, effortWord, holdIsUnit, sizeLabel, therapistShortName, videoRequirement,
-  wearableRequirement, type AnswerValue, type ExerciseAssignment, type StagedUpload,
+  Dates, DOT, durationLabel, effortWord, holdIsUnit, loadField, loadFromField, sizeLabel, therapistShortName,
+  videoRequirement, wearableRequirement, type AnswerValue, type ExerciseAssignment, type StagedUpload,
 } from '../../core/models'
 import { CloseButton, ErrorBanner, MPButton, NavBar, PrimaryButton, Screen, SecondaryButton, Toggle } from '../../ui/components'
 import { Sym } from '../../ui/icons'
@@ -43,7 +43,8 @@ export function CompletionSheet({ a, session, onClose, onSent }: {
   const [effort, setEffort] = useState<number | null>(null)
   const [sets, setSets] = useState(a.sets != null ? String(a.sets) : '')
   const [reps, setReps] = useState(a.reps != null ? String(a.reps) : '')
-  const [load, setLoad] = useState(a.loadKg != null ? String(a.loadKg) : '')
+  const unit = app.loadUnit
+  const [load, setLoad] = useState(loadField(a.loadKg, unit))
   const [note, setNote] = useState('')
   const [clip, setClip] = useState<ClipState>({ kind: 'none' })
   const [worn, setWorn] = useState(session?.wearableWorn === true)
@@ -115,7 +116,7 @@ export function CompletionSheet({ a, session, onClose, onSent }: {
         effort,
         setsDone: numberIn(sets),
         repsDone: countsReps ? numberIn(reps) : null,
-        loadDoneKg: hasLoad ? numberIn(load) : null,
+        loadDoneKg: hasLoad ? loadFromField(numberIn(load), unit) : null,
         wearableWorn: watchAsk === 'off' ? null : wornNow,
         startedAt: session ? Dates.iso(session.startedAt) : null,
         endedAt: session ? Dates.iso(session.endedAt) : null,
@@ -182,8 +183,9 @@ export function CompletionSheet({ a, session, onClose, onSent }: {
             )}
             {hasLoad && (
               <label>
-                <span>Load, kg</span>
-                <input className="field" inputMode="decimal" value={load} aria-label="Load done, in kilograms"
+                <span>Load, {unit}</span>
+                <input className="field" inputMode="decimal" value={load}
+                  aria-label={`Load done, in ${unit === 'lb' ? 'pounds' : 'kilograms'}`}
                   onChange={(e) => setLoad(e.target.value)} />
               </label>
             )}

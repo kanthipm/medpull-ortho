@@ -3,8 +3,8 @@
    hospital record. Devices and settings live behind the avatar. */
 
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom'
-import { app, useApp } from './core/appModel'
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { app, linkRoute, useApp } from './core/appModel'
 import { needsConsent } from './core/models'
 import { ConsentGate } from './features/consent/ConsentView'
 import { TodayView } from './features/today/TodayView'
@@ -132,6 +132,7 @@ function MainTabs() {
 
   return (
     <>
+      <LinkOpener />
       <Suspense fallback={<Launch />}>
         <Routes>
           <Route path="/today" element={<TodayView />} />
@@ -148,7 +149,7 @@ function MainTabs() {
           <Route path="/care" element={<CareView />} />
           <Route path="/tasks/:id" element={<TaskLink />} />
           <Route path="/connections" element={<ConnectionsLink />} />
-          <Route path="*" element={<Navigate to="/today" replace />} />
+          <Route path="*" element={<Fallback />} />
         </Routes>
       </Suspense>
       <TabBar />
@@ -159,6 +160,51 @@ function MainTabs() {
       </Sheet>
     </>
   )
+}
+
+/** A texted link continued in the browser (`#link=<token>`): once the tabs
+ *  are up, open the place it named. A task or a check-in goes through the
+ *  same door as a `medpull://tasks/<id>` link, so Today opens it when the
+ *  task list has it.
+ *
+ *  The link stays pending until the router is on its place. The router
+ *  moves in a transition while the app model re-renders at once, so letting
+ *  go of the link in the same breath as the navigation would show the old
+ *  address for a frame with nothing pending, and the fallback route would
+ *  send the app to Today after all. */
+function LinkOpener() {
+  const model = useApp()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const pending = model.pendingLink
+  const started = useRef<object | null>(null)
+  useEffect(() => {
+    if (!pending) return
+    const id = Number(pending.refId)
+    const task = (pending.kind === 'task' || pending.kind === 'checkin') && Number.isInteger(id)
+    const route = task ? '/today' : (linkRoute(pending) ?? '/today')
+    if (started.current !== pending) {
+      started.current = pending
+      if (task) {
+        model.setPendingTaskId(id)
+        void model.refreshTasks()
+      }
+      if (pathname !== route) {
+        navigate(route, { replace: true })
+        return
+      }
+    }
+    if (pathname === route) model.takePendingLink()
+  }, [model, pending, pathname, navigate])
+  return null
+}
+
+/** An address that names no screen opens Today. While a texted link is
+ *  waiting to be opened it holds still: the link's own place is where the
+ *  app is about to go. */
+function Fallback() {
+  const model = useApp()
+  return model.pendingLink ? null : <Navigate to="/today" replace />
 }
 
 /** `medpull://tasks/<id>`, as a web link: Today opens the task. */

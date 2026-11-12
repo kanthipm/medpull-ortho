@@ -87,6 +87,7 @@ export function MissingExercise({ back, waited, title = 'Exercise' }: {
 
 export function ExerciseDetailView({ a, back }: { a: ExerciseAssignment; back: { label: string; onClick: () => void } }) {
   const navigate = useNavigate()
+  const unit = useApp().loadUnit
   const [marking, setMarking] = useState(false)
   const [skipping, setSkipping] = useState(false)
   const [justSent, setJustSent] = useState(false)
@@ -193,7 +194,7 @@ export function ExerciseDetailView({ a, back }: { a: ExerciseAssignment; back: {
             <Fact label="Dose" value={a.dose} />
             {a.sideLabel && a.side !== 'not_applicable' && <><InsetDivider leading={16} /><Fact label="Side" value={a.sideLabel} /></>}
             {a.holdSeconds != null && <><InsetDivider leading={16} /><Fact label="Hold" value={`${a.holdSeconds} s`} /></>}
-            {a.loadKg != null && <><InsetDivider leading={16} /><Fact label="Load" value={loadLabel(a.loadKg) ?? ''} /></>}
+            {a.loadKg != null && <><InsetDivider leading={16} /><Fact label="Load" value={loadLabel(a.loadKg, unit) ?? ''} /></>}
             {a.rpeTarget != null && <><InsetDivider leading={16} /><Fact label="Effort to aim for" value={`${a.rpeTarget}/10${DOT}${effortWord(a.rpeTarget).toLowerCase()}`} /></>}
             <InsetDivider leading={16} />
             <Fact label="Equipment" value={a.equipment || 'None needed'} />
@@ -241,6 +242,7 @@ function Stat({ value, label }: { value: string; label: string }) {
  *  note, the clip that went with it, and the therapist's reply once she
  *  has looked. Skipped: the reason. */
 export function OutcomeCard({ a, fresh }: { a: ExerciseAssignment; fresh: boolean }) {
+  const unit = useApp().loadUnit
   const therapist = therapistShortName(a.assignedByName)
   if (a.status === 'skipped') {
     return (
@@ -266,7 +268,7 @@ export function OutcomeCard({ a, fresh }: { a: ExerciseAssignment; fresh: boolea
   const painValue = painAfter == null ? '—' : painBefore != null ? `${painBefore} → ${painAfter}` : String(painAfter)
   const effort = c?.effort ?? null
   const facts: string[] = []
-  const did = doneLine(a)
+  const did = doneLine(a, unit)
   if (did) facts.push(did)
   if (s?.wearableWorn) facts.push('watch on')
   if (s?.hrAvg != null) facts.push(`heart rate ${s.hrAvg} avg${s.hrMax != null ? `, ${s.hrMax} max` : ''}`)

@@ -11,7 +11,8 @@ import { HealthConnector } from './health'
 import { Keychain } from './keychain'
 import type {
   AgentResponse, Answers, ChatMessage, ConsentAcceptance, ExerciseAssignment, ExerciseCompletionBody,
-  ExercisesResponse, ExerciseStartBody, Me, PatientMetricsResponse, PortfolioMetric, ProgramDay,
+  ExercisesResponse, ExerciseStartBody, LinkTarget, LoadUnit, Me, PatientMetricsResponse, PortfolioMetric,
+  ProgramDay,
   ProgramResponse, ProgressDay, RecoveryTask, TasksResponse, WearableSummary,
 } from './models'
 import { Dates, isPersonalProfile } from './models'
@@ -52,6 +53,9 @@ export class AppModel {
 
   /** Set by a `medpull://tasks/<id>` link or a thread button; Today opens it. */
   pendingTaskId: number | null = null
+  /** The place a texted link named (`#link=<token>`), until the first
+   *  screen that can open it does. */
+  pendingLink: LinkTarget | null = null
   selectedTab: Tab = 'today'
   /** Opens the Connections screen (Apple Health, wearables) from wherever
    *  the person is: the Today nudge, a `medpull://wearables` link. */
@@ -81,6 +85,12 @@ export class AppModel {
    *  the clinic version, so this is false for every account it signs in. */
   get isPersonal(): boolean { return this.me ? isPersonalProfile(this.me.patient) : false }
 
+  /** The unit this person's clinic reads loads in, from whichever exercise
+   *  feed is in hand; kilograms until one says otherwise. */
+  get loadUnit(): LoadUnit {
+    return (this.exercises?.clinic?.loadUnit ?? this.program?.clinic?.loadUnit) === 'lb' ? 'lb' : 'kg'
+  }
+
   // MARK: lifecycle
 
   async bootstrap(): Promise<void> {
@@ -88,7 +98,31 @@ export class AppModel {
     // session it minted for the lifter it shows. That token replaces
     // whatever this browser held, and the URL is cleaned before anyone
     // sees it.
-    const handed = takeSessionFromHash()
+    let handed = takeSessionFromHash()
+    // A texted link continued in the browser arrives as `/patient/#link=<token>`.
+    // On the demo stack, for a demo persona, redeeming it signs this browser
+    // in as the person it was texted to. Everywhere else the server answers
+    // 403 and the link only names a place: it opens once the person is
+    // signed in the way they always are, and never signs anyone in.
+    const link = takeFromHash('link')
+    if (link) {
+      try {
+        const redeemed = await this.api.redeemLink(link)
+        handed = redeemed.sessionToken
+        this.pendingLink = redeemed.target
+      } catch (e) {
+        if (e instanceof APIError && e.status === 403) {
+          try {
+            const info = await this.api.readLink(link)
+            this.pendingLink = { kind: info.kind, refId: info.refId, day: info.day }
+          } catch {
+            /* the place is unknown; the app opens where it always does */
+          }
+        } else if (e instanceof APIError && e.status === 404) {
+          this.lastError = e.detail
+        }
+      }
+    }
     if (handed) {
       Keychain.clear()
       Keychain.set(handed, TOKEN_KEY)
@@ -478,6 +512,12 @@ export class AppModel {
   }
 
   setPendingTaskId(id: number | null): void { this.set('pendingTaskId', id) }
+  /** The place a texted link named, taken once by the screen that opens it. */
+  takePendingLink(): LinkTarget | null {
+    const link = this.pendingLink
+    if (link) this.set('pendingLink', null)
+    return link
+  }
   setShowConnections(on: boolean): void { this.set('showConnections', on) }
   setSelectedTab(tab: Tab): void { this.set('selectedTab', tab) }
 }
@@ -486,15 +526,46 @@ export class AppModel {
  *  fragment taken off the address so a copied link or a reload does not carry
  *  it. The router keeps its own state. */
 function takeSessionFromHash(): string | null {
+  return takeFromHash('session')
+}
+
+/** One value out of the URL's fragment (`#session=…`, `#link=…`), with the
+ *  fragment taken off the address. */
+function takeFromHash(name: string): string | null {
   const hash = window.location.hash
-  if (!hash.includes('session=')) return null
-  const token = new URLSearchParams(hash.replace(/^#/, '')).get('session')?.trim() ?? ''
+  if (!hash.includes(`${name}=`)) return null
+  const token = new URLSearchParams(hash.replace(/^#/, '')).get(name)?.trim() ?? ''
   try {
     window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
   } catch {
     /* an opaque origin: the hash stays, harmlessly */
   }
   return token || null
+}
+
+/** The route a texted link's target opens on, or null for one this app has
+ *  no screen for (it then opens on Today). */
+export function linkRoute(target: LinkTarget): string | null {
+  const id = target.refId
+  switch (target.kind) {
+    case 'today':
+      return '/today'
+    case 'exercise':
+      return id ? `/today/exercises/${encodeURIComponent(id)}` : '/today'
+    case 'program':
+      return '/today/program'
+    case 'task':
+    case 'checkin':
+      return id ? `/today/tasks/${encodeURIComponent(id)}` : '/today'
+    case 'thread':
+      return '/care'
+    case 'measure':
+      return '/measure'
+    case 'progress':
+      return '/progress'
+    default:
+      return null
+  }
 }
 
 /** What to show the person when an action fails, or null when there is

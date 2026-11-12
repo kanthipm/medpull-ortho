@@ -578,10 +578,15 @@ export type ProgramDay = {
 }
 
 /** `GET /mobile/exercises/program`: the fourteen days around today. */
+/** The clinic a calendar belongs to and the unit it reads loads in. Loads
+ *  travel in kilograms whatever this says; the app converts for the eye. */
+export type LoadUnit = 'kg' | 'lb'
+export type ExerciseClinic = { id: string; name: string; loadUnit?: LoadUnit | null }
+
 export type ProgramResponse = {
   start: string
   days: ProgramDay[]
-  clinic: { id: string; name: string } | null
+  clinic: ExerciseClinic | null
 }
 
 /** Whether there is a program to show: any exercise on any of the days. */
@@ -602,7 +607,7 @@ export type ExercisesResponse = {
   /** Earlier days this week whose exercises are still to do. */
   overdue?: ExerciseAssignment[]
   week: ExerciseDay[]
-  clinic: { id: string; name: string } | null
+  clinic: ExerciseClinic | null
 }
 
 /** Whether Today shows the schedule at all: a patient with no schedule
@@ -647,9 +652,24 @@ export function effortWord(n: number): string {
 /** "effort 7/10", beside the pain on a row or a sent line. */
 export const effortLabel = (n: number | null | undefined) => (n == null ? null : `effort ${n}/10`)
 
-/** "12 kg", with no trailing ".0". */
-export const loadLabel = (kg: number | null | undefined) =>
-  (kg == null ? null : `${Number.isInteger(kg) ? kg : kg.toFixed(1)} kg`)
+/** Pounds in a kilogram: the factor the server words its own lines with. */
+export const LB_PER_KG = 2.20462
+
+const trimmed = (n: number, places: number) => String(Number(n.toFixed(places)))
+
+/** A stored load as the clinic reads it: "12 kg", or "25 lb" where the
+ *  clinic works in pounds (to a tenth, as the server prints them). */
+export const loadLabel = (kg: number | null | undefined, unit: LoadUnit = 'kg') =>
+  kg == null ? null : unit === 'lb' ? `${trimmed(kg * LB_PER_KG, 1)} lb` : `${trimmed(kg, 1)} kg`
+
+/** A stored load as a field shows it, in the clinic's unit. */
+export const loadField = (kg: number | null | undefined, unit: LoadUnit = 'kg') =>
+  kg == null ? '' : unit === 'lb' ? trimmed(kg * LB_PER_KG, 1) : trimmed(kg, 1)
+
+/** What a load field holds, back as kilograms (two places: as fine as a
+ *  tenth of a pound). */
+export const loadFromField = (value: number | null, unit: LoadUnit = 'kg') =>
+  value == null ? null : Number((unit === 'lb' ? value / LB_PER_KG : value).toFixed(2))
 
 /** "11 min", "45 s": how long a session ran. */
 export function durationLabel(seconds: number | null | undefined): string | null {
@@ -660,7 +680,7 @@ export function durationLabel(seconds: number | null | undefined): string | null
 
 /** "3 × 10 · 12 kg": what was done, from the completion when it says, else
  *  the dose. Null when neither names a count. */
-export function doneLine(a: ExerciseAssignment): string | null {
+export function doneLine(a: ExerciseAssignment, unit: LoadUnit = 'kg'): string | null {
   const c = a.completion
   const sets = c?.setsDone ?? a.sets
   const reps = c?.repsDone ?? a.reps
@@ -668,7 +688,7 @@ export function doneLine(a: ExerciseAssignment): string | null {
   const parts: string[] = []
   if (sets != null && reps != null) parts.push(`${sets} × ${reps}`)
   else if (sets != null) parts.push(`${sets} ${sets === 1 ? 'set' : 'sets'}`)
-  const kg = loadLabel(load)
+  const kg = loadLabel(load, unit)
   if (kg) parts.push(kg)
   return parts.length ? parts.join(DOT) : null
 }
@@ -780,6 +800,20 @@ export type AgentResponse = { reply: string; flagged: boolean; provider: string;
 
 export type AppleSession = { signInToken: string; userId: string; environment: string; region: string }
 export type LinkResponse = { linkUrl: string; expiresAt: string | null }
+
+/** Where a texted link leads (`/a/<token>`, `app/links.py`): the kind of
+ *  place, the row it is about (an assignment for `exercise`, a task for
+ *  `task` and `checkin`), and the day it names. */
+export type LinkTarget = {
+  kind: 'today' | 'exercise' | 'program' | 'task' | 'checkin' | 'thread' | 'measure' | 'progress' | string
+  refId: string | null
+  day: string | null
+}
+/** GET /api/links/{token}: the target and whether redeeming signs in. */
+export type LinkInfo = LinkTarget & { signin: boolean; expiresAt: string | null }
+/** POST /api/links/{token}/session: a session as the person it was texted
+ *  to (demo stack, demo persona only), with the place to open. */
+export type LinkSession = { sessionToken: string; me: Me; target: LinkTarget }
 export type WearablesResponse = { summary: WearableSummary; refreshError: string | null }
 
 export type ProgressDay = { date: string; postopDay: number; steps: number | null; sleepHours: number | null }

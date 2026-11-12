@@ -13,7 +13,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { messageFor, useApp } from '../../core/appModel'
 import { AttachmentPrep } from '../../core/attachments'
 import {
-  Dates, DOT, effortLabel, effortWord, holdIsUnit, isOpenAssignment, loadLabel, painLabel, therapistShortName, typeset,
+  Dates, DOT, effortLabel, effortWord, holdIsUnit, isOpenAssignment, loadField, loadFromField, loadLabel, painLabel,
+  therapistShortName, typeset,
   videoRequirement, wearableRequirement,
   type AnswerValue, type ExerciseAssignment, type StagedUpload,
 } from '../../core/models'
@@ -144,9 +145,13 @@ export function GuidedTask({ a, onLeave }: { a: ExerciseAssignment; onLeave: () 
     case 'pain':
       return (
         <PainStage a={a} strip={strip} onLeave={onLeave} onSent={(u) => { setUpdated(u); next() }}
-          send={(painAfter, effort, note) => app.completeExercise(a, {
+          setsCounted={setsDone}
+          send={(painAfter, effort, note, did) => app.completeExercise(a, {
             painAfter, note, video: clip, effort,
-            setsDone: setsDone > 0 ? setsDone : null, repsDone: a.reps ?? null, loadDoneKg: a.loadKg ?? null,
+            // What the person says they did, not what was written: the
+            // session counted the sets, and the reps and the load are theirs
+            // to correct before it is sent.
+            setsDone: did.sets, repsDone: did.reps, loadDoneKg: did.loadKg,
             wearableWorn: watchAsk === 'off' ? null : worn === true,
             startedAt: startedAt ? Dates.iso(startedAt) : null,
             endedAt: endedAt ? Dates.iso(endedAt) : null,
@@ -375,6 +380,7 @@ function ExerciseStage({ a, strip, startedAt, onLeave, onDone }: {
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'work', set: 1 })
   const now = useNow(true)
+  const unit = useApp().loadUnit
   const sets = Math.max(1, a.sets ?? 1)
   const timedHold = holdIsUnit(a)
   const hold = a.holdSeconds ?? 0
@@ -394,7 +400,7 @@ function ExerciseStage({ a, strip, startedAt, onLeave, onDone }: {
   const doseBits: string[] = []
   if (!timedHold && a.reps != null) doseBits.push(`${a.reps} reps`)
   if (!timedHold && hold > 0) doseBits.push(`hold ${hold} s each`)
-  const kg = loadLabel(a.loadKg)
+  const kg = loadLabel(a.loadKg, unit)
   if (kg) doseBits.push(kg)
   if (a.sideLabel && a.side !== 'not_applicable') doseBits.push(a.sideLabel)
 
@@ -770,23 +776,46 @@ function CheckStage({ take, strip, therapist, onLeave, onContinue }: {
 
 // MARK: - 7. How did it go?
 
-function PainStage({ a, strip, onLeave, send, onSent }: {
+/** What the person did, as they confirm it before it is sent. */
+type Did = { sets: number | null; reps: number | null; loadKg: number | null }
+
+function countIn(text: string): number | null {
+  const clean = text.trim().replace(',', '.')
+  if (clean === '') return null
+  const n = Number(clean)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
+function PainStage({ a, strip, setsCounted, onLeave, send, onSent }: {
   a: ExerciseAssignment; strip: ReactNode; onLeave: () => void
-  send: (painAfter: number | null, effort: number | null, note: string) => Promise<ExerciseAssignment>
+  /** The sets the session counted off. */
+  setsCounted: number
+  send: (painAfter: number | null, effort: number | null, note: string, did: Did) => Promise<ExerciseAssignment>
   onSent: (updated: ExerciseAssignment) => void
 }) {
+  const unit = useApp().loadUnit
   const [pain, setPain] = useState<AnswerValue | null>(null)
   const [effort, setEffort] = useState<number | null>(null)
   const [note, setNote] = useState('')
+  const [sets, setSets] = useState(setsCounted > 0 ? String(setsCounted) : a.sets != null ? String(a.sets) : '')
+  const [reps, setReps] = useState(a.reps != null ? String(a.reps) : '')
+  const [load, setLoad] = useState(loadField(a.loadKg, unit))
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const therapist = therapistShortName(a.assignedByName)
+  const countsReps = !holdIsUnit(a) && a.reps != null
+  const hasLoad = a.loadKg != null
 
   const submit = async () => {
     setSending(true)
     setError(null)
     try {
-      onSent(await send(typeof pain === 'number' ? pain : null, effort, note.trim()))
+      const whole = (n: number | null) => (n == null ? null : Math.round(n))
+      onSent(await send(typeof pain === 'number' ? pain : null, effort, note.trim(), {
+        sets: whole(countIn(sets)),
+        reps: countsReps ? whole(countIn(reps)) : null,
+        loadKg: hasLoad ? loadFromField(countIn(load), unit) : null,
+      }))
     } catch (e) {
       setError(messageFor(e))
     } finally {
@@ -805,6 +834,34 @@ function PainStage({ a, strip, onLeave, send, onSent }: {
           <span className="t-label c-muted">{therapist} suggested around {a.rpeTarget}{DOT}{effortWord(a.rpeTarget).toLowerCase()}.</span>
         )}
         <EffortScale value={effort} onChange={setEffort} />
+      </div>
+      <div className="stack-10">
+        <span className="t-copy-lg-m c-ink">What you did</span>
+        <div className="dose-grid">
+          <label>
+            <span>Sets</span>
+            <input className="field" inputMode="numeric" pattern="[0-9]*" value={sets} aria-label="Sets done"
+              onChange={(e) => setSets(e.target.value)} />
+          </label>
+          {countsReps && (
+            <label>
+              <span>Reps</span>
+              <input className="field" inputMode="numeric" pattern="[0-9]*" value={reps} aria-label="Reps done"
+                onChange={(e) => setReps(e.target.value)} />
+            </label>
+          )}
+          {hasLoad && (
+            <label>
+              <span>Load, {unit}</span>
+              <input className="field" inputMode="decimal" value={load}
+                aria-label={`Load done, in ${unit === 'lb' ? 'pounds' : 'kilograms'}`}
+                onChange={(e) => setLoad(e.target.value)} />
+            </label>
+          )}
+        </div>
+        <span className="t-label c-muted">
+          The sets are the ones you counted off{countsReps || hasLoad ? `; the rest is ${therapist}’s dose` : ''}. Change anything you did differently.
+        </span>
       </div>
       <div className="stack-10">
         <span className="t-copy-lg-m c-ink">Anything to add?</span>
