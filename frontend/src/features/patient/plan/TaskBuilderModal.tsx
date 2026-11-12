@@ -1,5 +1,5 @@
-import { ClipboardList, Plus, Search, Sparkles, Star, Wand2, Zap } from 'lucide-react'
-import { useId, useMemo, useState, type ReactNode } from 'react'
+import { ArrowDown, Check, ClipboardList, Plus, Search, Sparkles, Star, Wand2, Zap } from 'lucide-react'
+import { useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { CarePathway } from '../../../api/care'
 import type { DraftTask, TaskPhase, TaskTemplate } from '../../../api/plan'
 import {
@@ -48,7 +48,12 @@ const PHASE_FILTERS: { key: PhaseFilter; label: string }[] = [
  *  one-press check-in card, gray quick-pick capsules, the library as an
  *  inset-hairline list with the app's task-kind tiles, and an EmptyState for
  *  an empty draft list. Secondary text is `text-secondary` (--body inside the
- *  Modal; dark --muted and --disabled-ink both fail on the overlay panel). */
+ *  Modal; dark --muted and --disabled-ink both fail on the overlay panel).
+ *
+ *  A pick has to answer where it is pressed. The draft list it lands in is
+ *  below the fold, so a quick pick and a library row are toggles that show
+ *  their own state (a check, a tint, "Added"), the library's header counts
+ *  what is drafted and jumps to it, and the Assign button's count pops. */
 export default function TaskBuilderModal({
   patientId,
   patientName,
@@ -114,9 +119,39 @@ export default function TaskBuilderModal({
     })
   }
 
+  const draftsRef = useRef<HTMLDivElement>(null)
+  const [said, setSaid] = useState('')
+  const showDrafts = () =>
+    // After the rows are in the document: the list is the last section.
+    window.requestAnimationFrame(() =>
+      draftsRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
+    )
+
   const append = (rows: Partial<DraftTask>[]) =>
     setDrafts((d) => [...d, ...rows.map((r) => normalizeDraft(r, kinds))])
-  const addTemplate = (t: TaskTemplate) => append([draftFromTemplate(t)])
+  /** How many drafts came from each template: what a pick shows as "Added". */
+  const picked = useMemo(() => {
+    const counts = new Map<number, number>()
+    for (const d of drafts) {
+      if (d.template_id != null) counts.set(d.template_id, (counts.get(d.template_id) ?? 0) + 1)
+    }
+    return counts
+  }, [drafts])
+  /** A premade task is a toggle: pressed once it is on the draft list,
+   *  pressed again it comes off (the newest row from that template). */
+  const toggleTemplate = (t: TaskTemplate) => {
+    // Decided on the list as it is when the update runs, not as it was at the
+    // last paint: two presses inside one frame are on-then-off, not two rows.
+    setDrafts((d) => {
+      const at = d.map((row) => row.template_id).lastIndexOf(t.id)
+      return at >= 0
+        ? d.filter((_, j) => j !== at)
+        : [...d, normalizeDraft(draftFromTemplate(t), kinds)]
+    })
+    setSaid(
+      picked.has(t.id) ? `${t.title} removed from the draft list` : `${t.title} added to the draft list`,
+    )
+  }
   const update = (i: number, next: DraftTask) =>
     setDrafts((d) => d.map((row, j) => (j === i ? next : row)))
   const remove = (i: number) => setDrafts((d) => d.filter((_, j) => j !== i))
@@ -127,6 +162,10 @@ export default function TaskBuilderModal({
         append(r.tasks.map((t) => ({ ...t, assigned_by: 'ai' as const })))
         setProvider(r.provider)
         if (r.tasks.length === 0) toast(`No suggestions for ${first} right now`, 'info')
+        else {
+          setSaid(`${r.tasks.length} suggested, in the draft list`)
+          showDrafts()
+        }
       },
       onError: () => toast('Suggestions are not available — try again', 'warning'),
     })
@@ -142,6 +181,10 @@ export default function TaskBuilderModal({
           setProvider(r.provider)
           setDescribe('')
           if (r.tasks.length === 0) toast('Nothing recognisable in that plan — add rows by hand', 'info')
+          else {
+            setSaid(`${r.tasks.length} drafted from the description`)
+            showDrafts()
+          }
         },
         onError: () => toast('The builder could not draft that — try again', 'warning'),
       },
@@ -218,9 +261,15 @@ export default function TaskBuilderModal({
         disabled={!ready || assign.isPending}
         onClick={submit}
       >
-        {assign.isPending
-          ? 'Assigning…'
-          : `Assign ${drafts.length} task${drafts.length === 1 ? '' : 's'}`}
+        {/* Keyed on the count, so each pick makes the number pop. */}
+        <span
+          key={drafts.length}
+          className="inline-block motion-safe:animate-[mp-pop-scale_0.45s_var(--ease-spring)]"
+        >
+          {assign.isPending
+            ? 'Assigning…'
+            : `Assign ${drafts.length} task${drafts.length === 1 ? '' : 's'}`}
+        </span>
       </button>
     </div>
   )
@@ -258,17 +307,25 @@ export default function TaskBuilderModal({
             </span>
           </button>
           <div className="flex flex-wrap items-center gap-1.5">
-            {pinned.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => addTemplate(t)}
-                title={t.clinical_target || t.why}
-                className="btn-gray btn-sm"
-              >
-                <Plus aria-hidden /> {t.title}
-              </button>
-            ))}
+            {pinned.map((t) => {
+              const on = picked.has(t.id)
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => toggleTemplate(t)}
+                  aria-pressed={on}
+                  title={on ? `On the draft list — press to take it off` : t.clinical_target || t.why}
+                  className={
+                    on
+                      ? 'btn-gray btn-sm !bg-brand-tint !bg-none !text-on-brand-tint !shadow-[inset_0_0_0_1.5px_rgb(var(--brand)/0.55)] motion-safe:animate-[mp-pop-scale_0.45s_var(--ease-spring)]'
+                      : 'btn-gray btn-sm'
+                  }
+                >
+                  {on ? <Check aria-hidden /> : <Plus aria-hidden />} {t.title}
+                </button>
+              )
+            })}
             {library.isLoading && <span className="meta">Loading the library…</span>}
             {library.isError && <span className="meta">The library is not available yet.</span>}
             {!library.isLoading && !library.isError && pinned.length === 0 && (
@@ -330,7 +387,17 @@ export default function TaskBuilderModal({
         </Section>
 
         {/* 3. Library */}
-        <Section id={`${uid}-library`} label="Library">
+        <Section
+          id={`${uid}-library`}
+          label="Library"
+          aside={
+            drafts.length > 0 ? (
+              <button type="button" className="btn-plain btn-sm -mr-2" onClick={showDrafts}>
+                {drafts.length} on the draft list <ArrowDown aria-hidden />
+              </button>
+            ) : undefined
+          }
+        >
           <div className="flex flex-wrap items-center gap-2">
             <label className="relative min-w-[180px] flex-1">
               <span className="sr-only">Search the task library</span>
@@ -378,7 +445,13 @@ export default function TaskBuilderModal({
                 </h4>
                 <ListGroup embedded inset="tile" aria-labelledby={`${uid}-uc-${g.key}`}>
                   {g.items.map((t) => (
-                    <LibraryRow key={t.id} t={t} onAdd={() => addTemplate(t)} onPin={() => onPin(t)} />
+                    <LibraryRow
+                      key={t.id}
+                      t={t}
+                      added={picked.has(t.id)}
+                      onToggle={() => toggleTemplate(t)}
+                      onPin={() => onPin(t)}
+                    />
                   ))}
                 </ListGroup>
               </div>
@@ -392,7 +465,8 @@ export default function TaskBuilderModal({
                         key={t.id}
                         t={t}
                         showUseCase
-                        onAdd={() => addTemplate(t)}
+                        added={picked.has(t.id)}
+                        onToggle={() => toggleTemplate(t)}
                         onPin={() => onPin(t)}
                       />
                     ))}
@@ -404,6 +478,10 @@ export default function TaskBuilderModal({
         </Section>
 
         {/* 4. Draft list */}
+        <div ref={draftsRef} className="scroll-mt-4" />
+        <p className="sr-only" role="status" aria-live="polite">
+          {said}
+        </p>
         <Section
           id={`${uid}-drafts`}
           label={
@@ -507,12 +585,15 @@ function ucOrder(key: string): number {
 function LibraryRow({
   t,
   showUseCase = false,
-  onAdd,
+  added,
+  onToggle,
   onPin,
 }: {
   t: TaskTemplate
   showUseCase?: boolean
-  onAdd: () => void
+  /** On the draft list already: the row says so and a press takes it off. */
+  added: boolean
+  onToggle: () => void
   onPin: () => void
 }) {
   const kind = taskKindTile(t.task_kind)
@@ -525,17 +606,28 @@ function LibraryRow({
   ]
     .filter(Boolean)
     .join(' · ')
-  // The title is the row's one stretched button (it adds the template); the
-  // pin is the only other control and sits above it.
+  // The title is the row's one stretched button (it puts the template on
+  // the draft list, or takes it off); the pin is the only other control and
+  // sits above it.
   return (
     <ListRow
       compact
+      tint={added ? 'brand' : 'none'}
       leading={<Tile family={kind.family} icon={<Icon />} />}
       title={t.title}
-      onClick={onAdd}
-      linkLabel={`Add ${t.title}`}
+      onClick={onToggle}
+      pressed={added}
+      linkLabel={added ? `${t.title}, on the draft list` : `Add ${t.title}`}
       subtitle={<span title={t.clinical_target || t.why}>{meta}</span>}
-      aside={<Plus aria-hidden size={16} className="text-brand-ink" />}
+      aside={
+        added ? (
+          <span className="inline-flex items-center gap-1 font-medium text-on-brand-tint motion-safe:animate-[mp-pop-scale_0.45s_var(--ease-spring)]">
+            <Check aria-hidden size={14} /> Added
+          </span>
+        ) : (
+          <Plus aria-hidden size={16} className="text-brand-ink" />
+        )
+      }
       trailing={
         <button
           type="button"

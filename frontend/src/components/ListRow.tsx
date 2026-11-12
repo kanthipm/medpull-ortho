@@ -91,6 +91,7 @@ export default function ListRow({
   titleClassName = '',
   'aria-current': ariaCurrent,
   linkLabel,
+  pressed,
 }: {
   leading?: ReactNode
   title: ReactNode
@@ -126,6 +127,9 @@ export default function ListRow({
   'aria-current'?: 'page' | 'true'
   /** Accessible name for the stretched link when `title` is not plain text. */
   linkLabel?: string
+  /** For an `onClick` row that toggles something (a pick list): whether it
+   *  is on. Announced as a toggle button's state. */
+  pressed?: boolean
 }) {
   const interactive = Boolean(to || href || onClick)
   const showChevron = chevron ?? (Boolean(to || href) && !trailing)
@@ -149,7 +153,13 @@ export default function ListRow({
     )
   } else if (onClick) {
     titleNode = (
-      <button type="button" onClick={onClick} className={`${linkClass} cursor-pointer`} aria-label={linkLabel}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${linkClass} cursor-pointer`}
+        aria-label={linkLabel}
+        aria-pressed={pressed}
+      >
         {title}
       </button>
     )
