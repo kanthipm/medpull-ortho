@@ -96,7 +96,7 @@ export default function TeamDashboardPage() {
                 className="badge-ring max-w-full"
                 style={
                   org.colors
-                    ? ({ backgroundColor: org.colors.primary, color: '#fff', borderColor: org.colors.primary } as CSSProperties)
+                    ? ({ background: org.colors.primary, color: '#fff', borderColor: org.colors.primary } as CSSProperties)
                     : undefined
                 }
               >

@@ -217,3 +217,68 @@ export function meanPerDay(
     .reduce((a, p) => a + (p.value ?? 0), 0)
   return total / days
 }
+
+/* ── The calendar's event kinds. Hue by category, never by state: games clay,
+   team work sage, the weight room amber, light or no days lilac. The kind's
+   word is always printed beside its mark. ─────────────────────────────── */
+
+export const EVENT_KIND: Record<string, { label: string; dot: string; family: 'violet' | 'teal' | 'blue' | 'indigo' }> = {
+  game: { label: 'Game', dot: 'bg-cat-violet-ink', family: 'violet' },
+  match: { label: 'Match', dot: 'bg-cat-violet-ink', family: 'violet' },
+  practice: { label: 'Practice', dot: 'bg-cat-teal-ink', family: 'teal' },
+  training: { label: 'Training', dot: 'bg-cat-teal-ink', family: 'teal' },
+  conditioning: { label: 'Conditioning', dot: 'bg-cat-teal-ink', family: 'teal' },
+  lift: { label: 'Lift', dot: 'bg-cat-blue-ink', family: 'blue' },
+  shootaround: { label: 'Shootaround', dot: 'bg-cat-indigo-ink', family: 'indigo' },
+  recovery: { label: 'Recovery', dot: 'bg-cat-indigo-ink', family: 'indigo' },
+  travel: { label: 'Travel', dot: 'bg-cat-indigo-ink', family: 'indigo' },
+  off: { label: 'Day off', dot: 'bg-line-strong', family: 'indigo' },
+}
+
+export function eventKind(kind: string) {
+  return EVENT_KIND[kind] ?? { label: words(kind), dot: 'bg-line-strong', family: 'teal' as const }
+}
+
+/** "3:30 PM · vs Prairie View A&M" / "Practice": one event in a line. */
+export function eventLine(e: TeamEvent): string {
+  const when = timeLabel(e.start_time)
+  const what = e.opponent ? opponentLine(e) : e.title
+  return [when, what].filter(Boolean).join(' · ')
+}
+
+/** The first day of the month `iso` falls in, and of the one `n` months on. */
+export function monthStart(iso: string, n = 0): string {
+  const d = local(iso)
+  return toIso(new Date(d.getFullYear(), d.getMonth() + n, 1))
+}
+
+/** The Monday on or before `iso`. */
+export function weekStart(iso: string): string {
+  return addDays(iso, -((local(iso).getDay() + 6) % 7))
+}
+
+/** "November 2026" */
+export function monthName(iso: string): string {
+  return local(iso).toLocaleDateString([], { month: 'long', year: 'numeric' })
+}
+
+export function dayNumber(iso: string): number {
+  return local(iso).getDate()
+}
+
+export function inMonth(iso: string, month: string): boolean {
+  return iso.slice(0, 7) === month.slice(0, 7)
+}
+
+/** A sortable column of the roster's data table. */
+export type SortDir = 'asc' | 'desc'
+
+export function compareNullable(a: number | null | undefined, b: number | null | undefined, dir: SortDir): number {
+  // A missing reading sorts last whichever way the column runs.
+  const an = a == null || !Number.isFinite(a)
+  const bn = b == null || !Number.isFinite(b)
+  if (an && bn) return 0
+  if (an) return 1
+  if (bn) return -1
+  return dir === 'asc' ? (a as number) - (b as number) : (b as number) - (a as number)
+}

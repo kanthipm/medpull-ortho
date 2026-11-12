@@ -174,6 +174,31 @@ export interface TeamEvent {
   home: boolean | null
   location: string | null
   note: string | null
+  /** `staff`: put on the calendar from the console, and the console's to
+   *  remove. `seed`: the generated schedule, rewritten each morning. */
+  source?: 'staff' | 'seed' | string
+}
+
+/** GET /api/sports/teams/{id}/events?from=&to= — exactly that range (at
+ *  most 62 days), with the kinds a new entry can be. */
+export interface TeamEventsResponse {
+  from: string
+  to: string
+  kinds: string[]
+  events: TeamEvent[]
+}
+
+/** POST /api/sports/teams/{id}/events */
+export interface TeamEventBody {
+  date: string
+  kind: string
+  title: string
+  /** 24-hour clock, "15:30". */
+  start_time?: string | null
+  opponent?: string | null
+  home?: boolean | null
+  location?: string | null
+  note?: string | null
 }
 
 export interface TeamLoadPoint {
@@ -571,6 +596,39 @@ export function useSportsTeams() {
 
 export function fetchTeamDashboard(teamId: string) {
   return fetchJson<TeamDashboard>(`/api/sports/teams/${enc(teamId)}/dashboard`)
+}
+
+export function useTeamEvents(teamId: string, from: string, to: string) {
+  return useQuery({
+    queryKey: [...sportsKeys.team(teamId), 'events', from, to] as const,
+    queryFn: () =>
+      fetchJson<TeamEventsResponse>(`/api/sports/teams/${enc(teamId)}/events?from=${from}&to=${to}`),
+    enabled: teamId !== '',
+    placeholderData: (prev) => prev,
+  })
+}
+
+/** Put an entry on the team's calendar, or take one the staff put there
+ *  off it. Both refresh the calendar and the board's week strip. */
+export function useAddTeamEvent(teamId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: TeamEventBody) =>
+      fetchJson<{ ok: boolean; event: TeamEvent }>(`/api/sports/teams/${enc(teamId)}/events`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: sportsKeys.team(teamId) }),
+  })
+}
+
+export function useDeleteTeamEvent(teamId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (eventId: number) =>
+      fetchJson<{ ok: boolean }>(`/api/sports/teams/${enc(teamId)}/events/${eventId}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: sportsKeys.team(teamId) }),
+  })
 }
 
 export function useTeamDashboard(teamId: string) {
