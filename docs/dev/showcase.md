@@ -124,7 +124,14 @@ app on the same origin clears `medpull.`).
 - **Worklist** — as today. The chart keeps the summary, next steps,
   check-ins, this week's exercises, tasks and the thread; the deep data
   (Full stats: metrics, signals, raw) moves to Data, with a link from the
-  chart.
+  chart. A chart on a clinic's own program (a non-surgical person whose
+  `care_pathway` is the clinic's program name: the H.I.R.T. roster) leads
+  with six tiles its calendar and check-ins fill
+  (`app/engine/care/pathways.py` `TRAINING`: verified adherence, load ratio,
+  pain against load, symptom burden, how the chart is followed, engagement).
+  Verified adherence (M14) counts the exercise calendar's last 14 days on
+  any chart that has one (`care/loaders.py` `exercise_outcome`), and the
+  stored assessment's hash moves with the calendar.
 - **Calendar** — the exercise schedule, grown: week and month views, drag to
   move or copy, repeat on weekdays for N weeks, missed and in-progress
   marks, done against prescribed, planned load against last week, one
