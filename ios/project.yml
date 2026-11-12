@@ -139,6 +139,155 @@ targets:
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+  # MedPull Demo: the showcase's phone (docs/dev/showcase/ios.md). It signs
+  # in as any fictional person on the demo stack with no account, in the
+  # Clinic, Personal or Sports version, and opens the links the demo's texts
+  # carry. A second app on the same phone, so it has its own bundle id, URL
+  # scheme and icon.
+  #
+  # It compiles the same design system, API client, models and feature
+  # screens as MedPull (the folders and files listed under `sources`) and
+  # supplies its own shell from MedPullDemo/. What it leaves out is what
+  # needs an account or an entitlement: onboarding, the real Profile, the
+  # paywall, Apple Health (HealthConnector, the Vital SDK) and StoreKit.
+  # MedPullDemo/Shell/StandIns.swift and Keychain.swift stand in for the
+  # three types Core/AppModel.swift hard-wires.
+  MedPullDemo:
+    type: application
+    platform: iOS
+    sources:
+      - path: MedPullDemo
+        excludes:
+          - "Info.plist"
+          # The unit tests (their own target below) and the two scripts that
+          # draw the icon and the sample clip.
+          - "Tests"
+          - "Tools"
+      - path: MedPull/UI
+      - path: MedPull/Assets.xcassets
+      - path: MedPull/PrivacyInfo.xcprivacy
+      - path: MedPull/Resources/Fonts
+        excludes:
+          - "EBGaramond-*.ttf"
+          - "OFL.txt"
+      - path: MedPull/Core
+        excludes:
+          - "HealthConnector.swift"
+          - "Store.swift"
+          - "Keychain.swift"
+      - path: MedPull/Features/Care
+      - path: MedPull/Features/Checkin
+      - path: MedPull/Features/Tasks
+      - path: MedPull/Features/Today
+      - path: MedPull/Features/Progress
+      - path: MedPull/Features/Measure
+      - path: MedPull/Features/Personal
+        includes:
+          - "PersonalHomeView.swift"
+          - "StatsView.swift"
+          - "MetricsView.swift"
+          - "PanelViews.swift"
+      - path: MedPull/Features/Sports
+        includes:
+          - "SportsHomeView.swift"
+          - "PerformanceView.swift"
+          - "RecoveryView.swift"
+          - "RehabView.swift"
+          - "SportsMotion.swift"
+          - "SportsSheets.swift"
+          - "SportsComponents.swift"
+          - "LaunchOrbitView.swift"
+      # The two formatters the shared screens call on `ProfileView`; each
+      # target has its own ProfileView and both get this extension.
+      - path: MedPull/Features/Profile/ProfileFormatting.swift
+    info:
+      path: MedPullDemo/Info.plist
+      properties:
+        CFBundleDisplayName: MedPull Demo
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        MedPullAPIBaseURL: $(MEDPULL_API_BASE_URL)
+        UIAppFonts:
+          - Outfit-ExtraLight.ttf
+          - Outfit-Light.ttf
+          - Outfit-Regular.ttf
+          - Outfit-Medium.ttf
+          - Outfit-SemiBold.ttf
+        ITSAppUsesNonExemptEncryption: false
+        # Its own scheme: two apps registering `medpull` on one phone would
+        # contend for it. A texted link is https://<host>/a/<token> (a
+        # universal link, see the entitlement below); medpulldemo://a/<token>
+        # is the same link for the browser's "Open in the app" button.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.medpull.demo
+            CFBundleURLSchemes: [medpulldemo]
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchMark
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        # No Health strings: this target has no HealthKit entitlement and
+        # compiles none of the code that reads Health.
+        NSMicrophoneUsageDescription: Talk to MedPull instead of typing, or record a voice note for the care team. The microphone is only on while you are recording.
+        NSCameraUsageDescription: MedPull Demo uses the camera only when you choose to send a photo or a short clip of an exercise.
+        NSSpeechRecognitionUsageDescription: MedPull turns what you say into text so it can log pain, mark tasks done, or pass a note to the care team.
+        NSMotionUsageDescription: MedPull records your phone’s motion during a guided walk or a joint measurement to show how the Measure tests work.
+        NSLocationWhenInUseUsageDescription: On an outdoor walk, MedPull uses your location only to measure how far you walked. It is never tracked otherwise.
+        # The presenter can point the app at a laptop over plain http
+        # (Profile, Server address), as the real app's development builds do.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    entitlements:
+      path: MedPullDemo/MedPullDemo.entitlements
+      properties:
+        # Universal links for the demo host's /a/* and /t/* (the server's
+        # apple-app-site-association names this app id). An unsigned
+        # simulator build ignores entitlements; there the custom scheme and
+        # -MP_OPEN_LINK do the same job.
+        com.apple.developer.associated-domains:
+          - applinks:demo.medpull.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.medpull.demo
+        PRODUCT_NAME: MedPullDemo
+        DEVELOPMENT_TEAM: 2DFDVFGSH3
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: "1.0"
+        # Bump before every TestFlight upload, like MedPull's.
+        CURRENT_PROJECT_VERSION: "20261112.1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconDemo
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_STRICT_CONCURRENCY: minimal
+        # The public demo, the one deployment. Profile, Server address
+        # changes it on the device (and `-api_base_url <url>` at launch).
+        MEDPULL_API_BASE_URL: "https://demo.medpull.app"
+        # DEMO_APP marks the few lines in the shared files that differ in
+        # this target (grep for it under MedPull/).
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEMO_APP
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG DEMO_APP
+  # Decoding against the JSON in docs/dev/showcase.md, the link parser, and
+  # the exercise rows and their words. Hosted by the demo app, which stays
+  # inert while tests run.
+  MedPullDemoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: MedPullDemo/Tests
+    dependencies:
+      - target: MedPullDemo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.medpull.demo.tests
+        DEVELOPMENT_TEAM: 2DFDVFGSH3
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
 schemes:
   MedPull:
     build:
@@ -151,5 +300,17 @@ schemes:
       # (APPLE_SUBSCRIPTION_VERIFY=lenient); a strict server refuses them and
       # the account runs on its trial instead.
       storeKitConfiguration: MedPull.storekit
+    archive:
+      config: Release
+  MedPullDemo:
+    build:
+      targets:
+        MedPullDemo: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - MedPullDemoTests
     archive:
       config: Release
