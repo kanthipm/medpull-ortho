@@ -713,6 +713,17 @@ def test_every_router_is_wired(client):
         "/api/patients/{patient_id}/next-steps/{key}/execute",
         "/api/patients/{patient_id}/next-steps/{key}/complete",
         "/api/patients/{patient_id}/next-steps/{key}/dismiss",
+        "/api/console/workspaces",
+        "/api/data/catalog",
+        "/api/data/coverage",
+        "/api/patients/{patient_id}/data/summary",
+        "/api/patients/{patient_id}/observations/browse",
+        "/api/patients/{patient_id}/series",
+        "/api/patients/{patient_id}/sleep",
+        "/api/patients/{patient_id}/reported",
+        "/api/patients/{patient_id}/data/export",
+        "/api/hep/calendar",
+        "/api/hep/week",
     ):
         assert path in paths
 
