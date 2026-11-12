@@ -1,8 +1,33 @@
-import { ArrowRight, Check, Columns2, Film, MessageSquare, Trash2, Watch } from 'lucide-react'
+import {
+  ArrowRight,
+  Check,
+  Columns2,
+  CopyPlus,
+  Film,
+  MessageSquare,
+  Repeat2,
+  RotateCcw,
+  Trash2,
+  Watch,
+} from 'lucide-react'
 import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { attachmentSrc } from '../../api/attachments'
+import {
+  useDeleteSeries,
+  useDuplicateAssignment,
+  useExerciseHistory,
+  useReopenAssignment,
+  useUpdateSeries,
+} from '../../api/calendar'
 import { ApiError } from '../../api/client'
-import type { Assignment, AssignmentCompletion, CareTeamMember, Requirement } from '../../api/hep'
+import type {
+  Assignment,
+  AssignmentCompletion,
+  CareTeamMember,
+  DoneAgainst,
+  LoadUnit,
+  Requirement,
+} from '../../api/hep'
 import {
   useCompleteAssignment,
   useDeleteAssignment,
@@ -10,7 +35,9 @@ import {
   useReviewAssignment,
   useUpdateAssignment,
 } from '../../api/hep'
+import Disclosure from '../../components/Disclosure'
 import Modal from '../../components/Modal'
+import SegmentedControl from '../../components/SegmentedControl'
 import { useToast } from '../../components/Toast'
 import { relativeTime } from '../../lib/format'
 import { ReviewDot } from './AdherenceChip'
@@ -19,37 +46,49 @@ import ClipPlayer from './ClipPlayer'
 import { LABEL, NumberField, RequirementControl } from './DoseFields'
 import { diagnosticWarning } from './hepCopy'
 import {
+  STATE_CHIP,
   awaitingReview,
   completionSource,
   countOf,
-  decimalOf,
   doseText,
   durationText,
   fieldOf,
-  kgText,
   longDay,
+  monthDay,
   painChipClass,
   requirementOf,
   requirementsText,
+  reviewReason,
   sessionSeconds,
   shortDay,
-  statusChip,
+  stateOf,
   vocabLabel,
 } from './scheduleCopy'
+import { loadBounds, loadField, loadKg, loadText, movedText } from './units'
+
+/** Which days a change to a repeat's day reaches. */
+type Scope = 'one' | 'following'
 
 /** A chip on the grid, opened: the clip the patient follows (or the button
  *  to film one), what came back once it is done — when, how long, pain
  *  before and after, effort, what they lifted, the wearable's numbers, the
  *  note, their clip beside hers — and the place to answer it; the steps and
  *  precautions; the dose editor with the load, the target effort and what
- *  she asks for (PATCH); a move to another day; Remove; "Log it done" for
- *  the room. A done row keeps its dose and its day (the server answers 409),
- *  so those controls close. */
+ *  she asks for (PATCH); a move to another day and a copy onto others;
+ *  Remove; "Log it done" for the room, and its undo. A done row keeps its
+ *  dose and its day (the server answers 409), so those controls close.
+ *
+ *  A day written by a repeat says so, and a re-dose or a removal asks how
+ *  far it reaches: this day only, or this and the following open days.
+ *  What was done is set against what was written, field by field, in the
+ *  clinic's own unit; and the exercise's run on this chart (the load, pain
+ *  and effort of each session) opens under it. */
 export default function AssignmentDialog({
   assignment: a,
   patientName,
   days,
   careTeam,
+  unit = 'kg',
   onClose,
   onChanged,
 }: {
@@ -60,6 +99,8 @@ export default function AssignmentDialog({
   /** The clinic's own therapists (the schedule payload's care_team); the
    *  library's whole care-team list is the fallback. */
   careTeam?: CareTeamMember[]
+  /** The unit the clinic reads loads in; rows are kept in kilograms. */
+  unit?: LoadUnit
   onClose: () => void
   /** The row as the server returned it after a change, for an opener that
    *  holds the row itself rather than reading it from a refetched list. */
@@ -70,16 +111,22 @@ export default function AssignmentDialog({
   const update = useUpdateAssignment()
   const remove = useDeleteAssignment()
   const complete = useCompleteAssignment()
+  const updateSeries = useUpdateSeries()
+  const removeSeries = useDeleteSeries()
+  const duplicate = useDuplicateAssignment()
+  const reopen = useReopenAssignment()
   const ids = useId()
   const done = a.status === 'done'
-  const chip = statusChip(a.status)
+  const chip = STATE_CHIP[stateOf(a)]
+  const series = a.series_id ?? null
+  const bounds = loadBounds(unit)
   const sides = options.data?.sides ?? []
   const team = careTeam && careTeam.length > 0 ? careTeam : (options.data?.care_team ?? [])
 
   const [sets, setSets] = useState(fieldOf(a.sets))
   const [reps, setReps] = useState(fieldOf(a.reps))
   const [hold, setHold] = useState(fieldOf(a.hold_seconds))
-  const [load, setLoad] = useState(fieldOf(a.load_kg))
+  const [load, setLoad] = useState(loadField(a.load_kg, unit))
   const [rpe, setRpe] = useState(fieldOf(a.rpe_target))
   const [side, setSide] = useState(a.side)
   const [video, setVideo] = useState<Requirement>(requirementOf(a.video_requirement))
@@ -91,12 +138,14 @@ export default function AssignmentDialog({
   const [logging, setLogging] = useState(false)
   const [pain, setPain] = useState<number | null>(null)
   const [logNote, setLogNote] = useState('')
+  const [scope, setScope] = useState<Scope>('one')
+  const [copyTo, setCopyTo] = useState<string[]>([])
 
   const dirty =
     countOf(sets) !== (a.sets ?? null) ||
     countOf(reps) !== (a.reps ?? null) ||
     countOf(hold) !== (a.hold_seconds ?? null) ||
-    decimalOf(load) !== (a.load_kg ?? null) ||
+    loadKg(load, unit) !== (a.load_kg ?? null) ||
     countOf(rpe) !== (a.rpe_target ?? null) ||
     side !== a.side ||
     video !== requirementOf(a.video_requirement) ||
@@ -104,7 +153,7 @@ export default function AssignmentDialog({
     note.trim() !== a.clinician_instructions ||
     assignedBy !== a.assigned_by
   const warn = diagnosticWarning(note)
-  const dose = doseText({ sets, reps, hold, load, side, sideLabel: vocabLabel(sides, side) })
+  const dose = doseText({ sets, reps, hold, load, side, sideLabel: vocabLabel(sides, side), unit })
   const rpeTarget = countOf(rpe)
   const asks = requirementsText(video, wearable)
   const actor = assignedBy || a.assigned_by
@@ -112,21 +161,35 @@ export default function AssignmentDialog({
   const fail = (fallback: string) => (e: unknown) =>
     toast(e instanceof ApiError && e.message ? e.message : fallback, 'warning')
 
-  const saveDose = () =>
+  const saveDose = () => {
+    const patch = {
+      sets: countOf(sets),
+      reps: countOf(reps),
+      hold_seconds: countOf(hold),
+      side,
+      load_kg: loadKg(load, unit),
+      rpe_target: rpeTarget,
+      video_requirement: video,
+      wearable_requirement: wearable,
+      clinician_instructions: note.trim(),
+      assigned_by: assignedBy,
+    }
+    if (series && scope === 'following') {
+      updateSeries.mutate(
+        { seriesId: series, from: a.scheduled_for, ...patch },
+        {
+          onSuccess: (r) => {
+            toast(`Dose updated on ${r.updated} day${r.updated === 1 ? '' : 's'} of the repeat`, 'success')
+            const row = r.assignments.find((x) => x.id === a.id)
+            if (row) onChanged?.(row)
+          },
+          onError: fail('Could not save the dose'),
+        },
+      )
+      return
+    }
     update.mutate(
-      {
-        id: a.id,
-        sets: countOf(sets),
-        reps: countOf(reps),
-        hold_seconds: countOf(hold),
-        side,
-        load_kg: decimalOf(load),
-        rpe_target: rpeTarget,
-        video_requirement: video,
-        wearable_requirement: wearable,
-        clinician_instructions: note.trim(),
-        assigned_by: assignedBy,
-      },
+      { id: a.id, ...patch },
       {
         onSuccess: (row) => {
           toast('Dose updated', 'success')
@@ -135,6 +198,7 @@ export default function AssignmentDialog({
         onError: fail('Could not save the dose'),
       },
     )
+  }
 
   const move = () => {
     if (!moveTo) return
@@ -151,7 +215,25 @@ export default function AssignmentDialog({
     )
   }
 
-  const removeIt = () =>
+  const removeIt = () => {
+    if (series && scope === 'following') {
+      removeSeries.mutate(
+        { seriesId: series, from: a.scheduled_for },
+        {
+          onSuccess: (r) => {
+            toast(
+              `${a.title} cleared from ${r.deleted} day${r.deleted === 1 ? '' : 's'} from ${shortDay(a.scheduled_for)} on${
+                r.kept > 0 ? ` · ${r.kept} earlier or done day${r.kept === 1 ? '' : 's'} kept` : ''
+              }`,
+              'info',
+            )
+            onClose()
+          },
+          onError: fail('Could not clear the repeat'),
+        },
+      )
+      return
+    }
     remove.mutate(a.id, {
       onSuccess: () => {
         toast(`${a.title} removed from ${shortDay(a.scheduled_for)}`, 'info')
@@ -159,6 +241,34 @@ export default function AssignmentDialog({
       },
       onError: fail('Could not remove it'),
     })
+  }
+
+  const copyIt = () => {
+    if (copyTo.length === 0) return
+    duplicate.mutate(
+      { id: a.id, dates: [...copyTo].sort(), actor },
+      {
+        onSuccess: (r) => {
+          const n = r.assignments.length
+          toast(`${a.title} copied onto ${n} day${n === 1 ? '' : 's'}`, 'success')
+          setCopyTo([])
+        },
+        onError: fail('Could not copy it'),
+      },
+    )
+  }
+
+  const reopenIt = () =>
+    reopen.mutate(
+      { id: a.id, actor },
+      {
+        onSuccess: (row) => {
+          toast(`${a.title} is open again`, 'info')
+          onChanged?.(row)
+        },
+        onError: fail('Could not reopen it'),
+      },
+    )
 
   const logDone = () =>
     complete.mutate(
@@ -188,9 +298,16 @@ export default function AssignmentDialog({
       {!done &&
         (confirming ? (
           <span className="mr-auto flex flex-wrap items-center gap-2 text-copy text-body">
-            Remove from {shortDay(a.scheduled_for)}?
-            <button type="button" className="btn-danger btn-sm" disabled={remove.isPending} onClick={removeIt}>
-              {remove.isPending ? 'Removing…' : 'Remove'}
+            {series && scope === 'following'
+              ? `Clear this and the following open days of the repeat?`
+              : `Remove from ${shortDay(a.scheduled_for)}?`}
+            <button
+              type="button"
+              className="btn-danger btn-sm"
+              disabled={remove.isPending || removeSeries.isPending}
+              onClick={removeIt}
+            >
+              {remove.isPending || removeSeries.isPending ? 'Removing…' : 'Remove'}
             </button>
             <button type="button" className="btn-plain-muted btn-sm" onClick={() => setConfirming(false)}>
               Keep
@@ -224,9 +341,14 @@ export default function AssignmentDialog({
           <span aria-hidden>·</span>
           <span>{longDay(a.scheduled_for)}</span>
           <span className={`chip ${chip.pill}`}>{chip.label}</span>
+          {series && (
+            <span className="chip bg-soft text-secondary">
+              <Repeat2 aria-hidden size={12} /> Part of a repeat
+            </span>
+          )}
           {awaitingReview(a) && (
             <span className="chip bg-risk-med-tint text-risk-med-ink">
-              <ReviewDot /> Awaiting your review
+              <ReviewDot /> {reviewReason(a) === 'over' ? 'Over the dose · awaiting your look' : 'Awaiting your review'}
             </span>
           )}
         </p>
@@ -275,8 +397,11 @@ export default function AssignmentDialog({
             c={a.completion}
             patientName={patientName}
             actor={actor}
+            unit={unit}
             id={`${ids}-done`}
             onChanged={onChanged}
+            onReopen={a.completion.source === 'console' ? reopenIt : undefined}
+            reopening={reopen.isPending}
           />
         )}
         {a.status === 'skipped' && (
@@ -324,10 +449,10 @@ export default function AssignmentDialog({
             <NumberField id={`${ids}-hold`} label="Hold (s)" value={hold} disabled={done} onChange={setHold} />
             <NumberField
               id={`${ids}-load`}
-              label="Load (kg)"
+              label={`Load (${unit})`}
               value={load}
-              max={500}
-              step={0.5}
+              max={bounds.max}
+              step={bounds.step}
               disabled={done}
               onChange={setLoad}
             />
@@ -405,16 +530,36 @@ export default function AssignmentDialog({
             </div>
           </div>
           {!done && (
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-3">
+              {series && (
+                <SegmentedControl<Scope>
+                  options={[
+                    { key: 'one', label: 'This day only' },
+                    { key: 'following', label: 'This and the following' },
+                  ]}
+                  value={scope}
+                  onChange={setScope}
+                  size="sm"
+                  role="radiogroup"
+                  aria-label="How far a change to this repeat reaches"
+                />
+              )}
               <button
                 type="button"
                 className="btn-gray btn-sm"
-                disabled={!dirty || update.isPending || !!warn}
+                disabled={!dirty || update.isPending || updateSeries.isPending || !!warn}
                 onClick={saveDose}
               >
-                {update.isPending ? 'Saving…' : 'Save changes'}
+                {update.isPending || updateSeries.isPending ? 'Saving…' : 'Save changes'}
               </button>
             </div>
+          )}
+          {!done && series && (
+            <p className="meta mt-2 px-1 text-right">
+              {scope === 'following'
+                ? `Saving or removing reaches every still-open day of the repeat from ${monthDay(a.scheduled_for)} on.`
+                : 'Saving or removing changes this day and leaves the rest of the repeat as written.'}
+            </p>
           )}
         </section>
 
@@ -447,6 +592,53 @@ export default function AssignmentDialog({
             </div>
           </section>
         )}
+
+        <section aria-labelledby={`${ids}-copy`}>
+          <h3 id={`${ids}-copy`} className="mb-2 text-copy font-medium text-body">
+            Copy onto other days
+          </h3>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {days
+              .filter((d) => d !== a.scheduled_for)
+              .map((d) => {
+                const on = copyTo.includes(d)
+                return (
+                  <label
+                    key={d}
+                    className={`inline-flex min-h-9 cursor-pointer select-none items-center gap-2 rounded-pill px-3 text-copy ring-1 ring-inset transition-colors duration-state ease-apple ${
+                      on
+                        ? 'bg-brand-tint text-brand-ink ring-brand-tint-strong'
+                        : 'bg-panel/70 text-ink ring-line-strong/60 hover:bg-panel'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-brand"
+                      checked={on}
+                      onChange={() =>
+                        setCopyTo((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]))
+                      }
+                    />
+                    {shortDay(d)}
+                  </label>
+                )
+              })}
+            <button
+              type="button"
+              className="btn-gray btn-sm ml-auto"
+              disabled={copyTo.length === 0 || duplicate.isPending}
+              onClick={copyIt}
+            >
+              <CopyPlus size={14} aria-hidden /> {duplicate.isPending ? 'Copying…' : 'Copy'}
+            </button>
+          </div>
+          <p className="meta mt-1.5 px-1">
+            The same dose, note and requirements as open days of their own. A day that already has
+            this exercise refuses the copy and says which.
+          </p>
+        </section>
+
+        <ExerciseHistory patientId={a.patient_id} exerciseId={a.exercise_id} currentId={a.id} unit={unit} />
 
         {!done && logging && (
           <section aria-labelledby={`${ids}-log`} className="rounded-surface bg-soft p-4">
@@ -501,16 +693,24 @@ function Completion({
   c,
   patientName,
   actor,
+  unit,
   id,
   onChanged,
+  onReopen,
+  reopening = false,
 }: {
   assignment: Assignment
   c: AssignmentCompletion
   patientName: string
   /** The care-team id the review is filed under. */
   actor: string
+  unit: LoadUnit
   id: string
   onChanged?: (a: Assignment) => void
+  /** Present when the day was logged in the room: its undo. A day the
+   *  patient logged themselves is their record and has none. */
+  onReopen?: () => void
+  reopening?: boolean
 }) {
   const toast = useToast()
   const review = useReviewAssignment()
@@ -551,7 +751,7 @@ function Completion({
   const did = [
     c.sets_done != null ? `${c.sets_done} sets` : '',
     c.reps_done != null ? `${c.reps_done} reps` : '',
-    c.load_done_kg != null ? kgText(c.load_done_kg) : '',
+    c.load_done_kg != null ? loadText(c.load_done_kg, unit) : '',
   ].filter(Boolean)
   if (did.length > 0) facts.push({ key: 'did', label: 'Did', value: did.join(' × ') })
   if (a.session?.wearable_worn != null) {
@@ -591,6 +791,11 @@ function Completion({
         Done {relativeTime(c.completed_at)}
         {completionSource(c.source) && <span className="meta">{completionSource(c.source)}</span>}
         {after == null && before == null && <span className="chip bg-soft text-secondary">no pain score</span>}
+        {onReopen && (
+          <button type="button" className="btn-plain-muted btn-sm ml-auto" disabled={reopening} onClick={onReopen}>
+            <RotateCcw size={14} aria-hidden /> {reopening ? 'Reopening…' : 'Undo: reopen the day'}
+          </button>
+        )}
       </h3>
 
       {facts.length > 0 && (
@@ -604,6 +809,7 @@ function Completion({
         </dl>
       )}
       {c.note && <p className="mt-3 text-copy text-ink">“{c.note}”</p>}
+      <AgainstTheDose c={c} unit={unit} />
 
       <div className="mt-3">
         {c.video ? (
@@ -703,6 +909,165 @@ function Completion({
           </div>
         )}
       </div>
+    </section>
+  )
+}
+
+/** What was done set against what was written. One line in words (the
+ *  server's, in the clinic's unit), a chip that says which way it went, and
+ *  the fields that were both written and done, side by side. It describes
+ *  the session; it does not judge it. */
+function AgainstTheDose({ c, unit }: { c: AssignmentCompletion; unit: LoadUnit }) {
+  if (!c.line && !c.performed) return null
+  const p = c.performed
+  const rows: { key: string; label: string; pair: DoneAgainst; text: (n: number) => string }[] = p
+    ? [
+        { key: 'sets', label: 'Sets', pair: p.sets, text: (n: number) => String(n) },
+        { key: 'reps', label: 'Reps', pair: p.reps, text: (n: number) => String(n) },
+        { key: 'load', label: 'Load', pair: p.load_kg, text: (n: number) => loadText(n, unit) },
+        { key: 'effort', label: 'Effort', pair: p.effort, text: (n: number) => `${n}/10` },
+      ].filter((r) => r.pair.done != null && r.pair.prescribed != null)
+    : []
+  return (
+    <div className="mt-3 rounded-control bg-panel/70 px-3 py-2.5">
+      <p className="flex flex-wrap items-center gap-2 text-copy text-ink">
+        <span
+          className={`chip normal-case ${
+            c.over
+              ? 'bg-risk-med-tint text-risk-med-ink'
+              : c.under
+                ? 'bg-soft text-body'
+                : 'bg-risk-low-tint text-risk-low-ink'
+          }`}
+        >
+          {c.over ? 'More than prescribed' : c.under ? 'Less than prescribed' : 'As prescribed'}
+        </span>
+        {c.line && c.line !== 'Done as prescribed' && <span>{c.line}</span>}
+      </p>
+      {rows.length > 0 && (
+        <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-1.5">
+          {rows.map((r) => {
+            const differs = r.pair.delta != null && r.pair.delta !== 0
+            return (
+              <div key={r.key}>
+                <dt className="text-label text-secondary">{r.label}</dt>
+                <dd className="text-copy tabular-nums text-ink">
+                  <span className={differs ? 'font-medium' : ''}>{r.text(r.pair.done as number)}</span>
+                  <span className="text-secondary"> of {r.text(r.pair.prescribed as number)}</span>
+                </dd>
+              </div>
+            )
+          })}
+        </dl>
+      )}
+    </div>
+  )
+}
+
+/** This exercise on this chart over time: the run in a sentence, then each
+ *  session with what was written, what was done, and how it felt. Loaded
+ *  when opened. */
+function ExerciseHistory({
+  patientId,
+  exerciseId,
+  currentId,
+  unit,
+}: {
+  patientId: string
+  exerciseId: number
+  currentId: number
+  unit: LoadUnit
+}) {
+  const [open, setOpen] = useState(false)
+  const history = useExerciseHistory(patientId, exerciseId, open)
+  const s = history.data?.summary
+  const points = [...(history.data?.points ?? [])].reverse()
+  const run =
+    s == null
+      ? ''
+      : [
+          `${s.sessions_done} of ${s.sessions} done`,
+          s.missed > 0 ? `${s.missed} missed` : '',
+          s.over > 0 ? `${s.over} over the dose` : '',
+          s.first_load_kg != null && s.latest_load_kg != null
+            ? `load ${loadText(s.first_load_kg, unit)} → ${loadText(s.latest_load_kg, unit)}`
+            : '',
+          s.total_tonnage > 0 ? `${movedText(s.total_tonnage, unit)} moved in all` : '',
+          s.pain_after_avg != null ? `pain after ${s.pain_after_avg} on average` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+  return (
+    <section>
+      <Disclosure label="This exercise over time" hint="every session, as written and as done" onToggle={setOpen}>
+        {history.isLoading && <p className="meta mt-2">Loading the run…</p>}
+        {history.isError && <p className="meta mt-2">The history could not be loaded.</p>}
+        {history.data && (
+          <div className="mt-2">
+            <p className="text-copy text-ink">{run || 'No sessions on file yet.'}</p>
+            {points.length > 0 && (
+              <div className="mt-2 max-h-64 overflow-auto rounded-control bg-soft">
+                <table className="w-full min-w-[520px] text-left text-copy">
+                  <caption className="sr-only">Each day this exercise was on, newest first</caption>
+                  <thead className="sticky top-0 bg-soft">
+                    <tr>
+                      {['Day', 'Written', 'Done', 'Pain', 'Effort'].map((h) => (
+                        <th key={h} scope="col" className="px-3 py-2 text-label font-medium text-secondary">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {points.map((pt) => {
+                      const state = stateOf(pt)
+                      const did = [
+                        pt.sets_done != null && pt.reps_done != null ? `${pt.sets_done} × ${pt.reps_done}` : '',
+                        pt.load_done_kg != null ? loadText(pt.load_done_kg, unit) : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                      return (
+                        <tr key={pt.id} className={pt.id === currentId ? 'bg-brand-tint/50' : ''}>
+                          <th scope="row" className="whitespace-nowrap border-t border-hairline px-3 py-1.5 font-normal tabular-nums text-ink">
+                            {monthDay(pt.date)}
+                            {pt.id === currentId && <span className="sr-only"> (this day)</span>}
+                          </th>
+                          <td className="border-t border-hairline px-3 py-1.5 text-ink">{pt.dose || '—'}</td>
+                          <td className="border-t border-hairline px-3 py-1.5 text-ink">
+                            {state === 'done' ? (
+                              <>
+                                {did || 'Done'}
+                                {pt.over && (
+                                  <span className="chip ml-1.5 bg-risk-med-tint normal-case text-risk-med-ink">over</span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-secondary">{STATE_CHIP[state].label}</span>
+                            )}
+                          </td>
+                          <td className="border-t border-hairline px-3 py-1.5 tabular-nums text-ink">
+                            {pt.pain_after != null
+                              ? pt.pain_before != null
+                                ? `${pt.pain_before} → ${pt.pain_after}`
+                                : pt.pain_after
+                              : '—'}
+                          </td>
+                          <td className="border-t border-hairline px-3 py-1.5 tabular-nums text-ink">
+                            {pt.effort != null
+                              ? `${pt.effort}${pt.rpe_target != null ? ` (target ${pt.rpe_target})` : ''}`
+                              : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </Disclosure>
     </section>
   )
 }

@@ -1,8 +1,9 @@
-import type { Assignment, AssignmentStatus, Requirement } from '../../api/hep'
+import type { Assignment, AssignmentState, AssignmentStatus, LoadUnit, Requirement } from '../../api/hep'
 import { REQUIREMENTS, isoDate } from '../../api/hep'
 import { signedPct } from '../../lib/format'
 import { PRIORITY, type Priority } from '../../lib/risk'
 import { titleCase } from './planCopy'
+import { loadKg, loadText } from './units'
 
 /** Copy and date helpers for the exercise schedule, kept out of the
  *  component modules so fast refresh keeps working. Dates are YYYY-MM-DD in
@@ -72,12 +73,56 @@ export function rangeLabel(days: string[]): string {
   return `${left} – ${right}${year}`
 }
 
+/** The first day of the month `iso` falls in. */
+export function firstOfMonth(iso: string): string {
+  const d = parseIso(iso)
+  return isoDate(new Date(d.getFullYear(), d.getMonth(), 1))
+}
+
+/** The first day of the month `n` months from the one `iso` falls in. */
+export function addMonths(iso: string, n: number): string {
+  const d = parseIso(iso)
+  return isoDate(new Date(d.getFullYear(), d.getMonth() + n, 1))
+}
+
+/** "November 2026" */
+export function monthLabel(iso: string): string {
+  return parseIso(iso).toLocaleDateString([], { month: 'long', year: 'numeric' })
+}
+
+export function sameMonth(a: string, b: string): boolean {
+  return a.slice(0, 7) === b.slice(0, 7)
+}
+
 /** The server takes dates within −60…+90 days of today. */
 export const ASSIGN_PAST_DAYS = 60
 export const ASSIGN_FUTURE_DAYS = 90
 
 export function assignable(iso: string, today: string): boolean {
   return iso >= addDays(today, -ASSIGN_PAST_DAYS) && iso <= addDays(today, ASSIGN_FUTURE_DAYS)
+}
+
+// --- dragging a chip ---------------------------------------------------------------
+
+/** The type a dragged chip carries: `{id, patientId, date, done}` as JSON. */
+export const DRAG_TYPE = 'application/x-medpull-assignment'
+
+export interface DraggedChip {
+  id: number
+  patientId: string
+  date: string
+  /** A done or skipped day: it stays where it is and can only be copied. */
+  done: boolean
+}
+
+export function readDragged(raw: string): DraggedChip | null {
+  try {
+    const v = JSON.parse(raw) as Partial<DraggedChip>
+    if (typeof v.id !== 'number' || typeof v.patientId !== 'string' || typeof v.date !== 'string') return null
+    return { id: v.id, patientId: v.patientId, date: v.date, done: v.done === true }
+  } catch {
+    return null
+  }
 }
 
 // --- status ------------------------------------------------------------------------
@@ -90,6 +135,36 @@ export const STATUS_CHIP: Record<AssignmentStatus, { label: string; pill: string
 
 export function statusChip(status: string) {
   return STATUS_CHIP[status as AssignmentStatus] ?? { label: titleCase(status), pill: 'bg-soft text-secondary' }
+}
+
+/** Where a row stands on its day. The server works it out from the status
+ *  and the clinician's own `today`; a server from before the field leaves
+ *  the status, which says three of the six. */
+export function stateOf(a: { state?: string; status: string }): AssignmentState {
+  const state = a.state as AssignmentState | undefined
+  if (state && state in STATE_CHIP) return state
+  if (a.status === 'done') return 'done'
+  if (a.status === 'skipped') return 'skipped'
+  return 'upcoming'
+}
+
+export const STATE_CHIP: Record<AssignmentState, { label: string; pill: string }> = {
+  upcoming: { label: 'Assigned', pill: 'bg-soft text-secondary' },
+  due: { label: 'Due today', pill: 'bg-brand-tint text-brand-ink' },
+  in_progress: { label: 'In progress', pill: 'bg-brand-tint text-brand-ink' },
+  done: { label: 'Done', pill: 'bg-risk-low-tint text-risk-low-ink' },
+  skipped: { label: 'Skipped', pill: 'bg-risk-missing-tint text-risk-missing-ink' },
+  missed: { label: 'Missed', pill: 'bg-risk-med-tint text-risk-med-ink' },
+}
+
+/** Whether the server says a done row waits for a look, and why. Falls back
+ *  to the first definition (a clip nobody has answered) on an older server. */
+export function reviewReason(a: Assignment): 'clip' | 'over' | null {
+  const c = a.completion
+  if (a.status !== 'done' || !c) return null
+  if (c.awaiting_review === false) return null
+  if (c.review_reason) return c.review_reason
+  return c.video && !c.review ? 'clip' : null
 }
 
 /** Pain after the exercise: 5 and up takes the warning tone. The number is
@@ -118,23 +193,34 @@ export function completionSource(source: string | null | undefined): string {
   return source ? titleCase(source) : ''
 }
 
-/** A done row with a clip the therapist has not answered. */
+/** A done row that waits for the therapist: a clip nobody has answered, or
+ *  a session over the dose nobody has looked at. */
 export function awaitingReview(a: Assignment): boolean {
-  return a.status === 'done' && !!a.completion?.video && !a.completion.review
+  return reviewReason(a) != null
 }
 
 /** The accessible name of a chip: everything its marks say. */
 export function assignmentSummary(a: Assignment): string {
   const parts = [a.title]
   if (a.dose) parts.push(a.dose)
-  if (a.status === 'done') {
+  const state = stateOf(a)
+  if (state === 'done') {
     parts.push('done')
     if (a.completion?.pain_after != null) parts.push(`pain ${a.completion.pain_after} of 10`)
     if (a.completion?.effort != null) parts.push(`effort ${a.completion.effort} of 10`)
+    if (a.completion?.over) parts.push('more than prescribed')
+    else if (a.completion?.under) parts.push('less than prescribed')
     if (awaitingReview(a)) parts.push('awaiting review')
-  } else if (a.status === 'skipped') {
+  } else if (state === 'skipped') {
     parts.push('skipped')
+  } else if (state === 'missed') {
+    parts.push('missed')
+  } else if (state === 'in_progress') {
+    parts.push('in progress on their phone')
+  } else if (state === 'due') {
+    parts.push('due today')
   }
+  if (a.series_id) parts.push('part of a repeat')
   if (a.video) parts.push('has a clip')
   return parts.join(', ')
 }
@@ -196,6 +282,12 @@ export function loadTrendText(changePct: number | null | undefined): string | nu
 export function kgText(kg: number): string {
   const rounded = Math.round(kg * 10) / 10
   return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)} kg`
+}
+
+/** "+12% vs last week", for a load written or done against the week before. */
+export function changeText(changePct: number | null | undefined): string | null {
+  if (changePct == null || !Number.isFinite(changePct)) return null
+  return changePct === 0 ? 'level with last week' : `${signedPct(changePct)} vs last week`
 }
 
 /** "11 min", "45 s", "1 h 05 min" */
@@ -268,7 +360,8 @@ export function fieldOf(n: number | null | undefined): string {
   return n == null ? '' : String(n)
 }
 
-/** The dose while it is being edited: the fields as strings. */
+/** The dose while it is being edited: the fields as strings. `load` is in
+ *  the clinic's own unit (`unit`, kilograms when left out). */
 export interface DoseDraft {
   sets: string
   reps: string
@@ -276,6 +369,7 @@ export interface DoseDraft {
   load: string
   side: string
   sideLabel: string
+  unit?: LoadUnit
 }
 
 /** Mirrors `plans.dose_line` without the frequency — what the chip and the
@@ -284,13 +378,14 @@ export function doseText(d: DoseDraft): string {
   const s = countOf(d.sets)
   const r = countOf(d.reps)
   const h = countOf(d.hold)
-  const kg = decimalOf(d.load)
+  const unit = d.unit ?? 'kg'
+  const kg = loadKg(d.load, unit)
   const parts: string[] = []
   if (s && r) parts.push(`${s} sets × ${r} reps`)
   else if (s) parts.push(`${s} sets`)
   else if (r) parts.push(`${r} reps`)
   if (h) parts.push(`hold ${h} s`)
-  if (kg) parts.push(kgText(kg))
+  if (kg) parts.push(loadText(kg, unit))
   if (d.side !== 'not_applicable' && d.sideLabel) parts.push(d.sideLabel)
   return parts.join(' · ')
 }

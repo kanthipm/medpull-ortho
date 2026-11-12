@@ -51,9 +51,10 @@ export function LoadTrendChip({
   )
 }
 
-/** The amber mark of a completion the therapist has not answered yet: a dot
- *  on a chip, or a dot with the count on a card ("2 clips to review"). The
- *  word is always beside it, or in the chip's accessible name. */
+/** The amber mark of a done day the therapist has not looked at yet (a clip
+ *  to watch, or a session over the dose): a dot on a chip, or a dot with the
+ *  count on a card ("2 to review"). The word is always beside it, or in the
+ *  chip's accessible name. */
 export function ReviewDot({ className = '' }: { className?: string }) {
   return <span aria-hidden className={`inline-block h-2 w-2 shrink-0 rounded-pill bg-risk-med-ink ${className}`} />
 }
@@ -63,7 +64,7 @@ export function AwaitingReview({ count, className = '' }: { count: number; class
   return (
     <span className={`inline-flex items-center gap-1.5 text-label text-risk-med-ink ${className}`}>
       <ReviewDot />
-      {count} clip{count === 1 ? '' : 's'} to review
+      {count} to review
     </span>
   )
 }

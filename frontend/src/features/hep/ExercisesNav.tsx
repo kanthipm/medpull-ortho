@@ -1,19 +1,18 @@
 import type { ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
-import { useReviewQueue } from '../../api/hep'
+import { useReviewCount } from '../../api/calendar'
 import SegmentedControl from '../../components/SegmentedControl'
 import { CALENDAR, calendarSection, type CalendarSection } from './paths'
 
 /** The Calendar tab's sub-nav, like SettingsNav: the glass segmented control
  *  on the sky, sized as a sub-nav under the app bar. The schedule (the week
- *  grid) comes first; Week is one lifter's week in review; Review carries the
- *  count of clips waiting on the therapist; Programs are the clinic's
+ *  grid) comes first; Week is each lifter's week in review; Review carries the
+ *  count of done days waiting on the therapist; Programs are the clinic's
  *  templates; then the library they are built from, and the plans. The paths
  *  are in `paths.ts`. */
 export default function ExercisesNav({ className = '' }: { className?: string }) {
   const { pathname } = useLocation()
-  const queue = useReviewQueue()
-  const waiting = queue.data?.items.length ?? 0
+  const waiting = useReviewCount().data?.count ?? 0
   const options: { key: CalendarSection; label: ReactNode; text: string; to: string }[] = [
     { key: 'schedule', label: 'Schedule', text: 'Schedule', to: CALENDAR.schedule },
     { key: 'week', label: 'Week', text: 'Week', to: CALENDAR.week },

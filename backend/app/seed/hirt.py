@@ -294,8 +294,21 @@ def write_history(db, patient_id: str, today: date) -> dict[str, int]:
 # rows and the week ahead are open. Nothing here carries a clip: bytes need
 # an object store, and scripts/seed_hirt_media.py adds placeholders.
 
-# How far past today the calendar is filled in.
-SCHEDULE_AHEAD = 7
+# How far past today the calendar is filled in: the rest of a six-week block
+# (two weeks behind, four ahead), so the month view shows a program and not
+# a fortnight.
+SCHEDULE_AHEAD = 28
+# June's therapist writes one week at a time, so her calendar stops at the end
+# of this week: the week in review then has a lifter whose next week is not
+# set yet, with the two ways to set it.
+WEEK_AT_A_TIME = frozenset({"hirt-june"})
+
+
+def schedule_ahead(patient_id: str, today: date) -> int:
+    """How many days past ``today`` a lifter's calendar runs."""
+    if patient_id in WEEK_AT_A_TIME:
+        return 6 - today.weekday()  # through this week's Sunday
+    return SCHEDULE_AHEAD
 MON_WED_FRI = (0, 2, 4)
 TUE_THU_SAT = (1, 3, 5)
 
@@ -545,7 +558,7 @@ def ensure_consent(db, patient_id: str, *, device_name: str = "enrolled by text"
 
 
 def write_schedule(db, patient_id: str, today: date) -> dict[str, int]:
-    """One lifter's calendar, program day 0 through today + 7, with the past
+    """One lifter's calendar, program day 0 through ``schedule_ahead``, with the past
     days' outcomes: each done day as a session (started, ended, how long,
     pain before and after, effort, what was done), and the therapist's
     reviews. Needs the catalog for the exercise rows and upserts it if a
@@ -574,7 +587,7 @@ def write_schedule(db, patient_id: str, today: date) -> dict[str, int]:
     db.execute(delete(ExerciseAssignment).where(ExerciseAssignment.patient_id == patient_id))
     start = today - timedelta(days=PROGRAM_DAYS)
     laid_out = datetime.combine(start, time(9, 0))
-    for offset in range(PROGRAM_DAYS + SCHEDULE_AHEAD + 1):
+    for offset in range(PROGRAM_DAYS + schedule_ahead(patient_id, today) + 1):
         day = start + timedelta(days=offset)
         order = 0
         clock = datetime.combine(day, DONE_AT[patient_id])
@@ -823,7 +836,8 @@ __all__ = [
     "HOSPITAL_ID", "TZ", "PROGRAM_DAYS", "QSET", "HIRT_HOSPITAL", "HIRT_CARE_TEAM",
     "HIRT_PATIENTS", "HIRT_IDS", "PATHWAYS", "PHONES", "MRNS", "STORIES", "CheckinDay", "HISTORY",
     "EXPECTED_TIERS", "write_history", "ensure_org", "ensure_consent",
-    "SCHEDULE_AHEAD", "ScheduledExercise", "SCHEDULE", "COLE_STEP_UP_KG", "COLE_HEAVY_KG",
+    "SCHEDULE_AHEAD", "WEEK_AT_A_TIME", "schedule_ahead", "ScheduledExercise", "SCHEDULE",
+    "COLE_STEP_UP_KG", "COLE_HEAVY_KG",
     "PAIN_AFTER", "EFFORT", "REVIEWS",
     "EXPECTED_SCHEDULE", "EXPECTED_REQUIREMENTS", "EXPECTED_LOADS", "EXPECTED_REVIEWS",
     "write_schedule", "write_reviews", "relink_return_clips", "TEMPLATES", "ensure_templates",

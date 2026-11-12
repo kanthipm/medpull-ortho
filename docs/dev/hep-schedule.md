@@ -214,7 +214,9 @@ clinic so this is filled.
 
 ## Seed (`backend/app/seed/hirt.py`, carried by `demo_fill` / `push_demo_fill.py`)
 
-Each lifter gets a schedule from program day 0 through today + 7, in catalog
+Each lifter gets a schedule from program day 0 through today + 28 (the rest
+of a six-week block; June's stops at the end of this week, so the week review
+has a lifter whose next week is not set: `hirt.schedule_ahead`), in catalog
 exercises that fit the pathway, three or four per training day, assigned by their
 therapist, with outcomes that match the fourteen-day check-in story:
 

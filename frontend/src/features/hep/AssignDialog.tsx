@@ -1,29 +1,59 @@
 import { Film, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { ApiError } from '../../api/client'
-import type { Assignment, CareTeamMember, Exercise, Requirement, SchedulePatientSummary } from '../../api/hep'
+import type {
+  Assignment,
+  CareTeamMember,
+  Exercise,
+  LoadUnit,
+  Requirement,
+  ScheduleCreateBody,
+  SchedulePatientSummary,
+} from '../../api/hep'
 import { useCreateAssignments, useHepOptions } from '../../api/hep'
 import Modal from '../../components/Modal'
+import SegmentedControl from '../../components/SegmentedControl'
 import { SkeletonCard } from '../../components/Skeleton'
 import { useToast } from '../../components/Toast'
-import { LABEL, NumberField, RequirementControl } from './DoseFields'
+import { LABEL, NumberField, RequirementControl, WeekdayPicker } from './DoseFields'
 import { diagnosticWarning } from './hepCopy'
 import LibraryPicker from './LibraryPicker'
-import { countOf, decimalOf, doseText, longDay, requirementsText, shortDay, vocabLabel } from './scheduleCopy'
+import {
+  addDays,
+  countOf,
+  doseText,
+  longDay,
+  monthDay,
+  parseIso,
+  requirementsText,
+  shortDay,
+  vocabLabel,
+  weekdaysLabel,
+} from './scheduleCopy'
+import { loadBounds, loadKg } from './units'
 
-/** The `+` in a cell: put one exercise on one patient's day (and, with
- *  "also on", the other days of the week). Pick from the library first,
- *  then the dose — sets, reps, hold, the load on the bar, the effort it
- *  should feel like — the side, what she asks for with it (a clip of their
- *  attempt, the wearable on), a note the patient reads, who assigns it, and
- *  the days. Save is one POST; a day that already has the exercise comes
- *  back as a 409 naming the date, shown in place. */
+type When = 'days' | 'repeat'
+
+/** The most weeks a repeat can run (`schedule.MAX_REPEAT_WEEKS`). */
+const MAX_WEEKS = 12
+
+/** The `+` in a cell: put one exercise on one patient's day. Pick from the
+ *  library first, then the dose — sets, reps, hold, the load in hand in the
+ *  clinic's own unit, the effort it should feel like — the side, what she
+ *  asks for with it (a clip of their attempt, the wearable on), a note the
+ *  patient reads, who assigns it, and when: this day and others of the
+ *  week, or a repeat on chosen weekdays for a number of weeks. Save is one
+ *  POST. With days, one that already has the exercise comes back as a 409
+ *  naming the date, shown in place; a repeat lands around what is already
+ *  there and says what it left out. "Text them" also sends a text with a
+ *  link that opens the app on the first of the days. */
 export default function AssignDialog({
   patient,
   date,
   days,
   assignments,
   careTeam,
+  unit = 'kg',
   onClose,
 }: {
   patient: SchedulePatientSummary
@@ -34,6 +64,8 @@ export default function AssignDialog({
   /** The patient's rows in view, so a day already holding the exercise is marked. */
   assignments: Assignment[]
   careTeam: CareTeamMember[]
+  /** The unit the clinic reads loads in; the row is sent in kilograms. */
+  unit?: LoadUnit
   onClose: () => void
 }) {
   const toast = useToast()
@@ -51,6 +83,12 @@ export default function AssignDialog({
   const [note, setNote] = useState('')
   const [assignedBy, setAssignedBy] = useState(patient.assigned_provider_id ?? careTeam[0]?.id ?? '')
   const [alsoOn, setAlsoOn] = useState<string[]>([])
+  const [when, setWhen] = useState<When>('days')
+  // Monday 0 … Sunday 6, starting with the weekday that was pressed.
+  const pressed = (parseIso(date).getDay() + 6) % 7
+  const [weekdays, setWeekdays] = useState<number[] | null>([pressed])
+  const [weeks, setWeeks] = useState('4')
+  const [textThem, setTextThem] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const team = careTeam.length > 0 ? careTeam : (options.data?.care_team ?? [])
@@ -60,9 +98,20 @@ export default function AssignDialog({
   const otherDays = days.filter((d) => d !== date)
   const dates = [date, ...alsoOn].sort()
   const warn = diagnosticWarning(note)
-  const dose = doseText({ sets, reps, hold, load, side, sideLabel: vocabLabel(sides, side) })
+  const dose = doseText({ sets, reps, hold, load, side, sideLabel: vocabLabel(sides, side), unit })
   const rpeTarget = countOf(rpe)
   const asks = requirementsText(video, wearable)
+  const bounds = loadBounds(unit)
+  const first = patient.name.split(' ')[0]
+
+  // The days a repeat would land on, counted here only for the sentence
+  // under the control; the server works the real ones out.
+  const nWeeks = Math.min(MAX_WEEKS, Math.max(1, countOf(weeks) ?? 1))
+  const onDays = weekdays ?? [0, 1, 2, 3, 4, 5, 6]
+  const repeatDays = Array.from({ length: nWeeks * 7 }, (_, i) => addDays(date, i)).filter((d) =>
+    onDays.includes((parseIso(d).getDay() + 6) % 7),
+  )
+  const repeating = when === 'repeat'
 
   const toggleDay = (d: string) =>
     setAlsoOn((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]))
@@ -70,31 +119,42 @@ export default function AssignDialog({
   const save = () => {
     if (!exercise) return
     setError(null)
-    create.mutate(
-      {
-        patient_id: patient.id,
-        exercise_id: exercise.id,
-        dates,
-        sets: countOf(sets),
-        reps: countOf(reps),
-        hold_seconds: countOf(hold),
-        side,
-        load_kg: decimalOf(load),
-        rpe_target: rpeTarget,
-        video_requirement: video,
-        wearable_requirement: wearable,
-        clinician_instructions: note.trim(),
-        assigned_by: assignedBy || undefined,
+    const body: ScheduleCreateBody = {
+      patient_id: patient.id,
+      exercise_id: exercise.id,
+      ...(repeating
+        ? { repeat: { weekdays: onDays, weeks: nWeeks, start: date } }
+        : { dates }),
+      sets: countOf(sets),
+      reps: countOf(reps),
+      hold_seconds: countOf(hold),
+      side,
+      load_kg: loadKg(load, unit),
+      rpe_target: rpeTarget,
+      video_requirement: video,
+      wearable_requirement: wearable,
+      clinician_instructions: note.trim(),
+      assigned_by: assignedBy || undefined,
+      text_patient: textThem,
+    }
+    create.mutate(body, {
+      onSuccess: (r) => {
+        const n = r.assignments.length
+        const parts = [`${exercise.title} assigned to ${patient.name} on ${n} day${n === 1 ? '' : 's'}`]
+        const left = r.skipped ?? 0
+        if (left > 0) parts.push(`${left} day${left === 1 ? '' : 's'} left out (already on, or out of reach)`)
+        if (textThem) {
+          parts.push(
+            r.text?.sent
+              ? `${first} was texted a link`
+              : `no text went${r.text?.detail ? `: ${r.text.detail}` : ' (nothing new from today on, or this chart cannot be texted)'}`,
+          )
+        }
+        toast(parts.join(' · '), n > 0 ? 'success' : 'info')
+        onClose()
       },
-      {
-        onSuccess: (r) => {
-          const n = r.assignments.length
-          toast(`${exercise.title} assigned to ${patient.name} on ${n} day${n === 1 ? '' : 's'}`, 'success')
-          onClose()
-        },
-        onError: (e) => setError(e instanceof ApiError && e.message ? e.message : 'Could not save'),
-      },
-    )
+      onError: (e) => setError(e instanceof ApiError && e.message ? e.message : 'Could not save'),
+    })
   }
 
   const clipNote = exercise
@@ -125,9 +185,11 @@ export default function AssignDialog({
           >
             {create.isPending
               ? 'Saving…'
-              : dates.length > 1
-                ? `Assign on ${dates.length} days`
-                : 'Assign'}
+              : repeating
+                ? `Assign for ${nWeeks} week${nWeeks === 1 ? '' : 's'}`
+                : dates.length > 1
+                  ? `Assign on ${dates.length} days`
+                  : 'Assign'}
           </button>
         </>
       }
@@ -167,7 +229,14 @@ export default function AssignDialog({
               <NumberField id="assign-sets" label="Sets" value={sets} onChange={setSets} />
               <NumberField id="assign-reps" label="Reps" value={reps} onChange={setReps} />
               <NumberField id="assign-hold" label="Hold (s)" value={hold} onChange={setHold} />
-              <NumberField id="assign-load" label="Load (kg)" value={load} max={500} step={0.5} onChange={setLoad} />
+              <NumberField
+                id="assign-load"
+                label={`Load (${unit})`}
+                value={load}
+                max={bounds.max}
+                step={bounds.step}
+                onChange={setLoad}
+              />
               <NumberField id="assign-rpe" label="Target RPE" value={rpe} max={10} onChange={setRpe} />
               <div className="sm:col-span-2">
                 <label htmlFor="assign-side" className={LABEL}>
@@ -243,38 +312,91 @@ export default function AssignDialog({
             </div>
           </div>
 
-          <fieldset>
-            <legend className={LABEL}>Also on</legend>
-            <div className="flex flex-wrap gap-1.5">
-              {otherDays.map((d) => {
-                const taken = exerciseOn(d).includes(exercise.id)
-                const on = alsoOn.includes(d)
-                return (
-                  <label
-                    key={d}
-                    title={taken ? `${exercise.title} is already on ${shortDay(d)}` : undefined}
-                    className={`inline-flex min-h-9 cursor-pointer select-none items-center gap-2 rounded-pill px-3 text-copy ring-1 ring-inset transition-colors duration-state ease-apple ${
-                      taken
-                        ? 'cursor-not-allowed text-disabled-ink ring-hairline'
-                        : on
-                          ? 'bg-brand-tint text-brand-ink ring-brand-tint-strong'
-                          : 'bg-panel/70 text-ink ring-line-strong/60 hover:bg-panel'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-brand"
-                      checked={on}
-                      disabled={taken}
-                      onChange={() => toggleDay(d)}
-                    />
-                    {shortDay(d)}
-                    {taken && <span className="sr-only">, already assigned</span>}
-                  </label>
-                )
-              })}
+          <div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span id="assign-when" className={`${LABEL} !mb-0`}>
+                When
+              </span>
+              <SegmentedControl<When>
+                options={[
+                  { key: 'days', label: 'These days' },
+                  { key: 'repeat', label: 'Repeat' },
+                ]}
+                value={when}
+                onChange={setWhen}
+                size="sm"
+                role="radiogroup"
+                aria-labelledby="assign-when"
+              />
             </div>
-          </fieldset>
+            {repeating ? (
+              <div className="space-y-3 rounded-control bg-soft p-4">
+                <WeekdayPicker label="On" value={weekdays} onChange={setWeekdays} />
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="w-28">
+                    <NumberField id="assign-weeks" label="For (weeks)" value={weeks} min={1} max={MAX_WEEKS} onChange={setWeeks} />
+                  </div>
+                  <p className="meta min-w-0 flex-1 pb-2">
+                    {weekdaysLabel(weekdays)} for {nWeeks} week{nWeeks === 1 ? '' : 's'} from {monthDay(date)}:{' '}
+                    {repeatDays.length} day{repeatDays.length === 1 ? '' : 's'}, the last on{' '}
+                    {repeatDays.length > 0 ? monthDay(repeatDays[repeatDays.length - 1]) : monthDay(date)}. A day that
+                    already has this exercise is left out. The days stay one repeat: re-dose or clear
+                    “this and the following” from any of them.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <fieldset>
+                <legend className="sr-only">Also on</legend>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="meta mr-1">{shortDay(date)}, and also on</span>
+                  {otherDays.map((d) => {
+                    const taken = exerciseOn(d).includes(exercise.id)
+                    const on = alsoOn.includes(d)
+                    return (
+                      <label
+                        key={d}
+                        title={taken ? `${exercise.title} is already on ${shortDay(d)}` : undefined}
+                        className={`inline-flex min-h-9 cursor-pointer select-none items-center gap-2 rounded-pill px-3 text-copy ring-1 ring-inset transition-colors duration-state ease-apple ${
+                          taken
+                            ? 'cursor-not-allowed text-disabled-ink ring-hairline'
+                            : on
+                              ? 'bg-brand-tint text-brand-ink ring-brand-tint-strong'
+                              : 'bg-panel/70 text-ink ring-line-strong/60 hover:bg-panel'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-brand"
+                          checked={on}
+                          disabled={taken}
+                          onChange={() => toggleDay(d)}
+                        />
+                        {shortDay(d)}
+                        {taken && <span className="sr-only">, already assigned</span>}
+                      </label>
+                    )
+                  })}
+                </div>
+              </fieldset>
+            )}
+          </div>
+
+          <label className="flex cursor-pointer items-start gap-3 rounded-control bg-soft px-4 py-3">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-brand"
+              checked={textThem}
+              onChange={(e) => setTextThem(e.target.checked)}
+            />
+            <span className="min-w-0">
+              <span className="block text-copy font-medium text-ink">Text {first} about it</span>
+              <span className="meta block">
+                One text naming what was added, with a link that opens the app on the first of these
+                days. Nothing is texted for days already behind today.
+              </span>
+            </span>
+          </label>
 
           {error && (
             <p role="alert" className="rounded-control bg-risk-high-tint px-4 py-3 text-copy text-risk-high-ink">

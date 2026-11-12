@@ -1,5 +1,6 @@
-import type { Exercise, Requirement, Template, TemplateItem, TemplateItemBody } from '../../api/hep'
-import { countOf, decimalOf, doseText, fieldOf, requirementOf, vocabLabel } from './scheduleCopy'
+import type { Exercise, LoadUnit, Requirement, Template, TemplateItem, TemplateItemBody } from '../../api/hep'
+import { countOf, doseText, fieldOf, requirementOf, vocabLabel } from './scheduleCopy'
+import { loadField, loadKg } from './units'
 
 /** Copy and helpers for the Programs pages, kept out of the component
  *  modules so fast refresh keeps working. A program is a template: a
@@ -8,7 +9,9 @@ import { countOf, decimalOf, doseText, fieldOf, requirementOf, vocabLabel } from
 
 /** One row in the editor: the exercise as the clinician sees it plus its
  *  dose and requirements. Numbers are strings while editing so a cleared
- *  field does not snap back to 0. */
+ *  field does not snap back to 0. `load_kg` holds what the load field shows,
+ *  which is in the clinic's own unit; it is turned into kilograms on the
+ *  way out (`toItemBody`) and back on the way in (`itemFromTemplate`). */
 export interface ProgramItem {
   exercise_id: number
   exercise_key: string | null
@@ -65,7 +68,7 @@ export function itemFromExercise(e: Exercise): ProgramItem {
 
 /** A saved item back into the editor. The template payload carries no
  *  region or clip, so those read from the library when it is loaded. */
-export function itemFromTemplate(i: TemplateItem, library?: Exercise): ProgramItem {
+export function itemFromTemplate(i: TemplateItem, library?: Exercise, unit: LoadUnit = 'kg'): ProgramItem {
   return {
     exercise_id: i.exercise_id,
     exercise_key: i.exercise_key ?? library?.key ?? null,
@@ -77,7 +80,7 @@ export function itemFromTemplate(i: TemplateItem, library?: Exercise): ProgramIt
     sets: fieldOf(i.sets),
     reps: fieldOf(i.reps),
     hold_seconds: fieldOf(i.hold_seconds),
-    load_kg: fieldOf(i.load_kg),
+    load_kg: loadField(i.load_kg, unit),
     rpe_target: fieldOf(i.rpe_target),
     side: i.side || 'not_applicable',
     clinician_instructions: i.clinician_instructions ?? '',
@@ -86,17 +89,17 @@ export function itemFromTemplate(i: TemplateItem, library?: Exercise): ProgramIt
   }
 }
 
-export function draftFromTemplate(t: Template, library: Exercise[] = []): ProgramDraft {
+export function draftFromTemplate(t: Template, library: Exercise[] = [], unit: LoadUnit = 'kg'): ProgramDraft {
   const byId = new Map(library.map((e) => [e.id, e]))
   return {
     name: t.name,
     description: t.description ?? '',
     weeks: String(t.weeks),
-    items: t.items.map((i) => itemFromTemplate(i, byId.get(i.exercise_id))),
+    items: t.items.map((i) => itemFromTemplate(i, byId.get(i.exercise_id), unit)),
   }
 }
 
-export function toItemBody(i: ProgramItem): TemplateItemBody {
+export function toItemBody(i: ProgramItem, unit: LoadUnit = 'kg'): TemplateItemBody {
   return {
     exercise_id: i.exercise_id,
     exercise_key: i.exercise_key ?? undefined,
@@ -106,7 +109,7 @@ export function toItemBody(i: ProgramItem): TemplateItemBody {
     reps: countOf(i.reps),
     hold_seconds: countOf(i.hold_seconds),
     side: i.side,
-    load_kg: decimalOf(i.load_kg),
+    load_kg: loadKg(i.load_kg, unit),
     rpe_target: countOf(i.rpe_target),
     clinician_instructions: i.clinician_instructions.trim(),
     video_requirement: i.video_requirement,
@@ -115,17 +118,21 @@ export function toItemBody(i: ProgramItem): TemplateItemBody {
 }
 
 /** What the server would receive, as a stable string, for dirty tracking. */
-export function serializeProgram(d: ProgramDraft): string {
+export function serializeProgram(d: ProgramDraft, unit: LoadUnit = 'kg'): string {
   return JSON.stringify({
     name: d.name.trim(),
     description: d.description.trim(),
     weeks: countOf(d.weeks),
-    items: d.items.map(toItemBody),
+    items: d.items.map((i) => toItemBody(i, unit)),
   })
 }
 
 /** The dose line of an editor row, as the patient will read it. */
-export function editorItemDose(i: ProgramItem, sides: { key: string; label: string }[]): string {
+export function editorItemDose(
+  i: ProgramItem,
+  sides: { key: string; label: string }[],
+  unit: LoadUnit = 'kg',
+): string {
   return doseText({
     sets: i.sets,
     reps: i.reps,
@@ -133,18 +140,20 @@ export function editorItemDose(i: ProgramItem, sides: { key: string; label: stri
     load: i.load_kg,
     side: i.side,
     sideLabel: vocabLabel(sides, i.side),
+    unit,
   })
 }
 
 /** The dose line of a saved item (the apply dialog, the programs list). */
-export function programItemDose(i: TemplateItem): string {
+export function programItemDose(i: TemplateItem, unit: LoadUnit = 'kg'): string {
   return doseText({
     sets: fieldOf(i.sets),
     reps: fieldOf(i.reps),
     hold: fieldOf(i.hold_seconds),
-    load: fieldOf(i.load_kg),
+    load: loadField(i.load_kg, unit),
     side: i.side,
     sideLabel: SIDE_LABEL[i.side] ?? '',
+    unit,
   })
 }
 

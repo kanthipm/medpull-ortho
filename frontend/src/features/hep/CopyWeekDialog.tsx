@@ -16,12 +16,15 @@ export default function CopyWeekDialog({
   patient,
   toStart,
   careTeam,
+  title = 'Copy last week onto this one?',
   onClose,
 }: {
   patient: SchedulePatientSummary
   /** The board's current first day; the source is the seven days before it. */
   toStart: string
   careTeam: CareTeamMember[]
+  /** The question in the head: the week review asks about next week. */
+  title?: string
   onClose: () => void
 }) {
   const toast = useToast()
@@ -54,7 +57,7 @@ export default function CopyWeekDialog({
 
   return (
     <Modal
-      title="Copy last week onto this one?"
+      title={title}
       size="md"
       onClose={onClose}
       description={patient.name}

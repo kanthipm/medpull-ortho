@@ -599,14 +599,19 @@ def test_the_patient_marks_a_day_done_with_pain_and_a_clip(client, db, tokens, l
 
 def test_the_seed_lays_out_the_five_lifters_calendars(db):
     start = TODAY - timedelta(days=hirt.PROGRAM_DAYS)
-    end = TODAY + timedelta(days=hirt.SCHEDULE_AHEAD)
     keys = {e.id: e.key for e in db.scalars(select(Exercise).where(Exercise.key.is_not(None)))}
+    # most calendars run the rest of a six-week block; June's stops with this week
+    assert hirt.schedule_ahead("hirt-cole", TODAY) == hirt.SCHEDULE_AHEAD == 28
+    assert hirt.schedule_ahead("hirt-june", TODAY) == 6 - TODAY.weekday()
     for spec in hirt.HIRT_PATIENTS:
+        ahead = hirt.schedule_ahead(spec.id, TODAY)
+        end = TODAY + timedelta(days=ahead)
         rows = db.scalars(select(ExerciseAssignment).where(
             ExerciseAssignment.patient_id == spec.id)).all()
         assert rows, spec.id
         assert min(r.scheduled_for for r in rows) == start
-        assert max(r.scheduled_for for r in rows) == end
+        # a weekday pattern may leave the last day or two of the reach empty
+        assert end - timedelta(days=2) <= max(r.scheduled_for for r in rows) <= end
         assert all(r.hospital_id == "hirt" and r.assigned_by == spec.assigned_id for r in rows)
         assert all(r.video_attachment_id is None and r.plan_exercise_id is None for r in rows)
         past = [r for r in rows if r.scheduled_for < TODAY]
@@ -626,11 +631,12 @@ def test_the_seed_lays_out_the_five_lifters_calendars(db):
         for item in hirt.SCHEDULE[spec.id]:
             days = sorted(r.scheduled_for for r in rows if keys[r.exercise_id] == item.key)
             assert len(days) == len(set(days)), (spec.id, item.key)
+            reach = hirt.PROGRAM_DAYS + ahead + 1
             if item.weekdays is None:
-                assert len(days) == hirt.PROGRAM_DAYS + hirt.SCHEDULE_AHEAD + 1
+                assert len(days) == reach
             else:
                 assert days and all(d.weekday() in item.weekdays for d in days)
-                assert all(d in days for d in (start + timedelta(days=i) for i in range(22))
+                assert all(d in days for d in (start + timedelta(days=i) for i in range(reach))
                            if d.weekday() in item.weekdays)
 
     def done_pain(pid: str) -> list[int]:
@@ -662,7 +668,9 @@ def test_the_seed_lays_out_the_five_lifters_calendars(db):
     # a second write is a clean replacement, not a second calendar
     before = db.scalar(select(func.count(ExerciseAssignment.id)))
     counts = hirt.write_schedule(db, "hirt-june", TODAY)
+    # four exercises a day, from program day 0 through the end of this week
+    june_days = hirt.PROGRAM_DAYS + hirt.schedule_ahead("hirt-june", TODAY) + 1
     assert {k: counts[k] for k in ("assignments", "done", "skipped")} == {
-        "assignments": 88, "done": 56, "skipped": 0}
+        "assignments": 4 * june_days, "done": 56, "skipped": 0}
     assert counts["consents"] == 0  # the first write already gave her the beta consent
     assert db.scalar(select(func.count(ExerciseAssignment.id))) == before

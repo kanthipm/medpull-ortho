@@ -11,22 +11,30 @@ export default function Disclosure({
   label,
   hint,
   defaultOpen = false,
+  onToggle,
   children,
   className = '',
 }: {
   label: string
   hint?: string
   defaultOpen?: boolean
+  /** Told each time it opens or closes, for content that loads on open. */
+  onToggle?: (open: boolean) => void
   children: ReactNode
   className?: string
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const panelId = useId()
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    onToggle?.(next)
+  }
   return (
     <div className={className}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         aria-expanded={open}
         aria-controls={panelId}
         className="-mx-2 flex min-h-9 w-[calc(100%+1rem)] cursor-pointer items-center gap-2 rounded-control-sm px-2 text-left text-copy font-medium text-ink transition-colors duration-state ease-apple hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"

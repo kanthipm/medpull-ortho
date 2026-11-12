@@ -11,6 +11,7 @@ import AssignmentChip from './AssignmentChip'
 import AssignmentDialog from './AssignmentDialog'
 import { CALENDAR } from './paths'
 import { dayOfMonth, mondayOf, weekDays, weekdayShort } from './scheduleCopy'
+import { unitOf } from './units'
 
 /** The patient page's "Exercises this week" strip: this week's seven days
  *  with the patient's assignments as chips (status and pain on each), the
@@ -114,6 +115,7 @@ export default function ExercisesThisWeek({
           assignment={open}
           patientName={week.data?.patient.name ?? 'the patient'}
           days={days}
+          unit={unitOf(week.data?.clinic)}
           onClose={() => setOpenId(null)}
         />
       )}

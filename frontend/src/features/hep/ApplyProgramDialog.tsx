@@ -1,6 +1,7 @@
 import { ClipboardList, Film } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useHepClinic } from '../../api/calendar'
 import { ApiError } from '../../api/client'
 import type { CareTeamMember, Template } from '../../api/hep'
 import { todayIso, useApplyTemplate, useHepOptions, useTemplates } from '../../api/hep'
@@ -20,6 +21,7 @@ import {
   requirementsText,
   weekdaysLabel,
 } from './scheduleCopy'
+import { unitOf } from './units'
 
 /** "Apply a program…": a template onto one patient's calendar from a start
  *  date, for a number of weeks (the program's own unless changed). Opened
@@ -44,6 +46,7 @@ export default function ApplyProgramDialog({
 }) {
   const toast = useToast()
   const options = useHepOptions()
+  const unit = unitOf(useHepClinic().data)
   const templates = useTemplates({ enabled: !template })
   const apply = useApplyTemplate()
   const today = todayIso()
@@ -264,7 +267,7 @@ export default function ApplyProgramDialog({
                         <span className="block font-medium text-ink">{it.title}</span>
                         <span className="meta block">
                           {weekdaysLabel(it.weekdays)}
-                          {programItemDose(it) && ` · ${programItemDose(it)}`}
+                          {programItemDose(it, unit) && ` · ${programItemDose(it, unit)}`}
                           {it.rpe_target != null && ` · RPE ${it.rpe_target}`}
                           {asks && ` · ${asks}`}
                         </span>

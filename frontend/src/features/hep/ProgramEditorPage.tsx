@@ -1,8 +1,9 @@
 import { ArrowDown, ArrowUp, CalendarDays, ChevronLeft, Film, Plus, X } from 'lucide-react'
 import { useEffect, useState, type CSSProperties } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useHepClinic } from '../../api/calendar'
 import { ApiError } from '../../api/client'
-import type { Exercise, HepOptions, Template } from '../../api/hep'
+import type { Exercise, HepOptions, LoadUnit, Template } from '../../api/hep'
 import { useCreateTemplate, useExercises, useHepOptions, useTemplates, useUpdateTemplate } from '../../api/hep'
 import EmptyState from '../../components/EmptyState'
 import SectionCard from '../../components/SectionCard'
@@ -25,6 +26,7 @@ import {
   type ProgramItem,
 } from './programCopy'
 import { countOf, requirementsText, weekdaysLabel } from './scheduleCopy'
+import { loadBounds, unitOf } from './units'
 
 /** `/calendar/programs/new` and `/calendar/programs/:id` — build a program:
  *  pick exercises from the library on the left, and on the right give each
@@ -39,6 +41,9 @@ export default function ProgramEditorPage() {
   // The template payload names its exercises but carries no region or clip;
   // the library fills those in for the tray rows.
   const library = useExercises({})
+  // Loads are typed and shown in the clinic's own unit, so the editor waits
+  // for it rather than opening in kilograms and switching.
+  const clinic = useHepClinic()
   const template = templateId != null ? templates.data?.templates.find((t) => t.id === templateId) : null
 
   if (templateId != null && (templates.isLoading || library.isLoading)) {
@@ -63,26 +68,41 @@ export default function ProgramEditorPage() {
       </EmptyState>
     )
   }
-  if (!options.data) return <SkeletonCard rows={4} />
+  if (!options.data || clinic.isLoading) return <SkeletonCard rows={4} />
   return (
     <Editor
       key={template?.id ?? 'new'}
       template={template ?? null}
       options={options.data}
       library={library.data?.exercises ?? []}
+      unit={unitOf(clinic.data)}
     />
   )
 }
 
-function Editor({ template, options, library }: { template: Template | null; options: HepOptions; library: Exercise[] }) {
+function Editor({
+  template,
+  options,
+  library,
+  unit,
+}: {
+  template: Template | null
+  options: HepOptions
+  library: Exercise[]
+  unit: LoadUnit
+}) {
   const toast = useToast()
   const navigate = useNavigate()
   const create = useCreateTemplate()
   const update = useUpdateTemplate()
-  const [draft, setDraft] = useState<ProgramDraft>(() => (template ? draftFromTemplate(template, library) : blankProgram()))
-  const [saved, setSaved] = useState(() => (template ? serializeProgram(draftFromTemplate(template, library)) : ''))
+  const [draft, setDraft] = useState<ProgramDraft>(() =>
+    template ? draftFromTemplate(template, library, unit) : blankProgram(),
+  )
+  const [saved, setSaved] = useState(() =>
+    template ? serializeProgram(draftFromTemplate(template, library, unit), unit) : '',
+  )
   const [applying, setApplying] = useState(false)
-  const dirty = serializeProgram(draft) !== saved
+  const dirty = serializeProgram(draft, unit) !== saved
   const saving = create.isPending || update.isPending
 
   // Leaving with unsaved work: the browser's own prompt, nothing custom.
@@ -133,14 +153,14 @@ function Editor({ template, options, library }: { template: Template | null; opt
       name: draft.name.trim(),
       description: draft.description.trim(),
       weeks: weeks ?? 1,
-      items: draft.items.map(toItemBody),
+      items: draft.items.map((i) => toItemBody(i, unit)),
     }
     if (template) {
       update.mutate(
         { id: template.id, ...body },
         {
           onSuccess: () => {
-            setSaved(serializeProgram(draft))
+            setSaved(serializeProgram(draft, unit))
             toast('Program saved', 'success')
           },
           onError,
@@ -149,7 +169,7 @@ function Editor({ template, options, library }: { template: Template | null; opt
     } else {
       create.mutate(body, {
         onSuccess: (t) => {
-          setSaved(serializeProgram(draft))
+          setSaved(serializeProgram(draft, unit))
           toast('Program saved', 'success')
           navigate(CALENDAR.program(t.id), { replace: true })
         },
@@ -235,6 +255,7 @@ function Editor({ template, options, library }: { template: Template | null; opt
                   index={i}
                   count={draft.items.length}
                   options={options}
+                  unit={unit}
                   onChange={(next) => setItem(i, next)}
                   onMove={(dir) => move(i, dir)}
                   onRemove={() => remove(i)}
@@ -268,6 +289,7 @@ function ItemRow({
   index,
   count,
   options,
+  unit,
   onChange,
   onMove,
   onRemove,
@@ -276,6 +298,7 @@ function ItemRow({
   index: number
   count: number
   options: HepOptions
+  unit: LoadUnit
   onChange: (next: ProgramItem) => void
   onMove: (dir: -1 | 1) => void
   onRemove: () => void
@@ -283,7 +306,8 @@ function ItemRow({
   const [more, setMore] = useState(Boolean(item.clinician_instructions))
   const set = <K extends keyof ProgramItem>(key: K, v: ProgramItem[K]) => onChange({ ...item, [key]: v })
   const id = `pr-${item.exercise_id}`
-  const dose = editorItemDose(item, options.sides)
+  const dose = editorItemDose(item, options.sides, unit)
+  const bounds = loadBounds(unit)
   const rpe = countOf(item.rpe_target)
   const asks = requirementsText(item.video_requirement, item.wearable_requirement)
   const warn = diagnosticWarning(item.clinician_instructions)
@@ -351,7 +375,14 @@ function ItemRow({
         <NumberField id={`${id}-sets`} label="Sets" value={item.sets} onChange={(v) => set('sets', v)} />
         <NumberField id={`${id}-reps`} label="Reps" value={item.reps} onChange={(v) => set('reps', v)} />
         <NumberField id={`${id}-hold`} label="Hold (s)" value={item.hold_seconds} onChange={(v) => set('hold_seconds', v)} />
-        <NumberField id={`${id}-load`} label="Load (kg)" value={item.load_kg} max={500} step={0.5} onChange={(v) => set('load_kg', v)} />
+        <NumberField
+          id={`${id}-load`}
+          label={`Load (${unit})`}
+          value={item.load_kg}
+          max={bounds.max}
+          step={bounds.step}
+          onChange={(v) => set('load_kg', v)}
+        />
         <NumberField id={`${id}-rpe`} label="Target RPE" value={item.rpe_target} max={10} onChange={(v) => set('rpe_target', v)} />
         <div className="sm:col-span-2">
           <label htmlFor={`${id}-side`} className={LABEL}>
