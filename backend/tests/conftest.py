@@ -45,6 +45,17 @@ os.environ["SENDBLUE_TEXT_FIRST_BODY"] = "Hi MedPull"
 os.environ["ALLOW_MOCK_WEBHOOK"] = "true"  # the suite drives the demo connector through it
 # Attachment bytes go to a throwaway directory, never backend/data.
 os.environ["ATTACHMENT_DIR"] = f"{_TMP}/attachments"
+# What a deployment's env file decides about itself must not leak into the
+# suite: the repo's .env is also the deploy script's, and it may say this
+# is the demo stack, name the calendar's clinic, or list apps for the
+# association file. The suite's baseline is the real app with none of that;
+# a test that needs one of them sets it for itself.
+os.environ["DEMO_MODE"] = "false"
+os.environ["HEP_CLINIC_ID"] = ""
+os.environ["IOS_TEAM_ID"] = ""
+os.environ["IOS_LINK_APP_IDS"] = ""
+os.environ["IOS_LINK_PATHS"] = "/t/*,/a/*"
+os.environ["EXERCISE_REMINDERS"] = "false"
 
 from datetime import date  # noqa: E402
 
