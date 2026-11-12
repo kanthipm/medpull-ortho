@@ -32,6 +32,26 @@ from app.models.personal import (
     PersonalProfile,
 )
 from app.models.showcase import ShowcaseState
+from app.pt.models import (  # noqa: F401 - registered on Base.metadata
+    CalendarMark,
+    ClinicSetting,
+    ClinicVisit,
+    ClipComment,
+    FlagEvent,
+    FunctionGoal,
+    FunctionRating,
+    Handoff,
+    Measurement,
+    MorningCheck,
+    OutcomeSchedule,
+    OutcomeScore,
+    PainArea,
+    PatientPhase,
+    PatientSetting,
+    Protocol,
+    RedFlagText,
+    WeekCheckin,
+)
 from app.models.sports import (
     SportsEvent,
     SportsInjury,

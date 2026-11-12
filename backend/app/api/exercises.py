@@ -59,6 +59,25 @@ def _refused(err: HepError) -> HTTPException:
                          detail=str(err))
 
 
+def _between_visits(db: Session, patient: Patient, day: date, today: date) -> dict:
+    """What the clinic's between-visits record adds to a day on the phone:
+    whether it is a rest day set on purpose, and the next visit."""
+    from sqlalchemy import select
+
+    from app.pt import service as between
+    from app.pt.models import CalendarMark
+
+    rest = db.scalar(select(CalendarMark).where(
+        CalendarMark.patient_id == patient.id, CalendarMark.day == day,
+        CalendarMark.kind == "rest"))
+    upcoming = between.visits_of(db, patient.id, today)["next"]
+    return {
+        "rest_day": {"note": rest.note or ""} if rest is not None else None,
+        "next_visit": ({"on": upcoming["on"], "at": upcoming["at"], "kind": upcoming["kind"],
+                        "kind_label": upcoming["kind_label"]} if upcoming else None),
+    }
+
+
 class ReturnClip(BaseModel):
     """The clip the patient filmed, in whichever form the upload left it.
 
@@ -145,7 +164,8 @@ def today_exercises(
     asked for; ``today`` is the phone's own day, which each row's ``state``
     is read on (the server's when left out)."""
     today = today or date.today()
-    return schedule.today_payload(db, patient, day or today, today)
+    payload = schedule.today_payload(db, patient, day or today, today)
+    return {**payload, **_between_visits(db, patient, day or today, today)}
 
 
 @router.get("/program")
@@ -159,11 +179,28 @@ def program(
     """The whole program by day: a week back and a week ahead by default,
     up to six weeks for a month view, each day with its exercises and how
     it went (a past day's open row is missed)."""
+    today = today or date.today()
     try:
-        return schedule.program_payload(db, patient, start=start, days=days,
-                                        today=today or date.today())
+        payload = schedule.program_payload(db, patient, start=start, days=days, today=today)
     except HepError as err:
         raise _refused(err)
+    from datetime import timedelta
+
+    from app.pt import service as between
+
+    dates = [d["date"] for d in payload.get("days", [])]
+    if dates and patient.hospital_id:
+        extras = between.calendar_extras(
+            db, patient.hospital_id, date.fromisoformat(dates[0]),
+            date.fromisoformat(dates[-1]) + timedelta(days=1), [patient.id])
+        # What the person sees of a visit: the day, the time and what it is.
+        payload["visits"] = [{"on": v["on"], "at": v["at"], "kind": v["kind"],
+                              "kind_label": v["kind_label"]} for v in extras["visits"]]
+        payload["rest_days"] = [{"day": m["day"], "note": m["note"]} for m in extras["marks"]
+                                if m["kind"] == "rest"]
+    else:
+        payload["visits"], payload["rest_days"] = [], []
+    return payload
 
 
 @router.get("/{assignment_id}")

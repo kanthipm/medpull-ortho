@@ -144,6 +144,22 @@ def compute_input_hash(db: Session, patient_id: str) -> str:
         )
     ).one()
     calendar = f":calendar:{exercise_rows}:{exercise_latest}" if exercise_rows else ""
+    # The clinic's between-visits record (app/pt): its own flag thresholds
+    # and the areas a person's pain is in both change what a chart is scored
+    # as. Present only where a clinic set a threshold or recorded an area.
+    from app.pt.models import PainArea
+    from app.pt.settings import flag_signature
+
+    areas, area_latest, areas_seen = db.execute(
+        select(func.count(PainArea.id), func.max(PainArea.id), func.count(PainArea.seen_on))
+        .where(PainArea.patient_id == patient_id)
+    ).one()
+    hospital_id = db.scalar(select(Patient.hospital_id).where(Patient.id == patient_id))
+    signature = flag_signature(db, hospital_id)
+    if areas:
+        calendar += f":areas:{areas}:{area_latest}:{areas_seen}"
+    if signature:
+        calendar += f":flags:{signature}"
     # today's date is part of the hash: postop_day and the recent-window stats
     # shift at midnight even when no new data arrives, so the first request of
     # each day lazily recomputes every assessment.
@@ -290,9 +306,18 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
         logger.exception("reported signals failed for %s", patient_id)
         reported = ReportedSignals()
 
+    # The clinic's own flag thresholds, where it has set any (the rules page).
+    try:
+        from app.pt.settings import flag_thresholds
+
+        thresholds = flag_thresholds(db, patient.hospital_id)
+    except Exception:  # noqa: BLE001 - a bad settings row must not take the tier down
+        logger.exception("flag thresholds failed for %s", patient_id)
+        thresholds = None
+
     risk = score_risk(
         postop_day, deviations, trajectory, composite, confidence, adherence,
-        gait_latest, gait_day, reported=reported,
+        gait_latest, gait_day, reported=reported, reported_thresholds=thresholds,
     )
     # The stress index is derived from the daily autonomic series the loader
     # just built (engine/mobility/stress) and charted like any other signal.
@@ -357,6 +382,17 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
     db.add(assessment)
     db.commit()
     _prune_assessments(db, patient_id)
+    # Which flags are up today, for the clinic's rules page ("how often did
+    # this fire"). One row per chart, flag and day.
+    try:
+        from app.pt.settings import log_flags
+
+        if log_flags(db, patient, [r.code for r in risk.reasons
+                                   if r.code not in ("ON_TRACK", "LOW_COVERAGE")], today):
+            db.commit()
+    except Exception:  # noqa: BLE001 - a count for a settings page, never worth a failed read
+        db.rollback()
+        logger.exception("flag log failed for %s", patient_id)
 
     was_high = previous is not None and previous.risk_level == RiskLevel.HIGH
     if risk.level == RiskLevel.HIGH and not was_high:

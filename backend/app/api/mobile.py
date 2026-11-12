@@ -1210,6 +1210,22 @@ def send_message(
         summary = f"Sent {attached} photos or files"
     tasks.notify_care_team(db, patient, f"{patient.name} sent a message", summary,
                            "patient_message")
+    # A clinic chart's typed line is sorted for the clinic (today, or the
+    # weekly block), and a line that matches one of its red-flag entries is
+    # answered with the clinic's own fixed words (app/pt/triage.py). No model
+    # reads or writes any of this.
+    if text:
+        from app.pt import triage
+
+        if triage.applies_to(patient):
+            sorted_as = triage.on_patient_line(db, patient, message)
+            if sorted_as["reply"]:
+                db.add(Message(
+                    patient_id=patient.id, channel="app", text=sorted_as["reply"],
+                    sender="care_team" if sorted_as["by"] else "copilot",
+                    sender_id=sorted_as["by"],
+                    authored_by="care_team" if sorted_as["by"] else "ai",
+                ))
     db.commit()
     return {"ok": True, "message": _message_view(message, None, attachments_for(db, [message]))}
 

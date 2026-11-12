@@ -389,6 +389,10 @@ def _message_view(m, db: Session | None = None,
         # clinician reading the thread sees what they actually sent.
         "action": m.action_view(),
         "read_by_care_team": m.read_by_care_team_at is not None,
+        # How the clinic's rules sorted a line the patient typed (app/pt/
+        # triage.py), and the red-flag entry it matched, if it matched one.
+        "triage": getattr(m, "triage", None),
+        "red_flag": getattr(m, "red_flag", None),
     }
 
 

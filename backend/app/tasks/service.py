@@ -325,18 +325,37 @@ def closed_for_now(task: AdherenceTask, today: date | None = None) -> bool:
     return not due_again(task, today)
 
 
+# Question sets a clinic's between-visits record asks (app/pt/asks.py). Their
+# keys start with this; their questions are written for the one person (a
+# goal in their own words, the name of their trainer) and travel on the
+# task itself.
+OWN_QUESTIONS_PREFIX = "pt_"
+
+
 def question_set_key(task: AdherenceTask) -> str:
     payload = task.payload if isinstance(task.payload, dict) else {}
     qset = payload.get("qset")
-    if isinstance(qset, str) and qset in QUESTION_SETS:
+    if isinstance(qset, str) and (qset in QUESTION_SETS or qset.startswith(OWN_QUESTIONS_PREFIX)):
         return qset
     return task.kind if task.kind in QUESTION_SETS else "custom"
 
 
 def questions_for(task: AdherenceTask) -> list[dict[str, Any]]:
-    """The questions this task asks: its kind's set, unless creation pinned
-    another (a general patient's check-in)."""
-    return QUESTION_SETS[question_set_key(task)]
+    """The questions this task asks: the ones it carries itself when it
+    carries any, else its kind's set, unless creation pinned another (a
+    general patient's check-in)."""
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    own = payload.get("questions")
+    if isinstance(own, list) and own and all(isinstance(q, dict) and "id" in q for q in own):
+        return own
+    return QUESTION_SETS.get(question_set_key(task), QUESTION_SETS["custom"])
+
+
+def counts_toward_adherence(task: AdherenceTask) -> bool:
+    """Whether doing this task is part of following the care plan. A
+    question the clinic asked (how was the morning after, how did the week
+    go) is an answer, not a dose: it is never counted as adherence."""
+    return not question_set_key(task).startswith(OWN_QUESTIONS_PREFIX)
 
 
 # --- answers -------------------------------------------------------------------
@@ -367,6 +386,13 @@ def answer_to_text(question: dict[str, Any], raw: Any) -> str:
         value = str(raw).strip().lower()
         if value not in options:
             raise ValueError(f"Invalid answer for {qid}")
+        # The question's own sentences first (a question written for one
+        # person carries them), then the shared ones for its id.
+        own = question.get("phrases")
+        if isinstance(own, dict) and own.get(value):
+            return str(own[value])
+        if question.get("phrase"):
+            return str(question["phrase"]).format(value=value)
         phrase = PHRASES.get(qid, {}).get(value)
         return phrase if phrase is not None else f"{question['prompt']} {value}."
     if kind == "text":
@@ -639,12 +665,15 @@ def recent_tasks(db: Session, patient_id: str, limit: int = 30) -> list[Adherenc
 # --- completion ------------------------------------------------------------------
 
 
-def transcript(kind: str, answers: dict[str, Any]) -> list[tuple[str, str]]:
+def transcript(
+    kind: str, answers: dict[str, Any], questions: list[dict[str, Any]] | None = None,
+) -> list[tuple[str, str]]:
     """(prompt, patient sentence) pairs for the answers given. ``kind`` is a
-    task kind or a question-set key. Raises ValueError on an answer the
-    question does not accept."""
+    task kind or a question-set key; ``questions`` replaces its set for a
+    task that carries its own. Raises ValueError on an answer the question
+    does not accept."""
     pairs: list[tuple[str, str]] = []
-    for q in QUESTION_SETS.get(kind, QUESTION_SETS["custom"]):
+    for q in questions if questions is not None else QUESTION_SETS.get(kind, QUESTION_SETS["custom"]):
         raw = answers.get(q["id"])
         if raw is None or raw == "":
             continue
@@ -716,7 +745,7 @@ def complete_task(
     if via not in COMPLETION_CHANNELS:
         raise ValueError(f"Unknown completion channel {via}")
     answers = {k: v for k, v in (answers or {}).items() if v is not None and v != ""}
-    pairs = transcript(question_set_key(task), answers)
+    pairs = transcript(question_set_key(task), answers, questions_for(task))
     if not pairs and task.kind == "checkin":
         raise ValueError("No answers given")
 
@@ -754,7 +783,9 @@ def complete_task(
         )
     )
     status = _adherence_status(task.kind, answers)
-    if record is None:
+    if not counts_toward_adherence(task):
+        pass
+    elif record is None:
         db.add(
             AdherenceRecord(
                 patient_id=task.patient_id, task_id=task.id, date=today, status=status
@@ -764,7 +795,14 @@ def complete_task(
         record.status = status
 
     qset = question_set_key(task)
-    if qset == "checkin_sports":
+    if qset.startswith(OWN_QUESTIONS_PREFIX) and patient is not None:
+        # An answer to something the clinic asked between visits: it is
+        # filed where the chart reads it (app/pt/intake.py), and the alert,
+        # if it is one, is that module's to raise.
+        from app.pt.intake import record_task_answers as record_pt_answers
+
+        record_pt_answers(db, task, patient, answers, now, via)
+    elif qset == "checkin_sports":
         # An athlete's answers land in the sports wellness log, which the
         # recovery board scores against their own four-week baseline.
         from app.sports.wellness import record_task_answers as record_sports_answers
@@ -784,6 +822,10 @@ def complete_task(
             from app.tasks.reported import record_reported
 
             record_reported(db, patient, answers, now)
+            # A yes to "any new pain?" is followed by "where?" (app/pt).
+            from app.pt.intake import after_checkin
+
+            after_checkin(db, patient, answers)
         for alert in _alerts(answers):
             notify_care_team(
                 db, patient, f"{patient.name} — {alert}",
@@ -1090,6 +1132,7 @@ def handle_inbound_sms(
     command = (sms_commands.handle(db, patient, body, base_url=base_url,
                                    in_conversation=active is not None) if body else None)
     even_if_opted_out = False
+    reply_by: str | None = None  # the clinician whose approved words the reply is
     if command is not None:
         reply, kind, even_if_opted_out = command.reply, command.kind, command.even_if_opted_out
         if kind == "help":
@@ -1143,18 +1186,32 @@ def handle_inbound_sms(
             if sent is not None and sent["sent"]:
                 return InboundOutcome(patient.id, True, texts.WELCOME_BODY, "demo_welcome")
     else:
-        from app.agent.copilot import respond
+        from app.pt import triage
 
-        # The thread lines are written here (with the delivery status), so the
-        # copilot records neither the patient's line nor its own reply.
-        result = respond(db, patient, body, channel="sms", record_patient_line=False,
-                         record_reply=False, default_to_care_team=True,
-                         deadline_s=SMS_REPLY_DEADLINE_S)
-        reply, kind = result["reply"], "message"
+        # A clinic chart's free text is sorted for the clinic first. A line
+        # that matches one of its red-flag entries is never handed to the
+        # assistant: the reply is the clinic's own approved words, or the
+        # one standing line, and the care team is told at once.
+        sorted_as = (triage.on_patient_line(db, patient, inbound)
+                     if triage.applies_to(patient) else {"reply": None, "by": None})
+        if sorted_as["reply"]:
+            reply, kind = sorted_as["reply"], "red_flag"
+            reply_by = sorted_as["by"]
+        else:
+            from app.agent.copilot import respond
+
+            # The thread lines are written here (with the delivery status), so
+            # the copilot records neither the patient's line nor its own reply.
+            result = respond(db, patient, body, channel="sms", record_patient_line=False,
+                             record_reply=False, default_to_care_team=True,
+                             deadline_s=SMS_REPLY_DEADLINE_S)
+            reply, kind = result["reply"], "message"
 
     # The copilot answering a text speaks for itself: no clinician tag, and
-    # no name — compose strips one the model may have reached for.
-    reply = sendblue.compose(reply, patient_name=patient.name)
+    # no name — compose strips one the model may have reached for. The
+    # clinic's fixed words go exactly as written.
+    if kind != "red_flag":
+        reply = sendblue.compose(reply, patient_name=patient.name)
 
     # A text cannot be unsent, and this reply only makes sense if the rows
     # behind it survive. The whole handler runs under the database write
@@ -1173,13 +1230,15 @@ def handle_inbound_sms(
         return InboundOutcome(patient.id, False, None, "lock_lost")
 
     delivery = sendblue.send_sms(phone, reply, even_if_opted_out=even_if_opted_out)
+    approved_by = reply_by if kind == "red_flag" else None
     db.add(
         Message(
             patient_id=patient.id,
-            sender="copilot",
+            sender="care_team" if approved_by else "copilot",
+            sender_id=approved_by,
             channel="sms",
             text=reply,
-            authored_by="ai",
+            authored_by="care_team" if approved_by else "ai",
             delivery_status=sendblue.delivery_status_for(delivery),
             delivery_detail=sendblue.delivery_detail_for(delivery),
             external_handle=delivery.message_handle,

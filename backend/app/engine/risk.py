@@ -11,6 +11,8 @@ tonight. What it does earn is a coverage reason — the signal is dark, and the
 clinician should be told that rather than told nothing.
 """
 
+from typing import Any
+
 from app.engine.deviation import RECENCY_WINDOW_DAYS, REF_ANCHORED_CURVE, is_stale
 from app.engine.types import (
     AdherenceResult,
@@ -100,7 +102,24 @@ def _ago(days: int | None) -> str:
     return f"{days} days ago"
 
 
-def score_reported(reported: ReportedSignals, postop_day: int) -> RiskResult:
+class _ProductThresholds:
+    """The thresholds above, in the shape a clinic's own come in
+    (app/pt/settings.py ``FlagThresholds``)."""
+
+    load_spike_ratio = LOAD_SPIKE_RATIO
+    load_watch_ratio = LOAD_WATCH_RATIO
+    pain_rise_points = PAIN_RISE_POINTS
+    program_low = PROGRAM_LOW
+    quiet_days = QUIET_DAYS
+    quiet_days_high = QUIET_DAYS_HIGH
+
+
+# A named new area lifts a Needs-review chart above the others in its tier:
+# it is the thing a clinic holds a lifter back for.
+NEW_AREA_SCORE = 8.0
+
+
+def score_reported(reported: ReportedSignals, postop_day: int, thresholds: Any = None) -> RiskResult:
     """The tier for a chart with no device series, from what the patient
     reported by check-in: training load against their own recent weeks, pain
     against the week before, anything new since the visit, whether the
@@ -109,12 +128,16 @@ def score_reported(reported: ReportedSignals, postop_day: int) -> RiskResult:
     The texts are what a clinician reads on the worklist and under the tier,
     so they say the finding in the clinic's words — "too much, too soon",
     "went quiet" — never a code.
+
+    ``thresholds`` are the clinic's own where it has set any (the rules
+    page); absent, the product's.
     """
     reasons: list[RiskReason] = []
     r = reported
+    t = thresholds if thresholds is not None else _ProductThresholds
 
-    quiet = r.days_since_checkin is not None and r.days_since_checkin >= QUIET_DAYS
-    quiet_long = r.days_since_checkin is not None and r.days_since_checkin >= QUIET_DAYS_HIGH
+    quiet = r.days_since_checkin is not None and r.days_since_checkin >= t.quiet_days
+    quiet_long = r.days_since_checkin is not None and r.days_since_checkin >= t.quiet_days_high
     if quiet:
         reasons.append(RiskReason(
             code="WENT_QUIET",
@@ -123,8 +146,8 @@ def score_reported(reported: ReportedSignals, postop_day: int) -> RiskResult:
         ))
 
     ratio = r.load_ratio
-    spike = ratio is not None and ratio >= LOAD_SPIKE_RATIO and not r.load_provisional
-    load_up = ratio is not None and ratio >= LOAD_WATCH_RATIO
+    spike = ratio is not None and ratio >= t.load_spike_ratio and not r.load_provisional
+    load_up = ratio is not None and ratio >= t.load_watch_ratio
     if spike:
         reasons.append(RiskReason(
             code="LOAD_SPIKE",
@@ -141,7 +164,7 @@ def score_reported(reported: ReportedSignals, postop_day: int) -> RiskResult:
             metric_type=str(M.SESSION_LOAD), severity=2,
         ))
 
-    pain_rising = r.pain_delta is not None and r.pain_delta >= PAIN_RISE_POINTS
+    pain_rising = r.pain_delta is not None and r.pain_delta >= t.pain_rise_points
     if pain_rising:
         reasons.append(RiskReason(
             code="PAIN_RISING",
@@ -151,13 +174,20 @@ def score_reported(reported: ReportedSignals, postop_day: int) -> RiskResult:
         ))
     if r.new_pain:
         when = _ago(postop_day - r.new_pain_day if r.new_pain_day is not None else None)
-        reasons.append(RiskReason(
-            code="NEW_PAIN",
-            text=f"New pain since the last visit, reported {when}",
-            metric_type=str(M.PAIN_NRS), severity=2,
-        ))
+        if r.new_pain_area:
+            reasons.append(RiskReason(
+                code="NEW_PAIN",
+                text=f"Reported a new area since the last visit: {r.new_pain_area.lower()}, {when}",
+                metric_type=str(M.PAIN_NRS), severity=3,
+            ))
+        else:
+            reasons.append(RiskReason(
+                code="NEW_PAIN",
+                text=f"New pain since the last visit, reported {when}",
+                metric_type=str(M.PAIN_NRS), severity=2,
+            ))
 
-    slipping = r.program_rate_3d is not None and r.program_rate_3d < PROGRAM_LOW
+    slipping = r.program_rate_3d is not None and r.program_rate_3d < t.program_low
     if slipping:
         reasons.append(RiskReason(
             code="PROGRAM_SLIPPING",
@@ -173,17 +203,19 @@ def score_reported(reported: ReportedSignals, postop_day: int) -> RiskResult:
     if spike or quiet_long or (load_up and (pain_rising or r.new_pain)):
         score = 72.0
         if spike:
-            score = min(80.0, 74.0 + 10.0 * (ratio - LOAD_SPIKE_RATIO))
+            score = min(80.0, 74.0 + 10.0 * (ratio - t.load_spike_ratio))
         if spike and (pain_rising or r.new_pain):
             score = min(82.0, score + 2.0)
         return RiskResult(level=RiskLevel.HIGH, score=round(score, 1), reasons=reasons)
 
     if reasons:
         score = min(60.0, 45.0 + 5.0 * (len(reasons) - 1))
+        if r.new_pain_area:
+            score += NEW_AREA_SCORE
         return RiskResult(level=RiskLevel.MEDIUM, score=round(score, 1), reasons=reasons)
 
     steady: list[str] = []
-    if ratio is not None and 0.8 <= ratio < LOAD_WATCH_RATIO:
+    if ratio is not None and 0.8 <= ratio < t.load_watch_ratio:
         steady.append("load steady")
     if r.pain_delta is not None and r.pain_delta <= -1.0:
         steady.append("pain easing")
@@ -211,6 +243,7 @@ def score_risk(
     gait_asymmetry_latest: float | None,
     gait_asymmetry_day: int | None = None,
     reported: ReportedSignals | None = None,
+    reported_thresholds: Any = None,
 ) -> RiskResult:
     reasons: list[RiskReason] = []
 
@@ -223,7 +256,7 @@ def score_risk(
             reported is not None and reported.followed
             and not deviations and not confidence.panel
         ):
-            return score_reported(reported, postop_day)
+            return score_reported(reported, postop_day, reported_thresholds)
         pct = int(round(confidence.score * 100))
         reasons.append(
             RiskReason(

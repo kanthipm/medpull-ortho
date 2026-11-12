@@ -289,6 +289,15 @@ def _exercise_reminders(event: dict) -> dict:
         db = SessionLocal()
         try:
             report = reminders.run(db, force=force)
+            # The same morning hour carries what a clinic's settings ask of
+            # its lifters: the morning-after check, the Friday word on the
+            # week, an outcome measure that has come due (app/pt).
+            from datetime import date
+
+            from app.pt import service as between
+
+            report["between_visits"] = between.run_daily(
+                db, date.today(), base_url=settings.checkin_base_url or None)
         finally:
             db.close()
         uploaded = storage.persist(conditional=False)

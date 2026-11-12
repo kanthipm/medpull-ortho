@@ -23,6 +23,7 @@ from app.api import (
     overview,
     patients,
     plan,
+    pt,
     sendblue_webhook,
     system,
     webhooks,
@@ -69,6 +70,11 @@ api_router.include_router(plan.router, dependencies=CONSOLE)
 api_router.include_router(hep.router, dependencies=CONSOLE)
 # The patient's side of the exercise schedule: authorised by the app session.
 api_router.include_router(exercises.router)
+# The clinic's between-visits record (app/pt): the console's routes, the
+# person's own read, and the trainer's page, which a link alone opens.
+api_router.include_router(pt.router, dependencies=CONSOLE)
+api_router.include_router(pt.mobile_router)
+api_router.include_router(pt.public_router)
 # Demo-stack-only routes (404 elsewhere), behind the console's door.
 api_router.include_router(demo.router, dependencies=CONSOLE)
 # ...and the ones the demo iPhone app reaches with no credential at all (the

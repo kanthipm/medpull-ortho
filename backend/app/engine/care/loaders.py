@@ -306,11 +306,17 @@ def load_tasks_with_records(
 ) -> list[dict[str, Any]]:
     """Active tasks (any lifecycle status) with their last-14-day records:
     {id, title, kind, records: {date: (status, source)}}."""
-    tasks = db.scalars(
-        select(AdherenceTask)
-        .where(AdherenceTask.patient_id == patient_id, AdherenceTask.active.is_(True))
-        .order_by(AdherenceTask.id)
-    ).all()
+    from app.tasks.service import counts_toward_adherence
+
+    tasks = [
+        task for task in db.scalars(
+            select(AdherenceTask)
+            .where(AdherenceTask.patient_id == patient_id, AdherenceTask.active.is_(True))
+            .order_by(AdherenceTask.id)
+        ).all()
+        # A question the clinic asked between visits is not a dose.
+        if counts_toward_adherence(task)
+    ]
     if not tasks:
         return []
     start = today - timedelta(days=days - 1)

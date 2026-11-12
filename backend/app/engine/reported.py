@@ -96,6 +96,30 @@ def _new_pain(db: Session, patient_id: str, surgery_date: date, today: date) -> 
     return False, None
 
 
+def _new_area(db: Session, patient_id: str, surgery_date: date, today: date) -> tuple[str | None, int | None]:
+    """An area the person named in the last few days that was not among the
+    ones recorded at their evaluation and that no visit has seen since:
+    (its name, the program day it was named on). The table is the clinic's
+    between-visits record (app/pt); a chart without one has none."""
+    from app.pt import regions
+    from app.pt.models import PainArea
+
+    rows = db.scalars(select(PainArea).where(PainArea.patient_id == patient_id)).all()
+    if not rows:
+        return None, None
+    known = [r.region for r in rows if r.source == "evaluation" or r.seen_on is not None]
+    fresh = [
+        r for r in rows
+        if r.source == "reported" and r.seen_on is None
+        and 0 <= (today - r.noted_on).days <= NEW_PAIN_RECENT_DAYS
+        and regions.is_new(r.region, known)
+    ]
+    if not fresh:
+        return None, None
+    latest = max(fresh, key=lambda r: (r.noted_on, r.id))
+    return regions.label(latest.region), (latest.noted_on - surgery_date).days
+
+
 def reported_signals(
     db: Session, patient, today: date, postop_day: int, series: dict[str, pd.Series],
 ) -> ReportedSignals:
@@ -142,6 +166,12 @@ def reported_signals(
                 out.pain_delta = round(out.pain_latest - out.pain_prior_mean, 1)
 
     out.new_pain, out.new_pain_day = _new_pain(db, patient.id, patient.surgery_date, today)
+    area, area_day = _new_area(db, patient.id, patient.surgery_date, today)
+    if area is not None:
+        # Naming an area is itself the yes, whatever the check-in line said.
+        out.new_pain_area = area
+        out.new_pain = True
+        out.new_pain_day = area_day if out.new_pain_day is None else max(out.new_pain_day, area_day)
 
     if program is not None and len(program[program.index >= 0]):
         post = program[program.index >= 0].dropna()

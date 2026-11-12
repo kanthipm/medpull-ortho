@@ -45,7 +45,8 @@ WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturd
 # What one item carries, in the order the payload lists it.
 ITEM_FIELDS = (
     "exercise_id", "exercise_key", "weekdays", "sets", "reps", "hold_seconds", "side",
-    "load_kg", "rpe_target", "clinician_instructions", "video_requirement", "wearable_requirement",
+    "load_kg", "rpe_target", "load_max_kg", "rpe_max", "clinician_instructions",
+    "video_requirement", "wearable_requirement",
 )
 
 
@@ -148,6 +149,8 @@ def normalize_items(db: Session, clinic: str, items: list[dict[str, Any]]) -> li
             "side": _side(item.get("side")),
             "load_kg": _load(item.get("load_kg")),
             "rpe_target": _scale(item.get("rpe_target"), "Target effort"),
+            "load_max_kg": _load(item.get("load_max_kg"), "The load ceiling"),
+            "rpe_max": _scale(item.get("rpe_max"), "The effort to stop at"),
             "clinician_instructions": schedule._text(item.get("clinician_instructions")),
             "video_requirement": _requirement(item.get("video_requirement"),
                                               "The clip requirement"),
@@ -259,6 +262,7 @@ def item_payload(item: dict[str, Any], exercise: Exercise | None,
         "sets": item.get("sets"), "reps": item.get("reps"), "hold_seconds": item.get("hold_seconds"),
         "side": side, "side_label": SIDE_LABELS.get(side, ""),
         "load_kg": item.get("load_kg"), "rpe_target": item.get("rpe_target"),
+        "load_max_kg": item.get("load_max_kg"), "rpe_max": item.get("rpe_max"),
         "dose": dose_text(item.get("sets"), item.get("reps"), item.get("hold_seconds"), side,
                           load_kg=item.get("load_kg"), load_unit=load_unit),
         "clinician_instructions": item.get("clinician_instructions") or "",

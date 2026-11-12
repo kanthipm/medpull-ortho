@@ -153,6 +153,16 @@ class Message(Base):
     action_ref: Mapped[str | None] = mapped_column(String, nullable=True)
     action_day: Mapped[date | None] = mapped_column(Date, nullable=True)
     action_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # A patient's line as the clinic sorts it (app/pt/triage.py): "today" for
+    # one that cannot wait, "weekly" for one that can sit until the weekly
+    # block, nothing for a line that is not a question. ``triage_by`` is
+    # "rule" until a clinician moves it (then her id). ``red_flag`` names the
+    # clinic's red-flag entry the line matched, when it matched one.
+    triage: Mapped[str | None] = mapped_column(String, nullable=True)
+    triage_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    triage_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    triage_done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    red_flag: Mapped[str | None] = mapped_column(String, nullable=True)
 
     def action_view(self) -> dict | None:
         """The button a client should draw under this line, or None for a

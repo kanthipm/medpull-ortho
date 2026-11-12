@@ -143,6 +143,23 @@ def _base_url(request: Request) -> str:
     return settings.checkin_base_url or str(request.base_url).rstrip("/")
 
 
+def _with_between_visits(db: Session, clinic: str, payload: dict,
+                         patient_ids: list[str] | None = None) -> dict:
+    """A calendar payload with what the clinic's between-visits record puts
+    on the same days: the visits and the rest days (app/pt)."""
+    from datetime import timedelta
+
+    from app.pt import service as between
+
+    days = payload.get("days") or []
+    if not days:
+        return {**payload, "visits": [], "marks": []}
+    first = days[0] if isinstance(days[0], str) else days[0].get("date")
+    last = days[-1] if isinstance(days[-1], str) else days[-1].get("date")
+    start, end = date.fromisoformat(first), date.fromisoformat(last) + timedelta(days=1)
+    return {**payload, **between.calendar_extras(db, clinic, start, end, patient_ids)}
+
+
 # --- the clinic ----------------------------------------------------------------------
 
 
@@ -492,6 +509,9 @@ class AssignmentCreate(BaseModel):
     # the day (REQUIREMENTS: off | optional | required).
     load_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
     rpe_target: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
+    # The ceilings: the load not to go past and the effort to stop at.
+    load_max_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
+    rpe_max: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
     video_requirement: str = "optional"
     wearable_requirement: str = "optional"
     clinician_instructions: str = Field(default="", max_length=schedule.TEXT_LIMIT)
@@ -501,6 +521,13 @@ class AssignmentCreate(BaseModel):
     # of these days.
     text_patient: bool = False
     actor: str = Field(default="provider", max_length=60)
+    # The same exercise, dose and days for several people at once: when
+    # given, ``patient_id`` is ignored and each person is written (or
+    # refused) on their own.
+    patient_ids: list[str] | None = Field(default=None, min_length=1, max_length=40)
+    # A day that would go past the clinic's exercise count (its settings,
+    # ``exercise_guard``) is refused unless this says the therapist means it.
+    allow_over_guard: bool = False
 
 
 class AssignmentPatch(BaseModel):
@@ -513,6 +540,9 @@ class AssignmentPatch(BaseModel):
     side: str | None = None
     load_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
     rpe_target: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
+    # The ceilings: the load not to go past and the effort to stop at.
+    load_max_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
+    rpe_max: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
     video_requirement: str | None = None
     wearable_requirement: str | None = None
     clinician_instructions: str | None = Field(default=None, max_length=schedule.TEXT_LIMIT)
@@ -565,6 +595,9 @@ class SeriesPatch(BaseModel):
     side: str | None = None
     load_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
     rpe_target: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
+    # The ceilings: the load not to go past and the effort to stop at.
+    load_max_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
+    rpe_max: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
     video_requirement: str | None = None
     wearable_requirement: str | None = None
     clinician_instructions: str | None = Field(default=None, max_length=schedule.TEXT_LIMIT)
@@ -575,6 +608,52 @@ class SeriesPatch(BaseModel):
 class DuplicateBody(BaseModel):
     dates: list[date] = Field(min_length=1, max_length=schedule.MAX_DATES)
     actor: str = Field(default="provider", max_length=60)
+
+
+class GuardCheck(BaseModel):
+    patient_ids: list[str] = Field(min_length=1, max_length=40)
+    dates: list[date] | None = Field(default=None, min_length=1, max_length=schedule.MAX_DATES)
+    repeat: RepeatBody | None = None
+
+
+def _days_of(dates: list[date] | None, repeat: RepeatBody | None) -> list[date]:
+    if dates is not None:
+        return sorted(set(dates))
+    if repeat is None:
+        return []
+    return schedule.repeat_days(repeat.start, sorted(set(repeat.weekdays)), repeat.weeks)
+
+
+def _guard(db: Session, clinic: str, patient_ids: list[str], days: list[date]) -> list[dict]:
+    """The people and days one more exercise would take past the clinic's
+    count, in a shape the dialog can list."""
+    from app.pt import service as between
+
+    over = []
+    for pid in patient_ids:
+        patient = db.get(Patient, pid)
+        for hit in between.exercise_guard(db, clinic, pid, days):
+            over.append({**hit, "patient_id": pid, "patient_name": patient.name if patient else pid})
+    return over
+
+
+def _guard_sentence(over: list[dict]) -> str:
+    first = over[0]
+    where = f"{first['patient_name']} on {first['day']}"
+    more = f" (and {len(over) - 1} more)" if len(over) > 1 else ""
+    return (f"That would put {first['would_be']} exercises on {where}{more}; this clinic asks "
+            f"before going past {first['limit']}. Send it again to assign anyway.")
+
+
+@router.post("/schedule/check")
+def check_schedule(body: GuardCheck, db: Session = Depends(_ready),
+                   clinic: str = Depends(_clinic)) -> dict:
+    """Before assigning: the days on which one more exercise would take a
+    person past the clinic's exercise count. Writes nothing."""
+    from app.pt import settings as pt_settings
+
+    return {"guard": _guard(db, clinic, body.patient_ids, _days_of(body.dates, body.repeat)),
+            "limit": pt_settings.read(db, clinic)["exercise_guard"]}
 
 
 @router.get("/schedule")
@@ -590,11 +669,12 @@ def read_schedule(
     window, today marked. ``start`` defaults to the Monday of ``today``'s
     week; ``today`` to the server date."""
     try:
-        return schedule.schedule_payload(
+        payload = schedule.schedule_payload(
             db, clinic, start=start, days=days, today=today or date.today(), patient_id=patient_id,
         )
     except HepError as err:
         raise _schedule_error(err)
+    return _with_between_visits(db, clinic, payload)
 
 
 @router.post("/schedule", status_code=201)
@@ -615,10 +695,18 @@ def create_schedule(
     if (body.dates is None) == (body.repeat is None):
         raise HTTPException(status_code=422, detail="Send the days as dates, or a repeat, not both")
     _no_diagnostic(body.clinician_instructions)
+    people = list(dict.fromkeys(body.patient_ids)) if body.patient_ids else [body.patient_id]
+    if not body.allow_over_guard:
+        over = _guard(db, clinic, people, _days_of(body.dates, body.repeat))
+        if over:
+            raise HTTPException(status_code=409, detail=_guard_sentence(over))
+    if body.patient_ids:
+        return _create_for_many(db, clinic, request, body, people)
     dose = {
         "sets": body.sets, "reps": body.reps, "hold_seconds": body.hold_seconds,
         "side": body.side, "clinician_instructions": body.clinician_instructions,
         "load_kg": body.load_kg, "rpe_target": body.rpe_target,
+        "load_max_kg": body.load_max_kg, "rpe_max": body.rpe_max,
         "video_requirement": body.video_requirement,
         "wearable_requirement": body.wearable_requirement,
     }
@@ -647,6 +735,62 @@ def create_schedule(
         "series_id": series_id,
         **schedule.skipped_payload(skips),
         "text": text,
+    }
+
+
+def _create_for_many(db: Session, clinic: str, request: Request, body: AssignmentCreate,
+                     people: list[str]) -> dict:
+    """One exercise, dose and set of days for several people. Each person is
+    all or nothing on their own: someone who already has the exercise on
+    one of the days is left out and named, and the others are written."""
+    dose = {
+        "sets": body.sets, "reps": body.reps, "hold_seconds": body.hold_seconds,
+        "side": body.side, "clinician_instructions": body.clinician_instructions,
+        "load_kg": body.load_kg, "rpe_target": body.rpe_target,
+        "load_max_kg": body.load_max_kg, "rpe_max": body.rpe_max,
+        "video_requirement": body.video_requirement,
+        "wearable_requirement": body.wearable_requirement,
+    }
+    view = schedule.AssignmentView(db)
+    written: list = []
+    by_person: list[dict] = []
+    for pid in people:
+        patient = db.get(Patient, pid)
+        entry: dict = {"patient_id": pid, "patient_name": patient.name if patient else pid,
+                       "assigned": 0, "skipped_days": [], "error": None, "text": None}
+        try:
+            if body.repeat is not None:
+                rows, skips, _series = schedule.create_series(
+                    db, clinic, patient_id=pid, exercise_id=body.exercise_id,
+                    start=body.repeat.start, weekdays=body.repeat.weekdays,
+                    weeks=body.repeat.weeks, assigned_by=body.assigned_by, actor=body.actor,
+                    today=date.today(), **dose,
+                )
+                entry["skipped_days"] = schedule.skipped_payload(skips).get("skipped_days", [])
+            else:
+                rows = schedule.create_assignments(
+                    db, clinic, patient_id=pid, exercise_id=body.exercise_id, dates=body.dates,
+                    assigned_by=body.assigned_by, actor=body.actor, today=date.today(), **dose,
+                )
+        except HepError as err:
+            db.rollback()
+            entry["error"] = str(err)
+            by_person.append(entry)
+            continue
+        entry["assigned"] = len(rows)
+        if body.text_patient and rows and patient is not None:
+            entry["text"] = texts.notify_assigned(db, patient, rows, base_url=_base_url(request),
+                                                  by=rows[0].assigned_by)
+        written.extend(rows)
+        by_person.append(entry)
+    return {
+        "assignments": view.render_all(written),
+        "series_id": None,
+        "skipped_days": [],
+        "text": None,
+        "by_person": by_person,
+        "people_written": sum(1 for e in by_person if e["assigned"]),
+        "people_refused": sum(1 for e in by_person if e["error"]),
     }
 
 
@@ -712,11 +856,20 @@ def week_review(
     over the dose, what waits for a look, and whether next week is set.
     Lifters with something to look at come first. ``start`` defaults to
     the Monday of ``today``'s week; ``today`` to the server date."""
+    today = today or date.today()
     try:
-        return calendar_reads.week_review_payload(db, clinic, start=start,
-                                                  today=today or date.today())
+        payload = calendar_reads.week_review_payload(db, clinic, start=start, today=today)
     except HepError as err:
         raise _schedule_error(err)
+    # Beside each lifter's week: the Friday word on it, how its mornings
+    # after settled, the next visit and the phase (app/pt).
+    from app.pt import service as between
+
+    extras = between.week_extras(db, [e["patient"]["id"] for e in payload["patients"]],
+                                 date.fromisoformat(payload["start"]), today)
+    for entry in payload["patients"]:
+        entry["between_visits"] = extras.get(entry["patient"]["id"])
+    return _with_between_visits(db, clinic, payload)
 
 
 @router.get("/calendar")
@@ -734,12 +887,13 @@ def read_calendar(
     ``start`` defaults to the Monday on or before the first of ``today``'s
     month."""
     try:
-        return calendar_reads.calendar_payload(
+        payload = calendar_reads.calendar_payload(
             db, clinic, start=start, days=days, today=today or date.today(),
             patient_id=patient_id,
         )
     except HepError as err:
         raise _schedule_error(err)
+    return _with_between_visits(db, clinic, payload)
 
 
 @router.patch("/schedule/{assignment_id}")
@@ -839,8 +993,17 @@ def review_schedule(
     body = body or ReviewBody()
     row = _assignment_or_404(db, clinic, assignment_id)
     _no_diagnostic(body.note)
+    # The therapist's typed comments on the clip ("0:12 knees drifting in")
+    # go to the person with the note, as its last lines.
+    from app.pt import service as between
+
+    note = body.note
+    lines = between.comment_lines(db, row.id)
+    if lines:
+        _no_diagnostic(*lines)
+        note = "\n".join([part for part in (note.strip(), *lines) if part])[:schedule.NOTE_LIMIT]
     try:
-        row, message = schedule.review_assignment(db, row, note=body.note, actor=body.actor)
+        row, message = schedule.review_assignment(db, row, note=note, actor=body.actor)
     except HepError as err:
         raise _schedule_error(err)
     text = None
@@ -912,11 +1075,12 @@ def patient_schedule(
     except HepError as err:
         raise HTTPException(status_code=404, detail=str(err))
     try:
-        return schedule.patient_schedule_payload(
+        payload = schedule.patient_schedule_payload(
             db, clinic, patient, start=start, days=days, today=today or date.today(),
         )
     except HepError as err:
         raise _schedule_error(err)
+    return _with_between_visits(db, clinic, payload, [patient.id])
 
 
 @router.get("/patients/{patient_id}/exercises/{exercise_id}/history")
@@ -1057,6 +1221,9 @@ class TemplateItemBody(BaseModel):
     side: str = "not_applicable"
     load_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
     rpe_target: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
+    # The ceilings: the load not to go past and the effort to stop at.
+    load_max_kg: float | None = Field(default=None, ge=0, le=schedule.LOAD_MAX)
+    rpe_max: int | None = Field(default=None, ge=0, le=schedule.SCALE_MAX)
     clinician_instructions: str = Field(default="", max_length=schedule.TEXT_LIMIT)
     video_requirement: str = "optional"
     wearable_requirement: str = "optional"

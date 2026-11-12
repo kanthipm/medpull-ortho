@@ -104,7 +104,9 @@ MAX_REVIEW_DAYS = 90
 # or the patient by text.
 COMPLETION_SOURCES = ("app", "console", "sms")
 # What a done day keeps: its counts, side, load and target effort.
-DOSE_FIELDS = ("sets", "reps", "hold_seconds", "side", "load_kg", "rpe_target")
+DOSE_FIELDS = ("sets", "reps", "hold_seconds", "side", "load_kg", "rpe_target",
+               # The ceilings: the load not to go past, the effort to stop at.
+               "load_max_kg", "rpe_max")
 REQUIREMENT_FIELDS = ("video_requirement", "wearable_requirement")
 EDITABLE = DOSE_FIELDS + REQUIREMENT_FIELDS + (
     "clinician_instructions", "scheduled_for", "assigned_by", "sort_order",
@@ -378,20 +380,34 @@ def _next_positions(db: Session, patient_id: str, days: list[date]) -> dict[date
     return {day: int(top or 0) + 1 for day, top in rows}
 
 
+def check_ceilings(load_kg: Any, load_max_kg: Any, rpe_target: Any, rpe_max: Any) -> None:
+    """A ceiling under the dose it caps is a typo, not a prescription."""
+    if load_kg is not None and load_max_kg is not None and load_max_kg < load_kg:
+        raise HepError("The load ceiling cannot be under the load prescribed")
+    if rpe_target is not None and rpe_max is not None and rpe_max < rpe_target:
+        raise HepError("The effort to stop at cannot be under the target effort")
+
+
 def dose_fields(
     *, sets: Any, reps: Any, hold_seconds: Any, side: str | None, load_kg: Any, rpe_target: Any,
     video_requirement: str | None, wearable_requirement: str | None, clinician_instructions: str,
+    load_max_kg: Any = None, rpe_max: Any = None,
 ) -> dict[str, Any]:
-    """A dose, its requirements and its note, checked the way every write
-    checks them, in the shape a row carries (and a placement copies)."""
-    return {
+    """A dose, its ceilings, its requirements and its note, checked the way
+    every write checks them, in the shape a row carries (and a placement
+    copies)."""
+    fields = {
         "side": _side(side), "sets": _count(sets, "Sets"), "reps": _count(reps, "Reps"),
         "hold_seconds": _count(hold_seconds, "Hold"), "load_kg": _load(load_kg),
         "rpe_target": _scale(rpe_target, "Target effort"),
+        "load_max_kg": _load(load_max_kg, "The load ceiling"),
+        "rpe_max": _scale(rpe_max, "The effort to stop at"),
         "video_requirement": _requirement(video_requirement, "The clip requirement"),
         "wearable_requirement": _requirement(wearable_requirement, "The wearable requirement"),
         "clinician_instructions": _text(clinician_instructions),
     }
+    check_ceilings(fields["load_kg"], fields["load_max_kg"], fields["rpe_target"], fields["rpe_max"])
+    return fields
 
 
 def _taken_text(exercise: Exercise | None, days: list[date]) -> str:
@@ -407,7 +423,7 @@ def create_assignments(
     sets: Any, reps: Any, hold_seconds: Any, side: str | None, clinician_instructions: str,
     assigned_by: str | None, actor: str, today: date,
     load_kg: Any = None, rpe_target: Any = None, video_requirement: str | None = None,
-    wearable_requirement: str | None = None,
+    wearable_requirement: str | None = None, load_max_kg: Any = None, rpe_max: Any = None,
 ) -> list[ExerciseAssignment]:
     """Put one exercise, at one dose, on each of ``dates`` for a patient.
     All or nothing: a day that already has the exercise refuses the whole
@@ -426,6 +442,7 @@ def create_assignments(
         sets=sets, reps=reps, hold_seconds=hold_seconds, side=side, load_kg=load_kg,
         rpe_target=rpe_target, video_requirement=video_requirement,
         wearable_requirement=wearable_requirement, clinician_instructions=clinician_instructions,
+        load_max_kg=load_max_kg, rpe_max=rpe_max,
     )
     member = _member(db, assigned_by, patient.assigned_provider_id)
     taken = _taken(db, patient.id, exercise.id, days)
@@ -462,7 +479,7 @@ def create_series(
     weekdays: Any, weeks: Any, sets: Any, reps: Any, hold_seconds: Any, side: str | None,
     clinician_instructions: str, assigned_by: str | None, actor: str, today: date,
     load_kg: Any = None, rpe_target: Any = None, video_requirement: str | None = None,
-    wearable_requirement: str | None = None,
+    wearable_requirement: str | None = None, load_max_kg: Any = None, rpe_max: Any = None,
 ) -> tuple[list[ExerciseAssignment], list["Skip"], str | None]:
     """One exercise, at one dose, on its weekdays for some weeks from
     ``start``: Step-Ups on Monday, Wednesday and Friday for four weeks.
@@ -486,6 +503,7 @@ def create_series(
         sets=sets, reps=reps, hold_seconds=hold_seconds, side=side, load_kg=load_kg,
         rpe_target=rpe_target, video_requirement=video_requirement,
         wearable_requirement=wearable_requirement, clinician_instructions=clinician_instructions,
+        load_max_kg=load_max_kg, rpe_max=rpe_max,
     )
     member = _member(db, assigned_by, patient.assigned_provider_id)
     series_id = secrets.token_hex(8)
@@ -519,6 +537,10 @@ def _clean_patch(db: Session, patch: dict[str, Any], touched: set[str]) -> dict[
         clean["load_kg"] = _load(patch["load_kg"])
     if "rpe_target" in touched:
         clean["rpe_target"] = _scale(patch["rpe_target"], "Target effort")
+    if "load_max_kg" in touched:
+        clean["load_max_kg"] = _load(patch["load_max_kg"], "The load ceiling")
+    if "rpe_max" in touched:
+        clean["rpe_max"] = _scale(patch["rpe_max"], "The effort to stop at")
     if "video_requirement" in touched:
         clean["video_requirement"] = _requirement(patch["video_requirement"],
                                                   "The clip requirement")
@@ -561,6 +583,8 @@ def update_assignment(
                 raise ScheduleConflict(_taken_text(db.get(Exercise, row.exercise_id), [day]))
             row.scheduled_for = day
             row.sort_order = _next_positions(db, row.patient_id, [day]).get(day, 0)
+    check_ceilings(clean.get("load_kg", row.load_kg), clean.get("load_max_kg", row.load_max_kg),
+                   clean.get("rpe_target", row.rpe_target), clean.get("rpe_max", row.rpe_max))
     for name, value in clean.items():
         setattr(row, name, value)
     if order is not None:
@@ -596,6 +620,9 @@ def update_series(
     changed = _open_from(rows, from_day)
     if not changed:
         return []
+    for row in changed:
+        check_ceilings(clean.get("load_kg", row.load_kg), clean.get("load_max_kg", row.load_max_kg),
+                       clean.get("rpe_target", row.rpe_target), clean.get("rpe_max", row.rpe_max))
     now = datetime.now()
     for row in changed:
         for name, value in clean.items():
@@ -916,6 +943,17 @@ def done_against_prescribed(row: ExerciseAssignment, unit: str = "kg") -> dict[s
         parts.append(f"{load_text(row.load_done_kg, unit)} done, {written}")
     if felt:
         parts.append(f"effort {row.effort}, target {row.rpe_target}")
+    # The ceilings are a different thing from the target: a lifter told to
+    # stop at RPE 7 who reports an 8 went past it, whatever the target was.
+    past: list[str] = []
+    if row.load_max_kg is not None and row.load_done_kg is not None \
+            and row.load_done_kg > row.load_max_kg:
+        past.append(f"{load_text(row.load_done_kg, unit)} done, ceiling "
+                    f"{load_text(row.load_max_kg, unit)}")
+    if row.rpe_max is not None and row.effort is not None and row.effort > row.rpe_max:
+        past.append(f"effort {row.effort}, told to stop at {row.rpe_max}")
+    if past:
+        parts.append("past the ceiling: " + ", ".join(past))
     if parts:
         line = " · ".join(parts)
     elif counted or felt is not None:
@@ -924,8 +962,10 @@ def done_against_prescribed(row: ExerciseAssignment, unit: str = "kg") -> dict[s
         line = None
     return {
         "performed": {"sets": sets, "reps": reps, "load_kg": load, "effort": effort},
-        "over": any(d > 0 for d in counted) or (felt is not None and felt >= EFFORT_MARGIN),
+        "over": (any(d > 0 for d in counted) or (felt is not None and felt >= EFFORT_MARGIN)
+                 or bool(past)),
         "under": any(d < 0 for d in counted) or (felt is not None and felt <= -EFFORT_MARGIN),
+        "past_ceiling": bool(past),
         "line": line,
     }
 
@@ -1010,6 +1050,7 @@ def placement_fields(row: ExerciseAssignment) -> dict[str, Any]:
     return {
         "sets": row.sets, "reps": row.reps, "hold_seconds": row.hold_seconds, "side": row.side,
         "load_kg": row.load_kg, "rpe_target": row.rpe_target,
+        "load_max_kg": row.load_max_kg, "rpe_max": row.rpe_max,
         "clinician_instructions": row.clinician_instructions or "",
         "video_requirement": row.video_requirement or "optional",
         "wearable_requirement": row.wearable_requirement or "optional",
@@ -1179,6 +1220,15 @@ class AssignmentView:
         return dose_text(row.sets, row.reps, row.hold_seconds, row.side, load_kg=row.load_kg,
                          load_unit=self.unit(row.hospital_id))
 
+    def ceiling(self, row: ExerciseAssignment) -> str:
+        parts = []
+        if row.rpe_max is not None:
+            parts.append(f"stop at RPE {row.rpe_max}")
+        if row.load_max_kg is not None:
+            parts.append(f"do not exceed {load_text(row.load_max_kg, self.unit(row.hospital_id))}")
+        text = " · ".join(parts)
+        return text[:1].upper() + text[1:] if text else ""
+
     @staticmethod
     def session(row: ExerciseAssignment) -> dict[str, Any] | None:
         """What the phone recorded around the attempt; nothing until the
@@ -1254,7 +1304,10 @@ class AssignmentView:
             "sets": row.sets, "reps": row.reps, "hold_seconds": row.hold_seconds,
             "side": row.side, "side_label": SIDE_LABELS.get(row.side, ""),
             "load_kg": row.load_kg, "rpe_target": row.rpe_target,
+            "load_max_kg": row.load_max_kg, "rpe_max": row.rpe_max,
             "dose": self.dose(row),
+            # "Stop at RPE 7 · do not exceed 65 lb", or "" with no ceiling.
+            "ceiling": self.ceiling(row),
             "clinician_instructions": row.clinician_instructions or "",
             "assigned_by": row.assigned_by,
             "assigned_by_name": self.member_name(row.assigned_by),
@@ -1296,6 +1349,7 @@ class AssignmentView:
             "dose": self.dose(row),
             "load_kg": row.load_kg,
             "rpe_target": row.rpe_target,
+            "ceiling": self.ceiling(row),
             "video_requirement": row.video_requirement or "optional",
             "pain_after": row.pain_after,
             "effort": row.effort,

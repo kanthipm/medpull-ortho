@@ -159,6 +159,9 @@ class ReportedSignals:
     pain_delta: float | None = None
     new_pain: bool = False                          # "new pain since the visit: yes", recently
     new_pain_day: int | None = None
+    # The area the person named, when it is not one recorded at the
+    # evaluation (app/pt/regions.py), in words: "Left hip".
+    new_pain_area: str | None = None
     # Program completion, from PROGRAM_DONE: 1 all, 0.5 some, 0 none.
     program_days: int = 0                           # answers on file
     program_rate_3d: float | None = None            # mean of the last 3 days' answers

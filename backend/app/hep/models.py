@@ -264,6 +264,11 @@ class ExerciseAssignment(Base):
     # the effort the therapist wants it to feel like (RPE 0–10).
     load_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     rpe_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The ceilings of the dose: the load not to go past and the effort to
+    # stop at, shown to the lifter during the session. A done day above
+    # either is "over" whatever the target was.
+    load_max_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rpe_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Patient-facing, in the therapist's words ("slow on the way down").
     clinician_instructions: Mapped[str] = mapped_column(String, default="")
     assigned_by: Mapped[str] = mapped_column(String, default="provider")  # care team id
