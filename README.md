@@ -182,9 +182,14 @@ stale. `.github/workflows/ci.yml` runs all three on every push.
 ## Deploying
 
 ```bash
-make deploy        # the real app: app.medpull.org, from .env
-make deploy-demo   # the public demo: demo.medpull.org, from .env.demo
+make deploy        # the one deployment: demo.medpull.app, from .env
 ```
+
+Since 2026-11-12 there is one stack, and it is the public demo: the
+showcase's generated personas live beside the team's own accounts and are
+re-anchored every morning (`docs/ops/one-deployment.md`). `make deploy-demo`
+and `.env.demo` remain for the two-stack arrangement described below, which
+is how a separate real product would be stood up again.
 
 Two stacks from one repo, each on AWS Lambda behind CloudFront and sized to
 sit inside the always-free tier — steady-state cost is a few cents a month

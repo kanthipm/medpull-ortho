@@ -156,12 +156,26 @@ mid-change without shipping that change.
 | `JUNCTION_ENVIRONMENT` | `sandbox` | `sandbox` or `production` — must match the key |
 | `JUNCTION_REGION` | `us` | `us` or `eu` |
 | `JUNCTION_LINK_REDIRECT_URL` | — | Where Junction Link sends a patient afterwards |
+| `HEP_CLINIC_ID` | — | The clinic the exercise Calendar acts for when the console has not picked one (`hirt` on the demo); empty picks the hospital with the most charts |
+| `APP_TIMEZONE` | — | The functions' `TZ` (e.g. `America/Chicago`); empty keeps Lambda's UTC |
+| `IOS_LINK_APP_IDS` | — | Other iPhone apps named in the association file, comma separated (`2DFDVFGSH3.com.medpull.demo`), so `https://<host>/a/<token>` opens them |
+| `IOS_LINK_PATHS` | `/t/*,/a/*` | The paths those apps open; a stack that names only the demo app keeps to `/a/*` |
+| `DEMO_APP_SCHEME` | `medpulldemo` | The demo iPhone app's own URL scheme, used by the link page on a demo stack |
+| `SHOWCASE_DAILY_CRON` | `cron(30 10 * * ? *)` | When the showcase's morning fill runs on a demo stack (UTC); it rewrites only the personas it wrote |
+| `EXERCISE_REMINDERS` | `false` | `true` texts each lifter today's plan every morning at `EXERCISE_REMINDER_HOUR` (default `8`, in `APP_TIMEZONE`). It reaches real phones |
 | `SITE_DOMAIN` | — | Custom hostname for the console (e.g. `demo.medpull.app`); also read from `.env`. See *Custom domain* |
 | `SITE_CERTIFICATE_ARN` | — | ISSUED ACM certificate in us-east-1 covering `SITE_DOMAIN`; also read from `.env` |
 | `BUDGET_EMAIL` | — | Enables the monthly cost alarm |
 | `API_RESERVED_CONCURRENCY` | `5` | `-1` leaves concurrency unreserved |
 
 ## Two deployments
+
+> **Since 2026-11-12 there is one deployment.** The `recovery-copilot` stack
+> at demo.medpull.app is the public demo (`DEMO_MODE=true`), with the
+> showcase's personas beside the team's own accounts, and the `medpull-demo`
+> stack is retired: see `docs/ops/one-deployment.md`. What follows is the
+> two-stack arrangement the template and the scripts still support, for the
+> day a separate real product is wanted again.
 
 The real app and the public demo are two stacks from one repo, told apart by
 one setting the server owns, `DEMO_MODE`, and by which env file the deploy

@@ -33,8 +33,11 @@ Dr. Harris is on every chart as the evaluating clinician (the drafts say
 
 ## The walkthrough (under five minutes)
 
-Open the console as HIRT (login link below). The worklist is the morning
-shortlist: exceptions first, the rest below.
+Open **https://demo.medpull.app/?clinic=hirt**: the console, already on
+H.I.R.T.'s roster (the menu at the top right reads *Clinic · H.I.R.T.
+Physical Therapy*; no sign-in). The worklist is the morning shortlist:
+exceptions first, the rest below. The tabs beside it are **Calendar** (the
+exercise schedule) and **Data** (everything underneath).
 
 **1. The shortlist and the flag.** Cole Whitaker is the one red row. The line
 under his name reads *Training load 1.6× its recent average — too much, too
@@ -103,18 +106,19 @@ slipping" — the clinic's own words — and never a code.
 
 ## Getting in
 
-**The HIRT console login link.** The console is opened with a link of the form
-`https://demo.medpull.app/login#token=…`. A token scoped to the HIRT roster is
-minted against the deployed database with
+**The HIRT console.** `https://demo.medpull.app/?clinic=hirt` opens the
+console on H.I.R.T.'s roster with no sign-in: the `?clinic=` is taken once
+and remembered, and the menu at the top right switches to every clinic, to a
+Personal member, or to a team. A link that can see *only* H.I.R.T. (a
+clinic's own door, for when they should not see the other rosters) is a
+token minted against the deployed database:
 
 ```
 cd backend && uv run python scripts/admin_db.py --bucket <bucket> --mint-token hospital:hirt "HIRT console"
 ```
 
-(`--mint-token` is the mechanism another stream is adding to `admin_db.py`;
-until it lands, the deployment's console token opens every roster and the
-HIRT rows are filtered by eye.) Treat the link as a credential: it is the
-clinic's door.
+It prints `https://demo.medpull.app/login#token=…`. Treat that link as a
+credential.
 
 **The check-in by text link.** The lifter's phone receives one text an
 evening. It carries the tokenized link (`https://demo.medpull.app/t/<token>`)
@@ -142,19 +146,19 @@ cd backend && DEMO_MODE=true DATABASE_URL=sqlite:///./data/hirt-dev.db GROQ_API_
   uv run python -m app.seed.seed --reset
 ```
 
-The deployed database, the morning of the demo, under the S3 write lock,
-with a server-side backup first (this re-anchors every demo org to today and
-never touches the protected charts):
+The deployed database re-anchors itself: every morning at 10:30 UTC the
+showcase fill rewrites every generated persona around the new day (the five
+lifters, the other clinic rosters, the teams, the Personal members) and
+leaves every other row alone (`docs/ops/one-deployment.md`). To run it by
+hand, say after a walkthrough that left the day in a state:
 
 ```
-cd backend && uv run python scripts/push_demo_fill.py --bucket <bucket> --dry-run
-cd backend && uv run python scripts/push_demo_fill.py --bucket <bucket>
+aws lambda invoke --function-name recovery-copilot-seed \
+  --cli-binary-format raw-in-base64-out --payload '{"action":"showcase_fill"}' /dev/stdout
 ```
 
-A local copy of any database: `uv run python scripts/push_demo_fill.py --local
-/path/to/copy.db`. The fill adds the `hirt` hospital and both therapists to a
-database that predates them, then writes the five lifters, their fourteen
-evenings and their threads, and re-runs the engine.
+One lifter's day alone is put back from the demo screen (**Reset the day**),
+which clears what the walkthrough did to today's exercises and nothing else.
 
 ## What is under it
 
@@ -179,11 +183,11 @@ evenings and their threads, and re-runs the engine.
 
 What Dr. Gregg asked for after the first walkthrough, and how it shows:
 
-1. **The week grid** — Exercises → Schedule (`/exercise-schedule`): one row per lifter, one column per day, today marked. Each chip is an exercise with its dose; a done one carries a check and the pain the lifter reported after it; a skipped one is muted; a film badge means a clip plays on the phone. The `+` in any cell opens the assign dialog: pick from the library, dose, side, a note in her words, who assigns it, and the other days of the week to put it on too.
+1. **The week grid** — the **Calendar** tab (`/calendar`): one row per lifter, one column per day, today marked. Each chip is an exercise with its dose; a done one carries a check and the pain the lifter reported after it; a skipped one is muted; a film badge means a clip plays on the phone. The `+` in any cell opens the assign dialog: pick from the library, dose, side, a note in her words, who assigns it, and the other days of the week to put it on too.
 2. **Her demonstration** — open any chip (or an exercise in the Library) → *Upload your demonstration*. The file input opens the camera on a phone; the clip goes straight to the clinic's bucket, is approved on upload, and from then on plays on every lifter's phone wherever that exercise is assigned. Standard exercises keep one clip per clinic; nothing is copied. The demo roster ships placeholder title cards (`backend/scripts/seed_hirt_media.py`) until she films hers.
 3. **The phone** — Today shows *Today's exercises* with the dose, her note and a Clip badge. The exercise screen plays her clip, lists the steps and precautions, then *Mark done*: pain after (0–10), an optional note, *Record a clip of you doing it* (the phone's camera; the clip is staged to storage and confirmed with the completion), *Send to Dr. Gregg*. *Can't do it today* skips with a reason. Today polls every ten seconds, so an assignment made in the room appears on the phone during the conversation.
 4. **What comes back** — the chip flips to done with the pain badge; the dialog shows when, pain, the note and the lifter's clip; the chart's thread gets a line "Did Step-Ups · pain 4/10 after" with the clip beside it; the patient page carries an *Exercises this week* strip.
-5. **The demo screen** — `/demo/hirt` on the demo stack only: the schedule on the left two thirds, an iPhone frame on the right running the real patient web app signed in as the lifter you pick (a demo-only session; no text message needed). Assign on the left, watch it land on the right; mark it done on the phone, watch the chip flip on the left.
+5. **The demo screen** — `/demo/hirt` (Calendar → *Open the demo screen*): the schedule on the left two thirds, an iPhone frame on the right running the real patient web app signed in as the lifter you pick (a demo-only session; no text message needed). Assign on the left, watch it land on the right; mark it done on the phone, watch the chip flip on the left.
 
 Seeded for the room: each lifter's calendar from program day 0 through next week in catalog exercises that fit the pathway, with outcomes matching the check-in story (Cole done with pain climbing 2 → 6, Devon mostly missed, Rafael quiet for three days, Tessa and June all done), their beta consent already accepted, and three returned clips. Contract and routes: `docs/dev/hep-schedule.md`.
 
@@ -199,7 +203,63 @@ On the phone, an exercise is a task done step by step, each step one screen with
 7. **How did it go?**: pain after and effort, 0–10, and a note. **Send to Dr. Gregg**.
 8. **Done**: pain before → after, effort, time, sets × reps × load, watch on, the clip.
 
-On her side the chip flips to done with pain and effort and an amber dot; the row header carries adherence ("19 of 20 · 95%") and "clips to review"; **Review** (Exercises → Review) lists new clips newest first, opens them beside her demonstration (**Compare**), and **Send reply** puts her note in the lifter's Care thread and on the done card. Also there: load and target effort on every dose, clip and watch requirements per exercise (off / optional / required), **Copy last week**, and **Programs** (templates by phase, applied to a lifter for a number of weeks). The phone's **See the week** shows the program as a 14-day calendar.
+On her side the chip flips to done with pain and effort and an amber dot; the row header carries adherence ("19 of 20 · 95%") and "clips to review"; **Review** (Calendar → Review) lists what waits for her newest first, opens them beside her demonstration (**Compare**), and **Send reply** puts her note in the lifter's Care thread and on the done card. Also there: load and target effort on every dose, clip and watch requirements per exercise (off / optional / required), **Copy last week**, and **Programs** (templates by phase, applied to a lifter for a number of weeks). The phone's **See the week** shows the program as a 14-day calendar.
 
-For the room, the order that tells the story in under three minutes: on `/demo/hirt`, pick Cole on the phone; on the left, `+` on today, Mini Squats, 2 × 10 at 12 kg, clip and watch required, a note; it lands on the phone at once; run the task on the phone with the sample clip; watch the chip flip on the left; open Review, Compare, reply; the reply shows on the phone.
+For the room, the order that tells the story in under three minutes: on `/demo/hirt`, pick Cole on the phone; on the left, `+` on today, Mini Squats, 2 × 10 at 25 lb, clip and watch required, a note; it lands on the phone at once; run the task on the phone with the sample clip; watch the chip flip on the left; open Review, Compare, reply; the reply shows on the phone.
+
+## The showcase (added 2026-11-12)
+
+The console is now three versions of one product behind the menu at the top
+right, and H.I.R.T. is one clinic in the first of them. What that adds to
+this room, in the order it is worth showing:
+
+1. **Calendar, grown.** The chips say where each day stands: *missed* (a
+   dashed outline once the day has passed), *in progress* (the session is
+   open on their phone), and a rising mark when a session went **over the
+   dose**. Open Cole's Step-Ups from Monday: *More than prescribed · 35 lb
+   done, 25 lb prescribed*, with sets, reps, load and effort side by side.
+   Loads read in pounds here (the **lb | kg** switch is the clinic's, top
+   right of the grid; rows are kept in kilograms either way). Drag a chip to
+   another day to move it; hold Option to copy. The `+` now has **Repeat**
+   (Mon/Wed/Fri for four weeks, as one repeat that is re-dosed or cleared
+   "this and the following") and **Text Cole about it**. **Month** shows six
+   weeks: a strip per lifter (done, missed, still ahead) and the picked
+   lifter's calendar. The row menu has **Text today's plan**.
+2. **Week** (Calendar → Week). Each lifter's week in review, the ones with
+   something to look at first: done against written, pain before and after,
+   effort against the target, the load moved against the load written and
+   against last week, the days over the dose, and whether next week is set.
+   June's is not ("not set yet"): **Copy this week forward** sets it in one
+   press. This is the Monday-morning page.
+3. **Review** now says why each day waits: a clip to watch, or a session
+   over the dose (which waits for a look even with no clip).
+4. **Data** (third tab). The roster by what was collected; open Cole →
+   **Reported**: the grid a clinic keeps in a spreadsheet today, one row a
+   day — pain, swelling, sleep, program, his own training, the exercise
+   calendar with *More than prescribed* marked, his note — and **Export
+   CSV**. For a chart with a watch (pick *All clinics*, then Dana Okonkwo):
+   Sources, Raw, Signals, what MedPull computes itself, Care metrics, Sleep.
+   **Dictionary** lists every metric with its unit, source and method.
+5. **The text that opens the app.** A text from the calendar carries
+   `https://demo.medpull.app/a/<token>`. On a phone with the demo app it
+   opens the app on that exercise; in a browser it opens the patient web
+   app there, signed in as that lifter (personas only: a link never signs
+   anyone into a real chart). Replies work: **DONE** marks today's open
+   exercises done and asks for the pain; **STOP** stops every text until
+   **START**; **HELP** says who this is. A row that asks for a clip or the
+   watch cannot be closed by text and answers with the link instead.
+6. **The demo iPhone app** (MedPull Demo, target `MedPullDemo`). One app
+   with no accounts that becomes any persona of any version: pick Clinic →
+   H.I.R.T. → Cole and it is Cole's phone, with the exercise calendar and
+   the guided session on it. **Text my phone** (the avatar at the top right)
+   binds the presenter's own number to that persona, so the texts in step 5
+   arrive on a real phone and their links open the app. It is a demo tool,
+   not the app a patient installs (`docs/dev/showcase/ios.md`).
+7. **The other two versions**, one click each from the menu, if the room
+   asks what else this is: **Personal** (a member's own Today, Trends and
+   Data) and **Sports** (a team's Board, Calendar and Data).
+
+Still true, and still the rules of the room: nothing here sets a dose,
+scores a movement, or says a lifter is cleared. "Over the dose" describes a
+session; the therapist decides what it means.
 
