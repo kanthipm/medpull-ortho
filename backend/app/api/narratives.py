@@ -61,8 +61,9 @@ class WarmBody(BaseModel):
 
 def _briefing_roster(db: Session, scope: ConsoleScope) -> list | None:
     """Who the briefing this console reads is about: everyone (None, the
-    default roster) for staff, one hospital's patients for its credential."""
-    return None if scope.kind == "all" else scoped_clinic_patients(db, scope)
+    default roster) for staff, one hospital's patients for its credential
+    or for staff acting for that hospital."""
+    return None if scope.whole_roster else scoped_clinic_patients(db, scope)
 
 
 def _todo(

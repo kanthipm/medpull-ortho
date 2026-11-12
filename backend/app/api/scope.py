@@ -9,6 +9,19 @@ Three rules, and every console route goes through one of them:
   board in its org. Neither sees a clinic chart.
 * **all** (the staff token, or an open console) sees everything.
 
+A staff scope **acting for one clinic** (``acting_hospital_id``, set from
+the console's ``X-MedPull-Clinic`` header) lists that hospital's charts
+only: ``scope_patients`` and ``scoped_clinic_patients`` narrow to it, so
+the worklist, its briefing, Ask, the bell and the Data roster are that
+clinic's. It narrows lists and nothing else: ``patient_visible`` is
+unchanged, so staff may still open any clinic chart by id.
+
+A chart a console route opens by id is a clinic chart. A personal
+subscriber's profile and an athlete's row are never on a clinic screen, so
+``require_patient`` answers 404 for them whatever the scope: the member's
+space has its own routes (``app/api/console_personal.py``) and the athlete's
+its own (``app/sports/api.py``).
+
 A patient or team outside the scope answers 404, never 403, so an id's
 existence does not leak to a console that cannot see it. The staff-only
 surfaces (integrations, notification settings, library edits) answer 403
@@ -26,7 +39,7 @@ from sqlalchemy.sql import Select
 from app.api.auth import ConsoleScope, console_scope
 from app.models.patient import Patient
 from app.models.sports import SportsTeam
-from app.personal.scope import CLINIC, clinic_filter
+from app.personal.scope import CLINIC, clinic_filter, is_clinic
 
 UNKNOWN_PATIENT = "Unknown patient"
 UNKNOWN_TEAM = "Unknown team"
@@ -51,6 +64,9 @@ def scope_patients(scope: ConsoleScope, stmt: Select) -> Select:
     """Add the scope's WHERE clauses to a ``select`` that has ``Patient`` in
     its FROM (``select(Patient)``, or a join that includes it)."""
     if scope.kind == "all":
+        if scope.acting_hospital_id is not None:
+            # Staff acting for one clinic list what its credential would.
+            return clinic_filter(stmt).where(Patient.hospital_id == scope.acting_hospital_id)
         return stmt
     if scope.kind == "hospital":
         return clinic_filter(stmt).where(Patient.hospital_id == scope.org_id)
@@ -58,8 +74,9 @@ def scope_patients(scope: ConsoleScope, stmt: Select) -> Select:
 
 
 def scoped_clinic_patients(db: Session, scope: ConsoleScope, order_by=None) -> list[Patient]:
-    """The clinic roster this scope may list: every clinic chart for ``all``,
-    one hospital's for a hospital credential, none for a sports credential."""
+    """The clinic roster this scope may list: every clinic chart for ``all``
+    (one hospital's while staff are acting for it), one hospital's for a
+    hospital credential, none for a sports credential."""
     stmt = scope_patients(scope, clinic_filter(select(Patient)))
     if order_by is not None:
         stmt = stmt.order_by(order_by)
@@ -67,10 +84,13 @@ def scoped_clinic_patients(db: Session, scope: ConsoleScope, order_by=None) -> l
 
 
 def require_patient(db: Session, scope: ConsoleScope, patient_id: str) -> Patient:
-    """The chart a route is about, or 404 when it does not exist *for this
-    scope* (same answer either way, on purpose)."""
+    """The clinic chart a route is about, or 404 when it does not exist *for
+    this scope* (same answer either way, on purpose). A subscriber's or an
+    athlete's row is not a chart: on a staff or open console ``patient_visible``
+    is true for any id, and this is the check that keeps those rows off the
+    clinic pages."""
     patient = db.get(Patient, patient_id)
-    if not patient_visible(scope, patient):
+    if not patient_visible(scope, patient) or not is_clinic(patient):
         raise HTTPException(status_code=404, detail=UNKNOWN_PATIENT)
     return patient
 

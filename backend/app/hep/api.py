@@ -42,10 +42,14 @@ def _ready(db: Session = Depends(get_db)) -> Session:
 def _clinic(db: Session = Depends(_ready), scope: ConsoleScope = Depends(console_scope)) -> str:
     """The clinic this request's library and plans belong to. A hospital
     credential acts for its own hospital and no other; the staff token (or an
-    open console) for ``HEP_CLINIC_ID``, else the first active hospital
-    (service.clinic_id). A sports credential has no clinic to act for."""
+    open console) for the clinic picked in the workspace menu
+    (``scope.acting_hospital_id``, from X-MedPull-Clinic), else for
+    ``HEP_CLINIC_ID``, else the first active hospital (service.clinic_id).
+    A sports credential has no clinic to act for."""
     if scope.kind == "hospital" and scope.org_id:
         return scope.org_id
+    if scope.acting_hospital_id is not None:
+        return scope.acting_hospital_id
     if not scope.clinic:
         raise HTTPException(status_code=403, detail="This console has no clinic to act for")
     try:

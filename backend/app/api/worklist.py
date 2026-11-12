@@ -192,9 +192,10 @@ def worklist(
 
     # The briefing is about the roster this console sees: the whole clinic
     # roster for staff, one hospital's for a hospital credential (its own
-    # cache key, derived from the ids on it). A sports credential has no
-    # clinic roster and gets no briefing.
-    roster = None if scope.kind == "all" else patients
+    # cache key, derived from the ids on it) and for staff acting for that
+    # hospital, who read the same row. A sports credential has no clinic
+    # roster and gets no briefing.
+    roster = None if scope.whole_roster else patients
     try:
         if not scope.clinic:
             briefing_view = {"text": "", "generated_at": datetime.now().isoformat(),

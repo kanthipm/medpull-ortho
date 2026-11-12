@@ -25,8 +25,8 @@ def ask_roster(
 
     from app.llm.ask import ask
 
-    # Staff ask over the whole clinic roster; an org credential over its own,
-    # so neither the answer nor the filtered list can name another clinic's
-    # patient.
-    patients = None if scope.kind == "all" else scoped_clinic_patients(db, scope)
+    # Staff ask over the whole clinic roster; an org credential over its own
+    # (and staff acting for one clinic over that clinic's), so neither the
+    # answer nor the filtered list can name another clinic's patient.
+    patients = None if scope.whole_roster else scoped_clinic_patients(db, scope)
     return ask(db, question, patients=patients)

@@ -83,7 +83,7 @@ def test_an_open_console_with_no_token_sees_every_hospital(client):
     assert METHODIST <= ids and HERMANN <= ids
     session = client.get("/api/console/session").json()
     assert session == {"scope": {"kind": "all", "org_id": None, "label": "MedPull",
-                                 "name": "MedPull"}}
+                                 "name": "MedPull"}, "acting_clinic": None}
 
 
 def test_the_staff_token_sees_every_hospital_and_locks_the_door(client, monkeypatch, tokens):
