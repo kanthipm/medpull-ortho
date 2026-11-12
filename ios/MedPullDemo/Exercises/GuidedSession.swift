@@ -326,6 +326,8 @@ private struct StartStage: View {
                 Text("Aim for effort \(target)/10\(MP.dot)\(ExerciseWords.effort(target).lowercased())")
                     .mpFont(.copy).foregroundStyle(MP.muted)
             }
+            // Her ceiling on the dose, before the first set.
+            if a.hasCeiling { DoseCeiling(a: a) }
             if !a.clinicianInstructions.isEmpty { TherapistNote(a: a) }
             Card {
                 VStack(alignment: .leading, spacing: 10) {
@@ -703,6 +705,10 @@ private struct ExerciseStage: View {
                 .accessibilityHidden(true)
                 Text(line).mpFont(.copyLarge).foregroundStyle(MP.ink)
                     .fixedSize(horizontal: false, vertical: true)
+                // Her ceiling stays under the dose through every set, rest
+                // and hold: this is where the person is deciding how hard
+                // to go.
+                if a.hasCeiling { DoseCeiling(a: a) }
             }
         }
     }

@@ -5,7 +5,8 @@ import SwiftUI
 /// exercise (done, skipped, missed, to do) with today ringed, and the chosen
 /// day's exercises under it. A past day shows what happened and can still be
 /// caught up; today's rows open the exercise; the days ahead open as a
-/// preview.
+/// preview. A visit to the clinic and a rest day the clinic set are marked on
+/// their days: a small symbol in the fortnight, the words on the chosen day.
 ///
 /// Two rows of seven rather than a month grid: a loading program is read a
 /// week at a time, and seven cells across a phone leave each day wide enough
@@ -58,7 +59,8 @@ struct CalendarTab: View {
                     ?? today
                 ProgramHero(program: program, today: today, clinic: clinicName(program)).mpRise(0)
                 DayStrip(program: program, today: today, selected: day) { store.calendarDay = $0 }.mpRise(1)
-                DayCard(day: program.days.first { $0.date == day }, date: day, today: today) { open = ExerciseRef(id: $0.id) }
+                DayCard(day: program.days.first { $0.date == day }, date: day, today: today,
+                        visits: program.visits(on: day), rest: program.restDay(on: day)) { open = ExerciseRef(id: $0.id) }
                     .mpRise(2)
                 Text("Set by \(clinicName(program)). What you send goes back to them.")
                     .mpFont(.label).foregroundStyle(MP.muted)
@@ -242,7 +244,9 @@ private struct DayStrip: View {
     private func week(_ days: [ProgramDay]) -> some View {
         HStack(spacing: 0) {
             ForEach(days) { day in
-                DayCell(day: day, today: today, isSelected: day.date == selected) { select(day.date) }
+                DayCell(day: day, today: today, isSelected: day.date == selected,
+                        visits: program.visits(on: day.date), rest: program.restDay(on: day.date),
+                        marksRow: program.hasMarks) { select(day.date) }
             }
             // A short week (the program's window is being changed) keeps
             // its cells the width of a full one.
@@ -251,15 +255,32 @@ private struct DayStrip: View {
         .padding(.horizontal, 8)
     }
 
+    /// The dots, and under them the two symbols, each only when a day of
+    /// the fortnight carries one.
     private var legend: some View {
-        HStack(spacing: 14) {
-            key("done", MP.riskLow, hollow: false)
-            key("to do", MP.riskMissing, hollow: true)
-            key("missed", MP.riskMed, hollow: false)
-            key("skipped", MP.muted, hollow: false)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 14) {
+                key("done", MP.riskLow, hollow: false)
+                key("to do", MP.riskMissing, hollow: true)
+                key("missed", MP.riskMed, hollow: false)
+                key("skipped", MP.muted, hollow: false)
+            }
+            if program.hasMarks {
+                HStack(spacing: 14) {
+                    if !program.visits.isEmpty { key("clinic visit", symbol: DayFact.visitSymbol, MP.brandInk) }
+                    if !program.restDays.isEmpty { key("rest day", symbol: DayFact.restSymbol, MP.muted) }
+                }
+            }
         }
         .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
         .accessibilityHidden(true)
+    }
+
+    private func key(_ word: String, symbol: String, _ color: Color) -> some View {
+        HStack(spacing: 5) {
+            DayMark(symbol: symbol, color: color)
+            Text(word).mpFont(.label).foregroundStyle(MP.muted)
+        }
     }
 
     private func key(_ word: String, _ color: Color, hollow: Bool) -> some View {
@@ -286,12 +307,34 @@ private struct ProgramDot: View {
     }
 }
 
+/// A visit or a set rest day as the strip draws it: its symbol, small. The
+/// words are on the chosen day's card and in the legend.
+private struct DayMark: View {
+    let symbol: String
+    let color: Color
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(color)
+            .frame(height: 10)
+    }
+}
+
 /// One day of the strip: the weekday, the date, a dot for each exercise in
-/// its state. Today is ringed; the chosen day is filled.
+/// its state, and under the dots the mark of a clinic visit or a rest day
+/// the clinic set. Today is ringed; the chosen day is filled.
 private struct DayCell: View {
     let day: ProgramDay
     let today: String
     let isSelected: Bool
+    /// The clinic visits on this day, and the rest day set on it.
+    var visits: [ClinicVisit] = []
+    var rest: RestDay? = nil
+    /// Whether the strip keeps a line under the dots for those marks. Only
+    /// a fortnight that has some does, and then every cell keeps it, so
+    /// the days stay level.
+    var marksRow = false
     let select: () -> Void
 
     var body: some View {
@@ -318,6 +361,13 @@ private struct DayCell: View {
                     }
                 }
                 .frame(height: 6)
+                if marksRow {
+                    HStack(spacing: 4) {
+                        if !visits.isEmpty { DayMark(symbol: DayFact.visitSymbol, color: MP.brandInk) }
+                        if rest != nil { DayMark(symbol: DayFact.restSymbol, color: MP.muted) }
+                    }
+                    .frame(height: 10)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
@@ -346,7 +396,9 @@ private struct DayCell: View {
         let what = day.assigned == 0 ? "a rest day"
             : "\(day.assigned) \(day.assigned == 1 ? "exercise" : "exercises"), \(day.done) done"
                 + (day.missed > 0 ? ", \(day.missed) missed" : "")
-        return "\(isToday ? "Today, " : "")\(name), \(what)"
+        // A day with nothing on it is already called a rest day.
+        let marks = visits.map(ExerciseWords.visitMarker) + (rest != nil && day.assigned > 0 ? ["rest day"] : [])
+        return (["\(isToday ? "Today, " : "")\(name)", what] + marks).joined(separator: ", ")
     }
 }
 
@@ -356,6 +408,9 @@ private struct DayCard: View {
     let day: ProgramDay?
     let date: String
     let today: String
+    /// The clinic visits on this day, and the rest day the clinic set on it.
+    var visits: [ClinicVisit] = []
+    var rest: RestDay? = nil
     let open: (ExerciseAssignment) -> Void
 
     var body: some View {
@@ -366,10 +421,14 @@ private struct DayCard: View {
         Card(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 CardTitleRow(ExerciseWords.dayTitle(date, today: today), note: note(past: past, future: future))
+                if !visits.isEmpty || rest != nil { marks }
                 if ordered.isEmpty {
+                    // A day the clinic set aside is a rest day whenever it
+                    // falls; an empty day ahead may still be filled.
                     EmptyRow(icon: "figure.strengthtraining.functional",
-                             title: future ? "Nothing planned yet" : "A rest day",
-                             detail: future ? "Your therapist may still add to this day."
+                             title: future && rest == nil ? "Nothing planned yet" : "A rest day",
+                             detail: rest != nil ? "Your clinic set this day aside for rest."
+                                : future ? "Your therapist may still add to this day."
                                 : past ? "Nothing was scheduled." : "Nothing scheduled today.")
                         .padding(.bottom, 4)
                 } else {
@@ -383,6 +442,25 @@ private struct DayCard: View {
             .padding(.bottom, ordered.isEmpty ? 0 : 4)
             .clipShape(MP.surfaceShape)
         }
+    }
+
+    /// What else is on the day, in words: "Test day 9:30 AM", "Rest day",
+    /// and the therapist's note on a rest day when she left one.
+    private var marks: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            BrandFlow(spacing: 6) {
+                ForEach(Array(visits.enumerated()), id: \.offset) { _, visit in
+                    ExercisePill(text: ExerciseWords.visitMarker(visit), symbol: DayFact.visitSymbol)
+                }
+                if rest != nil { ExercisePill(text: "Rest day", symbol: DayFact.restSymbol) }
+            }
+            if let note = rest?.note, !note.isEmpty {
+                Text(ExerciseWords.typeset(note)).mpFont(.label).foregroundStyle(MP.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16).padding(.bottom, 8)
     }
 
     /// "Nov 13 · 3 of 4 done · 1 missed" beside the title.

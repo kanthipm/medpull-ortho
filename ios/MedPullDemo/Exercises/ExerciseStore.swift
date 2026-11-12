@@ -113,7 +113,7 @@ final class ExerciseStore {
             do {
                 let answer = try await self.app.api.exercises(date: self.today)
                 guard mine == self.generation else { return }
-                self.feed = answer
+                self.feed = Self.day(answer)
             } catch {
                 guard mine == self.generation else { return }
                 self.noteReadFailure(error)
@@ -123,6 +123,20 @@ final class ExerciseStore {
         dayInFlight = task
         await task.value
         if dayInFlight == task { dayInFlight = nil }
+    }
+
+    /// The day as the server answered it. In a debug build
+    /// `-MP_REST_DAY <note>` (`1` for no note) reads today as a rest day the
+    /// clinic set, for a screenshot on a day the server has none on.
+    private static func day(_ answer: ExercisesResponse) -> ExercisesResponse {
+        #if DEBUG
+        if answer.restDay == nil, let note = AppConfig.debugFlag("MP_REST_DAY") {
+            var answer = answer
+            answer.restDay = RestDay(note: note == "1" ? "" : note)
+            return answer
+        }
+        #endif
+        return answer
     }
 
     /// Read the program around today.

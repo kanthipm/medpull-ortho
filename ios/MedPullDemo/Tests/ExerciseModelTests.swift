@@ -46,8 +46,33 @@ final class ExerciseModelTests: XCTestCase {
      "video": null, "session": null, "completion": null, "skip_reason": null}
     """
 
+    /// Open, with the ceiling the therapist put on the dose
+    /// (docs/dev/pt.md): the sentence, and the two figures behind it.
+    private static let stepUps = """
+    {"id": 1312, "exercise_id": 18, "title": "Step-Ups", "equipment": "A low step or bottom stair",
+     "precautions": "Keep the knee over the foot. Use a rail for balance.",
+     "steps": ["Stand facing a low step, holding a rail if available."],
+     "scheduled_for": "2026-11-13", "sort_order": 0, "series_id": null, "sets": 3, "reps": 10,
+     "hold_seconds": null, "side": "left", "side_label": "Left", "load_kg": 11.34, "rpe_target": 7,
+     "load_max_kg": 13.61, "rpe_max": 8, "dose": "3 sets × 10 reps · 25 lb · Left",
+     "ceiling": "Stop at RPE 8 · do not exceed 30 lb", "clinician_instructions": "Slow on the way down.",
+     "assigned_by": "ct_gregg", "assigned_by_name": "Dr. Ashley Gregg",
+     "video_requirement": "required", "wearable_requirement": "optional", "status": "assigned",
+     "state": "upcoming", "video": null, "session": null, "completion": null, "skip_reason": null}
+    """
+
     private func row(_ json: String) throws -> ExerciseAssignment {
         try Fixtures.decode(ExerciseAssignment.self, json)
+    }
+
+    /// A time as the phone writes it ("9:30 AM") has a narrow no-break
+    /// space before the AM; the tests compare with a plain one.
+    private func spaced(_ text: String?) -> String? {
+        text?.replacingOccurrences(of: "\u{202F}", with: " ").replacingOccurrences(of: "\u{00A0}", with: " ")
+    }
+
+    private func visit(_ json: String) throws -> ClinicVisit {
+        try Fixtures.decode(ClinicVisit.self, json)
     }
 
     // MARK: Rows
@@ -143,6 +168,56 @@ final class ExerciseModelTests: XCTestCase {
         XCTAssertEqual(started.state(on: "2026-11-13"), .missed)
     }
 
+    // MARK: The ceiling on a dose
+
+    func testACeilingIsReadWithTheTwoFiguresBehindIt() throws {
+        let a = try row(Self.stepUps)
+        XCTAssertEqual(a.ceiling, "Stop at RPE 8 · do not exceed 30 lb")
+        XCTAssertTrue(a.hasCeiling)
+        XCTAssertEqual(try XCTUnwrap(a.loadMaxKg), 13.61, accuracy: 0.0001)
+        XCTAssertEqual(a.rpeMax, 8)
+        // The ceiling is beside the dose, not in place of it.
+        XCTAssertEqual(a.loadKg, 11.34)
+        XCTAssertEqual(a.rpeTarget, 7)
+        XCTAssertEqual(a.dose, "3 sets × 10 reps · 25 lb · Left")
+        // The figures may arrive loosely typed, like every other number.
+        let loose = try row(#"{"id": 1, "status": "assigned", "ceiling": " Stop at RPE 8 ", "load_max_kg": 14, "rpe_max": "8"}"#)
+        XCTAssertEqual(loose.ceiling, "Stop at RPE 8")
+        XCTAssertEqual(loose.loadMaxKg, 14)
+        XCTAssertEqual(loose.rpeMax, 8)
+        XCTAssertEqual(try row(#"{"id": 1, "status": "assigned", "rpe_max": 8.0}"#).rpeMax, 8)
+    }
+
+    func testNoCeilingIsNothingWhetherSentEmptyNullOrNotAtAll() throws {
+        // What the server sends for a dose with no ceiling: "" and two nulls.
+        let none = try row(#"{"id": 1311, "status": "assigned", "load_max_kg": null, "rpe_max": null, "ceiling": ""}"#)
+        XCTAssertEqual(none.ceiling, "")
+        XCTAssertFalse(none.hasCeiling)
+        XCTAssertNil(none.loadMaxKg)
+        XCTAssertNil(none.rpeMax)
+        // All three null.
+        let nulled = try row(#"{"id": 1311, "status": "assigned", "load_max_kg": null, "rpe_max": null, "ceiling": null}"#)
+        XCTAssertEqual(nulled.ceiling, "")
+        XCTAssertFalse(nulled.hasCeiling)
+        XCTAssertNil(nulled.loadMaxKg)
+        XCTAssertNil(nulled.rpeMax)
+        // An older server sends none of the three: both rows above this
+        // test were answered before the fields existed.
+        for older in try [row(Self.reviewed), row(Self.wallSits), row(#"{"id": 5, "status": "assigned"}"#)] {
+            XCTAssertEqual(older.ceiling, "")
+            XCTAssertFalse(older.hasCeiling)
+            XCTAssertNil(older.loadMaxKg)
+            XCTAssertNil(older.rpeMax)
+        }
+        // A ceiling of a type this build does not expect does not sink the
+        // row, and is not shown.
+        let odd = try row(#"{"id": 7, "status": "assigned", "ceiling": {"rpe": 8}, "load_max_kg": "heavy", "rpe_max": []}"#)
+        XCTAssertEqual(odd.id, 7)
+        XCTAssertFalse(odd.hasCeiling)
+        XCTAssertNil(odd.loadMaxKg)
+        XCTAssertNil(odd.rpeMax)
+    }
+
     func testTheStartCompleteAndSkipRoutesAnswerEitherWay() throws {
         let wrapped = try Fixtures.decode(AssignmentAnswer.self, #"{"assignment": \#(Self.wallSits)}"#)
         XCTAssertEqual(wrapped.assignment.id, 378)
@@ -185,6 +260,192 @@ final class ExerciseModelTests: XCTestCase {
         let none = try Fixtures.decode(ExercisesResponse.self, #"{"date": "2026-11-12", "items": [], "week": [], "clinic": null}"#)
         XCTAssertFalse(none.hasSchedule)
         XCTAssertNil(none.clinic)
+    }
+
+    // MARK: Visits and rest days
+
+    /// Today's feed with what the between-visits record adds
+    /// (docs/dev/pt.md); `extra` goes in as the last keys.
+    private func feed(_ extra: String) throws -> ExercisesResponse {
+        try Fixtures.decode(ExercisesResponse.self, #"""
+        {"date": "2026-11-12", "today": "2026-11-12", "items": [\#(Self.wallSits)], "overdue": [],
+         "week": [{"date": "2026-11-12", "assigned": 1, "done": 0, "skipped": 0},
+                  {"date": "2026-11-13", "assigned": 5, "done": 0, "skipped": 0}],
+         "clinic": {"id": "hirt", "name": "H.I.R.T. Physical Therapy", "load_unit": "lb"}\#(extra)}
+        """#)
+    }
+
+    func testTodaysFeedCarriesTheRestDayAndTheNextVisit() throws {
+        // As a local server answered for the seeded lifter, two days before
+        // his test day.
+        let booked = try feed(#"""
+        , "rest_day": null,
+          "next_visit": {"on": "2026-11-14", "at": "09:30", "kind": "test_day", "kind_label": "Test day"}
+        """#)
+        XCTAssertNil(booked.restDay)
+        let next = try XCTUnwrap(booked.nextVisit)
+        XCTAssertEqual(next.on, "2026-11-14")
+        XCTAssertEqual(next.at, "09:30")
+        XCTAssertEqual(next.kind, "test_day")
+        XCTAssertEqual(next.kindLabel, "Test day")
+        XCTAssertFalse(next.isPlainVisit)
+        // Today's one line about it.
+        XCTAssertEqual(spaced((["Next visit"] + ExerciseWords.visitFacts(next, today: "2026-11-12")).joined(separator: " · ")),
+                       "Next visit · Test day · Sat, Nov 14 · 9:30 AM")
+
+        // A rest day, with the therapist's note and without one.
+        let deload = try feed(#", "rest_day": {"note": "Deload."}, "next_visit": null"#)
+        XCTAssertEqual(deload.restDay?.note, "Deload.")
+        XCTAssertNil(deload.restDay?.day)
+        XCTAssertNil(deload.nextVisit)
+        XCTAssertEqual(try feed(#", "rest_day": {"note": ""}"#).restDay?.note, "")
+        XCTAssertEqual(try feed(#", "rest_day": {"note": null}"#).restDay?.note, "")
+        XCTAssertEqual(try feed(#", "rest_day": {}"#).restDay?.note, "")
+        // The rest of the day still reads.
+        XCTAssertEqual(deload.items.map(\.id), [378])
+        XCTAssertEqual(deload.clinic?.loadUnit, .lb)
+    }
+
+    func testAFeedWithoutThemHasNeither() throws {
+        // Both null.
+        let nulled = try feed(#", "rest_day": null, "next_visit": null"#)
+        XCTAssertNil(nulled.restDay)
+        XCTAssertNil(nulled.nextVisit)
+        // An older server sends neither key.
+        let older = try feed("")
+        XCTAssertNil(older.restDay)
+        XCTAssertNil(older.nextVisit)
+        XCTAssertEqual(older.items.map(\.id), [378])
+        // Something else in their place does not sink the day.
+        let odd = try feed(#", "rest_day": true, "next_visit": {"at": "09:30", "kind": "visit"}"#)
+        XCTAssertNil(odd.restDay)
+        XCTAssertNil(odd.nextVisit)
+        XCTAssertEqual(odd.items.map(\.id), [378])
+        // Neither makes a card where there is no calendar.
+        let none = try Fixtures.decode(ExercisesResponse.self, #"""
+        {"date": "2026-11-12", "items": [], "overdue": [], "week": [{"date": "2026-11-12", "assigned": 0, "done": 0}],
+         "rest_day": {"note": "Deload."}, "next_visit": {"on": "2026-11-14", "at": null, "kind": "visit", "kind_label": "Visit"}}
+        """#)
+        XCTAssertFalse(none.hasSchedule)
+    }
+
+    func testARestDayTheClinicSetIsNotSaidTwice() throws {
+        // No exercises today, and the clinic set the day aside: its own
+        // line says "Rest day", so the line under it only says what is next.
+        let rest = try Fixtures.decode(ExercisesResponse.self, #"""
+        {"date": "2026-11-12", "items": [], "overdue": [], "rest_day": {"note": "Deload."},
+         "week": [{"date": "2026-11-12", "assigned": 0, "done": 0}, {"date": "2026-11-13", "assigned": 5, "done": 0}]}
+        """#)
+        XCTAssertTrue(rest.hasSchedule)
+        XCTAssertEqual(TodayExercises.restDayLine(rest), "Your next exercises are on Friday.")
+    }
+
+    func testAVisitInWords() throws {
+        let test = try visit(#"{"on": "2026-11-14", "at": "09:30", "kind": "test_day", "kind_label": "Test day"}"#)
+        XCTAssertEqual(spaced(ExerciseWords.visitTime(test)), "9:30 AM")
+        XCTAssertEqual(spaced(ExerciseWords.visitMarker(test)), "Test day 9:30 AM")
+        XCTAssertEqual(ExerciseWords.visitDay("2026-11-14", today: "2026-11-12"), "Sat, Nov 14")
+        XCTAssertEqual(ExerciseWords.visitDay("2026-11-13", today: "2026-11-12"), "Tomorrow")
+        XCTAssertEqual(ExerciseWords.visitDay("2026-11-12", today: "2026-11-12"), "Today")
+
+        // A plain visit in the afternoon: "Next visit" is not followed by
+        // "Visit", and its own day's marker still names it.
+        let plain = try visit(#"{"on": "2026-11-13", "at": "17:30", "kind": "visit", "kind_label": "Visit"}"#)
+        XCTAssertTrue(plain.isPlainVisit)
+        XCTAssertEqual(ExerciseWords.visitFacts(plain, today: "2026-11-12").map { spaced($0) }, ["Tomorrow", "5:30 PM"])
+        XCTAssertEqual(spaced(ExerciseWords.visitMarker(plain)), "Visit 5:30 PM")
+
+        // No time set: the day alone.
+        let untimed = try visit(#"{"on": "2026-11-20", "at": null, "kind": "evaluation", "kind_label": "Evaluation"}"#)
+        XCTAssertNil(untimed.at)
+        XCTAssertNil(ExerciseWords.visitTime(untimed))
+        XCTAssertEqual(ExerciseWords.visitFacts(untimed, today: "2026-11-12"), ["Evaluation", "Fri, Nov 20"])
+        XCTAssertEqual(ExerciseWords.visitMarker(untimed), "Evaluation")
+
+        // Only the day is insisted on. A kind with no label is worded from
+        // the kind; a time that is not one is left out.
+        let bare = try visit(#"{"on": "2026-11-20"}"#)
+        XCTAssertEqual(bare.kind, "visit")
+        XCTAssertEqual(bare.kindLabel, "Visit")
+        XCTAssertNil(bare.at)
+        XCTAssertEqual(try visit(#"{"on": "2026-11-20", "kind": "test_day"}"#).kindLabel, "Test day")
+        XCTAssertNil(try visit(#"{"on": "2026-11-20", "at": ""}"#).at)
+        XCTAssertNil(ExerciseWords.visitTime(try visit(#"{"on": "2026-11-20", "at": "morning"}"#)))
+        XCTAssertNil(ExerciseWords.visitTime(try visit(#"{"on": "2026-11-20", "at": "25:00"}"#)))
+        XCTAssertEqual(spaced(ExerciseWords.visitTime(try visit(#"{"on": "2026-11-20", "at": "07:05:00"}"#))), "7:05 AM")
+        XCTAssertThrowsError(try visit(#"{"at": "09:30", "kind": "visit"}"#))
+    }
+
+    func testTheProgramCarriesItsVisitsAndRestDays() throws {
+        // As a local server answered for the seeded lifter.
+        let program = try Fixtures.decode(ProgramResponse.self, #"""
+        {"start": "2026-11-05", "today": "2026-11-12",
+         "days": [{"date": "2026-11-14", "items": [\#(Self.wallSits)]}, {"date": "2026-11-15", "items": []}],
+         "clinic": {"id": "hirt", "name": "H.I.R.T. Physical Therapy", "load_unit": "lb"},
+         "visits": [{"on": "2026-11-05", "at": "09:00", "kind": "visit", "kind_label": "Visit"},
+                    {"on": "2026-11-14", "at": "09:30", "kind": "test_day", "kind_label": "Test day"}],
+         "rest_days": [{"day": "2026-11-08", "note": ""}, {"day": "2026-11-15", "note": "Deload."}]}
+        """#)
+        XCTAssertEqual(program.visits.map(\.on), ["2026-11-05", "2026-11-14"])
+        XCTAssertEqual(program.restDays.map(\.day), ["2026-11-08", "2026-11-15"])
+        XCTAssertTrue(program.hasMarks)
+        // Each on its own day.
+        XCTAssertEqual(program.visits(on: "2026-11-14").map(\.kindLabel), ["Test day"])
+        XCTAssertEqual(program.visits(on: "2026-11-13"), [])
+        XCTAssertEqual(program.restDay(on: "2026-11-15")?.note, "Deload.")
+        XCTAssertEqual(program.restDay(on: "2026-11-08")?.note, "")
+        XCTAssertNil(program.restDay(on: "2026-11-14"))
+        XCTAssertEqual(program.days.count, 2)
+
+        // Two on one day come in the order of the clock, an untimed one last;
+        // one with no day, and a rest day with none, are dropped.
+        let busy = try Fixtures.decode(ProgramResponse.self, #"""
+        {"start": "2026-11-05", "days": [],
+         "visits": [{"on": "2026-11-14", "at": null, "kind": "visit", "kind_label": "Visit"},
+                    {"on": "2026-11-14", "at": "15:00", "kind": "visit", "kind_label": "Visit"},
+                    {"on": "2026-11-14", "at": "09:30", "kind": "test_day", "kind_label": "Test day"},
+                    {"at": "10:00", "kind": "visit"}, "soon"],
+         "rest_days": [{"note": "No day."}, {"day": "2026-11-15"}, 7]}
+        """#)
+        XCTAssertEqual(busy.visits.count, 3)
+        XCTAssertEqual(busy.visits(on: "2026-11-14").map(\.at), ["09:30", "15:00", nil])
+        XCTAssertEqual(busy.restDays.map(\.day), ["2026-11-15"])
+        XCTAssertEqual(busy.restDay(on: "2026-11-15")?.note, "")
+        // Marks alone are not a program: the tab still says there are no
+        // exercises yet.
+        XCTAssertFalse(busy.hasProgram)
+    }
+
+    func testAProgramWithoutThemHasNone() throws {
+        // Both null.
+        let nulled = try Fixtures.decode(ProgramResponse.self, #"""
+        {"start": "2026-11-09", "days": [{"date": "2026-11-12", "items": [\#(Self.wallSits)]}],
+         "visits": null, "rest_days": null}
+        """#)
+        XCTAssertEqual(nulled.visits, [])
+        XCTAssertEqual(nulled.restDays, [])
+        XCTAssertFalse(nulled.hasMarks)
+        XCTAssertTrue(nulled.hasProgram)
+        // An older server sends neither key.
+        let older = try Fixtures.decode(ProgramResponse.self, #"""
+        {"start": "2026-11-09", "days": [{"date": "2026-11-12", "items": [\#(Self.wallSits)]}]}
+        """#)
+        XCTAssertEqual(older.visits, [])
+        XCTAssertEqual(older.restDays, [])
+        XCTAssertFalse(older.hasMarks)
+        XCTAssertEqual(older.visits(on: "2026-11-12"), [])
+        XCTAssertNil(older.restDay(on: "2026-11-12"))
+        // Empty lists, as the server sends for a person with neither.
+        let empty = try Fixtures.decode(ProgramResponse.self, #"{"start": "2026-11-09", "days": [], "visits": [], "rest_days": []}"#)
+        XCTAssertFalse(empty.hasMarks)
+        // Something else in their place does not sink the program.
+        let odd = try Fixtures.decode(ProgramResponse.self, #"""
+        {"start": "2026-11-09", "days": [{"date": "2026-11-12", "items": [\#(Self.wallSits)]}],
+         "visits": {"on": "2026-11-14"}, "rest_days": "sunday"}
+        """#)
+        XCTAssertEqual(odd.visits, [])
+        XCTAssertEqual(odd.restDays, [])
+        XCTAssertEqual(odd.days.count, 1)
     }
 
     func testTheProgram() throws {

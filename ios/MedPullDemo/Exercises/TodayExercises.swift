@@ -6,6 +6,11 @@ import SwiftUI
 /// `TodayView` places this view there in the demo target only
 /// (`#if DEMO_APP` in ios/MedPull/Features/Today/TodayView.swift).
 ///
+/// Two lines come from the clinic's between-visits record (docs/dev/pt.md):
+/// "Rest day", with the therapist's note, under the title when the clinic
+/// set today aside, and the next visit to the clinic as the card's last
+/// line. Neither makes a card appear where there was none.
+///
 /// A person with no exercise calendar gets no card at all, so their Today
 /// reads exactly as it does in the real app; a rest day inside a scheduled
 /// week does show, so nothing looks missing. The reading, the ten-second
@@ -32,6 +37,13 @@ struct TodayExercises: View {
                 CardTitleRow("Today’s exercises",
                              note: feed.items.isEmpty ? nil : "\(done) of \(feed.items.count) done",
                              actionTitle: "Calendar") { app.selectedTab = .calendar }
+                // A rest day the clinic set on purpose is said first, with
+                // the therapist's note: it frames whatever is listed under it.
+                if let rest = feed.restDay {
+                    DayFactLine(symbol: DayFact.restSymbol, lead: "Rest day",
+                                facts: rest.note.isEmpty ? [] : [ExerciseWords.typeset(rest.note)])
+                        .padding(.horizontal, 16).padding(.bottom, 8)
+                }
                 if ordered.isEmpty && feed.overdue.isEmpty {
                     EmptyRow(icon: "figure.strengthtraining.functional", title: "Nothing today",
                              detail: Self.restDayLine(feed))
@@ -56,6 +68,14 @@ struct TodayExercises: View {
                         .mpFont(.label).foregroundStyle(MP.muted)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 14)
+                }
+                // The next visit to the clinic closes the card: after today,
+                // this is what is coming.
+                if let visit = feed.nextVisit {
+                    InsetDivider(leading: 16)
+                    DayFactLine(symbol: DayFact.visitSymbol, lead: "Next visit",
+                                facts: ExerciseWords.visitFacts(visit, today: today))
+                        .padding(.horizontal, 16).padding(.vertical, 12)
                 }
             }
             .clipShape(MP.surfaceShape)
@@ -88,12 +108,15 @@ struct TodayExercises: View {
         return list.prefix(1).uppercased() + list.dropFirst() + "."
     }
 
-    /// "A rest day. Your next exercises are on Wednesday."
+    /// "A rest day. Your next exercises are on Wednesday." A rest day the
+    /// clinic set has its own line above this one, so then only what comes
+    /// next is said.
     static func restDayLine(_ feed: ExercisesResponse) -> String {
+        let opening = feed.restDay == nil ? "A rest day. " : ""
         if let next = feed.week.first(where: { $0.date > feed.date && $0.assigned > 0 }) {
-            return "A rest day. Your next exercises are on \(ExerciseWords.weekday(next.date))."
+            return "\(opening)Your next exercises are on \(ExerciseWords.weekday(next.date))."
         }
-        return "A rest day. New exercises from your therapist show up here."
+        return "\(opening)New exercises from your therapist show up here."
     }
 }
 

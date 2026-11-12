@@ -128,6 +128,8 @@ struct ExerciseScreen: View {
                 Text("Aim for effort \(target)/10\(MP.dot)\(ExerciseWords.effort(target).lowercased())")
                     .mpFont(.copy).foregroundStyle(MP.muted)
             }
+            // Her ceiling on the dose, right under it.
+            if a.hasCeiling { DoseCeiling(a: a).padding(.vertical, 2) }
             if let name = a.assignedByName, !name.isEmpty {
                 Text("From \(name)").mpFont(.copy).foregroundStyle(MP.muted)
             }
@@ -162,6 +164,7 @@ struct ExerciseScreen: View {
         if let target = a.rpeTarget {
             rows.append(("Effort to aim for", "\(target)/10\(MP.dot)\(ExerciseWords.effort(target).lowercased())"))
         }
+        if a.hasCeiling { rows.append(("Limit", ExerciseWords.typeset(a.ceiling))) }
         rows.append(("Equipment", a.equipment.isEmpty ? "None needed" : a.equipment))
         if a.videoRequirement != .off {
             rows.append(("A clip of you doing it", a.videoRequirement == .required ? "Asked for" : "If you like"))

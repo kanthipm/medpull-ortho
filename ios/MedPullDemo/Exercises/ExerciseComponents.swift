@@ -196,6 +196,75 @@ struct TherapistNote: View {
     }
 }
 
+/// The ceiling the therapist put on a dose, in the sentence the server
+/// built from it ("Stop at RPE 8 · do not exceed 30 lb"), wherever the dose
+/// is shown. It is her limit in her words, so it is set like the rest of
+/// what she says (sage on the sage tint) and never as a warning. Draws
+/// nothing when she set none.
+struct DoseCeiling: View {
+    let a: ExerciseAssignment
+
+    var body: some View {
+        if a.hasCeiling {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Image(systemName: "arrow.up.to.line")
+                    .font(.system(size: 11, weight: .semibold))
+                    .accessibilityHidden(true)
+                Text(ExerciseWords.typeset(a.ceiling)).mpFont(.copyMedium)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+            }
+            .foregroundStyle(MP.brandInk)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(MP.thumbShape.fill(MP.brandTint))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(spoken)
+        }
+    }
+
+    /// "Dr. Gregg’s limit: Stop at RPE 8 · do not exceed 30 lb".
+    private var spoken: String {
+        let whose = ExerciseWords.therapist(a.assignedByName)
+        return "\(whose.prefix(1).uppercased())\(whose.dropFirst())’s limit: \(a.ceiling)"
+    }
+}
+
+// MARK: - Visits and rest days
+
+/// The two things the clinic puts on a day besides exercises: a visit to
+/// the clinic and a rest day set on purpose. One symbol each, wherever they
+/// are drawn (Today's card, the calendar's strip, its day card).
+enum DayFact {
+    static let visitSymbol = "calendar"
+    static let restSymbol = "moon.fill"
+}
+
+/// One quiet line about a day inside a card: a small sage symbol, the
+/// fact's name in ink and what follows it in the muted ink ("Next visit ·
+/// Test day · Sat, Nov 14 · 9:30 AM", "Rest day · Deload.").
+struct DayFactLine: View {
+    let symbol: String
+    let lead: String
+    var facts: [String] = []
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(MP.brandInk)
+                .frame(width: 14)
+                .accessibilityHidden(true)
+            (Text(lead).font(.labelMedium).foregroundStyle(MP.ink)
+                + Text(facts.map { MP.dot + $0 }.joined()).foregroundStyle(MP.muted))
+                .mpFont(.label)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// The steps, numbered, as the library wrote them.
 struct StepsCard: View {
     let a: ExerciseAssignment

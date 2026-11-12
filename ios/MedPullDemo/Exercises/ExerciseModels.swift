@@ -12,7 +12,8 @@ import Foundation
 // never heard of is ignored, a missing one gets its default, and one field of
 // an unexpected type does not sink the row: the calendar's server side is
 // still growing (a `state` on every row, `series_id`, the clinic's
-// `load_unit`).
+// `load_unit`, and since the clinic's between-visits record, docs/dev/pt.md:
+// a ceiling on a dose, the clinic's visits and the rest days it sets).
 
 // MARK: - What the therapist asks for
 
@@ -249,6 +250,15 @@ struct ExerciseAssignment: Decodable, Identifiable, Hashable {
     let loadKg: Double?
     /// The effort she is aiming for, 0 to 10.
     let rpeTarget: Int?
+    /// The ceiling she put on the dose, as the server words it in the
+    /// clinic's own unit ("Stop at RPE 8 · do not exceed 30 lb"). Empty when
+    /// she set none, and on a server that does not send one.
+    let ceiling: String
+    /// The two figures behind that sentence: the most load, in kilograms
+    /// like `loadKg`, and the most effort, 0 to 10. The screens show her
+    /// sentence, not these.
+    let loadMaxKg: Double?
+    let rpeMax: Int?
     let videoRequirement: Requirement
     let wearableRequirement: Requirement
     let session: ExerciseSession?
@@ -256,7 +266,7 @@ struct ExerciseAssignment: Decodable, Identifiable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case id, exerciseId, title, steps, equipment, precautions, scheduledFor, sortOrder
         case sets, reps, holdSeconds, side, sideLabel, dose, clinicianInstructions, assignedByName
-        case status, video, completion, skipReason, loadKg, rpeTarget
+        case status, video, completion, skipReason, loadKg, rpeTarget, ceiling, loadMaxKg, rpeMax
         case videoRequirement, wearableRequirement, session
     }
 
@@ -284,6 +294,9 @@ struct ExerciseAssignment: Decodable, Identifiable, Hashable {
         skipReason = c.lenient(String.self, .skipReason)
         loadKg = c.lenient(Double.self, .loadKg)
         rpeTarget = c.lenientInt(.rpeTarget)
+        ceiling = (c.lenient(String.self, .ceiling) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        loadMaxKg = c.lenient(Double.self, .loadMaxKg)
+        rpeMax = c.lenientInt(.rpeMax)
         videoRequirement = Requirement(wire: c.lenient(String.self, .videoRequirement))
         wearableRequirement = Requirement(wire: c.lenient(String.self, .wearableRequirement))
         session = c.lenient(ExerciseSession.self, .session)
@@ -293,6 +306,8 @@ struct ExerciseAssignment: Decodable, Identifiable, Hashable {
     var isDone: Bool { status == "done" }
     var isSkipped: Bool { status == "skipped" }
     var hasSide: Bool { !sideLabel.isEmpty && side != "not_applicable" }
+    /// Whether the therapist put a ceiling on this dose.
+    var hasCeiling: Bool { !ceiling.isEmpty }
 
     /// Whether a set is one timed hold (Wall Sits, 3 × 30 s) rather than a
     /// count of reps: the session then times the hold and has no rest
@@ -372,6 +387,60 @@ struct ExerciseClinic: Decodable, Hashable {
     }
 }
 
+/// A visit to the clinic that is on the person's calendar: the day, the
+/// time when one was set, and what kind it is in the clinic's own word
+/// ("Visit", "Evaluation", "Test day").
+struct ClinicVisit: Decodable, Hashable {
+    /// "yyyy-MM-dd".
+    let on: String
+    /// "HH:mm" on a 24-hour clock; nil when the clinic set no time.
+    let at: String?
+    /// visit | evaluation | test_day
+    let kind: String
+    let kindLabel: String
+
+    private enum CodingKeys: String, CodingKey { case on, at, kind, kindLabel }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // A visit with no day cannot be put anywhere.
+        on = try c.decode(String.self, forKey: .on)
+        let time = c.lenient(String.self, .at)
+        at = (time ?? "").isEmpty ? nil : time
+        kind = c.lenient(String.self, .kind) ?? "visit"
+        let label = c.lenient(String.self, .kindLabel) ?? ""
+        // A server that names the kind and not its label: "test_day" reads
+        // "Test day".
+        let words = kind.replacingOccurrences(of: "_", with: " ")
+        kindLabel = label.isEmpty ? words.prefix(1).uppercased() + words.dropFirst() : label
+    }
+
+    /// Whether the label says more than "a visit" does. "Next visit · Visit"
+    /// would say it twice.
+    var isPlainVisit: Bool { kindLabel.caseInsensitiveCompare("Visit") == .orderedSame }
+}
+
+/// A day the clinic set aside for rest on purpose, with the therapist's
+/// note when she left one ("Deload."). `day` is nil on today's feed, which
+/// is about its own date; the program's list names each day.
+struct RestDay: Decodable, Hashable {
+    let day: String?
+    let note: String
+
+    private enum CodingKeys: String, CodingKey { case day, note }
+
+    init(day: String? = nil, note: String) {
+        self.day = day
+        self.note = note
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        day = c.lenient(String.self, .day)
+        note = (c.lenient(String.self, .note) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 /// `GET /api/mobile/exercises?date=`: the day's exercises in order, the ones
 /// still open from the week before it, and a seven-day strip around it.
 struct ExercisesResponse: Decodable, Equatable {
@@ -381,8 +450,13 @@ struct ExercisesResponse: Decodable, Equatable {
     var overdue: [ExerciseAssignment]
     var week: [ExerciseDay]
     let clinic: ExerciseClinic?
+    /// Set when the clinic made today a rest day; nil on any other day and
+    /// on a server that does not say.
+    var restDay: RestDay?
+    /// The next visit to the clinic, when one is booked.
+    let nextVisit: ClinicVisit?
 
-    private enum CodingKeys: String, CodingKey { case date, items, overdue, week, clinic }
+    private enum CodingKeys: String, CodingKey { case date, items, overdue, week, clinic, restDay, nextVisit }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -391,6 +465,8 @@ struct ExercisesResponse: Decodable, Equatable {
         overdue = c.lenientList(ExerciseAssignment.self, .overdue)
         week = c.lenientList(ExerciseDay.self, .week)
         clinic = c.lenient(ExerciseClinic.self, .clinic)
+        restDay = c.lenient(RestDay.self, .restDay)
+        nextVisit = c.lenient(ClinicVisit.self, .nextVisit)
     }
 
     /// Whether Today shows the schedule at all: a person with no schedule
@@ -432,18 +508,38 @@ struct ProgramResponse: Decodable, Equatable {
     let start: String
     var days: [ProgramDay]
     let clinic: ExerciseClinic?
+    /// The clinic visits inside the window; empty on a server that sends
+    /// none.
+    let visits: [ClinicVisit]
+    /// The rest days the clinic set inside the window, each with its day.
+    let restDays: [RestDay]
 
-    private enum CodingKeys: String, CodingKey { case start, days, clinic }
+    private enum CodingKeys: String, CodingKey { case start, days, clinic, visits, restDays }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         start = c.lenient(String.self, .start) ?? ""
         days = c.lenientList(ProgramDay.self, .days)
         clinic = c.lenient(ExerciseClinic.self, .clinic)
+        visits = c.lenientList(ClinicVisit.self, .visits)
+        restDays = c.lenientList(RestDay.self, .restDays).filter { !($0.day ?? "").isEmpty }
     }
 
     /// Whether there is a program to show: any exercise on any of the days.
+    /// A visit or a rest day alone is not one.
     var hasProgram: Bool { days.contains { !$0.items.isEmpty || $0.assigned > 0 } }
+
+    /// Whether any day of the window carries a visit or a set rest day.
+    var hasMarks: Bool { !visits.isEmpty || !restDays.isEmpty }
+
+    /// The clinic visits on a day ("yyyy-MM-dd"), the earliest first and
+    /// one with no time last.
+    func visits(on day: String) -> [ClinicVisit] {
+        visits.filter { $0.on == day }.sorted { ($0.at ?? "99") < ($1.at ?? "99") }
+    }
+
+    /// The rest day the clinic set on a day, if it set one.
+    func restDay(on day: String) -> RestDay? { restDays.first { $0.day == day } }
 }
 
 /// The start, complete and skip routes answer `{"assignment": {…}}`; a bare
@@ -575,6 +671,48 @@ enum ExerciseWords {
     /// writes between facts get the thin spaces Outfit needs around them
     /// (`MP.dot`), and straight apostrophes are curled.
     static func typeset(_ text: String) -> String { text.demoTypeset }
+
+    // MARK: Visits and rest days
+
+    /// "9:30 AM" (or "09:30" on a phone set to the 24-hour clock) for a
+    /// visit's "09:30" on its day. Nil when the clinic set no time, or sent
+    /// something that is not one.
+    static func visitTime(_ visit: ClinicVisit) -> String? {
+        guard let at = visit.at, let day = Dates.parse(visit.on) else { return nil }
+        let parts = at.split(separator: ":").map { Int($0) }
+        guard parts.count >= 2, let hour = parts[0], let minute = parts[1],
+              (0..<24).contains(hour), (0..<60).contains(minute),
+              let when = Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: day)
+        else { return nil }
+        return when.formatted(.dateTime.hour().minute())
+    }
+
+    /// "Sat, Nov 14" for a visit's day, or "Today" and "Tomorrow" when it
+    /// is that close.
+    static func visitDay(_ day: String, today: String) -> String {
+        if let from = Dates.parse(today), let to = Dates.parse(day) {
+            switch Calendar.current.dateComponents([.day], from: from, to: to).day {
+            case 0: return "Today"
+            case 1: return "Tomorrow"
+            default: break
+            }
+        }
+        return "\(Dates.shortDay(day)), \(Dates.monthDay(day))"
+    }
+
+    /// What follows "Next visit" on Today's one line about it: "Test day",
+    /// "Sat, Nov 14", "9:30 AM". The kind is left out when it is a plain
+    /// visit, and the time when the clinic set none.
+    static func visitFacts(_ visit: ClinicVisit, today: String) -> [String] {
+        [visit.isPlainVisit ? nil : visit.kindLabel.typeset, visitDay(visit.on, today: today), visitTime(visit)]
+            .compactMap { $0 }
+    }
+
+    /// "Test day 9:30 AM", "Visit": the marker on a visit's own day in the
+    /// calendar.
+    static func visitMarker(_ visit: ClinicVisit) -> String {
+        [visit.kindLabel.typeset, visitTime(visit)].compactMap { $0 }.joined(separator: " ")
+    }
 }
 
 extension KeyedDecodingContainer {
