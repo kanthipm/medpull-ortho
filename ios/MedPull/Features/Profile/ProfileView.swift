@@ -305,14 +305,6 @@ struct ProfileView: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// "1.0 (20261029)", as the App Store and TestFlight print it.
-    static var versionLine: String {
-        let info = Bundle.main.infoDictionary ?? [:]
-        let short = info["CFBundleShortVersionString"] as? String ?? "?"
-        let build = info["CFBundleVersion"] as? String ?? "?"
-        return "\(short) (\(build))"
-    }
-
     private func actionRow(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -324,17 +316,7 @@ struct ProfileView: View {
         .buttonStyle(.mpRow)
     }
 
-    /// "2026-08-28" -> "Aug 28, 2026" in the reader's locale. A string that
-    /// is not an ISO day comes back unchanged.
-    static func displayDate(_ iso: String) -> String {
-        let parser = DateFormatter()
-        parser.calendar = Calendar(identifier: .gregorian)
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.timeZone = .current
-        parser.dateFormat = "yyyy-MM-dd"
-        guard let date = parser.date(from: String(iso.prefix(10))) else { return iso }
-        return date.formatted(.dateTime.month(.abbreviated).day().year())
-    }
+    // `versionLine` and `displayDate` are in ProfileFormatting.swift.
 
     private func saveServer() {
         if let url = URL(string: serverURL.trimmingCharacters(in: .whitespaces)), url.scheme != nil {
