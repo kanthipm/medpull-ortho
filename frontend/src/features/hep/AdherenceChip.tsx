@@ -62,7 +62,7 @@ export function ReviewDot({ className = '' }: { className?: string }) {
 export function AwaitingReview({ count, className = '' }: { count: number; className?: string }) {
   if (count <= 0) return null
   return (
-    <span className={`inline-flex items-center gap-1.5 text-label text-risk-med-ink ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-label text-risk-med-ink ${className}`}>
       <ReviewDot />
       {count} to review
     </span>

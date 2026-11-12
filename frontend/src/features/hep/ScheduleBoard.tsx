@@ -231,6 +231,9 @@ export default function ScheduleBoard({
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {!dense && (
             <>
+              {/* The unit is the clinic's: shown once the clinic is known, so
+                  it never opens on one unit and settles on the other. */}
+              {clinic && (
               <SegmentedControl<LoadUnit>
                 options={[
                   { key: 'lb', label: 'lb', text: 'Pounds' },
@@ -243,6 +246,7 @@ export default function ScheduleBoard({
                 role="radiogroup"
                 aria-label="Unit loads are read in"
               />
+              )}
               <SegmentedControl<View>
                 options={[
                   { key: 'week', label: 'Week' },

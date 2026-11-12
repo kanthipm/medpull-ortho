@@ -890,6 +890,22 @@ export function useDemoPatientSession() {
   })
 }
 
+/** POST /api/demo/reset-day — a persona's exercise day put back so a
+ *  walkthrough can be run again: today's rows reopened, and the lines
+ *  today's completions and reviews wrote taken off the thread. Demo stack
+ *  only, and only for a generated persona. */
+export function useResetDemoDay() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (personaId: string) =>
+      fetchJson<Record<string, number>>('/api/demo/reset-day', {
+        method: 'POST',
+        body: JSON.stringify({ persona_id: personaId }),
+      }),
+    onSuccess: () => invalidateSchedule(qc),
+  })
+}
+
 // --- review, copy-week, programs -------------------------------------------------
 //
 // The second pass (docs/dev/hep-schedule.md): what the patient sent back

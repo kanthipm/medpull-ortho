@@ -1,11 +1,12 @@
-import { ChevronLeft, ChevronRight, RefreshCw, Smartphone } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RefreshCw, RotateCcw, Smartphone } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import type { DemoPatientSession } from '../../api/hep'
-import { useDemoPatientSession, useHepOptions } from '../../api/hep'
+import { useDemoPatientSession, useHepOptions, useResetDemoDay } from '../../api/hep'
 import { useHealth } from '../../api/queries'
 import { SkeletonCard } from '../../components/Skeleton'
+import { useToast } from '../../components/Toast'
 import ScheduleBoard from './ScheduleBoard'
 import { CALENDAR } from './paths'
 
@@ -49,6 +50,8 @@ interface Frame {
 function DemoScreen() {
   const options = useHepOptions()
   const session = useDemoPatientSession()
+  const reset = useResetDemoDay()
+  const toast = useToast()
   const [patientId, setPatientId] = useState('')
   const [frame, setFrame] = useState<Frame | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -83,6 +86,19 @@ function DemoScreen() {
               ? e.message
               : 'The phone could not be signed in',
         ),
+    })
+  }
+
+  // Put the lifter's day back the way the therapist laid it out, so the
+  // walkthrough can be run again: the phone is reloaded to show it.
+  const resetDay = () => {
+    if (!frame) return
+    reset.mutate(frame.patient.id, {
+      onSuccess: () => {
+        toast(`${frame.patient.name.split(' ')[0]}’s day is back as it was laid out`, 'info')
+        setFrame({ ...frame, nonce: Date.now() })
+      },
+      onError: (e) => toast(e instanceof ApiError && e.message ? e.message : 'The day could not be reset', 'warning'),
     })
   }
 
@@ -130,6 +146,15 @@ function DemoScreen() {
               onClick={() => frame && setFrame({ ...frame, nonce: Date.now() })}
             >
               <RefreshCw aria-hidden size={16} />
+            </button>
+            <button
+              type="button"
+              className="btn-gray btn-sm"
+              disabled={!frame || reset.isPending}
+              title="Reopen today’s exercises and take today’s completions off the thread"
+              onClick={resetDay}
+            >
+              <RotateCcw aria-hidden size={14} /> {reset.isPending ? 'Resetting…' : 'Reset the day'}
             </button>
           </div>
           <p className="meta mt-1.5 min-h-[1.25rem] px-1" role="status">
