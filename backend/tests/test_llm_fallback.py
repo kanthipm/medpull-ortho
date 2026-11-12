@@ -285,6 +285,25 @@ def test_the_briefing_is_told_a_lifter_is_on_a_program_not_post_op(db, groq_conf
         db.commit()
 
 
+def test_the_rule_written_line_keeps_whole_reasons():
+    from app.llm import fallback
+
+    def line(*texts: str) -> str:
+        reasons = [{"code": f"R{i}", "text": t} for i, t in enumerate(texts)]
+        return fallback.worklist_reason({"risk": {"reasons": reasons}})["reason"]
+
+    load = "Training load 1.6× its recent average — too much, too soon"
+    pain = "Pain up 2 points on the week before (4 → 6)"
+    assert line(load, pain) == f"{load} · {pain}"  # 103 characters: both, whole
+    long_second = "Pain up 2 points on the week before, and the swelling he reported is new"
+    assert line(load, long_second) == load  # the second does not fit: left off, not cut
+    only = "word " * 40
+    cut = line(only)
+    assert len(cut) <= fallback.REASON_LIMIT and cut.endswith("word…")
+    assert line(load, pain, "A third is never added") == f"{load} · {pain}"
+    assert line() == "Recovery tracking as expected"
+
+
 def test_warm_briefing_costs_no_per_patient_lookups(db, monkeypatch):
     """The briefing used to build its roster BEFORE consulting its own cache,
     so a cache hit still cost one insight lookup per patient."""

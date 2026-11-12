@@ -11,7 +11,7 @@ from typing import Any
 from app.models.enums import GUARDRAIL_SENTENCE, InsightKind
 
 # Bump to invalidate cached insights when prompt wording changes.
-PROMPT_VERSION = "3"
+PROMPT_VERSION = "4"
 
 # Shared writing rules. Every prompt that produces prose a person will read
 # includes one of these two blocks, so the product speaks with one voice.

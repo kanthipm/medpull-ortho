@@ -113,12 +113,29 @@ def _reason_texts(reasons: list[dict[str, Any]], limit: int) -> list[str]:
     return [_reason_text(r) for r in reasons[:limit]]
 
 
+# The longest line a worklist row carries: the ceiling the model's own line
+# is held to (insights._validate).
+REASON_LIMIT = 110
+
+
 def worklist_reason(analytics: dict[str, Any]) -> dict[str, str]:
     """The one-line scan text. Shorthand on purpose — it is read in a second
-    on a list — so it keeps the engine's fragments joined by dots."""
+    on a list — so it keeps the engine's fragments joined by dots.
+
+    Whole reasons only: the second is left off when the two do not fit,
+    never cut in half ("… · Pain up 2 points on the week" said nothing about
+    which week). One reason too long on its own ends at a word, with an
+    ellipsis."""
     reasons = analytics.get("risk", {}).get("reasons", [])
-    text = " · ".join(_reason_texts(reasons, 2)) or "Recovery tracking as expected"
-    return {"reason": text[:90]}
+    kept: list[str] = []
+    for text in _reason_texts(reasons, 2):
+        if kept and len(" · ".join([*kept, text])) > REASON_LIMIT:
+            break
+        kept.append(text)
+    line = " · ".join(kept) or "Recovery tracking as expected"
+    if len(line) > REASON_LIMIT:
+        line = line[:REASON_LIMIT - 1].rsplit(" ", 1)[0].rstrip(" ·—,;:") + "…"
+    return {"reason": line}
 
 
 # --- the hallway summary ----------------------------------------------------------
