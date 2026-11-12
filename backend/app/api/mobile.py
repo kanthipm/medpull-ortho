@@ -1424,6 +1424,13 @@ def portfolio(
     engine stores for them, the latest value and a daily series over the
     window. Metric names the enum does not know (another module's additions
     not yet deployed) are skipped rather than failing the whole call."""
+    return portfolio_for(db, patient.observations_from or patient.id, days)
+
+
+def portfolio_for(db: Session, owner_id: str, days: int = 14) -> dict:
+    """The portfolio of the row that owns the wearable stream (``owner_id``:
+    the patient, or the chart a paired personal space reads through). The
+    console's Personal pages read a demo member's signals through this too."""
     days = max(3, min(days, 90))
     since = date.today() - timedelta(days=days - 1)
     wanted = []
@@ -1434,7 +1441,7 @@ def portfolio(
             continue
     rows = db.scalars(
         select(Observation).where(
-            Observation.patient_id == (patient.observations_from or patient.id),
+            Observation.patient_id == owner_id,
             Observation.metric_type.in_([m for m, *_ in wanted]),
             Observation.local_date >= since,
             Observation.deleted_at.is_(None),

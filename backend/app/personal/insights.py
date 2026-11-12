@@ -259,7 +259,8 @@ def _headline(digest: dict[str, Any]) -> str:
             clauses.append(f"HRV {value:.0f} vs {hrv['baseline_mean']:.0f} usual")
     sleep = digest.get("sleep") or {}
     if sleep.get("status") in ("watch", "flag") and sleep.get("performance") is not None:
-        clauses.append(f"sleep {sleep['performance']:.0f}% of need")
+        # ``performance`` is a fraction of need (0.95), as the panel holds it.
+        clauses.append(f"sleep {sleep['performance'] * 100:.0f}% of need")
     load = digest.get("load") or {}
     if load.get("status") in ("watch", "flag") and load.get("acwr") is not None:
         clauses.append(f"load {load['acwr']:.2f}× chronic")
@@ -409,3 +410,57 @@ def _view(row: Insight) -> dict[str, Any]:
         "provider": row.llm_provider,
         "generated_at": row.generated_at.isoformat() if row.generated_at else None,
     }
+
+
+# --- reading without writing ------------------------------------------------------------
+#
+# ``get_brief`` and ``get_deep_dive`` persist what they produce and archive
+# it, which is right for the person's own phone and wrong for a console read
+# (a GET there must not commit: on AWS a commit re-uploads the database).
+# The two peeks below answer from what is already stored for today's
+# numbers and otherwise render the deterministic text in memory. They never
+# call a model and never write.
+
+
+def _stored(db: Session, patient_id: str, kind: InsightKind, domain: str | None,
+            dashboard: dict[str, Any]) -> Insight | None:
+    """The row ``get_brief`` / ``get_deep_dive`` would serve from cache for
+    this dashboard: the model's when one is configured and has written it,
+    else the deterministic one."""
+    today = date.fromisoformat(dashboard["as_of"])
+    learning = (dashboard["digest"].get("verdict") or {}).get("kind") == "unknown"
+    providers = ["fallback"] if learning else list(dict.fromkeys((provider_name(), "fallback")))
+    for provider in providers:
+        cache_hash = _key(patient_id, kind, domain, dashboard["fingerprint"], provider, today)
+        row = db.scalar(
+            select(Insight)
+            .where(Insight.patient_id == patient_id, Insight.kind == kind,
+                   Insight.input_hash == cache_hash)
+            .order_by(Insight.id.desc())
+            .limit(1)
+        )
+        if row is not None and (domain is None or row.content.get("domain") == domain):
+            return row
+    return None
+
+
+def peek_brief(db: Session, patient, dashboard: dict[str, Any]) -> dict[str, Any]:
+    """Today's brief, read-only: the stored one for these numbers when there
+    is one, else the deterministic brief (``generated_at`` is then None)."""
+    row = _stored(db, patient.id, InsightKind.PERSONAL_BRIEF, None, dashboard)
+    if row is not None:
+        return _view(row)
+    return {**fallback_brief(dashboard["digest"]), "guardrail": PERSONAL_GUARDRAIL_SENTENCE,
+            "provider": "fallback", "generated_at": None}
+
+
+def peek_deep_dive(db: Session, patient, dashboard: dict[str, Any], domain: str) -> dict[str, Any]:
+    """One deep dive, read-only, under the same rule as ``peek_brief``."""
+    if domain not in DOMAINS:
+        raise ValueError(f"Unknown domain {domain!r}")
+    row = _stored(db, patient.id, InsightKind.PERSONAL_DEEP, domain, dashboard)
+    if row is not None:
+        return _view(row)
+    return {**fallback_deep(dashboard["digest"], domain), "domain": domain,
+            "guardrail": PERSONAL_GUARDRAIL_SENTENCE, "provider": "fallback",
+            "generated_at": None}

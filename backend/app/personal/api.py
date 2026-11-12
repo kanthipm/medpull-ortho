@@ -715,6 +715,13 @@ def _care_section(db: Session, patient: Patient, profile: PersonalProfile) -> di
     except Exception:  # noqa: BLE001 — the readouts stand without this section
         logger.exception("care metrics failed for personal %s", patient.id)
         return None
+    return care_view(assessment)
+
+
+def care_view(assessment: Any) -> dict[str, Any]:
+    """The care section's shape, from an assessment already on file. Apart
+    from ``_care_section`` so a read that must not recompute (the console's
+    Personal pages) can pass the stored row."""
     care = (assessment.analytics or {}).get("care_metrics") or {}
     metrics = [m for m in care.get("metrics", []) if m.get("applicable", True)]
     headline = care.get("headline", [])
@@ -826,10 +833,23 @@ def export_data(request: Request, patient: Patient = Depends(personal_patient),
     """Everything this account holds, as one JSON document. Written to the
     personal bucket with a short-lived link where there is one; returned
     inline otherwise."""
-    from app.models.observation import Observation
     from app.storage import blobs
 
-    profile = _profile(db, patient)
+    bundle = export_bundle(db, patient, _profile(db, patient))
+    payload = json.dumps(bundle, default=str).encode()
+    if blobs.enabled_s3():
+        key = f"{blobs.PERSONAL_PREFIX}/{patient.id}/exports/{datetime.now():%Y%m%dT%H%M%S}.json"
+        blobs.put_json(key, payload)
+        url = blobs.download_url(key, "application/json", "medpull-export.json")
+        return {"url": url, "bytes": len(payload), "expires_in": blobs.DOWNLOAD_TTL_S}
+    return {"url": None, "bytes": len(payload), "data": bundle}
+
+
+def export_bundle(db: Session, patient: Patient, profile: PersonalProfile) -> dict[str, Any]:
+    """The export document itself: read-only, no storage. The console's
+    Personal pages return a demo member's inline through this."""
+    from app.models.observation import Observation
+
     data = load_personal_data(db, patient)
     board = compute_dashboard(data, patient, profile)
     since = date.today() - timedelta(days=365)
@@ -840,7 +860,7 @@ def export_data(request: Request, patient: Patient = Depends(personal_patient),
                Observation.local_date >= since, Observation.deleted_at.is_(None))
         .order_by(Observation.local_date)
     ).all()
-    bundle = {
+    return {
         "exported_at": datetime.now().isoformat(),
         "account": {"id": patient.id, "name": patient.name, "created_at":
                     patient.created_at.isoformat() if patient.created_at else None},
@@ -855,10 +875,3 @@ def export_data(request: Request, patient: Patient = Depends(personal_patient),
             for d, m, v, u, p in observations
         ],
     }
-    payload = json.dumps(bundle, default=str).encode()
-    if blobs.enabled_s3():
-        key = f"{blobs.PERSONAL_PREFIX}/{patient.id}/exports/{datetime.now():%Y%m%dT%H%M%S}.json"
-        blobs.put_json(key, payload)
-        url = blobs.download_url(key, "application/json", "medpull-export.json")
-        return {"url": url, "bytes": len(payload), "expires_in": blobs.DOWNLOAD_TTL_S}
-    return {"url": None, "bytes": len(payload), "data": bundle}
