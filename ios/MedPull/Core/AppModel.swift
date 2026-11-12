@@ -54,7 +54,13 @@ final class AppModel {
     /// The four tabs of a hospital record (Today, Progress, Measure, Care)
     /// and the three of a personal space (Today, Trends, Coach): the
     /// personal space reuses `progress` for Trends and `care` for Coach.
-    enum Tab: Hashable { case today, progress, measure, care, recovery, rehab }
+    enum Tab: Hashable {
+        case today, progress, measure, care, recovery, rehab
+        #if DEMO_APP
+        /// The demo app's exercise calendar (ios/MedPullDemo/Exercises).
+        case calendar
+        #endif
+    }
 
     /// Whether the signed-in row is a subscriber's own space.
     var isPersonal: Bool { me?.isPersonal ?? false }

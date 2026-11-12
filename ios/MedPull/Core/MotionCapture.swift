@@ -1,7 +1,9 @@
 import CoreLocation
 import CoreMotion
 import Foundation
+#if !DEMO_APP
 import HealthKit
+#endif
 import Observation
 
 /// Records what the backend's mobility engine needs from one walk: device
@@ -166,6 +168,11 @@ final class MotionCapture {
     /// The most recent height in Health, for the step-length model. Absent
     /// (never recorded, or not shared) the Measure screen asks for it once.
     static func healthHeightCm() async -> Double? {
+        #if DEMO_APP
+        // The demo app has no Health entitlement and does not link
+        // HealthKit: the Measure screen asks for the height instead.
+        return nil
+        #else
         guard HKHealthStore.isHealthDataAvailable(),
               let type = HKObjectType.quantityType(forIdentifier: .height) else { return nil }
         let store = HKHealthStore()
@@ -176,6 +183,7 @@ final class MotionCapture {
         guard let sample = try? await descriptor.result(for: store).first else { return nil }
         let cm = sample.quantity.doubleValue(for: .meterUnit(with: .centi))
         return (100...250).contains(cm) ? cm : nil
+        #endif
     }
 }
 

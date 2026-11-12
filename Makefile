@@ -1,6 +1,6 @@
 .PHONY: setup seed dev dev-backend dev-frontend dev-patient-web build build-patient-web run test lint clean \
         deploy deploy-backend reseed destroy deploy-demo deploy-demo-backend reseed-demo destroy-demo \
-        audit-compartments ios ios-build openapi android-build android-test android-install
+        audit-compartments ios ios-build ios-demo-build ios-demo-test openapi android-build android-test android-install
 
 setup: ## Install backend (uv) and frontend (npm) dependencies
 	cd backend && uv sync
@@ -80,6 +80,14 @@ ios: ## Generate the Xcode project for the patient app (needs xcodegen) and open
 ios-build: ## Build the patient app for the iPhone simulator (CI-style, no signing)
 	cd ios && xcodegen generate && xcodebuild -project MedPull.xcodeproj -scheme MedPull \
 		-destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO build
+
+ios-demo-build: ## Build MedPull Demo, the showcase's phone, for the iPhone simulator (no signing; docs/dev/showcase/ios.md)
+	cd ios && xcodegen generate && xcodebuild -project MedPull.xcodeproj -scheme MedPullDemo \
+		-destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO build
+
+ios-demo-test: ## MedPull Demo's unit tests on the iPhone simulator (the demo contract's JSON, the exercise models)
+	cd ios && xcodegen generate && xcodebuild -project MedPull.xcodeproj -scheme MedPullDemo \
+		-destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO test
 
 # Android Studio's JDK unless JAVA_HOME is already set (CI sets it).
 ANDROID_JAVA_HOME ?= $(or $(JAVA_HOME),/c/Program Files/Android/Android Studio/jbr)

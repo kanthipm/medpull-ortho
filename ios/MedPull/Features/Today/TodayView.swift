@@ -39,6 +39,11 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     header.mpRise(0)
                     if let me = app.me { RecoveryHero(me: me) { app.selectedTab = .progress }.mpRise(1) }
+                    #if DEMO_APP
+                    // The demo app's exercises for today sit between the hero
+                    // and the plan (ios/MedPullDemo/Exercises).
+                    TodayExercises().id("exercises")
+                    #endif
                     planCard.mpRise(2).id("plan")
                     measureRow.mpRise(3).id("measure")
                     careRow.mpRise(4).id("care")
@@ -76,6 +81,11 @@ struct TodayView: View {
             .sheet(isPresented: $app.showConnections) { ConnectionsView() }
             .navigationDestination(item: $openTask) { task in TaskDestination(task: task) }
             .navigationDestination(isPresented: $showHistory) { TaskHistoryView() }
+            #if DEMO_APP
+            // What those exercises need whether or not their card is
+            // showing: the day's read, and the screen a row opens.
+            .todayExercisesHost()
+            #endif
             .onChange(of: app.pendingTaskId, initial: true) { _, id in openPending(id) }
             .onChange(of: app.tasks) { _, _ in openPending(app.pendingTaskId) }
             .mpCompletionFeedback(count: quickDone)
