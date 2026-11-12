@@ -17,11 +17,22 @@ from app.hep.models import (
     REGION_LABELS,
     AuditEvent,
     Exercise,
+    ExerciseAssignment,
     ExerciseMedia,
 )
 from app.models.hospital import Hospital
-from app.models.patient import Patient
+from app.models.patient import CareTeamMember, Patient
 from app.personal.scope import clinic_filter
+
+# Therapists who belong in a clinic's "assigned by" list before they carry a
+# patient of their own: the demo clinic's two.
+HOUSE_CARE_TEAM: dict[str, tuple[str, ...]] = {"hirt": ("ct_harris", "ct_gregg")}
+# Loads are stored in kilograms everywhere. A clinic that works in pounds
+# says so on its hospital row (``load_unit``); the numbers on the wire stay
+# kilograms and the clients convert them, with the factor and the rounding
+# ``load_text`` uses for the strings the server builds.
+LOAD_UNITS = ("kg", "lb")
+LB_PER_KG = 2.20462
 
 
 class HepError(ValueError):
@@ -59,6 +70,55 @@ def visible_to(exercise: Exercise, clinic: str) -> bool:
     return exercise.origin == "standard" or exercise.hospital_id == clinic
 
 
+def clinic_care_team(db: Session, clinic: str) -> list[dict[str, Any]]:
+    """Who can be named as having assigned a day at this clinic, by name:
+    the surgeons and providers on its clinic charts, anyone already named
+    on one of its calendar rows, and the house list for a clinic that has
+    one. Another clinic's staff are not in it."""
+    ids: set[str] = set(HOUSE_CARE_TEAM.get(clinic, ()))
+    for surgeon, provider in db.execute(clinic_filter(
+            select(Patient.surgeon_id, Patient.assigned_provider_id)
+            .where(Patient.hospital_id == clinic))).all():
+        ids.update(i for i in (surgeon, provider) if i)
+    ids.update(i for i in db.scalars(
+        select(ExerciseAssignment.assigned_by)
+        .where(ExerciseAssignment.hospital_id == clinic).distinct()).all() if i)
+    if not ids:
+        return []
+    members = db.scalars(
+        select(CareTeamMember).where(CareTeamMember.id.in_(ids))
+        .order_by(CareTeamMember.name, CareTeamMember.id)
+    ).all()
+    return [{"id": m.id, "name": m.name, "role": str(m.role)} for m in members]
+
+
+# --- the clinic's unit for loads --------------------------------------------------
+
+
+def load_unit_of(hospital: Hospital | None) -> str:
+    """``kg`` or ``lb``; a clinic that has not said reads in kilograms."""
+    unit = hospital.load_unit if hospital is not None else None
+    return unit if unit in LOAD_UNITS else "kg"
+
+
+def load_text(kg: float, unit: str = "kg") -> str:
+    """A load as its clinic reads it: "10 kg", or "22 lb" where the clinic
+    works in pounds. Pounds are shown to a tenth, which is as fine as the
+    two decimals of a kilogram the rows keep: 25 lb in comes back 25 lb."""
+    if unit == "lb":
+        return f"{round(float(kg) * LB_PER_KG, 1):g} lb"
+    return f"{float(kg):g} kg"
+
+
+def clinic_payload(db: Session, clinic: str | None) -> dict[str, Any] | None:
+    """Whose calendar it is and the unit it reads loads in: what every
+    schedule payload carries under ``clinic``."""
+    hospital = db.get(Hospital, clinic) if clinic else None
+    if hospital is None:
+        return None
+    return {"id": hospital.id, "name": hospital.name, "load_unit": load_unit_of(hospital)}
+
+
 # --- audit ----------------------------------------------------------------------
 
 
@@ -66,6 +126,21 @@ def audit(db: Session, clinic: str | None, actor: str, action: str, subject_type
           subject_id: int | str, detail: dict[str, Any] | None = None) -> None:
     db.add(AuditEvent(hospital_id=clinic, actor=actor or "provider", action=action,
                       subject_type=subject_type, subject_id=str(subject_id), detail=detail))
+
+
+def set_load_unit(db: Session, clinic: str, unit: str | None, *, actor: str) -> dict[str, Any]:
+    """The clinic chooses pounds or kilograms. Nothing stored changes but
+    the choice: every load stays in kilograms."""
+    unit = (unit or "").strip().lower()
+    if unit not in LOAD_UNITS:
+        raise HepError(f"The load unit is one of {', '.join(LOAD_UNITS)}")
+    hospital = db.get(Hospital, clinic)
+    if hospital is None:
+        raise HepError(f"Unknown clinic: {clinic}")
+    hospital.load_unit = unit
+    audit(db, clinic, actor, "clinic.update", "clinic", clinic, {"load_unit": unit})
+    db.commit()
+    return clinic_payload(db, clinic)
 
 
 # --- the library ----------------------------------------------------------------
