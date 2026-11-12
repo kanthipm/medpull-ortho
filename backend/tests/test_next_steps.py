@@ -141,6 +141,46 @@ def test_rules_overreach_gait_nights_coverage_adherence_disengagement(db, librar
     assert {"msg_personal_checkin", "send_checkin"} <= {s["key"] for s in disengaged}
 
 
+def test_a_slipping_calendar_gets_the_program_nudge_once(db, library, ledger):
+    """A chart on a clinic's own program: low adherence is the exercise
+    calendar's, so the step is the program nudge, and it is not doubled when
+    the check-ins already raised it."""
+    from sqlalchemy import delete
+
+    from app.models.enums import ProcedureType
+
+    aisha = db.get(Patient, "aisha")
+    lifter = Patient(
+        id="next-steps-lifter", name="Noa Lindqvist", initials="NL", age=31, sex="F",
+        procedure_type=ProcedureType.NONE, procedure_display="Low back · return to lifting",
+        surgery_date=aisha.surgery_date, discharge_date=aisha.discharge_date,
+        surgeon_id=aisha.surgeon_id, assigned_provider_id=aisha.assigned_provider_id,
+        hospital_id=aisha.hospital_id, care_pathway="Low back · return to lifting",
+    )
+    db.add(lifter)
+    db.commit()
+    try:
+        low = {"M14": ("flag", "Adherence low", "12% of exercise-days verified.")}
+        steps = _plan(db, lifter.id, _assessment([], metrics=low))
+        keys = [s["key"] for s in steps]
+        assert "msg_program_nudge" in keys
+        assert not {"msg_exercise_nudge", "open_plan"} & set(keys)
+        nudge = next(s for s in steps if s["key"] == "msg_program_nudge")
+        assert nudge["title"] == "Nudge the program" and "12% of exercise-days" in nudge["detail"]
+
+        both = _plan(db, lifter.id, _assessment(["PROGRAM_SLIPPING"], metrics=low))
+        nudges = [s for s in both if s["key"] == "msg_program_nudge"]
+        assert len(nudges) == 1 and "Program slipping" in nudges[0]["detail"]
+        assert not {"msg_exercise_nudge", "open_plan"} & {s["key"] for s in both}
+
+        # Anyone else keeps the care plan's two steps.
+        other = _plan(db, "aisha", _assessment([], metrics=low))
+        assert {"msg_exercise_nudge", "open_plan"} <= {s["key"] for s in other}
+    finally:
+        db.execute(delete(Patient).where(Patient.id == lifter.id))
+        db.commit()
+
+
 def test_rule_chronic_vitals(db, library):
     patient = db.get(Patient, "priya")
     patient.care_pathway = "heart_failure"

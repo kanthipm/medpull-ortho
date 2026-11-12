@@ -24,9 +24,17 @@ _SCORE = {str(AdherenceStatus.VERIFIED): 1.0, str(AdherenceStatus.SELF_ATTESTED)
 
 
 def m14(ctx: CareContext) -> CareMetric:
-    tasks = ctx.tasks
+    # Two things a person is asked to do count here: the care plan's tasks,
+    # and the exercises on the clinic's calendar (one row per exercise, a
+    # record per day it was set and is now over; loaders.exercise_outcome
+    # says what makes a done day verified). A chart with only a calendar
+    # reads in the calendar's words.
+    tasks = list(ctx.tasks) + list(ctx.exercise_days)
     if not tasks:
         return nodata("M14", ctx)
+    calendar_only = not ctx.tasks
+    one, many, unit = (("exercise", "exercises", "exercise-days") if calendar_only
+                       else ("task", "tasks", "task-days"))
     today = ctx.today
     days = [today - timedelta(days=13 - i) for i in range(14)]
     totals = {"verified": 0, "self_attested": 0, "missed": 0}
@@ -51,6 +59,13 @@ def m14(ctx: CareContext) -> CareMetric:
         })
     assigned_total = sum(totals.values())
     if assigned_total == 0:
+        if calendar_only:
+            return nodata(
+                "M14", ctx, "No records yet",
+                finding=f"{len(tasks)} {one if len(tasks) == 1 else many} on the calendar, no "
+                        "day finished yet in the last 14 days.",
+                unlock="An exercise day counts once it is done, skipped or past.",
+            )
         return nodata(
             "M14", ctx, "No records yet",
             finding=f"{len(tasks)} active task{'s' if len(tasks) != 1 else ''}, no completions "
@@ -58,7 +73,7 @@ def m14(ctx: CareContext) -> CareMetric:
             unlock="Completions arrive from check-ins, the app, or wearable verification.",
         )
     rate = (totals["verified"] + 0.5 * totals["self_attested"]) / assigned_total
-    if ctx.adherence.assigned == assigned_total:
+    if not ctx.exercise_days and ctx.adherence.assigned == assigned_total:
         rate = float(ctx.adherence.rate)  # the number the risk rule used, verbatim
     verified_rate = totals["verified"] / assigned_total
 
@@ -78,14 +93,21 @@ def m14(ctx: CareContext) -> CareMetric:
         status, text = MetricStatus.WATCH, "Adherence slipping"
     else:
         status, text = MetricStatus.OK, "Adherence on track"
-    finding = (f"{verified_rate * 100:.0f}% of task-days verified and {rate * 100:.0f}% counting "
-               f"self-reports at half weight, across {len(tasks)} task"
-               f"{'s' if len(tasks) != 1 else ''} over 14 days")
-    if trend is not None:
+    across = f"across {len(tasks)} {one if len(tasks) == 1 else many} over 14 days"
+    if calendar_only and not totals["self_attested"]:
+        # Nothing was a done mark alone, so there is no second number to give.
+        finding = f"{verified_rate * 100:.0f}% of {unit} verified, {across}"
+    else:
+        finding = (f"{verified_rate * 100:.0f}% of {unit} verified and {rate * 100:.0f}% "
+                   f"counting self-reports at half weight, {across}")
+    if trend is not None and calendar_only and round(trend * 100) == 0:
+        finding += "; the same as last week"
+    elif trend is not None:
         finding += f"; verified rate {trend * 100:+.0f} points this week vs last"
     finding += "."
     if status is MetricStatus.FLAG:
-        finding += " Adherence is below the level the plan was built on."
+        finding += (" Adherence is below the level the "
+                    f"{'program' if calendar_only else 'plan'} was built on.")
     heat = []
     for task in tasks[:4]:
         for d in days:
@@ -93,17 +115,19 @@ def m14(ctx: CareContext) -> CareMetric:
             key = str(record[0]).replace("AdherenceStatus.", "").lower() if record else None
             heat.append({"x": (d - ctx.surgery_date).days, "row": task["title"],
                          "v": _SCORE.get(key) if key else None})
-    chart = ChartSpec(kind="heat", series=heat[:60], y_label="task",
+    chart = ChartSpec(kind="heat", series=heat[:60], y_label=one,
                       extra={"tasks_shown": min(4, len(tasks)), "tasks_total": len(tasks)})
     return build(
         "M14", ctx, status=status, status_text=text, finding=finding,
         value=f"{verified_rate * 100:.0f}%", value_num=verified_rate * 100, unit="verified",
-        value_label="verified task-days",
-        delta_text=f"{rate * 100:.0f}% incl. self-reported · {len(tasks)} tasks",
+        value_label=f"verified {unit}",
+        delta_text=f"{rate * 100:.0f}% incl. self-reported · {len(tasks)} "
+                   f"{one if len(tasks) == 1 else many}",
         chart=chart, drivers=per_task,
-        next_step="Ask which task is hardest to fit in; simplify the plan before adding to it."
+        next_step=(f"Ask which {one} is hardest to fit in; simplify the "
+                   f"{'program' if calendar_only else 'plan'} before adding to it.")
         if status is not MetricStatus.OK else None,
-        coverage_text=f"{assigned_total} task-days in 14 days", confidence=ctx.confidence.level,
+        coverage_text=f"{assigned_total} {unit} in 14 days", confidence=ctx.confidence.level,
     )
 
 
@@ -238,11 +262,25 @@ def m16(ctx: CareContext) -> CareMetric:
                       series=[{"x": c["label"], "y": round(c["coverage"] * 100)} for c in coverage],
                       x_label="Signal", y_label="% of days")
     if followed_by_text:
+        # What this chart is followed by is the check-in, so that is what the
+        # picture shows: the days of the last fortnight one came in. Six
+        # wearable signals at 0% would say the same thing six times.
+        answered: dict[int, int] = {}
+        for c in ctx.checkins:
+            back = (ctx.today - c["occurred_at"].date()).days
+            if 0 <= back < 14:
+                answered[back] = answered.get(back, 0) + 1
+        by_day = ChartSpec(
+            kind="bars",
+            series=[{"x": ctx.postop_day - back, "y": answered.get(back, 0)}
+                    for back in range(13, -1, -1)],
+            x_label="Day", y_label="check-ins",
+        )
         return build(
             "M16", ctx, status=status, status_text=text, finding=finding,
             value=f"{recent_checkins}", value_num=float(recent_checkins), unit="check-ins",
             value_label="check-ins in 14 days", delta_text="no device · reported only",
-            chart=chart, drivers=coverage, confidence=ConfidenceLevel.MEDIUM,
+            chart=by_day, drivers=coverage, confidence=ConfidenceLevel.MEDIUM,
             coverage_text=f"{recent_checkins} check-ins in 14 days, no wearable",
         )
     return build(

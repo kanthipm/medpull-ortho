@@ -315,7 +315,10 @@ function Arc({ value, min, max }: { value: number; min: number; max: number }) {
 }
 
 /** Task adherence, day by day: the site's "no wearable data" dot matrix.
- *  Filled = done and verified, ring = self-reported, hollow faint = missed. */
+ *  Filled = done and verified, ring = self-reported, hollow faint = missed,
+ *  a pin-prick = nothing was set that day (an exercise three days a week
+ *  has four of those, and none of them is a miss). The last column is today,
+ *  in lime: filled once today's is verified, a ring while it is still open. */
 function Dots({ spec }: { spec: ChartSpec }) {
   const rows = new Map<string, (number | null)[]>()
   for (const p of spec.series) {
@@ -330,20 +333,39 @@ function Dots({ spec }: { spec: ChartSpec }) {
         <div key={row} className="grid grid-cols-[minmax(0,6rem)_1fr] items-center gap-2.5 text-label">
           <span className="truncate">{row}</span>
           <span className="flex justify-between gap-1">
-            {vals.slice(-7).map((v, i, arr) => (
-              <i
-                key={i}
-                className={`block h-3 w-3 rounded-full ${
-                  i === arr.length - 1
-                    ? 'now-dot bg-lime shadow-[0_0_0_4px_rgb(212_241_74_/_.38),0_0_14px_rgb(212_241_74_/_.8)]'
-                    : v != null && v >= 1
+            {vals.slice(-7).map((v, i, arr) => {
+              const today = i === arr.length - 1
+              const verified = v != null && v >= 1
+              if (today)
+                return (
+                  <i
+                    key={i}
+                    className={`now-dot block h-3 w-3 rounded-full ${
+                      verified
+                        ? 'bg-lime shadow-[0_0_0_4px_rgb(212_241_74_/_.38),0_0_14px_rgb(212_241_74_/_.8)]'
+                        : 'border-[1.5px] border-lime shadow-[0_0_10px_rgb(212_241_74_/_.45)]'
+                    }`}
+                  />
+                )
+              if (v == null)
+                return (
+                  <i key={i} className="grid h-3 w-3 place-items-center">
+                    <b className="block h-1 w-1 rounded-full bg-white/35" />
+                  </i>
+                )
+              return (
+                <i
+                  key={i}
+                  className={`block h-3 w-3 rounded-full ${
+                    verified
                       ? 'bg-white/90'
-                      : v != null && v >= 0.5
+                      : v >= 0.5
                         ? 'shadow-[inset_0_0_0_1.5px_rgb(255_255_255_/_.9)]'
                         : 'shadow-[inset_0_0_0_1.2px_rgb(255_255_255_/_.45)]'
-                }`}
-              />
-            ))}
+                  }`}
+                />
+              )
+            })}
           </span>
         </div>
       ))}

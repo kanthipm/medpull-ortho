@@ -177,6 +177,19 @@ which clears what the walkthrough did to today's exercises and nothing else.
   drafts: hold the load, one-tap check-in, ask about the pain, program nudge.
 - `backend/app/api/patients.py` `progress` — the three numbers on the
   console's stats row (`frontend/src/features/patient/PatientDetailPage.tsx`).
+- `backend/app/engine/care/pathways.py` `TRAINING` — the six tiles a lifter's
+  chart leads with, chosen because a calendar and a check-in fill all of
+  them: **Verified adherence** (the exercise calendar's last 14 days, one row
+  per exercise), the load ratio, **Pain–load sensitivity** (what a unit of
+  training load costs in next-morning pain), symptom burden, how the chart
+  is followed (check-ins by day, no watch) and engagement. A done exercise
+  day counts as verified when a clip came back, a watch recorded the
+  session, the session was run on the phone start to finish, or the clinic
+  logged it; a done mark alone counts half; a skipped or passed day is a
+  miss (`care/loaders.py` `exercise_outcome`). Devon's tile reads *Adherence
+  low*, Rafael's *Adherence slipping*; the wearable tiles (trend against own
+  baseline, the overnight index) are under **All metrics** and come back to
+  attention beside the six if a watch is connected and one of them flags.
 - `backend/tests/test_hirt.py` — every rule, the five tiers, every path.
 
 ## The calendar, her clip, their clip (added 2026-11-08)

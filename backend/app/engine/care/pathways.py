@@ -20,6 +20,12 @@ because a chronic program lives or dies on both. The first and last slots
 are the wide tiles. Anything outside the six that the engine flags is
 brought to attention beside the grid (headline.select_attention), never by
 reshuffling it.
+
+A person on a clinic's own training program (``clinic_program``) has no
+operation to recover from and usually no watch. The care metrics read them
+on ``TRAINING``, whose six are the ones an exercise calendar and an evening
+check-in fill; everything else about them (the plan builder, the next
+steps) still reads ``pathway_for``.
 """
 
 from __future__ import annotations
@@ -112,3 +118,50 @@ def pathway_for(patient) -> Pathway:
 
 def pathway_by_key(key: str | None) -> Pathway:
     return PATHWAYS.get(key or "", PATHWAYS["general_recovery"])
+
+
+# --- a clinic's own training program -----------------------------------------------
+#
+# The six a lifter's chart leads with. Slot 0 and slot 5 are the wide tiles:
+# what was done of what was set (M14, an exercise-by-day grid) and whether
+# the person is still answering (M15). Between them: load this week (M1),
+# what load costs in next-day pain (M2), symptoms (C5) and how the chart is
+# being followed (M16). The wearable metrics are still computed, and still
+# come to attention beside the grid when a watch is connected and one flags.
+TRAINING_SIX = ("M14", "M1", "M2", "C5", "M16", "M15")
+
+# Not in PATHWAYS on purpose: a chart is never assigned to it by key, and the
+# plan library has no tasks tagged for it. It is what the care metrics read a
+# clinic-program chart on, and nothing else.
+TRAINING = Pathway(
+    "training_program", "Training program", "general", list(TRAINING_SIX), "pain", False,
+)
+
+
+def clinic_program(patient) -> str | None:
+    """The clinic-authored program a non-surgical person is on, when there
+    is one.
+
+    ``care_pathway`` normally holds one of the keys above. A clinic that
+    writes its own program name there instead ("Patellar tendinopathy ·
+    progressive loading", the H.I.R.T. roster) is saying this person trains
+    between visits. A surgical patient is never on one: they keep the
+    recovery pathway of their operation.
+    """
+    program = (getattr(patient, "care_pathway", None) or "").strip()
+    if not program or program in PATHWAYS:
+        return None
+    if str(getattr(patient, "procedure_type", None)) != "NONE":
+        return None
+    return program
+
+
+def care_pathway_for(patient) -> Pathway:
+    """The pathway the care metrics read this patient on: ``TRAINING`` for a
+    person on a clinic's own program, otherwise ``pathway_for``."""
+    return TRAINING if clinic_program(patient) is not None else pathway_for(patient)
+
+
+def care_pathway_by_key(key: str | None) -> Pathway:
+    """The pathway a stored care bundle names (it may name ``TRAINING``)."""
+    return TRAINING if key == TRAINING.key else pathway_by_key(key)

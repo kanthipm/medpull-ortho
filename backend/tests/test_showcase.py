@@ -24,6 +24,7 @@ from app.config import settings
 from app.database import Base, get_db
 from app.hep.models import Exercise, ExerciseAssignment
 from app.models.attachment import Attachment
+from app.models.enums import ProcedureType
 from app.models.hospital import Hospital
 from app.models.insight import RiskAssessment
 from app.models.mobile import Message, PatientSession
@@ -486,6 +487,118 @@ def test_the_fill_builds_all_of_it_on_an_empty_database(filled, db):
     assert medha is not None and db.scalar(
         select(func.count(Device.id)).where(Device.patient_id == "medha")) == 0
     assert report["clinic"]["tiers"]["medha"] == "missing_data"
+
+
+def test_a_lifters_chart_leads_with_six_tiles_that_have_data(api, db):
+    """The H.I.R.T. roster has a calendar and check-ins and no watch: the six
+    tiles its charts lead with are the ones those fill, adherence from the
+    calendar among them, and each lifter reads as their story is told."""
+    from app.engine.care.pathways import ORTHO_SIX, TRAINING_SIX
+
+    def bundle(pid: str) -> dict:
+        row = db.scalars(
+            select(RiskAssessment).where(RiskAssessment.patient_id == pid)
+            .order_by(RiskAssessment.computed_at.desc(), RiskAssessment.id.desc())
+        ).first()
+        return row.analytics["care_metrics"]
+
+    adherence = {}
+    for pid in hirt.PATHWAYS:
+        care = bundle(pid)
+        by_id = {m["id"]: m for m in care["metrics"]}
+        assert care["pathway"] == "training_program" and care["headline"] == list(TRAINING_SIX)
+        assert [i for i in TRAINING_SIX if by_id[i]["status"] == "nodata"] == [], pid
+        assert by_id["M14"]["value_label"] == "verified exercise-days"
+        assert by_id["M2"]["name"].startswith("Pain")
+        adherence[pid] = by_id["M14"]["status"]
+    assert adherence == {
+        "hirt-cole": "ok", "hirt-tessa": "ok", "hirt-june": "ok",
+        "hirt-devon": "flag", "hirt-rafael": "watch",
+    }
+    # The chart says which pathway it was read on; a surgical persona is untouched.
+    body = api.get("/api/patients/hirt-devon/care-metrics").json()
+    assert body["pathway"] == {"key": "training_program", "name": "Training program",
+                               "domain": "general"}
+    assert body["headline"] == list(TRAINING_SIX)
+    assert bundle("reyes")["headline"] == list(ORTHO_SIX)
+    # One nudge for the program that slipped, as before.
+    steps = api.get("/api/patients/hirt-devon/next-steps").json()["steps"]
+    assert [s["key"] for s in steps].count("msg_program_nudge") == 1
+    assert not {"msg_exercise_nudge", "open_plan"} & {s["key"] for s in steps}
+
+
+def test_every_clinic_personas_thread_reads_in_time_order(db):
+    """The phone lists a thread by row id, so the fill leaves each persona's
+    rows numbered in the order they are dated."""
+    checked = 0
+    for pid in demo_fill.roster_ids():
+        dates = list(db.scalars(
+            select(Message.created_at).where(Message.patient_id == pid).order_by(Message.id)
+        ))
+        assert dates == sorted(dates), pid
+        checked += len(dates) > 1
+    assert checked >= len(hirt.PATHWAYS)
+
+
+def test_putting_a_thread_in_order_takes_its_files_and_links_along():
+    from app.models.links import AppLink
+
+    directory = tempfile.mkdtemp(prefix="showcase-thread-")
+    engine = _engine(directory, "thread.db")
+    try:
+        with sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)() as db:
+            db.add(Hospital(id="clinic", name="A clinic", system="A", city="Houston", state="TX"))
+            start = TODAY - timedelta(days=14)
+            for pid, name in (("pat", "Pat Example"), ("other", "Other Example")):
+                db.add(Patient(
+                    id=pid, name=name, initials="PE", age=30, sex="F",
+                    procedure_type=ProcedureType.NONE, procedure_display="A program",
+                    surgery_date=start, discharge_date=start, surgeon_id="ct_harris",
+                    assigned_provider_id="ct_gregg", hospital_id="clinic",
+                ))
+            db.flush()
+            noon = datetime.combine(TODAY, datetime.min.time()) + timedelta(hours=12)
+            # Written newest first, the way a fill in passes leaves them.
+            note = Message(patient_id="pat", sender="care_team", text="About your Step-Ups",
+                           channel="app", authored_by="care_team",
+                           created_at=noon - timedelta(days=2))
+            clip_line = Message(patient_id="pat", sender="patient", text="Did Step-Ups",
+                                channel="app", created_at=noon - timedelta(days=3))
+            welcome = Message(patient_id="pat", sender="care_team", text="Welcome",
+                              channel="sms", created_at=noon - timedelta(days=7))
+            theirs = Message(patient_id="other", sender="patient", text="Not mine",
+                             channel="app", created_at=noon - timedelta(days=9))
+            db.add_all([note, clip_line, welcome, theirs])
+            db.flush()
+            ids = [note.id, clip_line.id, welcome.id]
+            clip = Attachment(patient_id="pat", message_id=clip_line.id, content_type="video/mp4",
+                              storage_key="k/clip", filename="clip.mp4", confirmed_at=noon)
+            link = AppLink(token_hash="h1", patient_id="pat", kind="thread", message_id=note.id)
+            elsewhere = AppLink(token_hash="h2", patient_id="other", kind="thread",
+                                message_id=theirs.id)
+            db.add_all([clip, link, elsewhere])
+            db.commit()
+
+            assert demo_fill.thread_in_order(db, "pat") == 2
+            db.commit()
+            rows = db.scalars(
+                select(Message).where(Message.patient_id == "pat").order_by(Message.id)).all()
+            assert [r.id for r in rows] == ids
+            assert [r.text for r in rows] == ["Welcome", "Did Step-Ups", "About your Step-Ups"]
+            assert [(r.sender, r.channel) for r in rows] == [
+                ("care_team", "sms"), ("patient", "app"), ("care_team", "app")]
+            assert rows[2].authored_by == "care_team" and rows[0].authored_by is None
+            # The clip is still on its own line and the link on the note it carried.
+            assert db.get(Message, db.get(Attachment, clip.id).message_id).text == "Did Step-Ups"
+            assert db.get(Message, db.get(AppLink, link.id).message_id).text == "About your Step-Ups"
+            # Another person's thread and link are not part of it.
+            assert db.get(AppLink, elsewhere.id).message_id == theirs.id
+            assert db.get(Message, theirs.id).text == "Not mine"
+            # In order already: nothing to do.
+            assert demo_fill.thread_in_order(db, "pat") == 0
+    finally:
+        engine.dispose()
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def test_every_persona_has_consent_on_file(db):

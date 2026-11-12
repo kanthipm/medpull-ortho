@@ -19,7 +19,7 @@ from app.api.scope import require_patient
 from app.api.worklist import ensure_fresh_assessment
 from app.database import get_db
 from app.engine.care.catalog import families_payload
-from app.engine.care.pathways import pathway_by_key, pathway_for
+from app.engine.care.pathways import care_pathway_by_key, care_pathway_for
 from app.models.adherence import AdherenceTask
 from app.models.checkin import Checkin
 from app.models.observation import Observation
@@ -43,7 +43,8 @@ def care_metrics(
     patient = _get_patient(db, scope, patient_id)
     assessment = ensure_fresh_assessment(db, patient_id)
     care = (assessment.analytics or {}).get("care_metrics") or {}
-    pathway = pathway_by_key(care.get("pathway")) if care.get("pathway") else pathway_for(patient)
+    pathway = (care_pathway_by_key(care.get("pathway")) if care.get("pathway")
+               else care_pathway_for(patient))
     return {
         "version": care.get("version", "care-1"),
         "pathway": {"key": pathway.key, "name": pathway.name, "domain": pathway.domain},

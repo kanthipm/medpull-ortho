@@ -179,6 +179,54 @@ def test_pathway_for_derives_from_procedure_and_honours_an_explicit_key():
     assert pathway_for(R()).key == "general_recovery"
 
 
+def test_a_clinic_program_is_read_on_the_training_six():
+    from app.engine.care.pathways import (
+        TRAINING,
+        TRAINING_SIX,
+        care_pathway_by_key,
+        care_pathway_for,
+        clinic_program,
+    )
+
+    class Lifter:
+        procedure_type = ProcedureType.NONE
+        care_pathway = "Patellar tendinopathy · progressive loading"
+
+    class General:
+        procedure_type = ProcedureType.NONE
+        care_pathway = "general_recovery"
+
+    class Unnamed:
+        procedure_type = ProcedureType.NONE
+        care_pathway = None
+
+    class Operated:
+        procedure_type = ProcedureType.TKA
+        care_pathway = "Patellar tendinopathy · progressive loading"
+
+    assert clinic_program(Lifter()) == "Patellar tendinopathy · progressive loading"
+    assert care_pathway_for(Lifter()) is TRAINING
+    # Everything but the care metrics still reads a lifter as general recovery.
+    assert pathway_for(Lifter()).key == "general_recovery"
+    for other in (General(), Unnamed(), Operated()):
+        assert clinic_program(other) is None
+        assert care_pathway_for(other) is pathway_for(other)
+    # The check-in a lifter is asked is decided by the same rule.
+    from app.tasks.service import training_program
+
+    assert training_program(Lifter()) == clinic_program(Lifter())
+    assert training_program(Operated()) is None and training_program(General()) is None
+
+    assert TRAINING.key not in PATHWAYS and TRAINING.headline == list(TRAINING_SIX)
+    assert len(set(TRAINING_SIX)) == 6 and set(TRAINING_SIX) <= set(ALL_IDS)
+    assert TRAINING.symptom_key == "pain" and not TRAINING.uses_expected_curve
+    assert care_pathway_by_key("training_program") is TRAINING
+    assert care_pathway_by_key("copd") is PATHWAYS["copd"]
+    assert care_pathway_by_key(None) is PATHWAYS["general_recovery"]
+    bundle = unavailable_bundle(TRAINING)
+    assert bundle["pathway"] == "training_program" and bundle["headline"] == list(TRAINING_SIX)
+
+
 def test_headline_is_the_same_six_in_the_same_order_whatever_the_data():
     from app.engine.care.headline import select_attention
     from app.engine.care.pathways import ORTHO_SIX
@@ -479,6 +527,67 @@ def test_m14_rates_match_the_adherence_result_and_flag_low():
                    adherence=AdherenceResult(rate=1.0, verified=14, assigned=14, self_attested=0))
     assert REGISTRY["M14"](ctx).status is MetricStatus.OK
     assert REGISTRY["M14"](make_ctx(postop_day)).status is MetricStatus.NODATA
+
+
+def _exercise_days(today: date, rows: dict[str, list[str | None]]) -> list[dict]:
+    """Exercise days as the loader hands them over: per exercise, the outcome
+    of each of the last days, today last (None: not on the calendar)."""
+    out = []
+    for n, (title, pattern) in enumerate(rows.items(), start=1):
+        records = {
+            today - timedelta(days=len(pattern) - 1 - i): (status, "session")
+            for i, status in enumerate(pattern) if status is not None
+        }
+        out.append({"id": f"exercise:{n}", "title": title, "kind": "exercise",
+                    "status": "active", "records": records})
+    return out
+
+
+def test_m14_counts_the_exercise_calendar_in_its_own_words():
+    postop_day = 20
+    today = SURGERY + timedelta(days=postop_day)
+    alternate = ["verified", None] * 7
+    all_done = _exercise_days(today, {"Step-Ups": alternate, "Heel Slides": ["verified"] * 14})
+    m = REGISTRY["M14"](make_ctx(postop_day, pathway="general_recovery", exercise_days=all_done))
+    assert m.status is MetricStatus.OK and m.value == "100%"
+    assert m.value_label == "verified exercise-days"
+    assert m.finding == ("100% of exercise-days verified, across 2 exercises over 14 days; "
+                         "the same as last week.")
+    assert m.coverage_text == "21 exercise-days in 14 days" and m.delta_text.endswith("2 exercises")
+    assert m.chart.kind == "heat" and m.chart.y_label == "exercise" and m.next_step is None
+    assert {pt["row"] for pt in m.chart.series} == {"Step-Ups", "Heel Slides"}
+    step_ups = [pt["v"] for pt in m.chart.series if pt["row"] == "Step-Ups"]
+    assert step_ups == [1.0, None] * 7  # a day it was not set on is not a miss
+    _assert_clean(m)
+
+    # A done mark alone counts half, a skipped or passed day not at all.
+    slipping = _exercise_days(today, {
+        "Bird Dog": ["verified"] * 4 + ["self_attested"] * 4 + ["missed"] * 6,
+    })
+    m = REGISTRY["M14"](make_ctx(postop_day, pathway="general_recovery", exercise_days=slipping))
+    assert m.status is MetricStatus.FLAG and m.status_text == "Adherence low"
+    assert m.finding.startswith("29% of exercise-days verified and 43% counting self-reports at "
+                                "half weight, across 1 exercise over 14 days")
+    assert m.finding.endswith("Adherence is below the level the program was built on.")
+    assert m.next_step.startswith("Ask which exercise is hardest to fit in; simplify the program")
+    _assert_clean(m)
+
+    # The risk rule's own rate stands in only for a chart with no calendar:
+    # with exercise days counted too, a matching total is a coincidence.
+    tasks = _tasks(today, ["verified"] * 7)
+    seven = _exercise_days(today, {"Wall Sits": ["missed"] * 7})
+    ctx = make_ctx(postop_day, tasks=tasks, exercise_days=seven,
+                   adherence=AdherenceResult(rate=1.0, verified=14, assigned=14, self_attested=0))
+    both = REGISTRY["M14"](ctx)
+    assert both.value == "50%" and both.value_label == "verified task-days"
+    assert "across 2 tasks over 14 days" in both.finding and both.chart.y_label == "task"
+    assert both.coverage_text == "14 task-days in 14 days"
+
+    # On the calendar, with no day over yet.
+    waiting = _exercise_days(today, {"Calf Raises": [None] * 14, "Wall Slides": [None] * 14})
+    m = REGISTRY["M14"](make_ctx(postop_day, pathway="general_recovery", exercise_days=waiting))
+    assert m.status is MetricStatus.NODATA and m.status_text == "No records yet"
+    assert m.finding == "2 exercises on the calendar, no day finished yet in the last 14 days."
 
 
 def test_m15_disengagement_from_silence_and_missed_tasks():

@@ -256,12 +256,9 @@ def training_program(patient: Patient) -> str | None:
     check-in they get asks about that training rather than about an
     incision or a walk. Surgical patients always keep the recovery check-in.
     """
-    from app.engine.care.pathways import PATHWAYS
+    from app.engine.care.pathways import clinic_program
 
-    pathway = (getattr(patient, "care_pathway", None) or "").strip()
-    if surgical(patient) or not pathway or pathway in PATHWAYS:
-        return None
-    return pathway
+    return clinic_program(patient)
 
 
 def checkin_qset(patient: Patient) -> str:

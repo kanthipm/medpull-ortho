@@ -797,8 +797,48 @@ def write_persona(db, persona: Persona, today: date) -> dict[str, int]:
             delivery_status="delivered" if m.sender != "patient" else None,
         ))
     counts["messages"] = len(persona.messages)
+    db.flush()
+    thread_in_order(db, spec.id)
     db.commit()
     return counts
+
+
+def thread_in_order(db, patient_id: str) -> int:
+    """Make a persona's thread read in time order on a phone.
+
+    The phone lists a thread by row id (``GET /api/mobile/messages``), which
+    is time order for a thread people actually wrote. The fill writes one in
+    passes instead (a lifter's review notes and clip lines, then the
+    conversation), so a note from two days ago sat above the welcome from a
+    week ago. This hands the same lines back to the same rows in the order
+    they are dated; a file or a link that pointed at a line follows it.
+    Returns the number of rows whose line changed.
+    """
+    from sqlalchemy import select
+
+    from app.models.attachment import Attachment
+    from app.models.links import AppLink
+    from app.models.mobile import Message
+
+    rows = db.scalars(
+        select(Message).where(Message.patient_id == patient_id).order_by(Message.id)
+    ).all()
+    dated = sorted(rows, key=lambda m: (m.created_at, m.id))
+    if all(row is line for row, line in zip(rows, dated)):
+        return 0
+    columns = [c.key for c in Message.__table__.columns if c.key not in ("id", "patient_id")]
+    lines = [{name: getattr(line, name) for name in columns} for line in dated]
+    # Where each line went: the id it was written under -> the id it has now.
+    moved = {line.id: row.id for row, line in zip(rows, dated) if line.id != row.id}
+    for row, values in zip(rows, lines):
+        for name, value in values.items():
+            setattr(row, name, value)
+    for model in (Attachment, AppLink):
+        pointing = db.scalars(select(model).where(model.message_id.in_(list(moved)))).all()
+        for item in pointing:
+            item.message_id = moved[item.message_id]
+    db.flush()
+    return len(moved)
 
 
 def refresh_briefing_and_engine(

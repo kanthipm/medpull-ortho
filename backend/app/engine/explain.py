@@ -259,16 +259,21 @@ METRICS: dict[str, Explanation] = {
     },
     "M14": {
         "title": "Verified adherence",
-        "what": "How much of the care plan is actually being done, with wearable verification "
-                "where it exists.",
+        "what": "How much of the care plan and the exercise calendar is actually being done, "
+                "with verification where it exists.",
         "inputs": "Assigned tasks and their completion records over the last 14 days (verified "
-                  "by data, self-reported, or missed).",
+                  "by data, self-reported, or missed), and each exercise day on the clinic's "
+                  "calendar once it is done, skipped or past.",
         "how": "Verified completions count in full, self-reports at half weight, over every "
-               "assigned task-day; this week's verified rate is compared with last week's.",
+               "assigned task-day; this week's verified rate is compared with last week's. An "
+               "exercise day is verified when a clip came back, a watch recorded the session, "
+               "the session was run on the phone from start to finish, or the clinic logged it; "
+               "marked done with none of those it is self-reported; skipped or passed undone "
+               "it is missed.",
         "reading": "Under 50% is Flag, under 75% (or a 20-point drop) is Watch. The grid shows "
-                   "each task by day: a filled dot is verified, a ring is self-reported, a dash "
-                   "is missed.",
-        "shows_after": "The first completion record.",
+                   "each task or exercise by day: a filled dot is verified, a ring is "
+                   "self-reported, a dash is missed.",
+        "shows_after": "The first completion record, or the first exercise day that is over.",
         "patient_what": "How much of your plan you are completing.",
         "patient_why": "The plan is built on a dose; your team adjusts it to what you can do.",
         "patient_help": "Tick off tasks in the app, by text or by voice.",

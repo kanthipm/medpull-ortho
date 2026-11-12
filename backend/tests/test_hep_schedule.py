@@ -127,6 +127,101 @@ def _patient_session(client, monkeypatch, headers, patient_id: str) -> dict:
     return {"Authorization": f"Bearer {resp.json()['token']}"}
 
 
+# --- what the calendar tells the care metrics -------------------------------------------------
+
+
+def test_an_exercise_day_counts_toward_adherence_by_how_it_was_done(db, lifter, ledger):
+    """Verified adherence (M14) reads the calendar: a done day is verified
+    when something beyond a tap says so, a done mark alone is the person's
+    word, a skipped or passed day is missed, and an open day is not counted."""
+    from datetime import datetime
+
+    from app.engine.care.loaders import exercise_outcome, load_exercise_days
+
+    exercises = db.scalars(select(Exercise).where(Exercise.origin == "standard")
+                           .order_by(Exercise.id).limit(2)).all()
+    often, once = exercises
+    noon = datetime.combine(TODAY, datetime.min.time()) + timedelta(hours=12)
+
+    def row(exercise, days_ago: int, **fields) -> ExerciseAssignment:
+        day = TODAY - timedelta(days=days_ago)
+        at = noon - timedelta(days=days_ago)
+        if fields.get("status") == "done":
+            fields.setdefault("completed_at", at)
+            fields.setdefault("completion_source", "app")
+        made = ExerciseAssignment(
+            hospital_id="hirt", patient_id=lifter.id, exercise_id=exercise.id, scheduled_for=day,
+            created_at=at, updated_at=at, **fields)
+        db.add(made)
+        return made
+
+    clip = Attachment(patient_id=lifter.id, content_type="video/mp4", storage_key="t/adherence-clip",
+                      filename="clip.mp4", confirmed_at=noon)
+    db.add(clip)
+    db.flush()
+    rows = {
+        "clip": row(often, 6, status="done", video_attachment_id=clip.id),
+        "watch": row(often, 5, status="done", hr_avg=112),
+        "session": row(often, 4, status="done", started_at=noon - timedelta(days=4, minutes=20),
+                       ended_at=noon - timedelta(days=4)),
+        "clinic": row(often, 3, status="done", completion_source="console"),
+        "tap": row(often, 2, status="done"),
+        "text": row(once, 2, status="done", completion_source="sms"),
+        "skipped": row(often, 1, status="skipped", skip_reason="Long shift"),
+        "passed": row(often, 7, status="assigned"),
+        "due": row(often, 0, status="assigned"),
+        "ahead": row(often, -1, status="assigned"),
+        "too old": row(often, 14, status="done"),
+    }
+    db.commit()
+
+    assert {name: exercise_outcome(r, TODAY) for name, r in rows.items()} == {
+        "clip": ("verified", "clip"), "watch": ("verified", "wearable"),
+        "session": ("verified", "session"), "clinic": ("verified", "clinic"),
+        "tap": ("self_attested", "app"), "text": ("self_attested", "sms"),
+        "skipped": ("missed", "skipped"), "passed": ("missed", "missed"),
+        "due": None, "ahead": None, "too old": ("self_attested", "app"),
+    }
+
+    days = load_exercise_days(db, lifter.id, TODAY)
+    # One entry per exercise, the one set on the most days first; the window
+    # is the last 14 days, and an open day leaves no record.
+    assert [d["title"] for d in days] == [often.title, once.title]
+    assert all(d["kind"] == "exercise" and d["id"].startswith("exercise:") for d in days)
+    statuses = {(TODAY - day).days: status for day, (status, _src) in days[0]["records"].items()}
+    assert statuses == {6: "verified", 5: "verified", 4: "verified", 3: "verified",
+                        2: "self_attested", 1: "missed", 7: "missed"}
+    assert days[1]["records"] == {TODAY - timedelta(days=2): ("self_attested", "sms")}
+    assert load_exercise_days(db, "grace", TODAY) == []
+
+
+def test_the_stored_assessment_follows_the_calendar(client, db, tokens, lifter, ledger):
+    """Setting a day, marking it done and clearing one each move the hash a
+    stored assessment is kept under; a chart with no calendar is untouched."""
+    from app.engine.pipeline import compute_input_hash
+
+    exercise = _exercise(client, tokens["hirt"], "Wall Sits")
+    elsewhere = compute_input_hash(db, "grace")
+    seen = [compute_input_hash(db, lifter.id)]
+
+    def moved() -> None:
+        db.expire_all()
+        seen.append(compute_input_hash(db, lifter.id))
+        assert len(set(seen)) == len(seen), seen
+
+    today_row, tomorrow_row = _assign(client, tokens["hirt"], lifter.id, exercise["id"],
+                                      [TODAY, TOMORROW])
+    moved()
+    done = client.post(f"/api/hep/schedule/{today_row['id']}/complete", json={"pain_after": 2},
+                       headers=tokens["hirt"])
+    assert done.status_code == 200, done.text
+    moved()
+    gone = client.delete(f"/api/hep/schedule/{tomorrow_row['id']}", headers=tokens["hirt"])
+    assert gone.status_code in (200, 204), gone.text
+    moved()
+    assert compute_input_hash(db, "grace") == elsewhere
+
+
 # --- the grid ------------------------------------------------------------------------------
 
 

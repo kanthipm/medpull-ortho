@@ -19,7 +19,12 @@ from app.engine import ENGINE_VERSION
 from app.engine.adherence import compute_adherence
 from app.engine.baseline import compute_baseline
 from app.engine import baseline_store
-from app.engine.care import build_context, compute_care_metrics, pathway_for, unavailable_bundle
+from app.engine.care import (
+    build_context,
+    care_pathway_for,
+    compute_care_metrics,
+    unavailable_bundle,
+)
 from app.engine.composite import composite_index
 from app.engine.confidence import coverage
 from app.engine.dataload import load_daily_series
@@ -127,13 +132,25 @@ def compute_input_hash(db: Session, patient_id: str) -> str:
             .scalar_subquery(),
         )
     ).one()
+    # The exercise calendar feeds verified adherence (M14): a day set, done,
+    # skipped, reopened or cleared has to move the hash, and every one of those
+    # either changes the row count or stamps ``updated_at``. A chart with no
+    # calendar adds nothing here, so its hash is the one it always had.
+    from app.hep.models import ExerciseAssignment
+
+    exercise_rows, exercise_latest = db.execute(
+        select(func.count(ExerciseAssignment.id), func.max(ExerciseAssignment.updated_at)).where(
+            ExerciseAssignment.patient_id == patient_id
+        )
+    ).one()
+    calendar = f":calendar:{exercise_rows}:{exercise_latest}" if exercise_rows else ""
     # today's date is part of the hash: postop_day and the recent-window stats
     # shift at midnight even when no new data arrives, so the first request of
     # each day lazily recomputes every assessment.
     payload = (
         f"{patient_id}:{count}:{latest}:{checkins}:{records}:{max_task}:"
         f"{active_tasks}:{closed_tasks}:{devices}:{min(sessions, 1)}:{date.today()}:"
-        f"{ENGINE_VERSION}"
+        f"{ENGINE_VERSION}{calendar}"
     )
     return hashlib.sha256(payload.encode()).hexdigest()
 
@@ -306,7 +323,7 @@ def run_patient(db: Session, patient_id: str, force: bool = False) -> RiskAssess
         )
     except Exception:  # noqa: BLE001
         logger.exception("care metrics failed for %s", patient_id)
-        care_metrics = unavailable_bundle(pathway_for(patient))
+        care_metrics = unavailable_bundle(care_pathway_for(patient))
 
     bundle = AnalyticsBundle(
         patient_id=patient_id,

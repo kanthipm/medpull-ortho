@@ -27,7 +27,7 @@ from app.engine.care.types import (
 )
 from app.models.adherence import AdherenceRecord, AdherenceTask
 from app.models.checkin import Checkin, CheckinMessage
-from app.models.enums import Granularity
+from app.models.enums import AdherenceStatus, Granularity
 from app.models.enums import MetricType as M
 from app.models.observation import Observation
 
@@ -332,6 +332,79 @@ def load_tasks_with_records(
             "records": by_task.get(task.id, {}),
         }
         for task in tasks
+    ]
+
+
+def exercise_outcome(row: Any, today: date) -> tuple[str, str] | None:
+    """How one exercise day counts toward adherence, as (status, source), or
+    None while it is still open (due today, under way, or ahead).
+
+    Done counts as verified when something beyond a tap says it happened: a
+    clip came back, a watch recorded the session, the session was run on the
+    phone from start to finish, or the clinic logged it. Done with none of
+    those is the person's word for it. A skipped day and a day that passed
+    undone are both missed.
+    """
+    from app.hep.schedule import state_of
+
+    state = state_of(row, today)
+    if state == "done":
+        if row.video_attachment_id is not None:
+            return str(AdherenceStatus.VERIFIED), "clip"
+        if row.hr_avg is not None:
+            return str(AdherenceStatus.VERIFIED), "wearable"
+        if row.started_at is not None and row.ended_at is not None:
+            return str(AdherenceStatus.VERIFIED), "session"
+        if row.completion_source == "console":
+            return str(AdherenceStatus.VERIFIED), "clinic"
+        return str(AdherenceStatus.SELF_ATTESTED), row.completion_source or "app"
+    if state in ("skipped", "missed"):
+        return str(AdherenceStatus.MISSED), state
+    return None
+
+
+def load_exercise_days(
+    db: Session, patient_id: str, today: date, days: int = 14
+) -> list[dict[str, Any]]:
+    """The exercise calendar's last 14 days in the shape M14 reads tasks in:
+    one entry per exercise that was on the calendar in the window,
+    {id, title, kind: "exercise", records: {date: (status, source)}}, the
+    exercise set on the most days first. An exercise whose days are all still
+    open is listed with no records. A chart with no calendar gives []."""
+    from app.hep.models import Exercise, ExerciseAssignment
+
+    start = today - timedelta(days=days - 1)
+    rows = db.scalars(
+        select(ExerciseAssignment).where(
+            ExerciseAssignment.patient_id == patient_id,
+            ExerciseAssignment.scheduled_for >= start,
+            ExerciseAssignment.scheduled_for <= today,
+        )
+    ).all()
+    if not rows:
+        return []
+    titles = dict(db.execute(
+        select(Exercise.id, Exercise.title).where(
+            Exercise.id.in_({row.exercise_id for row in rows})
+        )
+    ).all())
+    scheduled: dict[int, int] = {}
+    records: dict[int, dict[date, tuple[str, str]]] = {}
+    for row in rows:
+        scheduled[row.exercise_id] = scheduled.get(row.exercise_id, 0) + 1
+        outcome = exercise_outcome(row, today)
+        if outcome is not None:
+            records.setdefault(row.exercise_id, {})[row.scheduled_for] = outcome
+    order = sorted(scheduled, key=lambda eid: (-scheduled[eid], titles.get(eid) or "", eid))
+    return [
+        {
+            "id": f"exercise:{eid}",
+            "title": titles.get(eid) or "Exercise",
+            "kind": "exercise",
+            "status": "active",
+            "records": records.get(eid, {}),
+        }
+        for eid in order
     ]
 
 

@@ -27,6 +27,7 @@ from app.engine.care.headline import select_attention, select_headline
 from app.engine.care.loaders import (
     device_last_sync,
     load_checkins,
+    load_exercise_days,
     load_glucose,
     load_intraday,
     load_sessions,
@@ -34,7 +35,7 @@ from app.engine.care.loaders import (
     load_symptom,
     load_tasks_with_records,
 )
-from app.engine.care.pathways import Pathway, pathway_for
+from app.engine.care.pathways import Pathway, care_pathway_for, pathway_for
 from app.engine.care.types import CareContext, CareMetric
 from app.engine.deviation import analyze_metric
 from app.engine.types import (
@@ -82,7 +83,7 @@ def build_context(
     adherence: AdherenceResult,
     now: datetime | None = None,
 ) -> CareContext:
-    pathway = pathway_for(patient)
+    pathway = care_pathway_for(patient)
     surgery_date = patient.surgery_date
     procedure = ProcedureType(patient.procedure_type)
     symptoms = {
@@ -123,6 +124,7 @@ def build_context(
         },
         checkins=load_checkins(db, patient.id),
         tasks=load_tasks_with_records(db, patient.id, today),
+        exercise_days=load_exercise_days(db, patient.id, today),
         glucose=load_glucose(db, patient.id, surgery_date, today),
         local_deviations=local,
     )
@@ -160,5 +162,5 @@ def unavailable_bundle(pathway: Pathway) -> dict[str, Any]:
 
 __all__ = [
     "CARE_VERSION", "REGISTRY", "build_context", "compute_care_metrics", "unavailable_bundle",
-    "select_headline", "select_attention", "pathway_for",
+    "select_headline", "select_attention", "pathway_for", "care_pathway_for",
 ]

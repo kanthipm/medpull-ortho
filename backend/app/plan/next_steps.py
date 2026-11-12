@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.engine.care.pathways import Pathway, pathway_for
+from app.engine.care.pathways import Pathway, clinic_program, pathway_for
 from app.models.enums import CareRole, NotificationChannel, RiskLevel
 from app.models.insight import RiskAssessment
 from app.models.library import CareAction, MessageTemplate, TaskTemplate
@@ -361,7 +361,14 @@ def _rules(
 
     # 9. adherence
     adherence = ev.has("ADHERENCE_LOW") + ev.flagged("M14")
-    if adherence:
+    if adherence and clinic_program(patient) is not None:
+        # On a clinic's own program what slipped is the exercise calendar, and
+        # the nudge for that is the program's. 7b adds the same step from the
+        # check-ins when they say so too; only the first is kept.
+        rank += 1
+        add(_message("msg_program_nudge", "Nudge the program", _detail(ev.finding("M14")),
+                     "this_week", adherence, patient, "msg_program_nudge", rank))
+    elif adherence:
         rank += 1
         detail = _detail(ev.reason_text("ADHERENCE_LOW"), ev.finding("M14"))
         add(_message("msg_exercise_nudge", "Nudge the exercise plan", detail, "this_week",

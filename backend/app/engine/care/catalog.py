@@ -162,10 +162,11 @@ _DEFS: list[MetricDef] = [
     MetricDef(
         "M14", "verified_adherence", "Verified adherence", "engagement", "T-A", "App+Derived", 1,
         False, ["adherence_records"],
-        "Assign tasks from the plan builder — completion is verified against wearable data "
-        "where possible.",
+        "Assign tasks from the plan builder, or put exercises on the calendar — completion is "
+        "verified where something beyond a tap can show it.",
         [],
-        "Verified and self-reported completions over assigned task-days, last 14 days.",
+        "Verified and self-reported completions over assigned task-days and exercise-days, "
+        "last 14 days.",
     ),
     MetricDef(
         "M15", "disengagement_risk", "Disengagement risk", "engagement", "T-A+T-D",

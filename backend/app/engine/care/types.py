@@ -140,6 +140,9 @@ class CareContext:
     intraday: dict[str, pd.DataFrame] = field(default_factory=dict)
     checkins: list[dict[str, Any]] = field(default_factory=list)
     tasks: list[dict[str, Any]] = field(default_factory=list)
+    # The exercise calendar's last 14 days, one entry per exercise, in the
+    # shape of ``tasks`` (loaders.load_exercise_days). Empty off a calendar.
+    exercise_days: list[dict[str, Any]] = field(default_factory=list)
     glucose: pd.DataFrame = field(default_factory=lambda: empty_glucose_frame())
     # Deviation results computed locally for the variant statistics a real
     # device ships (hrv_sdnn, skin_temp_delta) when the canonical one is
