@@ -361,3 +361,89 @@ def test_console_never_sees_athletes(client, db):
     assert not any(spec.id in ids for spec in ROSTER)
     athletes = db.scalars(select(Patient.id).where(Patient.account_kind == "sports")).all()
     assert len(athletes) >= 15
+
+
+# --- the morning refresh keeps what people did ------------------------------------------------------
+
+
+def test_a_second_roster_is_on_the_board(client):
+    board = client.get("/api/sports/teams/rice-wsoc/dashboard")
+    assert board.status_code == 200
+    body = board.json()
+    assert len(body["roster"]) == 8 and body["team"]["sport"] == "soccer"
+    stories = {a["availability"] for a in body["roster"]}
+    assert "modified" in stories  # the hamstring on her way back
+    assert any(e["kind"] in ("game", "match") for e in body["events"])
+
+
+def test_a_refresh_keeps_sessions_the_staffs_status_and_their_events(client, db):
+    from sqlalchemy import func
+
+    from app.models.mobile import Message, PatientSession
+    from app.models.sports import SportsEvent
+
+    headers = _login(client, "jalen.okoro@athletes.medpull.demo")
+    assert client.get("/api/mobile/me", headers=headers).status_code == 200
+    sessions = db.scalar(select(func.count(PatientSession.id)).where(
+        PatientSession.patient_id == "jalen-okoro"))
+
+    # the staff sit a healthy starter down, write him a line and add a film session
+    set_status = client.patch("/api/sports/teams/rice-mbb/athletes/jalen-okoro/status",
+                              json={"status": "modified", "note": "Rest day: travel legs."})
+    assert set_status.status_code == 200
+    said = client.post("/api/sports/teams/rice-mbb/athletes/jalen-okoro/message",
+                       json={"text": "Light day today. Film at four.", "staff_id": "st_rice_mbb_sc"})
+    assert said.status_code == 200, said.text
+    added = client.post("/api/sports/teams/rice-mbb/events", json={
+        "date": (date.today() + timedelta(days=2)).isoformat(), "kind": "recovery",
+        "title": "Film and mobility", "start_time": "16:00"})
+    assert added.status_code == 200 and added.json()["event"]["source"] == "staff"
+    event_id = added.json()["event"]["id"]
+    try:
+        before = {
+            "observations": db.scalar(select(func.count()).select_from(SportsProfile)),
+            "events": db.scalar(select(func.count(SportsEvent.id))),
+        }
+        seed_sports(db, date.today())  # the next morning's run
+        db.expire_all()
+        profile = db.get(SportsProfile, "jalen-okoro")
+        assert (profile.status, profile.status_note) == ("modified", "Rest day: travel legs.")
+        assert db.get(SportsEvent, event_id) is not None
+        assert db.scalar(select(func.count(SportsEvent.id))) == before["events"]
+        assert db.scalar(select(func.count(PatientSession.id)).where(
+            PatientSession.patient_id == "jalen-okoro")) == sessions
+        assert client.get("/api/mobile/me", headers=headers).status_code == 200  # still signed in
+        assert db.scalar(select(func.count(Message.id)).where(
+            Message.patient_id == "jalen-okoro",
+            Message.text == "Light day today. Film at four.")) == 1
+        # an athlete the staff did not touch reads his scenario's own line, a day further on
+        ankle = db.get(SportsProfile, "tobias-lindqvist")
+        assert ankle.status == "modified" and "Right ankle, day" in ankle.status_note
+    finally:
+        client.delete(f"/api/sports/teams/rice-mbb/events/{event_id}")
+        client.patch("/api/sports/teams/rice-mbb/athletes/jalen-okoro/status",
+                     json={"status": "available", "note": None})
+
+
+def test_events_are_validated_and_read_by_range(client):
+    day = (date.today() + timedelta(days=3)).isoformat()
+    bad_kind = client.post("/api/sports/teams/rice-mbb/events",
+                           json={"date": day, "kind": "party", "title": "x"})
+    assert bad_kind.status_code == 422 and "Unknown kind" in bad_kind.json()["detail"]
+    bad_time = client.post("/api/sports/teams/rice-mbb/events",
+                           json={"date": day, "kind": "lift", "title": "Lift", "start_time": "4pm"})
+    assert bad_time.status_code == 422
+    assert client.delete("/api/sports/teams/rice-mbb/events/999999").status_code == 404
+
+    start = date.today().replace(day=1)
+    end = start + timedelta(days=41)
+    body = client.get(f"/api/sports/teams/rice-mbb/events?from={start}&to={end}").json()
+    assert body["from"] == start.isoformat() and body["to"] == end.isoformat()
+    assert "travel" in body["kinds"] and "off" in body["kinds"]
+    assert all(start.isoformat() <= e["date"] <= end.isoformat() for e in body["events"])
+    assert all(e["source"] in ("seed", "staff") for e in body["events"])
+    too_wide = client.get(f"/api/sports/teams/rice-mbb/events?from={start}"
+                          f"&to={start + timedelta(days=90)}")
+    assert too_wide.status_code == 422
+    # the older call shape still answers
+    assert "events" in client.get("/api/sports/teams/rice-mbb/events?days=14").json()

@@ -1,6 +1,18 @@
 {
   "components": {
     "schemas": {
+      "ActorBody": {
+        "properties": {
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          }
+        },
+        "title": "ActorBody",
+        "type": "object"
+      },
       "AddPersonalBody": {
         "properties": {
           "app_version": {
@@ -340,14 +352,21 @@
             "type": "string"
           },
           "dates": {
-            "items": {
-              "format": "date",
-              "type": "string"
-            },
-            "maxItems": 31,
-            "minItems": 1,
-            "title": "Dates",
-            "type": "array"
+            "anyOf": [
+              {
+                "items": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "maxItems": 84,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dates"
           },
           "exercise_id": {
             "title": "Exercise Id",
@@ -382,6 +401,16 @@
           "patient_id": {
             "title": "Patient Id",
             "type": "string"
+          },
+          "repeat": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepeatBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reps": {
             "anyOf": [
@@ -427,6 +456,11 @@
             "title": "Side",
             "type": "string"
           },
+          "text_patient": {
+            "default": false,
+            "title": "Text Patient",
+            "type": "boolean"
+          },
           "video_requirement": {
             "default": "optional",
             "title": "Video Requirement",
@@ -440,8 +474,7 @@
         },
         "required": [
           "patient_id",
-          "exercise_id",
-          "dates"
+          "exercise_id"
         ],
         "title": "AssignmentCreate",
         "type": "object"
@@ -785,6 +818,27 @@
         "title": "CheckinAnswers",
         "type": "object"
       },
+      "ClinicPatch": {
+        "description": "What a clinic may set about its own calendar: the unit it reads\nloads in.",
+        "properties": {
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          },
+          "load_unit": {
+            "maxLength": 8,
+            "title": "Load Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "load_unit"
+        ],
+        "title": "ClinicPatch",
+        "type": "object"
+      },
       "ClipConfirm": {
         "properties": {
           "actor": {
@@ -825,6 +879,21 @@
           "content_type"
         ],
         "title": "ClipConfirm",
+        "type": "object"
+      },
+      "CoachBody": {
+        "properties": {
+          "text": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "CoachBody",
         "type": "object"
       },
       "ConfirmBody": {
@@ -1258,6 +1327,31 @@
           }
         },
         "title": "DraftMessageBody",
+        "type": "object"
+      },
+      "DuplicateBody": {
+        "properties": {
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
+          },
+          "dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "maxItems": 84,
+            "minItems": 1,
+            "title": "Dates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dates"
+        ],
+        "title": "DuplicateBody",
         "type": "object"
       },
       "EnrollBody": {
@@ -2619,6 +2713,48 @@
         "title": "PatientSessionBody",
         "type": "object"
       },
+      "PersonaBody": {
+        "properties": {
+          "persona_id": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Persona Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "persona_id"
+        ],
+        "title": "PersonaBody",
+        "type": "object"
+      },
+      "PersonaSessionBody": {
+        "properties": {
+          "device_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "persona_id": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Persona Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "persona_id"
+        ],
+        "title": "PersonaSessionBody",
+        "type": "object"
+      },
       "PersonalJoinBody": {
         "properties": {
           "anchor_date": {
@@ -2871,6 +3007,21 @@
           "code"
         ],
         "title": "PersonalVerifyBody",
+        "type": "object"
+      },
+      "PhoneBody": {
+        "properties": {
+          "phone": {
+            "maxLength": 32,
+            "minLength": 7,
+            "title": "Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone"
+        ],
+        "title": "PhoneBody",
         "type": "object"
       },
       "PlanArchive": {
@@ -3162,6 +3313,38 @@
         "title": "RecordBody",
         "type": "object"
       },
+      "RepeatBody": {
+        "description": "Repeat on these weekdays (Monday is 0) for this many weeks, counted\nin seven-day blocks from ``start``.",
+        "properties": {
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "weekdays": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 7,
+            "minItems": 1,
+            "title": "Weekdays",
+            "type": "array"
+          },
+          "weeks": {
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Weeks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "weekdays",
+          "weeks",
+          "start"
+        ],
+        "title": "RepeatBody",
+        "type": "object"
+      },
       "ResearchBody": {
         "properties": {
           "allowed": {
@@ -3342,89 +3525,28 @@
         "title": "SearchBody",
         "type": "object"
       },
-      "SessionBody": {
+      "SeriesPatch": {
+        "description": "An edit of \"this and the following\" days of a repeat. Only the\nfields sent are applied, as on one day; a series' days keep their own\ndates and positions.",
         "properties": {
-          "average_hr": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Average Hr"
+          "actor": {
+            "default": "provider",
+            "maxLength": 60,
+            "title": "Actor",
+            "type": "string"
           },
-          "date": {
+          "assigned_by": {
             "anyOf": [
               {
-                "format": "date",
+                "maxLength": 60,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Date"
+            "title": "Assigned By"
           },
-          "distance_m": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Distance M"
-          },
-          "high_speed_m": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "High Speed M"
-          },
-          "jumps": {
-            "anyOf": [
-              {
-                "maximum": 2000.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Jumps"
-          },
-          "kind": {
-            "default": "practice",
-            "title": "Kind",
-            "type": "string"
-          },
-          "max_speed_kmh": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Speed Kmh"
-          },
-          "minutes": {
-            "maximum": 600.0,
-            "minimum": 1.0,
-            "title": "Minutes",
-            "type": "number"
-          },
-          "note": {
+          "clinician_instructions": {
             "anyOf": [
               {
                 "maxLength": 400,
@@ -3434,23 +3556,25 @@
                 "type": "null"
               }
             ],
-            "title": "Note"
+            "title": "Clinician Instructions"
           },
-          "player_load": {
+          "hold_seconds": {
             "anyOf": [
               {
-                "type": "number"
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Player Load"
+            "title": "Hold Seconds"
           },
-          "rpe": {
+          "load_kg": {
             "anyOf": [
               {
-                "maximum": 10.0,
+                "maximum": 500.0,
                 "minimum": 0.0,
                 "type": "number"
               },
@@ -3458,18 +3582,82 @@
                 "type": "null"
               }
             ],
-            "title": "Rpe"
+            "title": "Load Kg"
           },
-          "source": {
-            "default": "manual",
-            "title": "Source",
-            "type": "string"
+          "reps": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "rpe_target": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe Target"
+          },
+          "sets": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets"
+          },
+          "side": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Side"
+          },
+          "video_requirement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Requirement"
+          },
+          "wearable_requirement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wearable Requirement"
           }
         },
-        "required": [
-          "minutes"
-        ],
-        "title": "SessionBody",
+        "title": "SeriesPatch",
         "type": "object"
       },
       "SixMinuteWalkBody": {
@@ -3755,7 +3943,7 @@
           "weeks": {
             "anyOf": [
               {
-                "maximum": 12.0,
+                "maximum": 26.0,
                 "minimum": 1.0,
                 "type": "integer"
               },
@@ -4070,7 +4258,7 @@
           "weeks": {
             "anyOf": [
               {
-                "maximum": 12.0,
+                "maximum": 26.0,
                 "minimum": 1.0,
                 "type": "integer"
               },
@@ -4169,6 +4357,35 @@
           "entries"
         ],
         "title": "TestsBody",
+        "type": "object"
+      },
+      "TextTodayBody": {
+        "properties": {
+          "by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By"
+          },
+          "day": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day"
+          }
+        },
+        "title": "TextTodayBody",
         "type": "object"
       },
       "ValidationError": {
@@ -4439,6 +4656,24 @@
           }
         },
         "title": "CompleteBody",
+        "type": "object"
+      },
+      "app__api__links__SessionBody": {
+        "properties": {
+          "device_name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          }
+        },
+        "title": "SessionBody",
         "type": "object"
       },
       "app__api__mobile__JoinBody": {
@@ -4900,7 +5135,7 @@
           },
           "weeks": {
             "default": 2,
-            "maximum": 12.0,
+            "maximum": 26.0,
             "minimum": 1.0,
             "title": "Weeks",
             "type": "integer"
@@ -5415,6 +5650,136 @@
         },
         "title": "ProfilePatch",
         "type": "object"
+      },
+      "app__sports__api__SessionBody": {
+        "properties": {
+          "average_hr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Hr"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "distance_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance M"
+          },
+          "high_speed_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Speed M"
+          },
+          "jumps": {
+            "anyOf": [
+              {
+                "maximum": 2000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jumps"
+          },
+          "kind": {
+            "default": "practice",
+            "title": "Kind",
+            "type": "string"
+          },
+          "max_speed_kmh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Speed Kmh"
+          },
+          "minutes": {
+            "maximum": 600.0,
+            "minimum": 1.0,
+            "title": "Minutes",
+            "type": "number"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "player_load": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Player Load"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe"
+          },
+          "source": {
+            "default": "manual",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "minutes"
+        ],
+        "title": "SessionBody",
+        "type": "object"
       }
     }
   },
@@ -5442,6 +5807,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -5581,6 +5962,566 @@
         ]
       }
     },
+    "/api/console/personal/members": {
+      "get": {
+        "description": "Every demo member with the line a list needs: today's verdict, the\nreadiness figure, last night and the debt, the week's load.",
+        "operationId": "members_api_console_personal_members_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Members Api Console Personal Members Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Members",
+        "tags": [
+          "console-personal"
+        ]
+      }
+    },
+    "/api/console/personal/{member_id}/coach": {
+      "post": {
+        "description": "One turn with the member's coach, as the member: the same function\ntheir phone calls, with today's readouts in context. Both lines land on\nthe member's thread. With no model configured the reply is the\ndeterministic one, and ``provider`` says so.",
+        "operationId": "coach_api_console_personal__member_id__coach_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CoachBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Coach Api Console Personal  Member Id  Coach Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Coach",
+        "tags": [
+          "console-personal"
+        ]
+      }
+    },
+    "/api/console/personal/{member_id}/export": {
+      "get": {
+        "description": "Everything the member's account holds, as the one document their own\n\"Export my data\" produces.",
+        "operationId": "export_api_console_personal__member_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Export Api Console Personal  Member Id  Export Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export",
+        "tags": [
+          "console-personal"
+        ]
+      }
+    },
+    "/api/console/personal/{member_id}/insights/{domain}": {
+      "get": {
+        "operationId": "insight_api_console_personal__member_id__insights__domain__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "title": "Domain",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Insight Api Console Personal  Member Id  Insights  Domain  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Insight",
+        "tags": [
+          "console-personal"
+        ]
+      }
+    },
+    "/api/console/personal/{member_id}/overview": {
+      "get": {
+        "description": "One member's space in a single read: who they are, today's readouts\nexactly as their phone computes them, the brief, the plan, the thread\nwith the coach, and what they logged.",
+        "operationId": "overview_api_console_personal__member_id__overview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Overview Api Console Personal  Member Id  Overview Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Overview",
+        "tags": [
+          "console-personal"
+        ]
+      }
+    },
+    "/api/console/personal/{member_id}/signals": {
+      "get": {
+        "description": "The raw daily signals behind the readouts, as the member's own\n\"all metrics\" screen lists them.",
+        "operationId": "signals_api_console_personal__member_id__signals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "maximum": 90,
+              "minimum": 3,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Signals Api Console Personal  Member Id  Signals Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Signals",
+        "tags": [
+          "console-personal"
+        ]
+      }
+    },
+    "/api/console/personal/{member_id}/week": {
+      "get": {
+        "description": "This week against last, thirteen weeks of trends, and the review.",
+        "operationId": "week_api_console_personal__member_id__week_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Week Api Console Personal  Member Id  Week Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Week",
+        "tags": [
+          "console-personal"
+        ]
+      }
+    },
     "/api/console/session": {
       "get": {
         "description": "Who the console is signed in as. The SPA reads it after a token is\nentered (or arrives in a sign-in link) to decide which pages to show and\nwhose name to put beside the brand; a locked console answers 401 to a\nmissing or wrong token like every other console route.",
@@ -5600,6 +6541,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -5633,9 +6590,221 @@
         ]
       }
     },
+    "/api/console/workspaces": {
+      "get": {
+        "description": "What the workspace menu lists for this console: the versions it may\nopen (clinic, personal, sports) and the clinics, demo members and teams\nunder them (app/api/workspaces.py). Read-only.",
+        "operationId": "console_workspaces_api_console_workspaces_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Console Workspaces Api Console Workspaces Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Console Workspaces",
+        "tags": [
+          "console"
+        ]
+      }
+    },
+    "/api/data/catalog": {
+      "get": {
+        "description": "Every metric MedPull stores or computes, with its unit, tier, sources\nand method; the care metrics; the sources in precedence order. Built from\nthe code, so it cannot drift from what the engine does. Static for a\nrelease, hence cacheable like the glossary.",
+        "operationId": "data_catalog_api_data_catalog_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Data Catalog",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/data/coverage": {
+      "get": {
+        "description": "The roster by data family over the last ``days`` days: who has what,\nfrom which sources, how recently.",
+        "operationId": "data_coverage_api_data_coverage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Data Coverage Api Data Coverage Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Data Coverage",
+        "tags": [
+          "data"
+        ]
+      }
+    },
     "/api/demo/patient-session": {
       "post": {
-        "description": "A patient-app session for a chart in this console's scope, for the\ndemo screen's phone frame. 404 off the demo stack, and for any chart the\nconsole could not open itself.",
+        "description": "A patient-app session for a demo persona in this console's scope, for\nthe demo screen's phone frame. 404 off the demo stack, for any chart the\nconsole could not open itself, and for a chart the showcase did not\nwrite.",
         "operationId": "demo_patient_session_api_demo_patient_session_post",
         "parameters": [
           {
@@ -5652,6 +6821,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -5695,6 +6880,280 @@
         ]
       }
     },
+    "/api/demo/personas": {
+      "get": {
+        "description": "Everyone the showcase can show and the phone can become, by version\nand org, with the line the demo texts from. Reads only.",
+        "operationId": "demo_personas_api_demo_personas_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Demo Personas Api Demo Personas Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Demo Personas",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/demo/phone": {
+      "delete": {
+        "description": "Take the bound number off this persona. The next fill gives the\npersona its placeholder back.",
+        "operationId": "unbind_phone_api_demo_phone_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Unbind Phone Api Demo Phone Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unbind Phone",
+        "tags": [
+          "demo"
+        ]
+      },
+      "get": {
+        "description": "What is bound to this persona and whether it can be texted yet.",
+        "operationId": "read_phone_api_demo_phone_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Phone Api Demo Phone Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Phone",
+        "tags": [
+          "demo"
+        ]
+      },
+      "post": {
+        "description": "Bind a real number to this persona and text it the welcome, or leave\nthe welcome owed until the number has texted the line.",
+        "operationId": "bind_phone_api_demo_phone_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Bind Phone Api Demo Phone Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bind Phone",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/demo/reset-day": {
+      "post": {
+        "description": "Put a persona's exercise day back so a walkthrough can be run again:\ntoday's rows reopened, the lines today's completions and reviews wrote\ntaken off the thread. A Personal or Sports persona has no exercise\ncalendar and reports zeros.",
+        "operationId": "demo_reset_day_api_demo_reset_day_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Demo Reset Day Api Demo Reset Day Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Reset Day",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/demo/session": {
+      "post": {
+        "description": "An app session as one persona, of any version, with the same ``me``\nthe app would read next. One session per persona and device name: asking\nagain from the same device replaces the earlier one (its token stops\nworking), so a phone that switches people all afternoon leaves one row\nper person behind, not one per tap.",
+        "operationId": "demo_session_api_demo_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaSessionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Demo Session Api Demo Session Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Session",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
     "/api/explain": {
       "get": {
         "operationId": "explain_all_api_explain_get",
@@ -5713,6 +7172,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -5779,6 +7254,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -5831,6 +7322,280 @@
         "summary": "Health",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/hep/calendar": {
+      "get": {
+        "description": "A month of the calendar in compact rows: per chart and per day, what\nis on it, where each row stands and how it went, with the day's counts.\nNo steps and no clip URLs; open a row through ``/schedule`` for those.\n``start`` defaults to the Monday on or before the first of ``today``'s\nmonth.",
+        "operationId": "read_calendar_api_hep_calendar_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 42,
+              "maximum": 42,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "today",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Today"
+            }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Patient Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Calendar Api Hep Calendar Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Calendar",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/clinic": {
+      "get": {
+        "description": "The clinic this console acts for and the unit it reads loads in.",
+        "operationId": "read_clinic_api_hep_clinic_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Clinic Api Hep Clinic Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Clinic",
+        "tags": [
+          "hep"
+        ]
+      },
+      "patch": {
+        "description": "Pounds or kilograms for the acting clinic. A display choice: every\nload is stored, sent and received in kilograms whatever it says.",
+        "operationId": "update_clinic_api_hep_clinic_patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClinicPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Clinic Api Hep Clinic Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Clinic",
+        "tags": [
+          "hep"
         ]
       }
     },
@@ -5927,6 +7692,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -5977,6 +7758,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -6048,6 +7845,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -6105,6 +7918,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -6176,6 +8005,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -6284,6 +8129,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "requestBody": {
@@ -6376,6 +8237,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -6456,6 +8333,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -6527,6 +8420,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -6574,6 +8483,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -6606,6 +8531,133 @@
         ]
       }
     },
+    "/api/hep/patients/{patient_id}/exercises/{exercise_id}/history": {
+      "get": {
+        "description": "One exercise on one chart over time, oldest first: each day it was\non, as written and as done (load, sets, reps, pain, effort against the\ntarget), and the run in a few numbers. ``ahead`` adds the days already\nwritten after today.",
+        "operationId": "exercise_history_api_hep_patients__patient_id__exercises__exercise_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "exercise_id",
+            "required": true,
+            "schema": {
+              "title": "Exercise Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 120,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ahead",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 90,
+              "minimum": 0,
+              "title": "Ahead",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "today",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Today"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Exercise History Api Hep Patients  Patient Id  Exercises  Exercise Id  History Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exercise History",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
     "/api/hep/patients/{patient_id}/plans": {
       "get": {
         "operationId": "patient_exercise_plans_api_hep_patients__patient_id__plans_get",
@@ -6633,6 +8685,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -6741,6 +8809,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -6770,6 +8854,100 @@
         "summary": "Patient Schedule",
         "tags": [
           "hep"
+        ]
+      }
+    },
+    "/api/hep/patients/{patient_id}/text-today": {
+      "post": {
+        "description": "Text one lifter their plan for the day (today unless ``day`` says),\nwith a link that opens the app on it. 409 with the reason when the chart\ncannot be texted at all: no number, a placeholder, a STOP, or texting not\nset up.",
+        "operationId": "text_today_api_hep_patients__patient_id__text_today_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TextTodayBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Text Today Api Hep Patients  Patient Id  Text Today Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Text Today",
+        "tags": [
+          "hep-texts"
         ]
       }
     },
@@ -6824,6 +9002,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -6872,6 +9066,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -6943,6 +9153,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -7000,6 +9226,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -7070,6 +9312,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -7148,6 +9406,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "requestBody": {
@@ -7192,7 +9466,7 @@
     },
     "/api/hep/review": {
       "get": {
-        "description": "The clips waiting for the therapist: the clinic's done days with a\nclip of the attempt and no review yet, newest completion first.",
+        "description": "What waits for the therapist: the clinic's done days nobody has\nreviewed that carry a clip of the attempt, or went over the dose,\nnewest completion first. Each row says which under ``reason``.",
         "operationId": "review_queue_api_hep_review_get",
         "parameters": [
           {
@@ -7222,6 +9496,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -7249,6 +9539,86 @@
           }
         },
         "summary": "Review Queue",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/review/count": {
+      "get": {
+        "description": "How many rows the queue holds, for the number beside Review: the\nsame definition and the same window, without rendering a row.",
+        "operationId": "review_count_api_hep_review_count_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Review Count Api Hep Review Count Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Count",
         "tags": [
           "hep"
         ]
@@ -7336,6 +9706,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -7368,7 +9754,7 @@
         ]
       },
       "post": {
-        "description": "One exercise, at one dose, on each of the days given. A day that\nalready carries it refuses the whole request, naming the day.",
+        "description": "One exercise, at one dose, on the days given or on a repeat.\n\nWith ``dates`` it is all or nothing: a day that already carries the\nexercise refuses the whole request, naming the day. With ``repeat`` the\nserver works the days out and lands around what is there: a day that\nalready carries the exercise, or lies outside the schedule's reach, is\nleft out and listed in ``skipped_days``, and the rows written share a\n``series_id``. ``text_patient`` also texts the patient a link to the\nfirst of the days; what came of that is under ``text`` (null when no\ntext was asked for or none could go).",
         "operationId": "create_schedule_api_hep_schedule_post",
         "parameters": [
           {
@@ -7385,6 +9771,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -7430,7 +9832,7 @@
     },
     "/api/hep/schedule/copy-week": {
       "post": {
-        "description": "Last week again: every assignment of the seven days from\n``from_start`` on the same weekday from ``to_start``, dose, note and\nrequirements with it. A day that already has the exercise is skipped and\ncounted in ``skipped``.",
+        "description": "Last week again: every assignment of the seven days from\n``from_start`` on the same weekday from ``to_start``, dose, note and\nrequirements with it. A day that already has the exercise, or lies\noutside the schedule's reach, is skipped: counted in ``skipped`` and\nlisted with its reason in ``skipped_days``.",
         "operationId": "copy_schedule_week_api_hep_schedule_copy_week_post",
         "parameters": [
           {
@@ -7447,6 +9849,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -7529,6 +9947,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -7587,6 +10021,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "requestBody": {
@@ -7631,7 +10081,7 @@
     },
     "/api/hep/schedule/{assignment_id}/complete": {
       "post": {
-        "description": "The therapist logging a day done from the room, with the pain the\npatient told her. ``completion_source`` reads ``console``.",
+        "description": "The therapist logging a day done from the room, with what the\npatient told her: the pain after, the effort, and the sets, reps and\nload actually done. ``completion_source`` reads ``console``.",
         "operationId": "complete_schedule_api_hep_schedule__assignment_id__complete_post",
         "parameters": [
           {
@@ -7657,6 +10107,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -7707,9 +10173,190 @@
         ]
       }
     },
+    "/api/hep/schedule/{assignment_id}/duplicate": {
+      "post": {
+        "description": "The same exercise at the same dose, note and requirements on other\ndays, as open days of their own: drag to copy. All or nothing, like an\nassignment made by hand: a day that already carries the exercise is a\n409 naming it.",
+        "operationId": "duplicate_schedule_api_hep_schedule__assignment_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Duplicate Schedule Api Hep Schedule  Assignment Id  Duplicate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Duplicate Schedule",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
+    "/api/hep/schedule/{assignment_id}/reopen": {
+      "post": {
+        "description": "Undo a day the console logged done: the row is open again. A day the\npatient logged themselves is their record and answers 409, as does a\nday that is not done.",
+        "operationId": "reopen_schedule_api_hep_schedule__assignment_id__reopen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ActorBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reopen Schedule Api Hep Schedule  Assignment Id  Reopen Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reopen Schedule",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
     "/api/hep/schedule/{assignment_id}/review": {
       "post": {
-        "description": "The therapist has looked at a done day. The row records who and\nwhen; a note also goes to the patient as one line on the thread, under\nher name, so they read it in Care. An open day → 409.",
+        "description": "The therapist has looked at a done day. The row records who and\nwhen; a note also goes to the patient as one line on the thread, under\nher name, so they read it in Care, and as a text with a link to the\nexercise (``text``: what came of that, null when there was no note or\nno text could go). An open day → 409.",
         "operationId": "review_schedule_api_hep_schedule__assignment_id__review_post",
         "parameters": [
           {
@@ -7735,6 +10382,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -7785,6 +10448,213 @@
         ]
       }
     },
+    "/api/hep/series/{series_id}": {
+      "delete": {
+        "description": "Clear \"this and the following\": remove the repeat's still-open days\nfrom ``from`` on (today when left out). ``kept`` counts the days of the\nrepeat that stay: the done, the skipped and the earlier.",
+        "operationId": "delete_series_api_hep_series__series_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "title": "Series Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "default": "provider",
+              "maxLength": 60,
+              "title": "Actor",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Series Api Hep Series  Series Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Series",
+        "tags": [
+          "hep"
+        ]
+      },
+      "patch": {
+        "description": "Re-dose or re-word \"this and the following\": the fields sent go onto\nevery still-open day of the repeat from ``from`` on (today when left\nout). Done and skipped days, and open days before it, keep what they\nhad.",
+        "operationId": "update_series_api_hep_series__series_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "title": "Series Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeriesPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Series Api Hep Series  Series Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Series",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
     "/api/hep/templates": {
       "get": {
         "description": "The clinic's programs still in use, by name.",
@@ -7804,6 +10674,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -7853,6 +10739,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -7936,6 +10838,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -7993,6 +10911,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -8052,6 +10986,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "requestBody": {
@@ -8096,7 +11046,7 @@
     },
     "/api/hep/templates/{template_id}/apply": {
       "post": {
-        "description": "Every item on its weekdays from ``start`` for ``weeks`` weeks, around\nwhatever the patient's calendar already holds (duplicates are skipped\nand counted).",
+        "description": "Every item on its weekdays from ``start`` for ``weeks`` weeks, around\nwhatever the patient's calendar already holds and inside the schedule's\nreach: a day that already has the exercise, or lies past the reach, is\nskipped, counted in ``skipped`` and listed with its reason in\n``skipped_days``.",
         "operationId": "apply_template_api_hep_templates__template_id__apply_post",
         "parameters": [
           {
@@ -8122,6 +11072,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -8165,6 +11131,108 @@
         ]
       }
     },
+    "/api/hep/week": {
+      "get": {
+        "description": "The week in review, one entry per lifter: assigned against done,\npain, effort against target, load done and written, the days that went\nover the dose, what waits for a look, and whether next week is set.\nLifters with something to look at come first. ``start`` defaults to\nthe Monday of ``today``'s week; ``today`` to the server date.",
+        "operationId": "week_review_api_hep_week_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "today",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Today"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Week Review Api Hep Week Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Week Review",
+        "tags": [
+          "hep"
+        ]
+      }
+    },
     "/api/integrations": {
       "get": {
         "operationId": "list_integrations_api_integrations_get",
@@ -8183,6 +11251,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -8245,6 +11329,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -8305,6 +11405,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -8337,6 +11453,113 @@
         ]
       }
     },
+    "/api/links/{token}": {
+      "get": {
+        "description": "Where the link leads and how to follow it: the app's own URL, the\nbrowser's continuation, and whether redeeming it signs the phone in.\nReads only.",
+        "operationId": "read_link_api_links__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Link Api Links  Token  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Link",
+        "tags": [
+          "links"
+        ]
+      }
+    },
+    "/api/links/{token}/session": {
+      "post": {
+        "description": "Redeem the link: the open is recorded and, for a demo persona on the\ndemo stack, an app session starts for the person it was texted to. ``me`` is what ``GET\n/api/mobile/me`` answers for that session. Where sign-in by link is not\nallowed the open is still recorded and the answer is 403: an app that\nis already signed in as that person reads the target from the GET.",
+        "operationId": "redeem_link_api_links__token__session_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/app__api__links__SessionBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Redeem Link Api Links  Token  Session Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redeem Link",
+        "tags": [
+          "links"
+        ]
+      }
+    },
     "/api/message-templates": {
       "get": {
         "operationId": "list_message_templates_api_message_templates_get",
@@ -8365,6 +11588,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -8414,6 +11653,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -8484,6 +11739,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -9247,7 +12518,7 @@
     },
     "/api/mobile/exercises": {
       "get": {
-        "description": "The day's exercises in order, a seven-day strip around it, and whose\nschedule it is. Clip URLs are playable as given: presigned on AWS, this\nAPI's own stream under the session on a laptop.",
+        "description": "The day's exercises in order, a seven-day strip around it, and whose\nschedule it is. Clip URLs are playable as given: presigned on AWS, this\nAPI's own stream under the session on a laptop. ``date`` is the day\nasked for; ``today`` is the phone's own day, which each row's ``state``\nis read on (the server's when left out).",
         "operationId": "today_exercises_api_mobile_exercises_get",
         "parameters": [
           {
@@ -9265,6 +12536,23 @@
                 }
               ],
               "title": "Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "today",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Today"
             }
           },
           {
@@ -9383,7 +12671,7 @@
     },
     "/api/mobile/exercises/program": {
       "get": {
-        "description": "The whole program by day: a week back and a week ahead by default,\neach day with its exercises and how it went (a past day's open row is\nmissed).",
+        "description": "The whole program by day: a week back and a week ahead by default,\nup to six weeks for a month view, each day with its exercises and how\nit went (a past day's open row is missed).",
         "operationId": "program_api_mobile_exercises_program_get",
         "parameters": [
           {
@@ -9409,10 +12697,27 @@
             "required": false,
             "schema": {
               "default": 14,
-              "maximum": 35,
+              "maximum": 42,
               "minimum": 1,
               "title": "Days",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "today",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Today"
             }
           },
           {
@@ -9457,6 +12762,84 @@
           }
         },
         "summary": "Program",
+        "tags": [
+          "exercises"
+        ]
+      }
+    },
+    "/api/mobile/exercises/{assignment_id}": {
+      "get": {
+        "description": "One of the patient's own days by id, however long ago it was: what a\ntexted link opens, where the program's window may no longer reach.",
+        "operationId": "one_exercise_api_mobile_exercises__assignment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "today",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Today"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response One Exercise Api Mobile Exercises  Assignment Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One Exercise",
         "tags": [
           "exercises"
         ]
@@ -9535,6 +12918,108 @@
           }
         },
         "summary": "Complete Exercise",
+        "tags": [
+          "exercises"
+        ]
+      }
+    },
+    "/api/mobile/exercises/{assignment_id}/history": {
+      "get": {
+        "description": "This day's exercise over time, for the patient who does it: every\nday it was on their calendar, as written and as done, oldest first,\nwith the run in a few numbers.",
+        "operationId": "exercise_history_api_mobile_exercises__assignment_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 120,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ahead",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 90,
+              "minimum": 0,
+              "title": "Ahead",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "today",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Today"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Exercise History Api Mobile Exercises  Assignment Id  History Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exercise History",
         "tags": [
           "exercises"
         ]
@@ -12835,7 +16320,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SessionBody"
+                "$ref": "#/components/schemas/app__sports__api__SessionBody"
               }
             }
           },
@@ -13765,6 +17250,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "requestBody": {
@@ -13842,6 +17343,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -13910,6 +17427,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -13989,6 +17522,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -14040,6 +17589,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -14101,6 +17666,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -14152,6 +17733,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -14223,6 +17820,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -14283,6 +17896,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -14355,6 +17984,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -14416,6 +18061,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -14475,6 +18136,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -14536,6 +18213,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -14608,6 +18301,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "requestBody": {
@@ -14679,6 +18388,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -14738,6 +18463,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -14851,6 +18592,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "requestBody": {
@@ -14942,6 +18699,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -15012,6 +18785,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -15078,6 +18867,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -15148,6 +18953,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -15203,6 +19024,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -15263,6 +19100,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -15334,6 +19187,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -15395,6 +19264,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "requestBody": {
@@ -15437,6 +19322,293 @@
         ]
       }
     },
+    "/api/patients/{patient_id}/data/export": {
+      "get": {
+        "description": "One chart's data as a CSV file: its raw readings (the browse filters\napply), its reported grid, or the daily series of the metrics named.",
+        "operationId": "export_data_api_patients__patient_id__data_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "observations",
+              "pattern": "^(observations|reported|series)$",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "family",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Family"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Granularity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Data",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/patients/{patient_id}/data/summary": {
+      "get": {
+        "description": "One chart's sources and coverage, and what the latest stored\nassessment says (tier, reasons, composite, confidence, trajectory). The\nassessment is read as stored, never recomputed here.",
+        "operationId": "data_summary_api_patients__patient_id__data_summary_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Data Summary Api Patients  Patient Id  Data Summary Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Data Summary",
+        "tags": [
+          "data"
+        ]
+      }
+    },
     "/api/patients/{patient_id}/messages": {
       "get": {
         "operationId": "list_messages_api_patients__patient_id__messages_get",
@@ -15464,6 +19636,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -15524,6 +19712,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -15595,6 +19799,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -15655,6 +19875,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -15714,6 +19950,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -15783,6 +20035,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -15870,6 +20138,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -15938,6 +20222,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -16035,6 +20335,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -16067,6 +20383,209 @@
         ]
       }
     },
+    "/api/patients/{patient_id}/observations/browse": {
+      "get": {
+        "description": "The chart's stored readings newest first, a page at a time, each with\nits provenance and whether it is the one the daily series uses.",
+        "operationId": "browse_observations_api_patients__patient_id__observations_browse_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "family",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Family"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Granularity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Browse Observations Api Patients  Patient Id  Observations Browse Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Browse Observations",
+        "tags": [
+          "data"
+        ]
+      }
+    },
     "/api/patients/{patient_id}/overview": {
       "get": {
         "operationId": "patient_overview_api_patients__patient_id__overview_get",
@@ -16094,6 +20613,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -16155,6 +20690,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -16212,6 +20763,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -16283,6 +20850,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -16352,6 +20935,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -16420,6 +21019,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -16504,6 +21119,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -16565,6 +21196,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -16597,6 +21244,284 @@
         ]
       }
     },
+    "/api/patients/{patient_id}/reported": {
+      "get": {
+        "description": "One row per day, newest first: the check-in's answers, the training\nload they give, and that day on the exercise calendar (prescribed\nagainst done).",
+        "operationId": "reported_grid_api_patients__patient_id__reported_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 120,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reported Grid Api Patients  Patient Id  Reported Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reported Grid",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/patients/{patient_id}/series": {
+      "get": {
+        "description": "Each metric's daily series as the engine builds it, with the person's\nbaseline, each day's deviation and the source that supplied the day.",
+        "operationId": "daily_series_api_patients__patient_id__series_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One metric key, or several separated by commas",
+            "in": "query",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "description": "One metric key, or several separated by commas",
+              "title": "Metric",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Daily Series Api Patients  Patient Id  Series Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Daily Series",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/patients/{patient_id}/sleep": {
+      "get": {
+        "description": "The nights: duration, stage hours, bed and wake times where the source\nsent them, averages and consistency, and what the stored assessment\nderives from them.",
+        "operationId": "sleep_nights_api_patients__patient_id__sleep_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sleep Nights Api Patients  Patient Id  Sleep Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sleep Nights",
+        "tags": [
+          "data"
+        ]
+      }
+    },
     "/api/patients/{patient_id}/tasks": {
       "get": {
         "operationId": "list_tasks_api_patients__patient_id__tasks_get",
@@ -16624,6 +21549,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -16684,6 +21625,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -16746,6 +21703,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -16807,6 +21780,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -16866,6 +21855,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -16945,6 +21950,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -17006,6 +22027,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -17056,6 +22093,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -17126,6 +22179,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -17194,6 +22263,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -17274,6 +22359,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "requestBody": {
@@ -17344,6 +22445,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -17378,6 +22495,7 @@
     },
     "/api/sports/teams/{team_id}/events": {
       "get": {
+        "description": "The team's calendar: by default a week back and ``days`` ahead; with\n``from`` and ``to``, exactly that range (a month view asks for six weeks).",
         "operationId": "team_events_api_sports_teams__team_id__events_get",
         "parameters": [
           {
@@ -17400,6 +22518,40 @@
             }
           },
           {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -17413,6 +22565,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -17471,6 +22639,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -17551,6 +22735,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -17601,6 +22801,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -17705,6 +22921,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
+            }
           }
         ],
         "responses": {
@@ -17753,6 +22985,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -17823,6 +23071,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],
@@ -18162,6 +23426,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-MedPull-Clinic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Medpull-Clinic"
             }
           }
         ],

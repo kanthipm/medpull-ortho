@@ -268,3 +268,6 @@ class SportsEvent(Base):
     home: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     location: Mapped[str | None] = mapped_column(String, nullable=True)
     note: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Who wrote the row: "seed" for the demo's generated calendar, "staff" for
+    # an event added from the console. NULL on rows older than the column.
+    source: Mapped[str | None] = mapped_column(String, nullable=True)

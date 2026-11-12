@@ -66,7 +66,7 @@ INDEPENDENT_ORG = ("independent", "Independent athletes")
 # sports seed adds later, the Personal members) leads with its first row.
 HEROES = frozenset({
     "hirt-cole", "dana", "linda", "robert", "sofia", "james",
-    "jalen-okoro", "sloane-whitaker",
+    "jalen-okoro", "camila-ortega", "sloane-whitaker",
 })
 # H.I.R.T. is the pilot the showcase is built round, so it leads the clinic list.
 CLINIC_ORG_ORDER = (hirt.HOSPITAL_ID, demo_fill.DEMO_HOSPITAL)
@@ -80,6 +80,7 @@ SPORTS_STORIES = {
     "acl": "ACL rehab: running and jumping, no contact yet",
     "ankle": "Right ankle sprain, day nine: modified",
     "tendon": "Left patellar tendon: jump load managed",
+    "hamstring": "Hamstring strain: back to sprinting, not yet full speed",
     "unwell": "Running a temperature, resting heart rate up",
     "fresh": "Fresh after a light week",
     "freshman": "First year on the roster",

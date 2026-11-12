@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 import secrets
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api import mobile
@@ -1118,7 +1119,9 @@ def _team_briefing(rows: list[dict[str, Any]], events: list[SportsEvent], today:
 
 def _event_view(e: SportsEvent) -> dict[str, Any]:
     return {"id": e.id, "date": e.date.isoformat(), "start_time": e.start_time, "kind": e.kind, "title": e.title,
-            "opponent": e.opponent, "home": e.home, "location": e.location, "note": e.note}
+            "opponent": e.opponent, "home": e.home, "location": e.location, "note": e.note,
+            # "staff" for an entry added from the console, "seed" for the demo's own calendar
+            "source": e.source or "seed"}
 
 
 @team_router.get("/teams/{team_id}/athletes/{patient_id}")
@@ -1198,8 +1201,9 @@ def staff_status(
         raise HTTPException(status_code=404, detail="Unknown athlete on this team")
     if body.status not in STATUSES:
         raise HTTPException(status_code=422, detail="Unknown status")
-    profile.status = body.status
-    profile.status_note = body.note
+    # Marked as the staff's own decision, so the demo's morning refresh keeps
+    # it instead of putting the scenario's availability back.
+    identity.mark_staff_status(profile, body.status, body.note)
     db.commit()
     return {"ok": True, "status": profile.status, "status_label": STATUS_LABELS[profile.status]}
 
@@ -1215,18 +1219,34 @@ class EventBody(BaseModel):
     note: str | None = None
 
 
+# What a calendar entry can be. The seed and the app write the first six;
+# the console's calendar offers all of them.
+EVENT_KINDS = ("practice", "game", "match", "lift", "shootaround", "conditioning", "training",
+               "recovery", "travel", "off")
+MAX_EVENT_WINDOW_DAYS = 62
+
+
 @team_router.get("/teams/{team_id}/events")
 def team_events(
     team_id: str, days: int = 21,
+    start: dt.date | None = Query(default=None, alias="from"),
+    end: dt.date | None = Query(default=None, alias="to"),
     db: Session = Depends(get_db),
     scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
+    """The team's calendar: by default a week back and ``days`` ahead; with
+    ``from`` and ``to``, exactly that range (a month view asks for six weeks)."""
     team = _team_or_404(db, scope, team_id)
     today = date.today()
-    rows = db.scalars(select(SportsEvent).where(SportsEvent.team_id == team.id, SportsEvent.date >= today - timedelta(days=7),
-                                                SportsEvent.date <= today + timedelta(days=days))
+    if start is None or end is None:
+        start, end = today - timedelta(days=7), today + timedelta(days=max(0, min(days, MAX_EVENT_WINDOW_DAYS)))
+    if end < start or (end - start).days > MAX_EVENT_WINDOW_DAYS:
+        raise HTTPException(status_code=422, detail=f"Ask for at most {MAX_EVENT_WINDOW_DAYS} days")
+    rows = db.scalars(select(SportsEvent).where(SportsEvent.team_id == team.id, SportsEvent.date >= start,
+                                                SportsEvent.date <= end)
                       .order_by(SportsEvent.date, SportsEvent.start_time)).all()
-    return {"events": [_event_view(e) for e in rows]}
+    return {"from": start.isoformat(), "to": end.isoformat(), "kinds": list(EVENT_KINDS),
+            "events": [_event_view(e) for e in rows]}
 
 
 @team_router.post("/teams/{team_id}/events")
@@ -1236,8 +1256,16 @@ def add_event(
     scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
     team = _team_or_404(db, scope, team_id)
-    e = SportsEvent(team_id=team.id, date=body.date, kind=body.kind[:24], title=body.title, start_time=body.start_time,
-                    opponent=body.opponent, home=body.home, location=body.location, note=body.note)
+    kind = body.kind.strip().lower()
+    if kind not in EVENT_KINDS:
+        raise HTTPException(status_code=422, detail=f"Unknown kind; one of {', '.join(EVENT_KINDS)}")
+    start_time = (body.start_time or "").strip() or None
+    if start_time is not None and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", start_time):
+        raise HTTPException(status_code=422, detail="start_time is a 24-hour clock time, like 15:30")
+    # "staff": the morning refresh rewrites the seed's own calendar and leaves this row alone.
+    e = SportsEvent(team_id=team.id, date=body.date, kind=kind, title=body.title.strip(), start_time=start_time,
+                    opponent=body.opponent, home=body.home, location=body.location, note=body.note,
+                    source="staff")
     db.add(e)
     db.commit()
     return {"ok": True, "event": _event_view(e)}
@@ -1250,7 +1278,10 @@ def delete_event(
     scope: ConsoleScope = Depends(console_scope),
 ) -> dict:
     _team_or_404(db, scope, team_id)
-    db.execute(delete(SportsEvent).where(SportsEvent.id == event_id, SportsEvent.team_id == team_id))
+    event = db.get(SportsEvent, event_id)
+    if event is None or event.team_id != team_id:
+        raise HTTPException(status_code=404, detail="Unknown event")
+    db.delete(event)
     db.commit()
     return {"ok": True}
 

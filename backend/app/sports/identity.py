@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import re
 import secrets
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -153,6 +153,36 @@ def leave_org(db: Session, profile: SportsProfile) -> SportsProfile:
     profile.coach_linked = False
     db.commit()
     return profile
+
+
+# --- an availability the staff set -----------------------------------------------------------------
+#
+# ``profile.status`` is written from three places: the staff's control on the
+# console, the athlete's own profile screen, and the rehab engine when an
+# injury is reported or closed. Only the first is a decision someone made
+# about the roster, so it leaves a mark in the profile's settings, and the
+# demo's morning refresh keeps a status that still carries it.
+
+
+def mark_staff_status(profile: SportsProfile, status: str, note: str | None) -> None:
+    """Record that the staff set this availability and note, and when."""
+    profile.status = status
+    profile.status_note = note
+    profile.settings = {**(profile.settings or {}),
+                        "staff_status": {"status": status, "note": note, "at": datetime.now().isoformat(timespec="seconds")}}
+
+
+def staff_status(profile: SportsProfile) -> dict[str, Any] | None:
+    """The staff's mark, while the availability on the profile is still the
+    one they set; None once anything else has changed it."""
+    mark = (profile.settings or {}).get("staff_status")
+    if isinstance(mark, dict) and mark.get("status") == profile.status and mark.get("note") == profile.status_note:
+        return mark
+    return None
+
+
+def staff_set_status(profile: SportsProfile) -> bool:
+    return staff_status(profile) is not None
 
 
 # --- views ----------------------------------------------------------------------------------------
