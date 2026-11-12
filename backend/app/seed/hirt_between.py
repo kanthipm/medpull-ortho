@@ -79,6 +79,7 @@ class Between:
     areas: tuple[tuple[str, str | None], ...] = ()
     visits: tuple[tuple[int, str, str | None, str], ...] = ()   # day, kind, at, note
     rest_days: tuple[int, ...] = ()                              # weekdays (Monday is 0)
+    rest_note: str = ""                                          # what the day's mark says
     protocol: str | None = None
     phase: int = 0                                               # index of the current phase
     met: tuple[int, ...] = ()                                    # criteria ticked in it
@@ -103,7 +104,9 @@ RECORDS: dict[str, Between] = {
         areas=(("knee", "left"),),
         visits=((0, "evaluation", "09:00", ""), (7, "visit", "09:00", ""),
                 (16, "test_day", "09:30", "Bring lifting shoes.")),
-        rest_days=(6,),
+        # Sunday carries only his heel slides: a rest from the loaded work,
+        # and the mark says so.
+        rest_days=(6,), rest_note="No loaded work today. Heel slides only.",
         protocol="tendon", phase=1, met=(2,),
         goals=(
             ("Squat 315 for reps without the knee talking", ((0, 4), (7, 5), (13, 4))),
@@ -167,7 +170,7 @@ RECORDS: dict[str, Between] = {
     "hirt-june": Between(
         areas=(("low back", None),),
         visits=((0, "evaluation", "11:00", ""), (7, "visit", "11:00", ""), (15, "visit", "11:00", "")),
-        rest_days=(6,),
+        # No rest day: her program is on every day of the week.
         protocol="back", phase=1, met=(0,),
         goals=(
             ("Deadlift my bodyweight again", ((0, 4), (7, 6), (13, 7))),
@@ -278,7 +281,7 @@ def write(db: Session, patient_id: str, today: date) -> dict[str, int]:
         day = today + timedelta(days=ahead)
         if day.weekday() in record.rest_days:
             db.add(CalendarMark(hospital_id=HOSPITAL_ID, patient_id=patient_id, day=day,
-                                kind="rest", note="", created_by=by))
+                                kind="rest", note=record.rest_note, created_by=by))
     counts["visits"] = len(record.visits)
 
     if record.protocol is not None:
@@ -372,7 +375,7 @@ def write(db: Session, patient_id: str, today: date) -> dict[str, int]:
     if record.handoff is not None:
         status = record.handoff["status"]
         written = datetime.combine(_day(today, 7), time(10, 15))
-        db.add(Handoff(
+        handoff = Handoff(
             patient_id=patient_id, hospital_id=HOSPITAL_ID, trainer_name=TRAINER,
             limits=list(record.handoff["limits"]), report_back=record.handoff["report_back"],
             include_week=True, status=status, created_by=by, created_at=written,
@@ -381,7 +384,22 @@ def write(db: Session, patient_id: str, today: date) -> dict[str, int]:
             # A link for the demo that survives a refill would have to be a
             # known string; a fresh secret each morning is the honest shape.
             token=secrets.token_urlsafe(18) if status == "active" else None,
-        ))
+        )
+        db.add(handoff)
+        if status == "awaiting":
+            # Waiting on the person means the question is in their tasks: the
+            # same ask the console's button makes, written without a text.
+            from app.pt import asks
+
+            db.flush()
+            task, _outcome = asks.ask(
+                db, patient, qset=asks.HANDOFF, title="Share your training limits?",
+                why="Your therapist wrote a short page for your trainer. "
+                    "It goes nowhere unless you say yes.",
+                questions=asks.handoff_questions(handoff), ref={"handoff_id": handoff.id},
+                notify=False, created_by=by,
+            )
+            handoff.task_id = task.id
 
     if record.question is not None:
         text, hours_ago = record.question

@@ -73,8 +73,7 @@ def _between_visits(db: Session, patient: Patient, day: date, today: date) -> di
     upcoming = between.visits_of(db, patient.id, today)["next"]
     return {
         "rest_day": {"note": rest.note or ""} if rest is not None else None,
-        "next_visit": ({"on": upcoming["on"], "at": upcoming["at"], "kind": upcoming["kind"],
-                        "kind_label": upcoming["kind_label"]} if upcoming else None),
+        "next_visit": between.phone_visit(upcoming),
     }
 
 

@@ -794,6 +794,16 @@ def visit_view(db: Session, row: ClinicVisit) -> dict[str, Any]:
     }
 
 
+def phone_visit(view: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A visit as the person's own app gets it: the day, the time and what
+    kind. The clinic's note on a visit is written for the clinic, and who
+    booked it is the clinic's business, so neither travels."""
+    if not view:
+        return None
+    return {"on": view["on"], "at": view["at"], "kind": view["kind"],
+            "kind_label": view["kind_label"]}
+
+
 def add_visit(db: Session, clinic: str, patient: Patient, *, visit_on: date, at: str | None,
               kind: str, note: str | None, by: str, today: date) -> ClinicVisit:
     if kind not in VISIT_KINDS:
@@ -1323,7 +1333,7 @@ def patient_side(db: Session, patient: Patient, today: date) -> dict[str, Any]:
     goals = function_view(db, patient, None)["goals"]
     handoff = handoff_of(db, patient.id)
     return {
-        "next_visit": visits["next"],
+        "next_visit": phone_visit(visits["next"]),
         "rest_day": {"note": rest.note or ""} if rest is not None else None,
         "phase": ({"name": phases["current"]["name"], "goal": phases["current"]["goal"],
                    "number": phases["number"], "count": phases["count"]}
