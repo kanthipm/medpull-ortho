@@ -13,6 +13,7 @@ import ApplyProgramDialog from './ApplyProgramDialog'
 import { LABEL, NumberField, RequirementControl, WeekdayPicker } from './DoseFields'
 import { diagnosticWarning } from './hepCopy'
 import LibraryPicker from './LibraryPicker'
+import { CALENDAR } from './paths'
 import {
   blankProgram,
   draftFromTemplate,
@@ -25,7 +26,7 @@ import {
 } from './programCopy'
 import { countOf, requirementsText, weekdaysLabel } from './scheduleCopy'
 
-/** `/exercise-programs/new` and `/exercise-programs/:id` — build a program:
+/** `/calendar/programs/new` and `/calendar/programs/:id` — build a program:
  *  pick exercises from the library on the left, and on the right give each
  *  its weekdays, its dose (sets, reps, hold, load, target effort, side),
  *  what you ask for with it and a note. Save creates or updates the
@@ -53,7 +54,7 @@ export default function ProgramEditorPage() {
       <EmptyState
         title="This program couldn’t be opened."
         action={
-          <Link to="/exercise-programs" className="btn-tinted">
+          <Link to={CALENDAR.programs} className="btn-tinted">
             Back to programs
           </Link>
         }
@@ -150,7 +151,7 @@ function Editor({ template, options, library }: { template: Template | null; opt
         onSuccess: (t) => {
           setSaved(serializeProgram(draft))
           toast('Program saved', 'success')
-          navigate(`/exercise-programs/${t.id}`, { replace: true })
+          navigate(CALENDAR.program(t.id), { replace: true })
         },
         onError,
       })
@@ -160,7 +161,7 @@ function Editor({ template, options, library }: { template: Template | null; opt
   return (
     <div className="pb-28">
       <header data-hero className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
-        <Link to="/exercise-programs" className="btn-plain-muted btn-sm -ml-2">
+        <Link to={CALENDAR.programs} className="btn-plain-muted btn-sm -ml-2">
           <ChevronLeft size={16} aria-hidden /> Programs
         </Link>
         <div className="mt-3 flex flex-wrap items-center gap-3">

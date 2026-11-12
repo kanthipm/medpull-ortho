@@ -10,6 +10,7 @@ import { SkeletonCard } from '../../components/Skeleton'
 import { relativeTime } from '../../lib/format'
 import { GroupFooter, GroupHeader, SettingsHero } from '../settings/Switch'
 import ExercisesNav from './ExercisesNav'
+import { CALENDAR } from './paths'
 import { planStatus } from './planCopy'
 
 type Filter = 'all' | 'draft' | 'active' | 'closed'
@@ -20,7 +21,7 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'closed', label: 'Closed' },
 ]
 
-/** `/exercise-plans` — every home exercise plan the clinic has written:
+/** `/calendar/plans` — every home exercise plan the clinic has written:
  *  drafts still being built, the plan each patient is on now, and the ones
  *  replaced or archived. */
 export default function ExercisePlansPage() {
@@ -58,7 +59,7 @@ export default function ExercisePlansPage() {
           role="radiogroup"
           aria-label="Plan status"
         />
-        <Link to="/exercise-plans/new" className="btn-filled ml-auto">
+        <Link to={CALENDAR.newPlan} className="btn-filled ml-auto">
           <Plus size={16} /> New plan
         </Link>
       </div>
@@ -100,7 +101,7 @@ function PlansTable({ rows, filter }: { rows: Plan[]; filter: Filter }) {
               family="teal"
               action={
                 filter === 'all' ? (
-                  <Link to="/exercise-plans/new" className="btn-tinted">
+                  <Link to={CALENDAR.newPlan} className="btn-tinted">
                     <Plus size={16} /> New plan
                   </Link>
                 ) : undefined
@@ -131,7 +132,7 @@ function PlansTable({ rows, filter }: { rows: Plan[]; filter: Filter }) {
                     <tr key={p.id}>
                       <Td>
                         <Link
-                          to={`/exercise-plans/${p.id}`}
+                          to={CALENDAR.plan(p.id)}
                           className="block font-medium text-ink hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus rounded-[6px]"
                         >
                           {p.patient?.name ?? <span className="text-secondary">No patient yet</span>}

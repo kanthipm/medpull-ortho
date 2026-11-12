@@ -9,6 +9,7 @@ import Modal from '../../components/Modal'
 import { SkeletonCard } from '../../components/Skeleton'
 import { useToast } from '../../components/Toast'
 import { LABEL, NumberField } from './DoseFields'
+import { CALENDAR } from './paths'
 import { programItemDose } from './programCopy'
 import {
   ASSIGN_FUTURE_DAYS,
@@ -132,7 +133,7 @@ export default function ApplyProgramDialog({
           icon={<ClipboardList />}
           family="teal"
           action={
-            <Link to="/exercise-programs/new" className="btn-tinted" onClick={onClose}>
+            <Link to={CALENDAR.newProgram} className="btn-tinted" onClick={onClose}>
               Build a program
             </Link>
           }

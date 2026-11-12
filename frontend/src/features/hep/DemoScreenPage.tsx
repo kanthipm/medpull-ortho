@@ -7,6 +7,7 @@ import { useDemoPatientSession, useHepOptions } from '../../api/hep'
 import { useHealth } from '../../api/queries'
 import { SkeletonCard } from '../../components/Skeleton'
 import ScheduleBoard from './ScheduleBoard'
+import { CALENDAR } from './paths'
 
 const LABEL = 'mb-1 block px-1 text-label font-medium tracking-label text-secondary'
 
@@ -29,8 +30,8 @@ export default function DemoScreenPage() {
           <h1 className="display-title text-display text-ink">Demo screen</h1>
         </header>
         <p className="mt-4 text-copy-lg text-body">This screen is for the demo stack.</p>
-        <Link to="/exercise-schedule" className="btn-plain btn-sm -ml-3 mt-4">
-          <ChevronLeft size={16} aria-hidden /> Back to the schedule
+        <Link to={CALENDAR.schedule} className="btn-plain btn-sm -ml-3 mt-4">
+          <ChevronLeft size={16} aria-hidden /> Back to the calendar
         </Link>
       </div>
     )
@@ -93,8 +94,8 @@ function DemoScreen() {
       <header data-hero className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
         <h1 className="text-subhead font-medium text-ink">H.I.R.T. demo screen</h1>
         <p className="text-copy text-body">The clinic’s week on the left, the lifter’s phone on the right.</p>
-        <Link to="/exercise-schedule" className="btn-plain btn-sm ml-auto">
-          Schedule <ChevronRight size={14} aria-hidden />
+        <Link to={CALENDAR.schedule} className="btn-plain btn-sm ml-auto">
+          Calendar <ChevronRight size={14} aria-hidden />
         </Link>
       </header>
 

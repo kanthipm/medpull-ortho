@@ -20,7 +20,7 @@ const WINDOWS: { key: Window; label: string }[] = [
   { key: '30', label: '30 days' },
 ]
 
-/** `/exercise-review` — the queue: every completed exercise a lifter sent a
+/** `/calendar/review` — the queue: every completed exercise a lifter sent a
  *  clip with and the therapist has not answered, newest first. A row opens
  *  the same dialog the grid uses, where Compare puts her clip beside theirs
  *  and Reply posts the review. Reviewing a row takes it off the list. */

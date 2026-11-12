@@ -1,8 +1,11 @@
-import { ChevronRight, Users } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Users } from 'lucide-react'
 import type { CSSProperties } from 'react'
-import { Link } from 'react-router-dom'
-import { useSportsTeams, type SportsOrg } from '../../api/sports'
+import { Navigate } from 'react-router-dom'
+import { fetchSportsTeams, sportsKeys, type SportsOrg } from '../../api/sports'
+import { useWorkspaces } from '../../api/workspaces'
 import EmptyState from '../../components/EmptyState'
+import { landingSubject } from '../../components/layout/workspaceRows'
 import ListRow, { ListGroup } from '../../components/ListRow'
 import SectionCard from '../../components/SectionCard'
 import { SkeletonCard, SkeletonLine } from '../../components/Skeleton'
@@ -12,30 +15,46 @@ import DotLine from '../patient/DotLine'
 import { StaffGuardrail } from './SportsBits'
 import { words } from './sportsFormat'
 
-/** The demo opens on this team. */
-const DEFAULT_TEAM = { org: 'rice', team: 'rice-mbb' }
-
 const SPORT_FAMILY: Record<string, TileFamily> = {
   basketball: 'teal',
   soccer: 'blue',
   tennis: 'violet',
 }
 
-/** Every organisation as a grouped list of its teams, straight into a
- *  team's board. */
+/** `/sports` — names no team, so it forwards to the team that was open
+ *  last on this browser, else the first one the workspace menu lists (a team
+ *  with a roster). Sports is one team at a time, picked from that menu.
+ *
+ *  Only where the menu has no team to offer does this page show itself:
+ *  every organisation this console can see as a grouped list of its teams,
+ *  each straight into its board, or one line saying there are none. */
 export default function TeamsIndexPage() {
-  const { data, isLoading, isError } = useSportsTeams()
-  // Rice first (the demo), then the rest in the API's order.
-  const orgs = [...(data?.orgs ?? [])].sort(
-    (a, b) => Number(b.id === DEFAULT_TEAM.org) - Number(a.id === DEFAULT_TEAM.org),
-  )
+  const workspaces = useWorkspaces()
+  const landing = workspaces.data ? landingSubject(workspaces.data, 'sports') : null
+  // The index is read only once it is known there is no team to forward to.
+  const settled = workspaces.data != null || workspaces.isError
+  const { data, isLoading, isError } = useQuery({
+    queryKey: sportsKeys.teams,
+    queryFn: fetchSportsTeams,
+    enabled: settled && !landing,
+  })
+
+  if (landing) return <Navigate to={`/sports/teams/${encodeURIComponent(landing)}`} replace />
+  if (!settled) {
+    return (
+      <div className="space-y-stack pb-4 pt-8" role="status" aria-label="Loading">
+        <SkeletonCard lines={3} />
+      </div>
+    )
+  }
+
+  const orgs = data?.orgs ?? []
   const teams = orgs.reduce((n, o) => n + o.teams.length, 0)
-  const start = orgs.flatMap((o) => o.teams).find((t) => t.id === DEFAULT_TEAM.team) ?? null
 
   return (
     <div className="pb-4 pt-8">
       <header data-hero className="rise" style={{ '--rise-delay': '0ms' } as CSSProperties}>
-        <p className="micro">Teams</p>
+        <p className="micro">Sports</p>
         <h1 className="display-title mt-2 text-section text-ink lg:text-display">Team boards</h1>
         {data ? (
           <DotLine
@@ -48,16 +67,7 @@ export default function TeamsIndexPage() {
             ]}
           />
         ) : (
-          <SkeletonLine className="mt-4 h-4 w-72 max-w-full" />
-        )}
-        {start && (
-          <div className="mt-6">
-            <Link to={`/sports/teams/${start.id}`} className="btn-filled">
-              <span aria-hidden className="dot-lime" />
-              Open {orgs[0].short_name} {start.name}
-              <ChevronRight aria-hidden size={16} />
-            </Link>
-          </div>
+          !isError && <SkeletonLine className="mt-4 h-4 w-72 max-w-full" />
         )}
       </header>
 
@@ -69,10 +79,13 @@ export default function TeamsIndexPage() {
       )}
       {(isError || (data && orgs.length === 0)) && (
         <div className="mt-10">
-          <EmptyState icon={<Users />} title={isError ? 'Teams couldn’t be loaded' : 'No teams yet'}>
+          <EmptyState
+            icon={<Users />}
+            title={isError ? 'Teams couldn’t be loaded' : 'No teams to show on this deployment'}
+          >
             {isError
               ? 'Check that the API is running, then reload this page.'
-              : 'Organisations and teams appear here once they are set up.'}
+              : 'Sports is the version for a team’s performance and medical staff: the board, the calendar and the roster’s data. No team is set up here.'}
           </EmptyState>
         </div>
       )}

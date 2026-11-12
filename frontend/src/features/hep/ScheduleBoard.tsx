@@ -13,6 +13,7 @@ import AssignDialog from './AssignDialog'
 import AssignmentChip from './AssignmentChip'
 import AssignmentDialog from './AssignmentDialog'
 import CopyWeekDialog from './CopyWeekDialog'
+import { CALENDAR } from './paths'
 import {
   addDays,
   assignable,
@@ -121,7 +122,7 @@ export default function ScheduleBoard({
             {waiting > 0 && (
               <>
                 {' · '}
-                <Link to="/exercise-review" className="text-risk-med-ink hover:underline">
+                <Link to={CALENDAR.review} className="text-risk-med-ink hover:underline">
                   {waiting} to review
                 </Link>
               </>

@@ -9,6 +9,7 @@ import { RefreshOverlay, SkeletonCard } from '../../components/Skeleton'
 import Tile from '../../components/Tile'
 import { relativeTime } from '../../lib/format'
 import { planStatus } from './planCopy'
+import { CALENDAR } from './paths'
 
 /** The patient page's "Exercise plan" card: the published plan they are on
  *  (each exercise with its dose), any drafts waiting, and the way into the
@@ -21,7 +22,7 @@ export default function PlanSection({ patientId, refreshing }: { patientId: stri
   const data = plans.data
   const active = data?.active ?? null
   const drafts = data?.drafts ?? []
-  const newHref = `/exercise-plans/new?patient=${encodeURIComponent(patientId)}`
+  const newHref = `${CALENDAR.newPlan}?patient=${encodeURIComponent(patientId)}`
 
   return (
     <SectionCard
@@ -30,7 +31,7 @@ export default function PlanSection({ patientId, refreshing }: { patientId: stri
       aside={active?.published_at ? `Published ${relativeTime(active.published_at)}` : undefined}
       action={
         active ? (
-          <Link to={`/exercise-plans/${active.id}`} className="btn-plain btn-sm">Edit plan</Link>
+          <Link to={CALENDAR.plan(active.id)} className="btn-plain btn-sm">Edit plan</Link>
         ) : (
           <Link to={newHref} className="btn-plain btn-sm"><Plus size={14} /> Assign plan</Link>
         )
@@ -54,13 +55,13 @@ export default function PlanSection({ patientId, refreshing }: { patientId: stri
           </ListGroup>
           <p className="meta px-5 pb-4 pt-3">
             {active.exercise_count} exercise{active.exercise_count === 1 ? '' : 's'} · assigned by {active.assigned_by_name ?? active.assigned_by}
-            {drafts.length > 0 && <> · <Link to={`/exercise-plans/${drafts[0].id}`} className="underline">A draft is waiting</Link></>}
+            {drafts.length > 0 && <> · <Link to={CALENDAR.plan(drafts[0].id)} className="underline">A draft is waiting</Link></>}
           </p>
         </>
       ) : drafts.length > 0 ? (
         <ListGroup inset="none" aria-label="Draft plans" className="!rounded-[14px]">
           {drafts.map((d) => (
-            <ListRow key={d.id} compact title={d.title} to={`/exercise-plans/${d.id}`}
+            <ListRow key={d.id} compact title={d.title} to={CALENDAR.plan(d.id)}
               subtitle={`${d.exercise_count} exercise${d.exercise_count === 1 ? '' : 's'} · updated ${relativeTime(d.updated_at)}`}
               trailing={<span className={`chip ${planStatus(d.status).pill}`}>{planStatus(d.status).label}</span>} />
           ))}

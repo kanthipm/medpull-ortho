@@ -15,9 +15,10 @@ import { relativeTime } from '../../lib/format'
 import { GroupFooter, GroupHeader, SettingsHero } from '../settings/Switch'
 import ApplyProgramDialog from './ApplyProgramDialog'
 import ExercisesNav from './ExercisesNav'
+import { CALENDAR } from './paths'
 import { weekdaysLabel } from './scheduleCopy'
 
-/** `/exercise-programs` — the clinic's programs: a pattern of exercises by
+/** `/calendar/programs` — the clinic's programs: a pattern of exercises by
  *  weekday, for a number of weeks, that "Apply to…" puts on a lifter's
  *  calendar from a start date. Open one to edit it; archiving takes it off
  *  the list and leaves every calendar built from it alone. */
@@ -65,7 +66,7 @@ export default function ProgramsPage() {
             {rows.length} program{rows.length === 1 ? '' : 's'}
           </span>
         )}
-        <Link to="/exercise-programs/new" className="btn-filled ml-auto">
+        <Link to={CALENDAR.newProgram} className="btn-filled ml-auto">
           <Plus size={16} aria-hidden /> New program
         </Link>
       </div>
@@ -93,7 +94,7 @@ export default function ProgramsPage() {
             icon={<Layers />}
             family="teal"
             action={
-              <Link to="/exercise-programs/new" className="btn-tinted">
+              <Link to={CALENDAR.newProgram} className="btn-tinted">
                 <Plus size={16} aria-hidden /> New program
               </Link>
             }
@@ -117,7 +118,7 @@ export default function ProgramsPage() {
                   key={t.id}
                   leading={<Tile family="teal" icon={<ClipboardList />} />}
                   title={t.name}
-                  to={`/exercise-programs/${t.id}`}
+                  to={CALENDAR.program(t.id)}
                   subtitle={t.description || summary(t)}
                   subtitleLines={2}
                   meta={`${t.weeks} week${t.weeks === 1 ? '' : 's'} · ${t.items.length} exercise${
@@ -135,7 +136,7 @@ export default function ProgramsPage() {
                             key: 'edit',
                             label: 'Edit',
                             icon: <Pencil />,
-                            onSelect: () => navigate(`/exercise-programs/${t.id}`),
+                            onSelect: () => navigate(CALENDAR.program(t.id)),
                           },
                           { key: 'sep', separator: true },
                           {

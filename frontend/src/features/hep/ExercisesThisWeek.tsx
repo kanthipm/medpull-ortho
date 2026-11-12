@@ -9,6 +9,7 @@ import { RefreshOverlay, SkeletonCard } from '../../components/Skeleton'
 import Tile from '../../components/Tile'
 import AssignmentChip from './AssignmentChip'
 import AssignmentDialog from './AssignmentDialog'
+import { CALENDAR } from './paths'
 import { dayOfMonth, mondayOf, weekDays, weekdayShort } from './scheduleCopy'
 
 /** The patient page's "Exercises this week" strip: this week's seven days
@@ -41,8 +42,8 @@ export default function ExercisesThisWeek({
       icon={<Tile size="sm" family="teal" icon={<CalendarDays />} />}
       aside={items.length > 0 ? `${done} of ${items.length} done` : undefined}
       action={
-        <Link to="/exercise-schedule" className="btn-plain btn-sm">
-          Schedule <ChevronRight aria-hidden size={14} />
+        <Link to={CALENDAR.schedule} className="btn-plain btn-sm">
+          Calendar <ChevronRight aria-hidden size={14} />
         </Link>
       }
     >
@@ -58,12 +59,12 @@ export default function ExercisesThisWeek({
           icon={<CalendarDays />}
           family="teal"
           action={
-            <Link to="/exercise-schedule" className="btn-tinted">
+            <Link to={CALENDAR.schedule} className="btn-tinted">
               <Plus size={16} aria-hidden /> Schedule exercises
             </Link>
           }
         >
-          Put exercises on their days from the schedule; they show in the app at once.
+          Put exercises on their days from the calendar; they show in the app at once.
         </EmptyState>
       ) : (
         <ol className="grid gap-1.5 sm:grid-cols-7" aria-label="This week, by day">
