@@ -10,7 +10,7 @@ import {
   Trash2,
   Watch,
 } from 'lucide-react'
-import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react'
 import { attachmentSrc } from '../../api/attachments'
 import {
   useDeleteSeries,
@@ -64,6 +64,7 @@ import {
   stateOf,
   vocabLabel,
 } from './scheduleCopy'
+import ClipNotes from '../pt/ClipNotes'
 import { loadBounds, loadField, loadKg, loadText, movedText } from './units'
 
 /** Which days a change to a repeat's day reaches. */
@@ -128,6 +129,8 @@ export default function AssignmentDialog({
   const [hold, setHold] = useState(fieldOf(a.hold_seconds))
   const [load, setLoad] = useState(loadField(a.load_kg, unit))
   const [rpe, setRpe] = useState(fieldOf(a.rpe_target))
+  const [loadMax, setLoadMax] = useState(loadField(a.load_max_kg, unit))
+  const [rpeMax, setRpeMax] = useState(fieldOf(a.rpe_max))
   const [side, setSide] = useState(a.side)
   const [video, setVideo] = useState<Requirement>(requirementOf(a.video_requirement))
   const [wearable, setWearable] = useState<Requirement>(requirementOf(a.wearable_requirement))
@@ -147,6 +150,8 @@ export default function AssignmentDialog({
     countOf(hold) !== (a.hold_seconds ?? null) ||
     loadKg(load, unit) !== (a.load_kg ?? null) ||
     countOf(rpe) !== (a.rpe_target ?? null) ||
+    loadKg(loadMax, unit) !== (a.load_max_kg ?? null) ||
+    countOf(rpeMax) !== (a.rpe_max ?? null) ||
     side !== a.side ||
     video !== requirementOf(a.video_requirement) ||
     wearable !== requirementOf(a.wearable_requirement) ||
@@ -169,6 +174,8 @@ export default function AssignmentDialog({
       side,
       load_kg: loadKg(load, unit),
       rpe_target: rpeTarget,
+      load_max_kg: loadKg(loadMax, unit),
+      rpe_max: countOf(rpeMax),
       video_requirement: video,
       wearable_requirement: wearable,
       clinician_instructions: note.trim(),
@@ -289,7 +296,7 @@ export default function AssignmentDialog({
       : 'Library demonstration — your own replaces it on their phone'
     : 'No demonstration for this exercise yet'
 
-  const description = [a.dose, a.rpe_target != null ? `should feel like ${a.rpe_target}/10` : '']
+  const description = [a.dose, a.rpe_target != null ? `should feel like ${a.rpe_target}/10` : '', a.ceiling ?? '']
     .filter(Boolean)
     .join(' · ')
 
@@ -350,6 +357,9 @@ export default function AssignmentDialog({
             <span className="chip bg-risk-med-tint text-risk-med-ink">
               <ReviewDot /> {reviewReason(a) === 'over' ? 'Over the dose · awaiting your look' : 'Awaiting your review'}
             </span>
+          )}
+          {a.completion?.past_ceiling && (
+            <span className="chip bg-risk-med-tint normal-case text-risk-med-ink">Went past your ceiling</span>
           )}
         </p>
       }
@@ -481,6 +491,34 @@ export default function AssignmentDialog({
             {dose ? `The patient reads: ${dose}` : 'No counts set.'}
             {rpeTarget != null && ` · should feel like ${rpeTarget}/10`}
           </p>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-7">
+            <div className="sm:col-span-2">
+              <NumberField
+                id={`${ids}-load-max`}
+                label={`Do not exceed (${unit})`}
+                value={loadMax}
+                max={bounds.max}
+                step={bounds.step}
+                disabled={done}
+                onChange={setLoadMax}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <NumberField
+                id={`${ids}-rpe-max`}
+                label="Stop at RPE"
+                value={rpeMax}
+                max={10}
+                disabled={done}
+                onChange={setRpeMax}
+              />
+            </div>
+            <p className="meta col-span-2 self-end px-1 pb-2 sm:col-span-3">
+              {a.ceiling
+                ? `On their screen through the session: ${a.ceiling}.`
+                : 'Ceilings: the load not to go past and the effort to stop at. Optional.'}
+            </p>
+          </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <RequirementControl label="Clip of their attempt" value={video} disabled={done} onChange={setVideo} />
             <RequirementControl label="Wearable on" value={wearable} disabled={done} onChange={setWearable} />
@@ -716,6 +754,7 @@ function Completion({
   const review = useReviewAssignment()
   const [reply, setReply] = useState('')
   const [compare, setCompare] = useState(false)
+  const clipRef = useRef<HTMLVideoElement>(null)
   const replyId = `${id}-reply`
   const seconds = sessionSeconds(a.session)
   const before = a.session?.pain_before ?? null
@@ -839,13 +878,31 @@ function Completion({
                   <figcaption className="meta mt-1">Your demonstration</figcaption>
                 </figure>
                 <figure>
-                  <ReturnedClip patientId={a.patient_id} video={c.video} label={`${patientName}’s clip of ${a.title}`} />
+                  <ReturnedClip
+                    patientId={a.patient_id}
+                    video={c.video}
+                    label={`${patientName}’s clip of ${a.title}`}
+                    videoRef={clipRef}
+                  />
                   <figcaption className="meta mt-1">Their attempt</figcaption>
                 </figure>
               </div>
             ) : (
-              <ReturnedClip patientId={a.patient_id} video={c.video} label={`${patientName}’s clip of ${a.title}`} />
+              <ReturnedClip
+                patientId={a.patient_id}
+                video={c.video}
+                label={`${patientName}’s clip of ${a.title}`}
+                videoRef={clipRef}
+              />
             )}
+            <ClipNotes
+              assignmentId={a.id}
+              patientId={a.patient_id}
+              patientName={patientName}
+              by={actor}
+              clipRef={clipRef}
+              reviewed={reviewed != null}
+            />
           </>
         ) : (
           <p className="meta">No clip was sent with it.</p>
@@ -868,7 +925,11 @@ function Completion({
           <div>
             <label htmlFor={replyId} className={LABEL}>
               Reply to {patientName}
-              {waiting && <span className="font-normal"> · they are waiting on this clip</span>}
+              {waiting && (
+                <span className="font-normal">
+                  {c.video ? ' · they are waiting on this clip' : ' · this day is waiting for your look'}
+                </span>
+              )}
             </label>
             <textarea
               id={replyId}
@@ -885,7 +946,10 @@ function Completion({
               </p>
             ) : (
               <p className="meta mt-1 px-1">
-                They read it in Care as “About your {a.title} clip: …”. Sending marks it reviewed.
+                {c.video
+                  ? `They read it in Care as “About your ${a.title} clip: …”, with your typed comments on the clip under it as lines.`
+                  : `They read it in Care as “About your ${a.title}: …”.`}{' '}
+                Sending marks it reviewed.
               </p>
             )}
             <div className="mt-2 flex flex-wrap justify-end gap-2">
@@ -1080,10 +1144,12 @@ function ReturnedClip({
   patientId,
   video,
   label,
+  videoRef,
 }: {
   patientId: string
   video: NonNullable<AssignmentCompletion['video']>
   label: string
+  videoRef?: Ref<HTMLVideoElement>
 }) {
   const [src, setSrc] = useState<string | null>(video.url ?? null)
   const [failed, setFailed] = useState(false)
@@ -1110,7 +1176,7 @@ function ReturnedClip({
   }, [patientId, video.id, video.url])
   if (failed) return <p className="meta">The clip could not be loaded.</p>
   if (!src) return <p className="meta">Loading the clip…</p>
-  return <ClipPlayer src={src} label={label} className="max-h-[360px]" />
+  return <ClipPlayer src={src} label={label} className="max-h-[360px]" videoRef={videoRef} />
 }
 
 /** 0–10 as a row of radios: one tab stop, arrows move, the number is the

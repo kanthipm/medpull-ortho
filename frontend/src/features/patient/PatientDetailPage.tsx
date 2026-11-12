@@ -31,6 +31,7 @@ import DataLinks from '../data/DataLinks'
 import { dataPath } from '../data/dataFormat'
 import ExercisesThisWeek from '../hep/ExercisesThisWeek'
 import PlanSection from '../hep/PlanSection'
+import ProgramCard from '../pt/ProgramCard'
 import RecoveryTimeline from './RecoveryTimeline'
 import WearableConnectionCard from './WearableConnectionCard'
 
@@ -499,6 +500,10 @@ export default function PatientDetailPage() {
 
           <Block index={6} order="order-6" id="exercises-this-week">
             <ExercisesThisWeek patientId={p.id} refreshing={refreshing} />
+          </Block>
+
+          <Block index={6} order="order-6" id="program">
+            <ProgramCard patientId={p.id} patientName={p.name} />
           </Block>
 
           <Block index={6} order="order-6" id="exercise-plan">

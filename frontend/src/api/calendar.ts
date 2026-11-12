@@ -7,6 +7,8 @@ import {
   type Assignment,
   type AssignmentPatch,
   type AssignmentState,
+  type CalendarMark,
+  type CalendarVisit,
   type HepClinic,
   type LoadUnit,
   type LoadWeek,
@@ -14,6 +16,7 @@ import {
   type SchedulePatientSummary,
   type TextOutcome,
 } from './hep'
+import type { PtBetweenWeek } from './pt'
 
 /** The calendar's wider reads and the writes that work on more than one
  *  day: the month, the week in review, one exercise over time, a repeat as
@@ -107,6 +110,9 @@ export interface CalendarResponse {
   today: string
   clinic: HepClinic | null
   patients: CalendarPatient[]
+  /** The clinic visits and rest days in the window (app/pt). */
+  visits?: CalendarVisit[]
+  marks?: CalendarMark[]
 }
 
 export function useCalendarMonth(start: string, options: { enabled?: boolean } = {}) {
@@ -183,6 +189,10 @@ export interface WeekEntry {
     change_pct: number | null
   }
   attention: WeekAttention[]
+  /** What the clinic's between-visits record says about the same week:
+   *  the lifter's own word on it, the mornings after loaded sessions, the
+   *  next visit and the phase they are in. Null on a server before it. */
+  between_visits?: PtBetweenWeek | null
 }
 
 /** GET /api/hep/week — one entry per lifter, those with something to look at first. */
@@ -192,6 +202,8 @@ export interface WeekResponse {
   today: string
   clinic: HepClinic | null
   patients: WeekEntry[]
+  visits?: CalendarVisit[]
+  marks?: CalendarMark[]
 }
 
 export function useWeekReview(start: string | null) {

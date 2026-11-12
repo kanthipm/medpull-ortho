@@ -391,6 +391,11 @@ export interface PatientMessage {
   /** Why a text did not go, in plain words. Null when it went out. */
   delivery_detail: string | null
   read_by_care_team: boolean
+  /** How the clinic's own word list sorted a line the patient typed: for
+   *  today, or for the weekly block. Null on everything else. */
+  triage?: 'today' | 'weekly' | null
+  /** The key of the clinic's red-flag entry the line matched, if it did. */
+  red_flag?: string | null
   /** Images and files on this line. Empty for most of them. */
   attachments: MessageAttachment[]
   /** A button the line carries, e.g. "Open the task". Null for words only. */

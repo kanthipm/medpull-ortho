@@ -9,6 +9,8 @@
  *    /calendar/programs[/:id]  the clinic's programs, and the editor
  *    /calendar/library         the exercises a clinic prescribes from
  *    /calendar/plans[/:id]     home exercise plans, and the editor
+ *    /calendar/questions       what lifters asked, sorted for today and the weekly block
+ *    /calendar/rules           the clinic's flag rules, fixed texts, protocols and settings
  *    /demo/hirt                the room's screen (demo stack), under the same tab
  *
  *  `:id` is `new` for a program or plan that has not been saved yet. */
@@ -28,10 +30,20 @@ export const CALENDAR = {
   plans: '/calendar/plans',
   plan: (id: Id) => `/calendar/plans/${enc(id)}`,
   newPlan: '/calendar/plans/new',
+  questions: '/calendar/questions',
+  rules: '/calendar/rules',
   demoScreen: '/demo/hirt',
 } as const
 
-export type CalendarSection = 'schedule' | 'week' | 'review' | 'programs' | 'library' | 'plans'
+export type CalendarSection =
+  | 'schedule'
+  | 'week'
+  | 'review'
+  | 'questions'
+  | 'programs'
+  | 'library'
+  | 'plans'
+  | 'rules'
 
 /** The sub-nav section a Calendar path belongs to. The schedule is the
  *  landing page, so it is what is left when no deeper section matches. */
@@ -42,5 +54,7 @@ export function calendarSection(pathname: string): CalendarSection {
   if (at(CALENDAR.programs)) return 'programs'
   if (at(CALENDAR.library)) return 'library'
   if (at(CALENDAR.plans)) return 'plans'
+  if (at(CALENDAR.questions)) return 'questions'
+  if (at(CALENDAR.rules)) return 'rules'
   return 'schedule'
 }

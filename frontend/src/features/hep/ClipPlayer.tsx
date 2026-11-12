@@ -1,3 +1,5 @@
+import type { Ref } from 'react'
+
 /** A clip, played in place: controls, inline on a phone, metadata only until
  *  pressed so a dialog does not pull the whole file down on open. A phone's
  *  clip is portrait, so the box is dark and the picture sits inside it.
@@ -8,15 +10,20 @@ export default function ClipPlayer({
   label,
   autoPlay = false,
   className = '',
+  videoRef,
 }: {
   src: string
   poster?: string | null
   label: string
   autoPlay?: boolean
   className?: string
+  /** For a reader that needs the moment the clip is on (comments pinned to
+   *  a time), or to send it back to one. */
+  videoRef?: Ref<HTMLVideoElement>
 }) {
   return (
     <video
+      ref={videoRef}
       controls
       playsInline
       preload="metadata"

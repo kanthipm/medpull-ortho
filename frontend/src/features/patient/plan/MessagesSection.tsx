@@ -1,5 +1,6 @@
 import { MessageCircle, MessageSquarePlus, MessageSquareText, Phone, Smartphone, Terminal } from 'lucide-react'
 import { Fragment, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { firstNameOf } from '../../../api/plan'
 import { useMarkPatientMessagesRead, usePatientMessages } from '../../../api/queries'
 import type { PatientMessage } from '../../../api/types'
@@ -8,6 +9,7 @@ import SectionCard from '../../../components/SectionCard'
 import { RefreshOverlay, SkeletonLine } from '../../../components/Skeleton'
 import { useToast } from '../../../components/Toast'
 import { relativeTime } from '../../../lib/format'
+import { CALENDAR } from '../../hep/paths'
 import ThreadAttachments from '../ThreadAttachments'
 import MessageComposerModal from './MessageComposerModal'
 
@@ -238,6 +240,23 @@ function Bubble({ m, first, patientId }: { m: PatientMessage; first: string; pat
             </>
           )}
           {failed && <span className="chip bg-risk-high-tint text-risk-high-ink">Not delivered</span>}
+          {/* How the clinic's own rules sorted this line (Calendar → Rules).
+              A word list did it, and the chip says which pile, not what it means. */}
+          {inbound && m.red_flag && (
+            <Link to={CALENDAR.rules} className="chip bg-risk-high-tint normal-case text-risk-high-ink hover:underline">
+              Matched your red-flag list
+            </Link>
+          )}
+          {inbound && !m.red_flag && m.triage === 'today' && (
+            <Link to={CALENDAR.questions} className="chip bg-risk-med-tint normal-case text-risk-med-ink hover:underline">
+              Sorted for today
+            </Link>
+          )}
+          {inbound && m.triage === 'weekly' && (
+            <Link to={CALENDAR.questions} className="chip bg-soft normal-case text-secondary hover:underline">
+              For the weekly block
+            </Link>
+          )}
           {unreachable && (
             <span className="chip bg-risk-med-tint text-risk-med-ink">Not reachable by text yet</span>
           )}

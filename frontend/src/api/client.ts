@@ -170,13 +170,15 @@ export function consoleAuthHeaders(): Record<string, string> {
   }
 }
 
-/** Routes a patient reaches from a texted link; the token in the path is
- *  their credential, so no console header goes with them. */
+/** Routes a patient reaches from a texted link, and the page a trainer is
+ *  given; the token in the path is the credential, so no console header goes
+ *  with them. */
 function isPatientPath(path: string): boolean {
   return (
     path.startsWith('/api/checkin/') ||
     path.startsWith('/api/tasks/') ||
-    path.startsWith('/api/links/')
+    path.startsWith('/api/links/') ||
+    path.startsWith('/api/handoff/')
   )
 }
 

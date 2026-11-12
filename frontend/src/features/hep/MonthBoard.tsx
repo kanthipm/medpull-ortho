@@ -1,7 +1,8 @@
-import { CalendarDays, Check, CircleSlash, TrendingUp, Users } from 'lucide-react'
+import { CalendarDays, Check, CircleSlash, Moon, Stethoscope, TrendingUp, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useCalendarMonth, type CalendarDay, type CalendarItem, type CalendarPatient } from '../../api/calendar'
-import type { LoadUnit } from '../../api/hep'
+import type { CalendarMark, CalendarVisit, LoadUnit } from '../../api/hep'
+import { clockText } from '../../api/pt'
 import Avatar from '../../components/Avatar'
 import EmptyState from '../../components/EmptyState'
 import { SkeletonCard } from '../../components/Skeleton'
@@ -26,7 +27,8 @@ import { movedText } from './units'
  *  the day went (all done, some left, missed, still ahead, nothing on it).
  *  The strip is also the picker. Under it, the picked lifter's month as a
  *  calendar: each day lists what is on it with the same marks as the week
- *  grid, and opens that week for the full rows and the editing.
+ *  grid, and opens that week for the full rows and the editing. A clinic
+ *  visit and a rest day are named on their day, above the exercises.
  *
  *  Every square and every day carries its words (a title and a name), and
  *  the legend spells the five states out, so the fill is never the only
@@ -152,7 +154,16 @@ export default function MonthBoard({
       </section>
 
       {chosen && (
-        <MonthGrid patient={chosen} month={month} weeks={weeks} today={today} unit={unit} onOpenWeek={onOpenWeek} />
+        <MonthGrid
+          patient={chosen}
+          month={month}
+          weeks={weeks}
+          today={today}
+          unit={unit}
+          onOpenWeek={onOpenWeek}
+          visits={(calendar.data?.visits ?? []).filter((v) => v.patient_id === chosen.id)}
+          marks={(calendar.data?.marks ?? []).filter((m) => m.patient_id === chosen.id)}
+        />
       )}
     </div>
   )
@@ -252,6 +263,8 @@ function MonthGrid({
   today,
   unit,
   onOpenWeek,
+  visits,
+  marks,
 }: {
   patient: CalendarPatient
   month: string
@@ -259,6 +272,8 @@ function MonthGrid({
   today: string
   unit: LoadUnit
   onOpenWeek: (day: string) => void
+  visits: CalendarVisit[]
+  marks: CalendarMark[]
 }) {
   const byDate = new Map(p.days.map((d) => [d.date, d]))
   const inMonth = p.days.filter((d) => sameMonth(d.date, month))
@@ -306,6 +321,14 @@ function MonthGrid({
                   const items = day?.items ?? []
                   const outside = !sameMonth(date, month)
                   const isToday = date === today
+                  const visit = visits.find((v) => v.on === date)
+                  const rest = marks.find((m) => m.day === date && m.kind === 'rest')
+                  const also = [
+                    visit ? `${visit.kind_label}${visit.at ? ` at ${clockText(visit.at)}` : ''}` : '',
+                    rest ? 'a rest day' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(', ')
                   return (
                     <td
                       key={date}
@@ -316,7 +339,7 @@ function MonthGrid({
                       <button
                         type="button"
                         onClick={() => onOpenWeek(date)}
-                        aria-label={`${longDay(date)}: ${day ? dayWords(day) : 'nothing assigned'}. Open the week.`}
+                        aria-label={`${longDay(date)}: ${also ? `${also}; ` : ''}${day ? dayWords(day) : 'nothing assigned'}. Open the week.`}
                         className={`flex min-h-[104px] w-full flex-col gap-1 p-2 text-left transition-colors duration-state ease-apple hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
                           outside ? 'opacity-55' : ''
                         }`}
@@ -330,6 +353,21 @@ function MonthGrid({
                             </span>
                           )}
                         </span>
+                        {visit && (
+                          <span className="flex items-center gap-1 text-micro font-medium leading-tight text-cat-violet-ink">
+                            <Stethoscope aria-hidden size={10} className="shrink-0" />
+                            <span className="min-w-0 truncate">
+                              {visit.kind_label}
+                              {visit.at ? ` ${clockText(visit.at)}` : ''}
+                            </span>
+                          </span>
+                        )}
+                        {rest && (
+                          <span className="flex items-center gap-1 text-micro leading-tight text-secondary">
+                            <Moon aria-hidden size={10} className="shrink-0" />
+                            Rest day
+                          </span>
+                        )}
                         {items.slice(0, SHOWN).map((item) => (
                           <ItemLine key={item.id} item={item} />
                         ))}

@@ -422,6 +422,8 @@ export interface AssignmentCompletion {
    *  the attempt, or a session that went over the dose. */
   awaiting_review?: boolean
   review_reason?: ReviewReason | null
+  /** The day went past the therapist's ceiling: the load, the effort, or both. */
+  past_ceiling?: boolean
   /** What was done against what was written, field by field, and the same
    *  in one line ("35 lb done, 25 lb prescribed · effort 8, target 7"). The
    *  line is in the clinic's own unit; the numbers stay kilograms. */
@@ -490,6 +492,13 @@ export interface Assignment {
    *  should feel like (RPE 0–10). */
   load_kg: number | null
   rpe_target: number | null
+  /** The ceilings: the load not to go past (kilograms) and the effort to
+   *  stop at, and both as one line in the clinic's unit ("Stop at RPE 8 ·
+   *  do not exceed 30 lb"; empty when neither is set). Absent on a server
+   *  from before the fields. */
+  load_max_kg?: number | null
+  rpe_max?: number | null
+  ceiling?: string
   /** "3 sets × 10 reps · 12 kg · Left" — `plans.dose_line` without the
    *  frequency, the load before the side when set. */
   dose: string
@@ -582,6 +591,30 @@ export interface ScheduleResponse {
   /** Whose calendar this is and the unit it reads loads in. */
   clinic?: HepClinic | null
   to_review?: { count: number; days: number }
+  /** What the clinic's between-visits record puts on the same days: the
+   *  visits in the window, and the days marked as rest on purpose. */
+  visits?: CalendarVisit[]
+  marks?: CalendarMark[]
+}
+
+/** A clinic visit on the calendar (app/pt). */
+export interface CalendarVisit {
+  id: number
+  patient_id: string
+  on: string
+  at: string | null
+  kind: 'visit' | 'evaluation' | 'test_day' | string
+  kind_label: string
+  note: string
+}
+
+/** A day marked on purpose: for now, a rest day. */
+export interface CalendarMark {
+  id: number
+  patient_id: string
+  day: string
+  kind: 'rest' | string
+  note: string
 }
 
 /** GET /api/hep/patients/{id}/schedule */
@@ -591,6 +624,8 @@ export interface PatientScheduleResponse {
   today: string
   assignments: Assignment[]
   clinic?: HepClinic | null
+  visits?: CalendarVisit[]
+  marks?: CalendarMark[]
 }
 
 /** Repeat on these weekdays (Monday is 0) for this many weeks from `start`. */
@@ -626,6 +661,18 @@ export interface ScheduleCreateResult {
   skipped_days?: SkippedDay[]
   /** Null when no text was asked for or none could go. */
   text?: TextOutcome | null
+  /** Written for several people at once: what came of each. Each person is
+   *  all or nothing on their own. */
+  by_person?: {
+    patient_id: string
+    patient_name: string
+    assigned: number
+    skipped_days: SkippedDay[]
+    error: string | null
+    text: TextOutcome | null
+  }[]
+  people_written?: number
+  people_refused?: number
 }
 
 export interface ScheduleCreateBody {
@@ -645,11 +692,20 @@ export interface ScheduleCreateBody {
   side?: string
   load_kg?: number | null
   rpe_target?: number | null
+  /** The ceilings: the load not to go past, and the effort to stop at. */
+  load_max_kg?: number | null
+  rpe_max?: number | null
   clinician_instructions?: string
   video_requirement?: Requirement | string
   wearable_requirement?: Requirement | string
   /** A care-team id; the server defaults to the patient's provider. */
   assigned_by?: string
+  /** The same exercise, dose and days for several people (1–40);
+   *  `patient_id` is then only the chart the dialog was opened from. */
+  patient_ids?: string[]
+  /** A day that would pass the clinic's exercise count is a 409 with a
+   *  sentence, unless this says the therapist means it. */
+  allow_over_guard?: boolean
 }
 
 /** PATCH /api/hep/schedule/{id} — any of these. Moving or re-dosing a done
@@ -661,6 +717,8 @@ export interface AssignmentPatch {
   side?: string
   load_kg?: number | null
   rpe_target?: number | null
+  load_max_kg?: number | null
+  rpe_max?: number | null
   clinician_instructions?: string
   video_requirement?: Requirement | string
   wearable_requirement?: Requirement | string

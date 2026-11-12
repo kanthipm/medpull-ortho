@@ -5,15 +5,19 @@ import {
   ClipboardList,
   CopyPlus,
   MessageSquareText,
+  Moon,
   Plus,
+  Stethoscope,
   Users,
+  X,
 } from 'lucide-react'
 import { useId, useState, type DragEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useSetLoadUnit, useDuplicateAssignment, useTextToday } from '../../api/calendar'
 import { ApiError } from '../../api/client'
-import type { Assignment, LoadUnit, SchedulePatient } from '../../api/hep'
+import type { Assignment, CalendarMark, CalendarVisit, LoadUnit, SchedulePatient } from '../../api/hep'
 import { todayIso, useSchedule, useUpdateAssignment } from '../../api/hep'
+import { clockText, useClearMark, useSetMark } from '../../api/pt'
 import Avatar from '../../components/Avatar'
 import EmptyState from '../../components/EmptyState'
 import { Menu } from '../../components/Menu'
@@ -62,6 +66,12 @@ type View = 'week' | 'month'
  *  to move it, or with Option held to copy it; a done day can only be
  *  copied. The dialog's "Move" and "Copy to" do the same from the keyboard.
  *
+ *  A day also carries what the clinic's between-visits record puts on it:
+ *  a clinic visit (set on the chart), and a rest day, which is a day left
+ *  empty on purpose. An empty day ahead has a moon beside its `+` to mark
+ *  it as rest; the marker's own × takes it off. The lifter's app says the
+ *  same on that day.
+ *
  *  Week or Month: the month is six weeks at a glance, one strip per lifter
  *  and the picked lifter's calendar under them (MonthBoard); a day there
  *  opens its week here. The head also names the clinic whose calendar this
@@ -104,6 +114,8 @@ export default function ScheduleBoard({
   const duplicate = useDuplicateAssignment()
   const textToday = useTextToday()
   const setUnit = useSetLoadUnit()
+  const setMark = useSetMark()
+  const clearMark = useClearMark()
   const clinic = schedule.data?.clinic ?? null
   const unit = unitOf(clinic)
 
@@ -151,6 +163,19 @@ export default function ScheduleBoard({
 
   const patients = schedule.data?.patients ?? []
   const careTeam = schedule.data?.care_team ?? []
+  const visits = schedule.data?.visits ?? []
+  const marks = schedule.data?.marks ?? []
+
+  const onRest = (p: SchedulePatient, day: string) =>
+    setMark.mutate(
+      { patientId: p.id, day },
+      {
+        onSuccess: () => toast(`${shortDay(day)} is a rest day for ${p.name.split(' ')[0]}`, 'success'),
+        onError: said('Could not mark the rest day'),
+      },
+    )
+  const onClearRest = (mark: CalendarMark) =>
+    clearMark.mutate(mark.id, { onError: said('Could not take the rest day off') })
   const assigning = assign ? patients.find((p) => p.id === assign.patientId) : undefined
   const acting = rowAction ? patients.find((p) => p.id === rowAction.patientId) : undefined
   let opened: { a: Assignment; p: SchedulePatient } | undefined
@@ -313,6 +338,10 @@ export default function ScheduleBoard({
               onRowAction={(kind, patientId) => setRowAction({ kind, patientId })}
               onDropChip={onDropChip}
               onTextToday={onTextToday}
+              visits={visits}
+              marks={marks}
+              onRest={onRest}
+              onClearRest={onClearRest}
             />
             {!dense && (
               <p className="meta mt-3 px-1">
@@ -333,6 +362,7 @@ export default function ScheduleBoard({
           assignments={assigning.assignments}
           careTeam={careTeam}
           unit={unit}
+          roster={dense ? [] : patients}
           onClose={() => setAssign(null)}
         />
       )}
@@ -380,6 +410,10 @@ function Grid({
   onRowAction,
   onDropChip,
   onTextToday,
+  visits,
+  marks,
+  onRest,
+  onClearRest,
 }: {
   patients: SchedulePatient[]
   days: string[]
@@ -391,6 +425,10 @@ function Grid({
   onRowAction: (kind: 'copy' | 'apply', patientId: string) => void
   onDropChip: (id: number, title: string, date: string, copy: boolean) => void
   onTextToday: (p: SchedulePatient) => void
+  visits: CalendarVisit[]
+  marks: CalendarMark[]
+  onRest: (p: SchedulePatient, day: string) => void
+  onClearRest: (mark: CalendarMark) => void
 }) {
   const colMin = dense ? 'min-w-[92px]' : 'min-w-[128px]'
   const lastWeek = rangeLabel(weekDays(addDays(days[0], -7)))
@@ -519,6 +557,10 @@ function Grid({
                       onAssign={onAssign}
                       onOpen={onOpen}
                       onDropChip={onDropChip}
+                      visits={visits.filter((v) => v.patient_id === p.id && v.on === d)}
+                      rest={marks.find((m) => m.patient_id === p.id && m.day === d && m.kind === 'rest')}
+                      onRest={onRest}
+                      onClearRest={onClearRest}
                     />
                   ))}
                 </tr>
@@ -539,6 +581,10 @@ function Cell({
   onAssign,
   onOpen,
   onDropChip,
+  visits,
+  rest,
+  onRest,
+  onClearRest,
 }: {
   patient: SchedulePatient
   date: string
@@ -547,6 +593,10 @@ function Cell({
   onAssign: (patientId: string, date: string) => void
   onOpen: (a: Assignment) => void
   onDropChip: (id: number, title: string, date: string, copy: boolean) => void
+  visits: CalendarVisit[]
+  rest: CalendarMark | undefined
+  onRest: (p: SchedulePatient, day: string) => void
+  onClearRest: (mark: CalendarMark) => void
 }) {
   const toast = useToast()
   const [over, setOver] = useState(false)
@@ -588,20 +638,65 @@ function Cell({
       } ${over ? 'bg-brand-tint' : isToday ? 'bg-brand-tint/40' : ''}`}
     >
       <div className={`group/cell flex flex-col gap-1 ${dense ? 'min-h-[72px]' : 'min-h-[96px]'}`}>
+        {visits.map((v) => (
+          <span
+            key={v.id}
+            title={v.note || undefined}
+            className="inline-flex min-h-6 items-center gap-1 self-start rounded-pill bg-cat-violet-tint px-2 text-label font-medium text-cat-violet-ink"
+          >
+            <Stethoscope aria-hidden size={12} className="shrink-0" />
+            <span className="truncate">
+              {v.kind_label}
+              {v.at ? ` ${clockText(v.at)}` : ''}
+            </span>
+          </span>
+        ))}
+        {rest && (
+          <span
+            title={rest.note || 'A day left empty on purpose'}
+            className="inline-flex min-h-6 items-center gap-1 self-start rounded-pill bg-soft pl-2 pr-1 text-label font-medium text-secondary"
+          >
+            <Moon aria-hidden size={12} className="shrink-0" />
+            Rest day
+            {!dense && (
+              <button
+                type="button"
+                onClick={() => onClearRest(rest)}
+                aria-label={`Take the rest day off ${longDay(d)} for ${p.name}`}
+                className="inline-flex h-5 w-5 items-center justify-center rounded-pill hover:bg-panel hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+              >
+                <X aria-hidden size={11} />
+              </button>
+            )}
+          </span>
+        )}
         {items.map((a) => (
           <AssignmentChip key={a.id} assignment={a} onOpen={onOpen} draggable={!dense} />
         ))}
         {canAdd && (
-          <button
-            type="button"
-            onClick={() => onAssign(p.id, d)}
-            aria-label={`Add an exercise for ${p.name} on ${longDay(d)}`}
-            className={`mt-auto inline-flex h-7 w-7 items-center justify-center self-start rounded-pill text-secondary transition-[opacity,background-color,color] duration-state ease-apple hover:bg-soft hover:text-ink focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${
-              items.length === 0 ? 'opacity-80' : 'opacity-40 group-hover/cell:opacity-100'
-            }`}
-          >
-            <Plus aria-hidden size={14} />
-          </button>
+          <div className="mt-auto flex items-center gap-0.5 self-start">
+            <button
+              type="button"
+              onClick={() => onAssign(p.id, d)}
+              aria-label={`Add an exercise for ${p.name} on ${longDay(d)}`}
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-pill text-secondary transition-[opacity,background-color,color] duration-state ease-apple hover:bg-soft hover:text-ink focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${
+                items.length === 0 ? 'opacity-80' : 'opacity-40 group-hover/cell:opacity-100'
+              }`}
+            >
+              <Plus aria-hidden size={14} />
+            </button>
+            {!dense && !rest && items.length === 0 && (
+              <button
+                type="button"
+                onClick={() => onRest(p, d)}
+                aria-label={`Mark ${longDay(d)} as a rest day for ${p.name}`}
+                title="Mark as a rest day"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-pill text-secondary opacity-0 transition-[opacity,background-color,color] duration-state ease-apple hover:bg-soft hover:text-ink focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus group-hover/cell:opacity-80"
+              >
+                <Moon aria-hidden size={13} />
+              </button>
+            )}
+          </div>
         )}
       </div>
     </td>

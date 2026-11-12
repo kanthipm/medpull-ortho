@@ -15,6 +15,7 @@ import { Link } from 'react-router-dom'
 import { useWeekReview, type WeekEntry } from '../../api/calendar'
 import type { CareTeamMember, LoadUnit } from '../../api/hep'
 import { todayIso, useHepOptions } from '../../api/hep'
+import { visitText, type PtBetweenWeek } from '../../api/pt'
 import Avatar from '../../components/Avatar'
 import EmptyState from '../../components/EmptyState'
 import { SkeletonCard } from '../../components/Skeleton'
@@ -46,7 +47,10 @@ import { movedText, unitOf } from './units'
  *  the target, the load moved against the load written and against the
  *  week before, the days that went over the dose, what waits for a look,
  *  and whether next week is on the calendar yet — with the two ways to set
- *  it (copy this week forward, or apply a program).
+ *  it (copy this week forward, or apply a program). Beside those sits what
+ *  the lifter said about it: their own word on the week and what changes
+ *  next week, how the mornings after the loaded sessions were, the next
+ *  visit, and the phase they are in.
  *
  *  Every number here describes what happened. Nothing on the page tells
  *  the therapist what the next dose should be. */
@@ -188,6 +192,65 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
         <span className="big-num text-[1.5rem] text-ink">{value}</span>
         {hint && <span className="meta block">{hint}</span>}
       </dd>
+    </div>
+  )
+}
+
+const WENT: Record<string, string> = { better: 'Better', same: 'About the same', worse: 'Worse' }
+
+/** The between-visits record for the same week: four short facts in the
+ *  lifter's and the clinician's own words. Nothing here is scored. */
+function BetweenVisits({ b, first }: { b: PtBetweenWeek; first: string }) {
+  const word = b.week_checkin
+  const m = b.mornings
+  const facts: { label: string; value: string; note?: string; warn?: boolean }[] = []
+  if (word?.answered_at) {
+    facts.push({
+      label: `${first}’s word on the week`,
+      value: WENT[word.went ?? ''] ?? 'Answered',
+      note: word.change_note ? `Next week: ${word.change_note}` : undefined,
+      warn: word.went === 'worse',
+    })
+  } else if (word?.asked_at) {
+    facts.push({ label: `${first}’s word on the week`, value: 'Asked, no answer yet' })
+  }
+  if (m.asked > 0) {
+    facts.push({
+      label: 'Mornings after a loaded session',
+      value: m.answered === 0 ? 'No answer yet' : `${m.settled} of ${m.answered} settled`,
+      note:
+        [
+          m.not_settled > 0 ? `${m.not_settled} not settled by morning` : '',
+          m.asked > m.answered ? `${m.asked - m.answered} not answered` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ') || undefined,
+      warn: m.not_settled > 0,
+    })
+  }
+  if (b.phase) {
+    facts.push({
+      label: `Phase ${b.phase.number} of ${b.phase.count}`,
+      value: b.phase.name,
+      note: b.phase.of > 0 ? `${b.phase.met} of ${b.phase.of} criteria ticked` : undefined,
+    })
+  }
+  if (b.next_visit) facts.push({ label: 'Next visit', value: visitText(b.next_visit) })
+  if (facts.length === 0) return null
+  return (
+    <div className="mt-5">
+      <h4 className="text-label font-medium tracking-label text-secondary">Between visits</h4>
+      <dl className="mt-1.5 grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+        {facts.map((f) => (
+          <div key={f.label} className="min-w-0">
+            <dt className="text-label text-secondary">{f.label}</dt>
+            <dd className={`text-copy font-medium ${f.warn ? 'text-risk-med-ink' : 'text-ink'}`}>
+              {f.value}
+              {f.note && <span className="block font-normal text-secondary">{f.note}</span>}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   )
 }
@@ -350,6 +413,8 @@ function WeekCard({
           </ul>
         </div>
       )}
+
+      {e.between_visits && <BetweenVisits b={e.between_visits} first={first} />}
 
       <footer className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-hairline pt-4">
         <p className="min-w-0 flex-1 text-copy text-ink">

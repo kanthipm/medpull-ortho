@@ -47,6 +47,9 @@ const ExerciseLibraryPage = lazy(() => import('./features/hep/ExerciseLibraryPag
 const ExercisePlansPage = lazy(() => import('./features/hep/ExercisePlansPage'))
 const PlanEditorPage = lazy(() => import('./features/hep/PlanEditorPage'))
 const DemoScreenPage = lazy(() => import('./features/hep/DemoScreenPage'))
+const QuestionsPage = lazy(() => import('./features/pt/QuestionsPage'))
+const RulesPage = lazy(() => import('./features/pt/RulesPage'))
+const HandoffPage = lazy(() => import('./features/pt/HandoffPage'))
 
 // Clinic · Data
 const loadDataRosterPage = () => import('./features/data/DataRosterPage')
@@ -89,7 +92,7 @@ function preloadRoutes(pathname: string) {
 
 /** Pages a patient reaches from a texted link, and the sign-in: nothing in
  *  the console is worth warming for them. */
-const OUTSIDE_SHELL = ['/checkin/', '/t/', '/a/', '/login']
+const OUTSIDE_SHELL = ['/checkin/', '/t/', '/a/', '/h/', '/login']
 
 /** What a lazily loaded page shows for the instant before its chunk lands:
  *  the shimmer cards every page uses while its own data loads. */
@@ -136,6 +139,7 @@ export default function App() {
       <Route path="checkin/:token" element={<CheckinPage />} />
       <Route path="t/:token" element={<TaskPage />} />
       <Route path="a/:token" element={<LinkPage />} />
+      <Route path="h/:token" element={<Page><HandoffPage /></Page>} />
       <Route path="login" element={<LoginPage />} />
       <Route element={<AppShell />}>
         {/* Clinic · Worklist */}
@@ -151,6 +155,8 @@ export default function App() {
         <Route path="calendar/library" element={<Page><ExerciseLibraryPage /></Page>} />
         <Route path="calendar/plans" element={<Page><ExercisePlansPage /></Page>} />
         <Route path="calendar/plans/:id" element={<Page><PlanEditorPage /></Page>} />
+        <Route path="calendar/questions" element={<Page><QuestionsPage /></Page>} />
+        <Route path="calendar/rules" element={<Page><RulesPage /></Page>} />
         <Route path="demo/hirt" element={<Page><DemoScreenPage /></Page>} />
         <Route path="demo" element={<Navigate to={CALENDAR.demoScreen} replace />} />
         <Route path="exercise-schedule" element={<Moved to={CALENDAR.schedule} />} />

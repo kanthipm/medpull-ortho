@@ -11,6 +11,7 @@ import type {
   SchedulePatientSummary,
 } from '../../api/hep'
 import { useCreateAssignments, useHepOptions } from '../../api/hep'
+import { dayText, useGuardCheck, type GuardHit } from '../../api/pt'
 import Modal from '../../components/Modal'
 import SegmentedControl from '../../components/SegmentedControl'
 import { SkeletonCard } from '../../components/Skeleton'
@@ -30,7 +31,7 @@ import {
   vocabLabel,
   weekdaysLabel,
 } from './scheduleCopy'
-import { loadBounds, loadKg } from './units'
+import { loadBounds, loadKg, loadText } from './units'
 
 type When = 'days' | 'repeat'
 
@@ -46,7 +47,15 @@ const MAX_WEEKS = 12
  *  POST. With days, one that already has the exercise comes back as a 409
  *  naming the date, shown in place; a repeat lands around what is already
  *  there and says what it left out. "Text them" also sends a text with a
- *  link that opens the app on the first of the days. */
+ *  link that opens the app on the first of the days.
+ *
+ *  Under the dose sit its ceilings: the load not to go past and the effort
+ *  to stop at, which the lifter reads on the exercise and through the
+ *  session. "Also for" gives the same exercise, dose and days to other
+ *  people on the grid in the one save. Before anything is written the
+ *  server is asked whether a day would pass the clinic's exercise count
+ *  (Calendar → Rules); if one would, the days are listed and she presses
+ *  again to mean it. */
 export default function AssignDialog({
   patient,
   date,
@@ -54,6 +63,7 @@ export default function AssignDialog({
   assignments,
   careTeam,
   unit = 'kg',
+  roster = [],
   onClose,
 }: {
   patient: SchedulePatientSummary
@@ -66,17 +76,27 @@ export default function AssignDialog({
   careTeam: CareTeamMember[]
   /** The unit the clinic reads loads in; the row is sent in kilograms. */
   unit?: LoadUnit
+  /** Everyone on the grid, for "Also for". Without it the dialog is for
+   *  the one person. */
+  roster?: SchedulePatientSummary[]
   onClose: () => void
 }) {
   const toast = useToast()
   const options = useHepOptions()
   const create = useCreateAssignments()
+  const guard = useGuardCheck()
   const [exercise, setExercise] = useState<Exercise | null>(null)
   const [sets, setSets] = useState('')
   const [reps, setReps] = useState('')
   const [hold, setHold] = useState('')
   const [load, setLoad] = useState('')
   const [rpe, setRpe] = useState('')
+  const [loadMax, setLoadMax] = useState('')
+  const [rpeMax, setRpeMax] = useState('')
+  const [alsoFor, setAlsoFor] = useState<string[]>([])
+  // Days that would pass the clinic's exercise count, once the server has
+  // said so: shown in place, and the next press assigns anyway.
+  const [overCount, setOverCount] = useState<GuardHit[] | null>(null)
   const [side, setSide] = useState('not_applicable')
   const [video, setVideo] = useState<Requirement>('optional')
   const [wearable, setWearable] = useState<Requirement>('optional')
@@ -100,6 +120,24 @@ export default function AssignDialog({
   const warn = diagnosticWarning(note)
   const dose = doseText({ sets, reps, hold, load, side, sideLabel: vocabLabel(sides, side), unit })
   const rpeTarget = countOf(rpe)
+  const rpeCeiling = countOf(rpeMax)
+  const loadCeiling = loadKg(loadMax, unit)
+  const loadDose = loadKg(load, unit)
+  const ceilingLine = [
+    rpeCeiling != null ? `Stop at RPE ${rpeCeiling}` : '',
+    loadCeiling != null ? `do not exceed ${loadText(loadCeiling, unit)}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  // A ceiling under the dose it sits on is a slip of the keys, not a plan.
+  const ceilingSlip =
+    loadCeiling != null && loadDose != null && loadCeiling < loadDose
+      ? 'The load ceiling is under the load in the dose.'
+      : rpeCeiling != null && rpeTarget != null && rpeCeiling < rpeTarget
+        ? 'The effort to stop at is under the target effort.'
+        : null
+  const others = roster.filter((r) => r.id !== patient.id)
+  const people = [patient.id, ...alsoFor]
   const asks = requirementsText(video, wearable)
   const bounds = loadBounds(unit)
   const first = patient.name.split(' ')[0]
@@ -113,12 +151,17 @@ export default function AssignDialog({
   )
   const repeating = when === 'repeat'
 
-  const toggleDay = (d: string) =>
+  const toggleDay = (d: string) => {
+    setOverCount(null)
     setAlsoOn((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]))
+  }
+  const togglePerson = (id: string) => {
+    setOverCount(null)
+    setAlsoFor((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
 
-  const save = () => {
+  const write = (allowOver: boolean) => {
     if (!exercise) return
-    setError(null)
     const body: ScheduleCreateBody = {
       patient_id: patient.id,
       exercise_id: exercise.id,
@@ -129,8 +172,12 @@ export default function AssignDialog({
       reps: countOf(reps),
       hold_seconds: countOf(hold),
       side,
-      load_kg: loadKg(load, unit),
+      load_kg: loadDose,
       rpe_target: rpeTarget,
+      load_max_kg: loadCeiling,
+      rpe_max: rpeCeiling,
+      ...(alsoFor.length > 0 ? { patient_ids: people } : {}),
+      ...(allowOver ? { allow_over_guard: true } : {}),
       video_requirement: video,
       wearable_requirement: wearable,
       clinician_instructions: note.trim(),
@@ -139,6 +186,26 @@ export default function AssignDialog({
     }
     create.mutate(body, {
       onSuccess: (r) => {
+        if (r.by_person) {
+          const wrote = r.by_person.filter((e) => e.assigned > 0)
+          const refused = r.by_person.filter((e) => e.error)
+          const parts = [
+            `${exercise.title} assigned to ${wrote.length} ${wrote.length === 1 ? 'person' : 'people'}`,
+          ]
+          if (refused.length > 0) {
+            // The server names the day as it stores it; say it as a day.
+            const said = (why: string | null) =>
+              (why ?? '').replace(/\d{4}-\d{2}-\d{2}/g, (iso) => dayText(iso))
+            parts.push(`left out ${refused.map((e) => `${e.patient_name.split(' ')[0]} (${said(e.error)})`).join(', ')}`)
+          }
+          if (textThem) {
+            const texted = r.by_person.filter((e) => e.text?.sent).length
+            parts.push(`${texted} texted a link`)
+          }
+          toast(parts.join(' · '), wrote.length > 0 ? 'success' : 'warning')
+          onClose()
+          return
+        }
         const n = r.assignments.length
         const parts = [`${exercise.title} assigned to ${patient.name} on ${n} day${n === 1 ? '' : 's'}`]
         const left = r.skipped ?? 0
@@ -155,6 +222,32 @@ export default function AssignDialog({
       },
       onError: (e) => setError(e instanceof ApiError && e.message ? e.message : 'Could not save'),
     })
+  }
+
+  /** Ask first whether a day would pass the clinic's exercise count. A day
+   *  that would is listed, and the same button then assigns anyway. If the
+   *  question itself fails the write goes ahead: the server asks it again
+   *  and answers 409 with the sentence. */
+  const save = () => {
+    if (!exercise) return
+    setError(null)
+    if (overCount) return write(true)
+    guard.mutate(
+      {
+        patient_ids: people,
+        ...(repeating ? { repeat: { weekdays: onDays, weeks: nWeeks, start: date } } : { dates }),
+      },
+      {
+        onSuccess: (r) => (r.guard.length > 0 ? setOverCount(r.guard) : write(false)),
+        onError: () => write(false),
+      },
+    )
+  }
+  const busy = create.isPending || guard.isPending
+  // Anything that changes who or when asks the question again.
+  const asked = <T,>(set: (v: T) => void) => (v: T) => {
+    setOverCount(null)
+    set(v)
   }
 
   const clipNote = exercise
@@ -180,16 +273,20 @@ export default function AssignDialog({
           <button
             type="button"
             className="btn-filled"
-            disabled={!exercise || create.isPending || !!warn}
+            disabled={!exercise || busy || !!warn || !!ceilingSlip}
             onClick={save}
           >
-            {create.isPending
+            {busy
               ? 'Saving…'
-              : repeating
-                ? `Assign for ${nWeeks} week${nWeeks === 1 ? '' : 's'}`
-                : dates.length > 1
-                  ? `Assign on ${dates.length} days`
-                  : 'Assign'}
+              : overCount
+                ? 'Assign anyway'
+                : alsoFor.length > 0
+                  ? `Assign to ${people.length} people`
+                  : repeating
+                    ? `Assign for ${nWeeks} week${nWeeks === 1 ? '' : 's'}`
+                    : dates.length > 1
+                      ? `Assign on ${dates.length} days`
+                      : 'Assign'}
           </button>
         </>
       }
@@ -263,6 +360,33 @@ export default function AssignDialog({
             </p>
           </fieldset>
 
+          <fieldset>
+            <legend className={LABEL}>
+              Ceilings <span className="font-normal">optional</span>
+            </legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-7">
+              <div className="sm:col-span-2">
+                <NumberField
+                  id="assign-load-max"
+                  label={`Do not exceed (${unit})`}
+                  value={loadMax}
+                  max={bounds.max}
+                  step={bounds.step}
+                  onChange={setLoadMax}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <NumberField id="assign-rpe-max" label="Stop at RPE" value={rpeMax} max={10} onChange={setRpeMax} />
+              </div>
+            </div>
+            <p className={`meta mt-2 px-1 ${ceilingSlip ? '!text-risk-med-ink' : ''}`} role={ceilingSlip ? 'alert' : undefined}>
+              {ceilingSlip ??
+                (ceilingLine
+                  ? `The patient reads, on the exercise and through the session: ${ceilingLine}. A day done past either is marked for you.`
+                  : 'A load not to go past and an effort to stop at. They read on the exercise and through the session.')}
+            </p>
+          </fieldset>
+
           <div className="grid gap-3 sm:grid-cols-2">
             <RequirementControl label="Clip of their attempt" value={video} onChange={setVideo} />
             <RequirementControl label="Wearable on" value={wearable} onChange={setWearable} />
@@ -323,7 +447,7 @@ export default function AssignDialog({
                   { key: 'repeat', label: 'Repeat' },
                 ]}
                 value={when}
-                onChange={setWhen}
+                onChange={asked(setWhen)}
                 size="sm"
                 role="radiogroup"
                 aria-labelledby="assign-when"
@@ -331,10 +455,10 @@ export default function AssignDialog({
             </div>
             {repeating ? (
               <div className="space-y-3 rounded-control bg-soft p-4">
-                <WeekdayPicker label="On" value={weekdays} onChange={setWeekdays} />
+                <WeekdayPicker label="On" value={weekdays} onChange={asked(setWeekdays)} />
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="w-28">
-                    <NumberField id="assign-weeks" label="For (weeks)" value={weeks} min={1} max={MAX_WEEKS} onChange={setWeeks} />
+                    <NumberField id="assign-weeks" label="For (weeks)" value={weeks} min={1} max={MAX_WEEKS} onChange={asked(setWeeks)} />
                   </div>
                   <p className="meta min-w-0 flex-1 pb-2">
                     {weekdaysLabel(weekdays)} for {nWeeks} week{nWeeks === 1 ? '' : 's'} from {monthDay(date)}:{' '}
@@ -382,6 +506,43 @@ export default function AssignDialog({
             )}
           </div>
 
+          {others.length > 0 && (
+            <fieldset>
+              <legend className={LABEL}>
+                Also for <span className="font-normal">the same exercise, dose and days</span>
+              </legend>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {others.map((o) => {
+                  const on = alsoFor.includes(o.id)
+                  return (
+                    <label
+                      key={o.id}
+                      className={`inline-flex min-h-9 cursor-pointer select-none items-center gap-2 rounded-pill px-3 text-copy ring-1 ring-inset transition-colors duration-state ease-apple ${
+                        on
+                          ? 'bg-brand-tint text-brand-ink ring-brand-tint-strong'
+                          : 'bg-panel/70 text-ink ring-line-strong/60 hover:bg-panel'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-brand"
+                        checked={on}
+                        onChange={() => togglePerson(o.id)}
+                      />
+                      {o.name}
+                    </label>
+                  )
+                })}
+              </div>
+              {alsoFor.length > 0 && (
+                <p className="meta mt-2 px-1">
+                  Each person is written on their own: someone who already has {exercise.title} on one of the days is
+                  left out and named, and the others are assigned.
+                </p>
+              )}
+            </fieldset>
+          )}
+
           <label className="flex cursor-pointer items-start gap-3 rounded-control bg-soft px-4 py-3">
             <input
               type="checkbox"
@@ -390,13 +551,33 @@ export default function AssignDialog({
               onChange={(e) => setTextThem(e.target.checked)}
             />
             <span className="min-w-0">
-              <span className="block text-copy font-medium text-ink">Text {first} about it</span>
+              <span className="block text-copy font-medium text-ink">
+                Text {alsoFor.length > 0 ? 'each of them' : first} about it
+              </span>
               <span className="meta block">
                 One text naming what was added, with a link that opens the app on the first of these
                 days. Nothing is texted for days already behind today.
               </span>
             </span>
           </label>
+
+          {overCount && (
+            <div role="alert" className="rounded-control bg-risk-med-tint px-4 py-3 text-copy text-risk-med-ink">
+              <p className="font-medium">
+                This would go past the {overCount[0].limit} exercises your clinic asks about before a day carries
+                more.
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {overCount.slice(0, 6).map((h) => (
+                  <li key={`${h.patient_id}-${h.day}`} className="tabular-nums">
+                    {h.patient_name} · {dayText(h.day)} · would be {h.would_be}
+                  </li>
+                ))}
+                {overCount.length > 6 && <li>and {overCount.length - 6} more days</li>}
+              </ul>
+              <p className="mt-1">Press “Assign anyway” if that is what you mean, or change the days.</p>
+            </div>
+          )}
 
           {error && (
             <p role="alert" className="rounded-control bg-risk-high-tint px-4 py-3 text-copy text-risk-high-ink">
