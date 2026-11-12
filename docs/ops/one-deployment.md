@@ -37,7 +37,10 @@ it cannot reach them:
   mark. A Personal row without the mark is never touched; the clinic roster
   refuses to name a protected id. Before the first fill the roster's ids
   were checked against the live database (none existed) and a dry run on a
-  copy left all 4,219 rows of the 13 other accounts identical.
+  copy left all 4,219 rows of the 13 other accounts identical. The same
+  comparison was made around the second fill on the live database
+  (2026-11-12 11:23 UTC, a copy taken before and one after): no row of the
+  13 differed.
 - **The destructive seed is off**: `SEED=none`, and `seed --reset` refuses a
   database that holds anyone it could not rebuild.
 - **"Become a persona"** (`/api/demo/session`, `/api/demo/patient-session`,
@@ -47,6 +50,16 @@ it cannot reach them:
   subscriber's space is never listed and its routes answer 404.
 - The worklist's caption counts what it shows ("25 generated, 6 of the
   team's own") instead of claiming every chart is generated.
+- **One of the team's accounts is refreshed on purpose, and was before
+  this.** Steve's athlete account (`steve-zhang-ath`) had the sports
+  showcase applied to it (`app/sports/showcase.py`), so the sports morning
+  run (`sports_daily`, 11:00 UTC, older than the showcase) rewrites its
+  generated sessions, wellness, tests and readings around today, every
+  day; its sign-in and sessions are kept. Checked on 2026-11-12 against
+  the first backup: of the 13 accounts' rows, those were the only ones
+  that changed all day, and the function's log has them rewritten at
+  11:00:48 UTC by that run (`refilled ['steve-zhang-ath']`). Neither
+  showcase fill changed a row of any of the 13.
 
 The console is open (no sign-in) by Steve's earlier decision; org-scoped
 tokens still narrow it (`scripts/admin_db.py --mint-token`). To lock it
@@ -65,7 +78,11 @@ cd backend && uv run python scripts/sendblue_webhooks.py      # where inbound te
 A backup before anything that writes the database by hand:
 `aws s3api copy-object --bucket <data bucket> --copy-source <data bucket>/db/recovery.db --key db/backups/recovery-<stamp>.db`.
 The one made before the first showcase fill is
-`db/backups/recovery-20261112T103047Z-pre-showcase.db`.
+`db/backups/recovery-20261112T103047Z-pre-showcase.db`; the last one made
+on 2026-11-12 is `db/backups/recovery-20261112T112248Z-pre-fill-2.db`.
+
+Three rules run each morning on this stack: the showcase fill (10:30 UTC),
+the sports run (11:00) and the Personal briefs (12:00).
 
 The morning exercise text (`EXERCISE_REMINDERS=true`) is off. Turned on, it
 texts every lifter who can be texted their plan for the day at
