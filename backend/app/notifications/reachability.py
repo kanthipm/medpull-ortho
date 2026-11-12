@@ -94,6 +94,14 @@ def is_verification_refusal(reason: str | None) -> bool:
     return any(marker in lowered for marker in _REFUSAL_MARKERS)
 
 
+def is_placeholder(phone: str | None) -> bool:
+    """Whether a number is one of the fictional 555 numbers the demo roster
+    is seeded with (+1 NPA 555 XXXX). Nobody holds one, so the texts the
+    exercise calendar sends skip them instead of spending a refused send on
+    each."""
+    return bool(phone) and len(phone) == 12 and phone.startswith("+1") and phone[5:8] == "555"
+
+
 def text_first_body() -> str:
     return (settings.sendblue_text_first_body or "Hi MedPull").strip() or "Hi MedPull"
 
@@ -281,18 +289,19 @@ def _contact_number(contact: Any) -> str | None:
     return None
 
 
-def contact_verified(phone: str) -> bool | None:
+def contact_verified(phone: str, *, max_age_s: float = CONTACTS_TTL_S) -> bool | None:
     """Ask Sendblue whether ``phone`` is a verified contact on the account.
 
     ``GET /v3/verified-contacts/{phone}`` answers for one number; an account
     whose API predates it falls back to the whole legacy contact list
     (``GET /accounts/contacts``). ``None`` when the provider could not say.
-    Cached briefly per number.
+    Cached briefly per number; ``max_age_s`` shortens that for a caller
+    polling while the person is texting the line right now.
     """
     if not _configured():
         return None
     cached = _contacts.get(phone)
-    if cached and time.monotonic() - cached[0] < CONTACTS_TTL_S:
+    if cached and time.monotonic() - cached[0] < max_age_s:
         return cached[1]
     verified = _fetch_contact(phone)
     _contacts[phone] = (time.monotonic(), verified)

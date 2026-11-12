@@ -988,6 +988,13 @@ def patient_for_phone(db: Session, phone: str) -> Patient | None:
         return None
     if len(rows) == 1:
         return rows[0]
+    # A presenter who bound their own phone to a demo persona
+    # (app/api/demo_phone.py) still has it on their real chart. While it is
+    # bound, their texts are the persona's: binding was the explicit act,
+    # and unbinding gives the number back to the chart.
+    bound = [p for p in rows if p.demo_phone_bound_at is not None]
+    if bound:
+        return max(bound, key=lambda p: p.demo_phone_bound_at)
     # A clinic chart and its personal profile legitimately share one number
     # (app/personal/identity.py), and so may the same person's athlete
     # account (app/sports). A text answers whichever one is mid-way through
@@ -1077,7 +1084,23 @@ def handle_inbound_sms(
     tasks = open_tasks(db, patient.id)
     active = _active_conversation(tasks)
     lowered = body.lower()
-    if media and not body:
+    # What a text can command without the assistant reading it: STOP, START
+    # and HELP, and DONE for today's exercises (app/hep/sms_commands.py).
+    # Mid-conversation only the unmistakable stop is one; any other word
+    # there is the answer to the question in hand.
+    from app.hep import sms_commands
+
+    command = (sms_commands.handle(db, patient, body, base_url=base_url,
+                                   in_conversation=active is not None) if body else None)
+    even_if_opted_out = False
+    if command is not None:
+        reply, kind, even_if_opted_out = command.reply, command.kind, command.even_if_opted_out
+        if kind == "help":
+            # A person may type "help" meaning exactly that. The line is on
+            # the thread already; make sure somebody is told it arrived.
+            notify_care_team(db, patient, f"{patient.name} sent a message", body[:200],
+                             "patient_message")
+    elif media and not body:
         # Nothing was said, so there is nothing to interpret — and nothing
         # here has looked at the picture. Acknowledge that it arrived and
         # that a person will see it; never characterise what is in it.
@@ -1110,6 +1133,18 @@ def handle_inbound_sms(
             "Thanks — you're connected. Texts from your care team reach you here from now on.",
             "verified",
         )
+        if patient.sms_welcome_owed_at is not None:
+            # The demo app bound this phone to a persona before the number
+            # could be texted. This is the text it was waiting on: the
+            # welcome with its link into the app goes instead of the plain
+            # acknowledgement, as its own thread line.
+            from app.hep import texts
+
+            sent = texts.welcome(db, patient, base_url=base_url or None)
+            patient.sms_welcome_owed_at = None
+            db.commit()
+            if sent is not None and sent["sent"]:
+                return InboundOutcome(patient.id, True, texts.WELCOME_BODY, "demo_welcome")
     else:
         from app.agent.copilot import respond
 
@@ -1140,7 +1175,7 @@ def handle_inbound_sms(
         )
         return InboundOutcome(patient.id, False, None, "lock_lost")
 
-    delivery = sendblue.send_sms(phone, reply)
+    delivery = sendblue.send_sms(phone, reply, even_if_opted_out=even_if_opted_out)
     db.add(
         Message(
             patient_id=patient.id,

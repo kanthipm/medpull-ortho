@@ -267,6 +267,34 @@ def _showcase_fill(event: dict) -> dict:
     return {"ok": True, "uploaded": uploaded, **report}
 
 
+def _exercise_reminders(event: dict) -> dict:
+    """The morning text of today's exercise plan (app/hep/reminders.py), on
+    an hourly schedule: the run itself decides whether this is the hour and
+    whether the deployment asked for reminders at all, and returns before
+    the lock is taken when it is not. ``{"action": "exercise_reminders",
+    "force": true}`` is an operator's run by hand."""
+    from datetime import datetime
+
+    from app.config import settings
+    from app.database import SessionLocal
+    from app.hep import reminders
+
+    force = bool(event.get("force"))
+    if not force and (not settings.exercise_reminders
+                      or datetime.now().hour != settings.exercise_reminder_hour):
+        return {"ok": True, "ran": False}
+    with storage.write_lock():
+        storage.hydrate(force=True)
+        ensure_schema()
+        db = SessionLocal()
+        try:
+            report = reminders.run(db, force=force)
+        finally:
+            db.close()
+        uploaded = storage.persist(conditional=False)
+    return {"ok": True, "uploaded": uploaded, **report}
+
+
 def _comp(event: dict) -> dict:
     """An operator's complimentary grant for one personal space, named by
     its email login or its patient id (a space opened by phone number has
@@ -324,6 +352,8 @@ def handler(event, context):
             return _personal_daily(event)
         if action == "showcase_fill":
             return _showcase_fill(event)
+        if action == "exercise_reminders":
+            return _exercise_reminders(event)
         return {"ok": False, "error": f"Unknown action: {action}"}
 
     if not _origin_is_cloudfront(event):

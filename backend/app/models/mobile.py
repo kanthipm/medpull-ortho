@@ -7,9 +7,9 @@ session token is the patient app's credential; only its hash is stored, like
 the check-in invite token.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, and_
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, and_
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.config import settings
@@ -145,6 +145,14 @@ class Message(Base):
     action_kind: Mapped[str | None] = mapped_column(String, nullable=True)
     action_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     action_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    # A line that carried a link into the app (app/links.py) offers the same
+    # place as a button: "open_today", "open_exercise" (``action_ref`` is
+    # the assignment id), "open_program" (``action_day`` is the day to show).
+    # ``action_url`` is the https link the text carried, for a client that
+    # would rather open it than navigate itself.
+    action_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    action_day: Mapped[date | None] = mapped_column(Date, nullable=True)
+    action_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     def action_view(self) -> dict | None:
         """The button a client should draw under this line, or None for a
@@ -153,6 +161,10 @@ class Message(Base):
         Lives on the model because both the patient app and the console
         thread render it and the two must not drift, and because everything
         it needs is already loaded — it costs no query.
+
+        ``target`` is the place the button opens, in the shape a redeemed
+        link answers with (``POST /api/links/{token}/session``), so a client
+        has one navigator for both; None for a kind that names no place.
         """
         if not self.action_kind:
             return None
@@ -160,4 +172,17 @@ class Message(Base):
             "kind": self.action_kind,
             "task_id": self.action_task_id,
             "label": self.action_label or "Open",
+            "target": self._action_target(),
+            "url": self.action_url,
         }
+
+    def _action_target(self) -> dict | None:
+        if self.action_kind == "open_task" and self.action_task_id is not None:
+            return {"kind": "task", "ref_id": str(self.action_task_id), "day": None}
+        if (self.action_kind or "").startswith("open_") and self.action_url:
+            return {
+                "kind": self.action_kind.removeprefix("open_"),
+                "ref_id": self.action_ref,
+                "day": self.action_day.isoformat() if self.action_day else None,
+            }
+        return None

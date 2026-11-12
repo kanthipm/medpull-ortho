@@ -21,6 +21,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from sqlalchemy import select
@@ -188,3 +189,29 @@ def _handle(request: Request, body: dict[str, Any], db: Session) -> dict:
         "matched_patient": outcome.patient_id is not None,
         "attachments": outcome.attachments,
     }
+
+
+# --- the line's contact card ------------------------------------------------------------
+
+
+@router.get("/contact.vcf", include_in_schema=False)
+@router.get("/contact/{clinic_id}.vcf", include_in_schema=False)
+def contact_card_file(clinic_id: str | None = None, db: Session = Depends(get_db)) -> Response:
+    """The number MedPull texts from, as a contact card a phone saves in one
+    tap (app/notifications/contact_card.py). Named for the clinic when the
+    address carries one. Public: it holds the line's number and a name, and
+    Sendblue fetches it to attach it."""
+    from app.models.hospital import Hospital
+    from app.notifications import contact_card
+
+    if not settings.sendblue_from_number:
+        raise HTTPException(status_code=404, detail="Not Found")
+    hospital = db.get(Hospital, clinic_id) if clinic_id else None
+    if clinic_id and hospital is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    body = contact_card.vcard(contact_card.card_name(hospital.name if hospital else None),
+                              settings.sendblue_from_number)
+    return Response(content=body, media_type=contact_card.MEDIA_TYPE, headers={
+        "Content-Disposition": 'inline; filename="medpull.vcf"',
+        "Cache-Control": "public, max-age=3600",
+    })

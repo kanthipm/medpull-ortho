@@ -14,14 +14,17 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
-from app.database import SessionLocal
+from app.database import SessionLocal, ensure_schema
 from app.models.enums import NotificationStatus
 from app.models.notification import Notification
-from app.models.patient import CareTeamMember
+from app.models.patient import CareTeamMember, Patient
 from app.notifications import reachability
 
 logger = logging.getLogger(__name__)
@@ -118,6 +121,10 @@ def status() -> dict:
         "configured": configured(),
         "from_number": settings.sendblue_from_number or None,
         "webhook_secret_set": bool(settings.sendblue_webhook_secret),
+        # Whether each send asks for its delivery states back at this stack
+        # (status_callback_url): true once the public host and the webhook
+        # secret are both set.
+        "status_callback": status_callback_url() is not None,
         # None until a send has been attempted in this process.
         "config_fault": _last_config_fault,
         "last_failure": _last_failure,
@@ -194,6 +201,23 @@ class SendblueChannel:
         return NotificationStatus.SENT
 
 
+def status_callback_url() -> str | None:
+    """Where Sendblue should report one message's delivery states: this
+    stack's own webhook, secret in the path. None unless the public host and
+    the webhook secret are both set.
+
+    An account has one number and may have several stacks behind it. The
+    account's registered webhook reaches whichever stack it names; a
+    callback named on the message itself comes back to the stack that sent
+    it, so a thread line here moves from "sent" to "delivered" whichever
+    stack the account points at."""
+    base = (settings.checkin_base_url or "").strip().rstrip("/")
+    secret = settings.sendblue_webhook_secret
+    if not base or not secret:
+        return None
+    return f"{base}/api/webhooks/sendblue/{quote(secret, safe='')}"
+
+
 def _post_message(phone: str, content: str, media_url: str | None = None) -> httpx.Response:
     """One bounded attempt; raises httpx.HTTPError on any failure.
 
@@ -208,6 +232,9 @@ def _post_message(phone: str, content: str, media_url: str | None = None) -> htt
         payload["media_url"] = media_url
     if settings.sendblue_from_number:
         payload["from_number"] = settings.sendblue_from_number
+    callback = status_callback_url()
+    if callback:
+        payload["status_callback"] = callback
     response = httpx.post(
         SEND_URL,
         headers={
@@ -321,14 +348,20 @@ class CheckinSendResult:
     # line (Sendblue's free plan). Not a fault of ours and not a dead end:
     # the number becomes reachable the moment the person texts MedPull once.
     unreachable: bool = False
+    # True when nothing was attempted because the person replied STOP. Not
+    # a failure either: it is their answer, and START from them undoes it.
+    opted_out: bool = False
 
 
 def delivery_status_for(result: CheckinSendResult) -> str:
     """The thread line's state for one send: ``sent``, ``unreachable`` (the
     honest word for a number that has not texted the line yet — the console
-    says what to do, not "failed") or ``failed``."""
+    says what to do, not "failed"), ``opted_out`` (the person replied STOP,
+    so nothing was sent) or ``failed``."""
     if result.sent:
         return "sent"
+    if result.opted_out:
+        return "opted_out"
     if result.unreachable:
         return "unreachable"
     return "failed"
@@ -349,7 +382,42 @@ def normalize_phone(phone_number: str) -> str | None:
     return _e164(phone_number)
 
 
-def send_sms(phone_number: str, content: str, *, media_url: str | None = None) -> CheckinSendResult:
+# What the console shows under a line that was not texted because the
+# person had replied STOP.
+OPTED_OUT_DETAIL = "Not texted: this number replied STOP. Texts resume when they reply START."
+
+
+def opted_out(phone: str) -> bool:
+    """Whether the person at ``phone`` (E.164) has replied STOP and not
+    START since (``patients.sms_opt_out_at``, set by the inbound webhook).
+
+    Asked by number, in a short session of its own, because that is all a
+    send knows: every path that texts a patient funnels through
+    ``send_sms`` with a number and words, and the opt-out has to hold for
+    all of them without each one remembering to check. A lookup that cannot
+    be made reads as "not opted out": the send was asked for by a request
+    that has the database, and a text is what the person expects unless
+    they said otherwise."""
+    try:
+        ensure_schema()
+        with SessionLocal() as db:
+            return db.scalar(
+                select(Patient.id)
+                .where(Patient.phone == phone, Patient.sms_opt_out_at.is_not(None))
+                .limit(1)
+            ) is not None
+    except SQLAlchemyError:
+        logger.exception("Could not read the opt-out state for a number")
+        return False
+
+
+def send_sms(
+    phone_number: str,
+    content: str,
+    *,
+    media_url: str | None = None,
+    even_if_opted_out: bool = False,
+) -> CheckinSendResult:
     """Text a patient. With either key unset, sends nothing and says so.
 
     The one outbound primitive every patient-facing text goes through; the
@@ -359,6 +427,11 @@ def send_sms(phone_number: str, content: str, *, media_url: str | None = None) -
 
     ``media_url`` attaches a picture, clip or recording: a short-lived
     signed link to the stored file, which Sendblue fetches as it sends.
+
+    A number that replied STOP is not texted: the result says
+    ``opted_out`` and nothing reaches the provider. ``even_if_opted_out``
+    is for the texts that person asked for themselves: the answer to STOP,
+    START or HELP, and a sign-in code they just requested.
     """
     if not configured():
         return CheckinSendResult(sent=False, detail="Sendblue keys not configured")
@@ -370,6 +443,8 @@ def send_sms(phone_number: str, content: str, *, media_url: str | None = None) -
         return CheckinSendResult(
             sent=False, detail=f"not a usable phone number: {phone_number!r}"
         )
+    if not even_if_opted_out and opted_out(phone):
+        return CheckinSendResult(sent=False, detail=OPTED_OUT_DETAIL, opted_out=True)
 
     try:
         # Two call shapes on purpose: the plain text keeps the two-argument
@@ -613,4 +688,7 @@ def send_media_message(phone_number: str, media_url: str) -> CheckinSendResult:
 
 
 def send_verification_code(phone_number: str, code: str) -> CheckinSendResult:
-    return send_sms(phone_number, VERIFICATION_TEMPLATE.format(code=code))
+    # Sent even to a number that replied STOP: the person typed this number
+    # into the app a moment ago and is waiting on the code.
+    return send_sms(phone_number, VERIFICATION_TEMPLATE.format(code=code),
+                    even_if_opted_out=True)

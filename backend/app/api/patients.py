@@ -537,13 +537,16 @@ def message_outcome(delivery: sendblue.CheckinSendResult | None,
     """(status, reason) for a message written in the console.
 
     ``sent_sms`` when the text went. ``stored_app_only`` when nothing could
-    go out through no fault of anyone's — no number on file, or a number
-    that has not texted MedPull yet (``reason`` tells the two apart, and the
-    message is in the app either way). ``stored_sms_failed`` only for a real
-    provider failure, which is the one case worth a warning.
+    go out through no fault of anyone's — no number on file, a number that
+    has not texted MedPull yet, or one that replied STOP (``reason`` tells
+    them apart, and the message is in the app either way).
+    ``stored_sms_failed`` only for a real provider failure, which is the one
+    case worth a warning.
     """
     if delivery is not None and delivery.sent:
         return "sent_sms", None
+    if delivery is not None and delivery.opted_out:
+        return "stored_app_only", "opted_out"
     if delivery is not None and delivery.unreachable:
         return "stored_app_only", "not_reachable_yet"
     if phone:

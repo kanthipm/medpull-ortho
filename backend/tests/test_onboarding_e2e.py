@@ -469,7 +469,15 @@ def test_stress_crowd_of_patients_tasks_texts_and_messages(client, db, monkeypat
         for text in HOSTILE_TEXTS[:12]:
             r = client.post("/api/mobile/messages", headers=_auth(token), json={"text": text})
             assert r.status_code in (200, 422)
+        # Among the hostile texts was STOP, said outside any conversation: this
+        # number is not texted any more. The message is kept for the app, and
+        # that is not reported as a failure.
         r = client.post(f"/api/patients/{pid}/actions/message", json={"text": f"Hi {n}"})
+        assert r.status_code == 200
+        assert (r.json()["status"], r.json()["reason"]) == ("stored_app_only", "opted_out")
+        # START turns texts back on, and the provider's own failures show again
+        assert _text(client, phone, "START", handle=f"start-{n}")["kind"] == "opted_in"
+        r = client.post(f"/api/patients/{pid}/actions/message", json={"text": f"Hi again {n}"})
         assert r.status_code == 200
         assert r.json()["status"] == ("stored_sms_failed" if phone in failing else "sent_sms")
         # the copilot with hostile input

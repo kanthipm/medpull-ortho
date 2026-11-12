@@ -67,6 +67,28 @@ class Patient(Base):
     observations_from: Mapped[str | None] = mapped_column(
         ForeignKey("patients.id"), nullable=True
     )
+    # --- texting (all nullable; app/notifications, app/hep/texts.py) ---
+    # When this number replied STOP. Set, nothing but a verification code or
+    # the answer to START / HELP is texted to it (sendblue.send_sms); START
+    # clears it.
+    sms_opt_out_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When a texted DONE was answered with "How was the pain after, 0 to
+    # 10?". A bare number inside the next two hours is that answer
+    # (app/hep/sms_commands.py). Kept here, not in memory: the instance that
+    # asked is rarely the one that hears the reply.
+    sms_done_asked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # The day the morning run last texted this chart its plan
+    # (app/hep/reminders.py), so a retried run never texts it twice.
+    exercise_reminded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Set when the demo app bound this number and the welcome text could not
+    # go yet (the number had not texted the line); cleared when it is sent
+    # (app/api/demo_phone.py).
+    sms_welcome_owed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When the demo app bound this chart's number to it (a presenter's own
+    # phone on a demo persona). The same number may sit on that person's real
+    # chart too; while it is bound, a text from it is the persona's
+    # (tasks.service.patient_for_phone). Cleared when it is unbound.
+    demo_phone_bound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     surgeon: Mapped[CareTeamMember] = relationship(foreign_keys=[surgeon_id])
     hospital = relationship("Hospital")

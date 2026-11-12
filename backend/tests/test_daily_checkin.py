@@ -193,6 +193,10 @@ def test_the_app_receives_the_message_with_a_button_into_the_task(client, db, ch
         "kind": "open_task",
         "task_id": body["task_id"],
         "label": "Start check-in",
+        # the same place in the shape a texted link answers with, so a
+        # client has one navigator for both; no link rode in this line
+        "target": {"kind": "task", "ref_id": str(body["task_id"]), "day": None},
+        "url": None,
     }
 
     # And the task that button opens is a real check-in the app can render.
