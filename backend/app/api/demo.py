@@ -24,6 +24,10 @@ from app.database import get_db
 from app.personal.scope import is_clinic
 
 router = APIRouter(prefix="/demo", tags=["demo"])
+# The routes the demo iPhone app calls before it has any credential: the
+# persona list and the session for one of them. Mounted without the console's
+# door; each answers 404 off the demo stack.
+public_router = APIRouter(prefix="/demo", tags=["demo"])
 
 DEVICE_NAME = "demo screen"
 

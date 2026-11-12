@@ -18,6 +18,7 @@ from app.hep.models import (
 )
 from app.models.hospital import Hospital
 from app.models.insight import EstablishedBaseline, Insight, RiskAssessment
+from app.models.links import AppLink
 from app.models.library import CareAction, MessageTemplate, TaskTemplate, TaskVerification
 from app.models.mobile import Message, PatientSession, PhoneVerification, VerifiedContact
 from app.models.notification import Notification, NotificationPreference
@@ -45,6 +46,7 @@ from app.models.sports import (
 
 __all__ = [
     "AdherenceRecord",
+    "AppLink",
     "AdherenceTask",
     "Attachment",
     "CareAction",

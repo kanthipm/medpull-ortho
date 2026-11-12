@@ -7,10 +7,15 @@ from app.api import (
     auth,
     care,
     checkin,
+    console_personal,
+    data,
     demo,
+    demo_phone,
+    exercise_texts,
     exercises,
     explain,
     integrations,
+    links,
     mobile,
     mobility,
     narratives,
@@ -66,6 +71,18 @@ api_router.include_router(hep.router, dependencies=CONSOLE)
 api_router.include_router(exercises.router)
 # Demo-stack-only routes (404 elsewhere), behind the console's door.
 api_router.include_router(demo.router, dependencies=CONSOLE)
+# ...and the ones the demo iPhone app reaches with no credential at all (the
+# persona list, a session for one of them) or with the persona's own app
+# session (binding a real phone number). 404 off the demo stack.
+api_router.include_router(demo.public_router)
+api_router.include_router(demo_phone.router)
+# The showcase's read-only surfaces: the Data tab, and the Personal version
+# (demo members only).
+api_router.include_router(data.router, dependencies=CONSOLE)
+api_router.include_router(console_personal.router, dependencies=CONSOLE)
+# Texts the exercise calendar sends, and the links they carry into the app.
+api_router.include_router(exercise_texts.router, dependencies=CONSOLE)
+api_router.include_router(links.router)
 api_router.include_router(attachments.router)
 api_router.include_router(attachments.console_router, dependencies=CONSOLE)
 api_router.include_router(personal.router)

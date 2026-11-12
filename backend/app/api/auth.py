@@ -44,6 +44,11 @@ class ConsoleScope:
     org_id: str | None = None
     label: str = "MedPull"
     source: str = "open"
+    # A staff console looking at one clinic at a time (the workspace menu's
+    # choice, sent as X-MedPull-Clinic): roster reads narrow to this hospital,
+    # and the exercise calendar acts for it. It narrows lists only; a staff
+    # scope may still open any chart by id. None for every org credential.
+    acting_hospital_id: str | None = None
 
     @property
     def staff(self) -> bool:

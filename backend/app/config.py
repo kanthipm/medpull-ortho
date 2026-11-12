@@ -110,6 +110,24 @@ class Settings(BaseSettings):
     # Play Console prints them) are set.
     android_package: str = "com.medpull.recovery"
     android_cert_sha256: str = ""
+    # Other iPhone apps the association file names beside (or, with no
+    # IOS_TEAM_ID, instead of) the one above: full app ids, comma separated
+    # ("TEAMID.com.medpull.demo"). The demo stack lists the demo app here and
+    # leaves ios_bundle_id alone, because that one also gates App Store
+    # receipts.
+    ios_link_app_ids: str = ""
+    # The paths those apps open instead of Safari: the task link, and the
+    # links a text carries into the app (app/links.py).
+    ios_link_paths: str = "/t/*,/a/*"
+    # The demo iPhone app's own URL scheme, so it never contends with the
+    # real app for medpull:// on a phone that has both.
+    demo_app_scheme: str = "medpulldemo"
+    # --- texts from the exercise calendar (app/hep/texts.py) ---------------
+    # The morning run that texts each lifter today's plan. Off unless a
+    # deployment asks for it; the console's "text today's plan" works either
+    # way. The hour is local to the functions' TZ.
+    exercise_reminders: bool = False
+    exercise_reminder_hour: int = 8
     # --- the personal tier (app/personal) ---------------------------------
     # Every personal account starts on a trial this long; the paywall closes
     # after it unless an Apple subscription is on file.
